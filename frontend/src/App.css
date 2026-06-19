@@ -1,0 +1,183 @@
+/* ===== Reset & Base ===== */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+:root {
+  --color-text-secondary: #64748b;
+  --color-primary: #3b82f6;
+  --color-success: #22c55e;
+  --font-mono: ui-monospace, Consolas, "Courier New", monospace;
+}
+
+body {
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    Roboto,
+    sans-serif;
+  font-size: 13px;
+  color: #1e293b;
+  background: #f8f9fa;
+}
+
+#root {
+  width: 100%;
+  height: 100vh;
+}
+
+/* ===== ReactFlow 容器 ===== */
+.workflow-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+/* ===== Custom Node (n8n style: icon square + label below) ===== */
+
+.custom-node-wrapper.status-success .custom-node {
+  border-color: var(--color-success);
+  border-width: 2px;
+}
+
+.custom-node-wrapper.status-error .custom-node {
+  border-color: #fa5252;
+  border-width: 2px;
+}
+
+.custom-node-wrapper.status-running .custom-node {
+  border-color: transparent;
+}
+
+.custom-node-wrapper.status-running .custom-node::after {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 10px;
+  background: conic-gradient(
+    from var(--gradient-angle, 0deg),
+    rgba(59, 130, 246, 1),
+    rgba(59, 130, 246, 0.2) 30%,
+    rgba(59, 130, 246, 0.2) 70%,
+    rgba(59, 130, 246, 1) 90%,
+    rgba(59, 130, 246, 1)
+  );
+  animation: spin-border 1.2s linear infinite;
+  z-index: -1;
+}
+
+@keyframes spin-border {
+  to { --gradient-angle: 360deg; }
+}
+
+@property --gradient-angle {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+
+.custom-node-wrapper.status-waiting .custom-node {
+  border-color: #fab005;
+  border-width: 2px;
+}
+
+/* 图标方块：节点的视觉主体 */
+.custom-node {
+  width: 64px;
+  height: 64px;
+  position: relative;
+  background: #fff;
+  border: 1px solid #e9ecef;
+  border-radius: 10px;
+  transition:
+    box-shadow 0.15s,
+    border-color 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.custom-node-wrapper:hover .custom-node {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+}
+
+.node-icon-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  background: transparent;
+}
+
+/* 标签区域：图标下方的名称、副标题等 */
+.node-body {
+  margin-top: 5px;
+  text-align: center;
+  max-width: 64px;
+}
+
+.node-status-icon.status-success { color: var(--color-success); }
+.node-status-icon.status-error { color: #fa5252; }
+.node-status-icon.status-running { color: var(--color-primary); }
+.node-status-icon.status-waiting { color: #fab005; }
+
+/* 连接点（Handle）：半透明常显 */
+.port-handle {
+  width: 12px !important;
+  height: 12px !important;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2) !important;
+  opacity: 0.55 !important;
+  transition: opacity 0.15s !important;
+  z-index: 10 !important;
+  cursor: crosshair !important;
+}
+
+.port-input { background: #40c057 !important; }
+.port-output { background: #339af0 !important; }
+
+.port-handle[data-handleid="port-true"],
+.port-handle[data-handleid="port-false"] {
+  background: #339af0 !important;
+}
+
+.custom-node-wrapper:hover .port-handle {
+  opacity: 1 !important;
+}
+
+/* ===== Node Card (NodePanel 拖拽项) ===== */
+.node-card {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 4px;
+  cursor: grab;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+  border: 1px solid transparent;
+}
+
+.node-card:hover {
+  background: #f1f5f9;
+  border-color: #e2e8f0;
+}
+
+.node-card:active {
+  cursor: grabbing;
+}
+
+/* ===== Output JSON (执行结果展示) ===== */
+.output-json {
+  background: #1e293b;
+  color: #e2e8f0;
+  padding: 8px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

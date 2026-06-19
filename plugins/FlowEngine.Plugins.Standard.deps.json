@@ -1,0 +1,91 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v10.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v10.0": {
+      "FlowEngine.Plugins.Standard/1.0.0": {
+        "dependencies": {
+          "FlowEngine.Core": "1.0.0",
+          "Jint": "4.10.0"
+        },
+        "runtime": {
+          "FlowEngine.Plugins.Standard.dll": {}
+        }
+      },
+      "Acornima/1.6.2": {
+        "runtime": {
+          "lib/net8.0/Acornima.dll": {
+            "assemblyVersion": "1.6.2.0",
+            "fileVersion": "1.6.2.0"
+          }
+        }
+      },
+      "Jint/4.10.0": {
+        "dependencies": {
+          "Acornima": "1.6.2"
+        },
+        "runtime": {
+          "lib/net10.0/Jint.dll": {
+            "assemblyVersion": "4.10.0.0",
+            "fileVersion": "4.5.0.0"
+          }
+        }
+      },
+      "Microsoft.EntityFrameworkCore.Abstractions/10.0.9": {
+        "runtime": {
+          "lib/net10.0/Microsoft.EntityFrameworkCore.Abstractions.dll": {
+            "assemblyVersion": "10.0.9.0",
+            "fileVersion": "10.0.926.27113"
+          }
+        }
+      },
+      "FlowEngine.Core/1.0.0": {
+        "dependencies": {
+          "Microsoft.EntityFrameworkCore.Abstractions": "10.0.9"
+        },
+        "runtime": {
+          "FlowEngine.Core.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "FlowEngine.Plugins.Standard/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Acornima/1.6.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-laakpDHzMwHr5C8+q5RlRf0XJJshUvghNeo4xDerICrYR3iEuGvwfpauCmXuU3RE437XDaQO5ZxieWDpADuD+w==",
+      "path": "acornima/1.6.2",
+      "hashPath": "acornima.1.6.2.nupkg.sha512"
+    },
+    "Jint/4.10.0": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-0quB/4E0FpYmKTTYMGriYOcb0LT6xmKtaZG6SFAbnypJzPJ17G6QLIFWmD4MdjLCtdh+h77GZDaC7i7v+cQaeA==",
+      "path": "jint/4.10.0",
+      "hashPath": "jint.4.10.0.nupkg.sha512"
+    },
+    "Microsoft.EntityFrameworkCore.Abstractions/10.0.9": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-GRMaiPkqYna/gCsyDffYDWmefGPC3hDrdMw+2rrGcQwhs6uZOsaMQXMJnoXQ35tx9SkBV2ieRRU9N/jLOO6BZw==",
+      "path": "microsoft.entityframeworkcore.abstractions/10.0.9",
+      "hashPath": "microsoft.entityframeworkcore.abstractions.10.0.9.nupkg.sha512"
+    },
+    "FlowEngine.Core/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}
