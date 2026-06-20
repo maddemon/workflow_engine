@@ -1,8 +1,15 @@
+using System.Text;
 using System.Text.Json.Serialization;
+using FlowEngine.Application.Audit;
 using FlowEngine.Application.Credentials;
 using FlowEngine.Application.Executions;
+using FlowEngine.Application.Identity;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Events;
+using FlowEngine.Host.Middlewares;
+using FlowEngine.Infrastructure.Audit;
+using FlowEngine.Infrastructure.Identity;
 using FlowEngine.Infrastructure.Persistence;
 using FlowEngine.Infrastructure.Persistence.Repositories;
 using FlowEngine.Infrastructure.Security;
@@ -10,7 +17,9 @@ using FlowEngine.Runtime.Credentials;
 using FlowEngine.Runtime.Expressions;
 using FlowEngine.Runtime.Executor;
 using FlowEngine.Runtime.Registry;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -27,6 +36,52 @@ builder.Services.AddScoped<ParameterResolver>();
 builder.Services.AddDbContext<FlowEngineDbContext>(options =>
     options.UseSqlite(builder.Configuration.GetConnectionString("Default")));
 
+builder.Services.AddSingleton<InternalErrorSink>();
+builder.Services.AddSingleton<IEventBus, InMemoryEventBus>();
+builder.Services.AddSingleton<AuditLogFileSink>(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var logPath = config["Audit:LogPath"] ?? "./storage/audit";
+    return new AuditLogFileSink(
+        logPath,
+        sp.GetRequiredService<IEventBus>(),
+        sp.GetService<ILogger<AuditLogFileSink>>());
+});
+builder.Services.AddSingleton(sp =>
+{
+    var config = sp.GetRequiredService<IConfiguration>();
+    var logPath = config["Audit:LogPath"] ?? "./storage/audit";
+    return new AuditLogReader(logPath);
+});
+
+var jwtSecret = builder.Configuration["Jwt:Secret"]
+    ?? throw new InvalidOperationException("JWT Secret is not configured.");
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidateAudience = true,
+            ValidateLifetime = true,
+            ValidateIssuerSigningKey = true,
+            ValidIssuer = builder.Configuration["Jwt:Issuer"] ?? "FlowEngine",
+            ValidAudience = builder.Configuration["Jwt:Audience"] ?? "FlowEngine",
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+        };
+    });
+
+builder.Services.AddAuthorization();
+builder.Services.AddHttpContextAccessor();
+
+builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
+builder.Services.AddScoped<IPasswordValidator, PasswordValidator>();
+builder.Services.AddScoped<ITokenService, JwtTokenService>();
+builder.Services.AddScoped<IUserStore, UserStore>();
+builder.Services.AddScoped<IUserContext, HttpContextUserContext>();
+builder.Services.AddScoped<AuthenticationService>();
+builder.Services.AddScoped<AuditEventFactory>();
 builder.Services.AddScoped<IWorkflowRepository, WorkflowRepository>();
 builder.Services.AddScoped<IExecutionStore, ExecutionStore>();
 builder.Services.AddScoped<ICredentialRepository, CredentialRepository>();
@@ -104,7 +159,12 @@ using (var scope = app.Services.CreateScope())
     dbContext.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
 }
 
+app.Services.GetRequiredService<AuditLogFileSink>();
+
 app.UseCors();
+app.UseAuthentication();
+app.UseMiddleware<CurrentUserMiddleware>();
+app.UseAuthorization();
 app.UseStaticFiles();
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
