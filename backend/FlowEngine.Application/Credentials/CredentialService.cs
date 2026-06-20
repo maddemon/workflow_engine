@@ -43,12 +43,10 @@ public sealed class CredentialService
 
         var credential = new Credential
         {
-            Id = Guid.NewGuid(),
             Name = dto.Name,
             Type = dto.Type,
             Data = encryptedData,
             KeyVersion = KeyVersion,
-            CreatedAt = DateTime.UtcNow
         };
 
         await _credentialRepository.SaveAsync(credential, cancellationToken).ConfigureAwait(false);

@@ -11,8 +11,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace FlowEngine.Infrastructure.Migrations
 {
     [DbContext(typeof(FlowEngineDbContext))]
-    [Migration("20260619132740_AddWorkflowStyleSettings")]
-    partial class AddWorkflowStyleSettings
+    [Migration("20260620011324_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -23,14 +23,11 @@ namespace FlowEngine.Infrastructure.Migrations
             modelBuilder.Entity("FlowEngine.Infrastructure.Persistence.Entities.CredentialEntity", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT")
-                        .HasColumnName("id")
-                        .HasComment("主键");
+                        .HasMaxLength(36)
+                        .HasColumnType("TEXT");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT")
-                        .HasColumnName("created_at")
                         .HasComment("创建时间");
 
                     b.Property<string>("DataJson")
@@ -38,6 +35,10 @@ namespace FlowEngine.Infrastructure.Migrations
                         .HasColumnType("TEXT")
                         .HasColumnName("data")
                         .HasComment("加密字段数据 JSON");
+
+                    b.Property<bool>("Deleted")
+                        .HasColumnType("INTEGER")
+                        .HasComment("是否删除");
 
                     b.Property<string>("KeyVersion")
                         .IsRequired()
@@ -62,8 +63,7 @@ namespace FlowEngine.Infrastructure.Migrations
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("TEXT")
-                        .HasColumnName("updated_at")
-                        .HasComment("更新时间");
+                        .HasComment("最后更新时间");
 
                     b.HasKey("Id");
 
@@ -80,15 +80,21 @@ namespace FlowEngine.Infrastructure.Migrations
             modelBuilder.Entity("FlowEngine.Infrastructure.Persistence.Entities.ExecutionRecordEntity", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT")
-                        .HasColumnName("id")
-                        .HasComment("主键");
+                        .HasMaxLength(36)
+                        .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("TEXT")
                         .HasColumnName("completed_at")
                         .HasComment("完成时间");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT")
+                        .HasComment("创建时间");
+
+                    b.Property<bool>("Deleted")
+                        .HasColumnType("INTEGER")
+                        .HasComment("是否删除");
 
                     b.Property<string>("NodeRecordsJson")
                         .IsRequired()
@@ -111,6 +117,10 @@ namespace FlowEngine.Infrastructure.Migrations
                         .HasColumnName("status")
                         .HasComment("执行状态");
 
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT")
+                        .HasComment("最后更新时间");
+
                     b.Property<Guid>("WorkflowDefinitionId")
                         .HasColumnType("TEXT")
                         .HasColumnName("workflow_definition_id")
@@ -131,15 +141,21 @@ namespace FlowEngine.Infrastructure.Migrations
             modelBuilder.Entity("FlowEngine.Infrastructure.Persistence.Entities.NodeExecutionRecordEntity", b =>
                 {
                     b.Property<Guid>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("TEXT")
-                        .HasColumnName("id")
-                        .HasComment("主键");
+                        .HasMaxLength(36)
+                        .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("CompletedAt")
                         .HasColumnType("TEXT")
                         .HasColumnName("completed_at")
                         .HasComment("完成时间");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT")
+                        .HasComment("创建时间");
+
+                    b.Property<bool>("Deleted")
+                        .HasColumnType("INTEGER")
+                        .HasComment("是否删除");
 
                     b.Property<Guid>("ExecutionId")
                         .HasColumnType("TEXT")
@@ -185,6 +201,10 @@ namespace FlowEngine.Infrastructure.Migrations
                         .HasColumnName("started_at")
                         .HasComment("开始时间");
 
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT")
+                        .HasComment("最后更新时间");
+
                     b.HasKey("Id");
 
                     b.HasIndex("ExecutionId");
@@ -198,13 +218,11 @@ namespace FlowEngine.Infrastructure.Migrations
             modelBuilder.Entity("FlowEngine.Infrastructure.Persistence.Entities.WorkflowDefinitionEntity", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasColumnType("TEXT")
-                        .HasColumnName("id")
-                        .HasComment("主键");
+                        .HasMaxLength(36)
+                        .HasColumnType("TEXT");
 
                     b.Property<int>("Version")
                         .HasColumnType("INTEGER")
-                        .HasColumnName("version")
                         .HasComment("版本号");
 
                     b.Property<string>("ConnectionsJson")
@@ -215,26 +233,26 @@ namespace FlowEngine.Infrastructure.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT")
-                        .HasColumnName("created_at")
                         .HasComment("创建时间");
 
                     b.Property<string>("CreatedBy")
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("TEXT")
-                        .HasColumnName("created_by")
                         .HasComment("创建人");
+
+                    b.Property<bool>("Deleted")
+                        .HasColumnType("INTEGER")
+                        .HasComment("是否删除");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("INTEGER")
-                        .HasColumnName("is_active")
                         .HasComment("是否激活");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(256)
                         .HasColumnType("TEXT")
-                        .HasColumnName("name")
                         .HasComment("工作流名称");
 
                     b.Property<string>("NodesJson")
@@ -245,18 +263,15 @@ namespace FlowEngine.Infrastructure.Migrations
 
                     b.Property<Guid?>("ProjectId")
                         .HasColumnType("TEXT")
-                        .HasColumnName("project_id")
                         .HasComment("项目 ID");
 
                     b.Property<string>("StyleSettingsJson")
                         .HasColumnType("TEXT")
-                        .HasColumnName("style_settings")
                         .HasComment("样式设置");
 
-                    b.Property<DateTime>("UpdatedAt")
+                    b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("TEXT")
-                        .HasColumnName("updated_at")
-                        .HasComment("更新时间");
+                        .HasComment("最后更新时间");
 
                     b.HasKey("Id", "Version");
 

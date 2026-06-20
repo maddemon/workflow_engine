@@ -47,18 +47,4 @@ public sealed class CredentialEntity : Entity
     [Column("key_version")]
     [Comment("密钥版本")]
     public string KeyVersion { get; set; } = string.Empty;
-
-    /// <summary>
-    /// 创建时间。
-    /// </summary>
-    [Column("created_at")]
-    [Comment("创建时间")]
-    public DateTime CreatedAt { get; set; }
-
-    /// <summary>
-    /// 更新时间。
-    /// </summary>
-    [Column("updated_at")]
-    [Comment("更新时间")]
-    public DateTime? UpdatedAt { get; set; }
 }

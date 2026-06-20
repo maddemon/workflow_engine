@@ -51,7 +51,41 @@
 - 新增功能必须配套测试用例。
 - Code Review 前必须完成编译和测试。
 
-## 6. 规则文档索引
+## 6. 开发工作流（TDD）
+
+### 6.1 标准开发流程
+
+```
+1. 写测试（正常路径 + 边界条件）
+2. 运行测试（确认失败）
+3. 实现功能代码
+4. 运行测试（确认通过）
+5. 重构（如需要）
+6. 运行全部测试（确认无回归）
+```
+
+### 6.2 新增节点插件流程
+
+1. 在 `plugins/FlowEngine.Plugins.Standard/` 创建节点类
+2. 在 `tests/FlowEngine.Runtime.Tests/Plugins/` 创建对应测试
+3. 测试覆盖：正常执行、空参数、类型转换、异常处理
+4. `dotnet build` + `dotnet test` 全部通过
+
+### 6.3 新增 API 端点流程
+
+1. 在 `tests/FlowEngine.Application.Tests/` 创建 DTO 转换测试
+2. 实现 Service 和 Controller
+3. 测试覆盖：正常创建/更新/查询、无效输入、ID 类型兼容
+4. `dotnet build` + `dotnet test` 全部通过
+
+### 6.4 修复 Bug 流程
+
+1. **先写回归测试**：复现 Bug 的测试用例（确认失败）
+2. 修复 Bug
+3. 运行测试（确认通过）
+4. 运行全部测试（确认无回归）
+
+## 7. 规则文档索引
 
 | 规则 | 文件 |
 |------|------|
@@ -60,7 +94,7 @@
 | 前端代码规范 | `.agents/rules/frontend-code-rules.md` |
 | 文档规范与开发计划实施 | `.agents/rules/docs-rules.md` |
 
-## 7. 文档目录索引
+## 8. 文档目录索引
 
 | 文档类型 | 目录 |
 |----------|------|

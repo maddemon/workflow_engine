@@ -29,7 +29,6 @@ function groupParameters(
 export function ParameterPanel() {
   const selectedNodeId = useWorkflowStore((s) => s.selectedNodeId);
   const nodes = useWorkflowStore((s) => s.nodes);
-  const edges = useWorkflowStore((s) => s.edges);
   const updateNodeParameters = useWorkflowStore((s) => s.updateNodeParameters);
   const updateNodeName = useWorkflowStore((s) => s.updateNodeName);
   const validationErrors = useWorkflowStore((s) => s.validationErrors);
@@ -39,6 +38,7 @@ export function ParameterPanel() {
   const setIsActive = useWorkflowStore((s) => s.setIsActive);
   const styleSettings = useWorkflowStore((s) => s.styleSettings);
   const setStyleSettings = useWorkflowStore((s) => s.setStyleSettings);
+  const edgeCount = useWorkflowStore((s) => s.edges.length);
 
   const selectedNode = nodes.find((n) => n.id === selectedNodeId);
   const { isVisible } = useDisplayRule(selectedNode?.data.parameters ?? {});
@@ -93,7 +93,7 @@ export function ParameterPanel() {
           </Group>
           <Group justify="space-between" mt={4}>
             <Text size="sm" c="dimmed">Connections</Text>
-            <Badge variant="light" size="sm">{edges.length}</Badge>
+            <Badge variant="light" size="sm">{edgeCount}</Badge>
           </Group>
         </Paper>
         <Text c="dimmed" size="xs" ta="center" mt="auto" pb="md">

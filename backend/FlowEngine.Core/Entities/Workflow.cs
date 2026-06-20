@@ -44,20 +44,6 @@ public class Workflow : Entity
     public string CreatedBy { get; set; } = string.Empty;
 
     /// <summary>
-    /// 创建时间。
-    /// </summary>
-    [Column("created_at")]
-    [Comment("创建时间")]
-    public DateTime CreatedAt { get; set; }
-
-    /// <summary>
-    /// 更新时间。
-    /// </summary>
-    [Column("updated_at")]
-    [Comment("更新时间")]
-    public DateTime UpdatedAt { get; set; }
-
-    /// <summary>
     /// 节点实例列表。
     /// </summary>
     [Column("nodes")]

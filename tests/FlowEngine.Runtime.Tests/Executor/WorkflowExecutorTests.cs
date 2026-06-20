@@ -6,6 +6,7 @@ using FlowEngine.Runtime.Executor;
 using FlowEngine.Runtime.Expressions;
 using FlowEngine.Runtime.Registry;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -42,12 +43,15 @@ public class WorkflowExecutorTests
         var contextFactory = new NodeExecutionContextFactory(_nodeRegistry, evaluator, resolver, new TestCredentialAccessor(), new HashSet<string>());
         var errorHandler = new ErrorStrategyHandler();
 
+        var scopeFactory = new TestScopeFactory(_executionStore);
+
         _executor = new WorkflowExecutor(
             _workflowRepository,
             _executionStore,
             _nodeRegistry,
             contextFactory,
             errorHandler,
+            scopeFactory,
             NullLogger<WorkflowExecutor>.Instance);
     }
 
@@ -356,5 +360,26 @@ public class WorkflowExecutorTests
     {
         public Task<CredentialValue> GetCredentialAsync(Guid credentialId, CancellationToken cancellationToken = default)
             => Task.FromResult(new CredentialValue());
+    }
+
+    private class TestScopeFactory(IExecutionStore executionStore) : IServiceScopeFactory
+    {
+        public IServiceScope CreateScope() => new TestScope(executionStore);
+    }
+
+    private class TestScope(IExecutionStore executionStore) : IServiceScope
+    {
+        public IServiceProvider ServiceProvider { get; } = new TestServiceProvider(executionStore);
+        public void Dispose() { }
+    }
+
+    private class TestServiceProvider(IExecutionStore executionStore) : IServiceProvider
+    {
+        public object? GetService(Type serviceType)
+        {
+            if (serviceType == typeof(IExecutionStore))
+                return executionStore;
+            return null;
+        }
     }
 }

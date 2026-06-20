@@ -28,23 +28,22 @@ public sealed class WorkflowService
     {
         ArgumentNullException.ThrowIfNull(dto);
 
+        var (nodes, connections, nodeIdMap) = ConvertFromDtos(dto.Nodes, dto.Connections);
+
         var workflow = new Workflow
         {
-            Id = Guid.NewGuid(),
             ProjectId = dto.ProjectId,
             Name = dto.Name,
             CreatedBy = dto.CreatedBy,
-            CreatedAt = DateTime.UtcNow,
-            UpdatedAt = DateTime.UtcNow,
             IsActive = true,
-            Nodes = dto.Nodes,
-            Connections = dto.Connections
+            Nodes = nodes,
+            Connections = connections
         };
 
         ValidateOrThrow(workflow);
         await _workflowRepository.SaveAsync(workflow, cancellationToken).ConfigureAwait(false);
 
-        return MapToDto(workflow);
+        return MapToDto(workflow, dto.Nodes, dto.Connections, nodeIdMap);
     }
 
     /// <summary>
@@ -81,17 +80,19 @@ public sealed class WorkflowService
             return null;
         }
 
+        var (nodes, connections, nodeIdMap) = ConvertFromDtos(dto.Nodes, dto.Connections);
+
         existing.Name = dto.Name;
         existing.IsActive = dto.IsActive;
         existing.StyleSettings = dto.StyleSettings;
-        existing.Nodes = dto.Nodes;
-        existing.Connections = dto.Connections;
+        existing.Nodes = nodes;
+        existing.Connections = connections;
         existing.UpdatedAt = DateTime.UtcNow;
 
         ValidateOrThrow(existing);
         await _workflowRepository.SaveAsync(existing, cancellationToken).ConfigureAwait(false);
 
-        return MapToDto(existing);
+        return MapToDto(existing, dto.Nodes, dto.Connections, nodeIdMap);
     }
 
     /// <summary>
@@ -130,6 +131,57 @@ public sealed class WorkflowService
         return await _workflowRepository.GetVersionsAsync(id, cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// 将 API DTO 转换为领域实体，生成新的 Guid ID 并建立前端字符串 ID 到 Guid 的映射。
+    /// </summary>
+    private static (List<NodeInstance> Nodes, List<Connection> Connections, Dictionary<string, Guid> NodeIdMap) ConvertFromDtos(
+        List<NodeInstanceDto> nodeDtos,
+        List<ConnectionDto> connectionDtos)
+    {
+        var nodeIdMap = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
+
+        var nodes = nodeDtos.Select(dto =>
+        {
+            var node = new NodeInstance
+            {
+                TypeName = dto.TypeName,
+                Name = dto.Name,
+                Parameters = dto.Parameters,
+                Ports = dto.Ports,
+                PositionX = dto.PositionX,
+                PositionY = dto.PositionY,
+                IsEntry = dto.IsEntry,
+                RetryPolicy = dto.RetryPolicy,
+                ErrorStrategy = dto.ErrorStrategy,
+                Timeout = dto.Timeout,
+            };
+
+            if (!string.IsNullOrEmpty(dto.Id))
+            {
+                nodeIdMap[dto.Id] = node.Id;
+            }
+
+            return node;
+        }).ToList();
+
+        var connections = connectionDtos.Select(dto =>
+        {
+            var sourceGuid = nodeIdMap.TryGetValue(dto.SourceNodeId, out var s) ? s : Guid.Empty;
+            var targetGuid = nodeIdMap.TryGetValue(dto.TargetNodeId, out var t) ? t : Guid.Empty;
+
+            return new Connection
+            {
+                SourceNodeId = sourceGuid,
+                SourcePortName = dto.SourcePortName,
+                TargetNodeId = targetGuid,
+                TargetPortName = dto.TargetPortName,
+                Condition = dto.Condition,
+            };
+        }).ToList();
+
+        return (nodes, connections, nodeIdMap);
+    }
+
     private void ValidateOrThrow(Workflow workflow)
     {
         var result = _workflowValidator.Validate(workflow);
@@ -139,8 +191,36 @@ public sealed class WorkflowService
         }
     }
 
+    /// <summary>
+    /// 将领域实体转换为 API 响应 DTO（从数据库加载时使用）。
+    /// </summary>
     private static WorkflowDto MapToDto(Workflow workflow)
     {
+        var nodeDtos = workflow.Nodes.Select(n => new NodeInstanceDto
+        {
+            Id = n.Id.ToString(),
+            TypeName = n.TypeName,
+            Name = n.Name,
+            Parameters = n.Parameters,
+            Ports = n.Ports,
+            PositionX = n.PositionX,
+            PositionY = n.PositionY,
+            IsEntry = n.IsEntry,
+            RetryPolicy = n.RetryPolicy,
+            ErrorStrategy = n.ErrorStrategy,
+            Timeout = n.Timeout,
+        }).ToList();
+
+        var connectionDtos = workflow.Connections.Select(c => new ConnectionDto
+        {
+            Id = c.Id.ToString(),
+            SourceNodeId = c.SourceNodeId.ToString(),
+            SourcePortName = c.SourcePortName,
+            TargetNodeId = c.TargetNodeId.ToString(),
+            TargetPortName = c.TargetPortName,
+            Condition = c.Condition,
+        }).ToList();
+
         return new WorkflowDto
         {
             Id = workflow.Id,
@@ -152,8 +232,72 @@ public sealed class WorkflowService
             UpdatedAt = workflow.UpdatedAt,
             IsActive = workflow.IsActive,
             StyleSettings = workflow.StyleSettings,
-            Nodes = workflow.Nodes,
-            Connections = workflow.Connections
+            Nodes = nodeDtos,
+            Connections = connectionDtos,
+        };
+    }
+
+    /// <summary>
+    /// 将领域实体转换为 API 响应 DTO（保存后返回时使用，保持前端原始 ID）。
+    /// </summary>
+    private static WorkflowDto MapToDto(
+        Workflow workflow,
+        List<NodeInstanceDto> originalNodeDtos,
+        List<ConnectionDto> originalConnectionDtos,
+        Dictionary<string, Guid> nodeIdMap)
+    {
+        var reverseNodeIdMap = nodeIdMap.ToDictionary(kv => kv.Value, kv => kv.Key);
+
+        var nodeDtos = workflow.Nodes.Select(n =>
+        {
+            var originalId = reverseNodeIdMap.TryGetValue(n.Id, out var origId) ? origId : n.Id.ToString();
+            return new NodeInstanceDto
+            {
+                Id = originalId,
+                TypeName = n.TypeName,
+                Name = n.Name,
+                Parameters = n.Parameters,
+                Ports = n.Ports,
+                PositionX = n.PositionX,
+                PositionY = n.PositionY,
+                IsEntry = n.IsEntry,
+                RetryPolicy = n.RetryPolicy,
+                ErrorStrategy = n.ErrorStrategy,
+                Timeout = n.Timeout,
+            };
+        }).ToList();
+
+        var connectionDtos = workflow.Connections.Select(c =>
+        {
+            var origSource = reverseNodeIdMap.TryGetValue(c.SourceNodeId, out var sId) ? sId : c.SourceNodeId.ToString();
+            var origTarget = reverseNodeIdMap.TryGetValue(c.TargetNodeId, out var tId) ? tId : c.TargetNodeId.ToString();
+            var origConn = originalConnectionDtos.FirstOrDefault(cd =>
+                cd.SourceNodeId == origSource && cd.TargetNodeId == origTarget);
+
+            return new ConnectionDto
+            {
+                Id = origConn?.Id ?? c.Id.ToString(),
+                SourceNodeId = origSource,
+                SourcePortName = c.SourcePortName,
+                TargetNodeId = origTarget,
+                TargetPortName = c.TargetPortName,
+                Condition = c.Condition,
+            };
+        }).ToList();
+
+        return new WorkflowDto
+        {
+            Id = workflow.Id,
+            ProjectId = workflow.ProjectId,
+            Name = workflow.Name,
+            Version = workflow.Version,
+            CreatedBy = workflow.CreatedBy,
+            CreatedAt = workflow.CreatedAt,
+            UpdatedAt = workflow.UpdatedAt,
+            IsActive = workflow.IsActive,
+            StyleSettings = workflow.StyleSettings,
+            Nodes = nodeDtos,
+            Connections = connectionDtos,
         };
     }
 

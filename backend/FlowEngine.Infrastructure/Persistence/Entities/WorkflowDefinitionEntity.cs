@@ -17,7 +17,6 @@ public sealed class WorkflowDefinitionEntity : Entity
     /// <summary>
     /// 项目 ID。
     /// </summary>
-    [Column("project_id")]
     [Comment("项目 ID")]
     public Guid? ProjectId { get; set; }
 
@@ -26,14 +25,12 @@ public sealed class WorkflowDefinitionEntity : Entity
     /// </summary>
     [Required]
     [MaxLength(256)]
-    [Column("name")]
     [Comment("工作流名称")]
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
     /// 版本号。
     /// </summary>
-    [Column("version")]
     [Comment("版本号")]
     public int Version { get; set; }
 
@@ -42,35 +39,18 @@ public sealed class WorkflowDefinitionEntity : Entity
     /// </summary>
     [Required]
     [MaxLength(256)]
-    [Column("created_by")]
     [Comment("创建人")]
     public string CreatedBy { get; set; } = string.Empty;
 
     /// <summary>
-    /// 创建时间。
-    /// </summary>
-    [Column("created_at")]
-    [Comment("创建时间")]
-    public DateTime CreatedAt { get; set; }
-
-    /// <summary>
-    /// 更新时间。
-    /// </summary>
-    [Column("updated_at")]
-    [Comment("更新时间")]
-    public DateTime UpdatedAt { get; set; }
-
-    /// <summary>
     /// 是否激活。
     /// </summary>
-    [Column("is_active")]
     [Comment("是否激活")]
     public bool IsActive { get; set; }
 
     /// <summary>
     /// 样式设置 JSON。
     /// </summary>
-    [Column("style_settings")]
     [Comment("样式设置")]
     public string? StyleSettingsJson { get; set; }
 

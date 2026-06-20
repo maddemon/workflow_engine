@@ -33,6 +33,7 @@ public sealed class WorkflowRepository : IWorkflowRepository
     {
         var entity = await _context.WorkflowDefinitions
             .Where(x => x.Id == id)
+            .AsNoTracking()
             .OrderByDescending(x => x.Version)
             .FirstOrDefaultAsync(cancellationToken)
             .ConfigureAwait(false);

@@ -7,7 +7,6 @@ import { JsonField } from './fields/JsonField.tsx';
 import { CodeField } from './fields/CodeField.tsx';
 import { CredentialField } from './fields/CredentialField.tsx';
 import { ButtonGroupField } from './fields/ButtonGroupField.tsx';
-import { ToggleField } from './fields/ToggleField.tsx';
 import { TextAreaField } from './fields/TextAreaField.tsx';
 import { SecretField } from './fields/SecretField.tsx';
 import { ExpressionField } from './fields/ExpressionField.tsx';
@@ -38,7 +37,7 @@ export function FieldResolver({ definition, value, onChange, error }: FieldResol
       }
       return <ButtonGroupField definition={definition} value={value} onChange={onChange} error={error} />;
     case 'Toggle':
-      return <ToggleField definition={definition} value={value} onChange={onChange} error={error} />;
+      return <BooleanField definition={definition} value={value} onChange={onChange} error={error} />;
     case 'TextArea':
       return <TextAreaField definition={definition} value={value} onChange={onChange} error={error} />;
     case 'CodeEditor':

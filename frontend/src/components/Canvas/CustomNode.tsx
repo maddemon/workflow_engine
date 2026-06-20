@@ -76,7 +76,7 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
 
   useLayoutEffect(() => {
     updateNodeInternals(id);
-  });
+  }, [id, inputPorts.length, outputPorts.length, updateNodeInternals]);
 
   const template = data.descriptor.displayTemplate;
   let subtitle: string | null = null;

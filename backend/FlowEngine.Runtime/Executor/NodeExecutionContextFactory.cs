@@ -50,7 +50,7 @@ public sealed class NodeExecutionContextFactory
     /// <param name="nodeBatches">节点批次数据。</param>
     /// <param name="runIndex">运行索引。</param>
     /// <param name="cancellationToken">取消令牌。</param>
-    public NodeExecutionContext Create(
+    public async Task<NodeExecutionContext> CreateAsync(
         Workflow workflow,
         ExecutionRecord execution,
         NodeInstance node,
@@ -83,7 +83,7 @@ public sealed class NodeExecutionContextFactory
 
         var resolvedParameters = _parameterResolver.Resolve(rawParameters, expressionContext);
 
-        _parameterHydrator.Hydrate(nodeInstance, resolvedParameters);
+        await _parameterHydrator.HydrateAsync(nodeInstance, resolvedParameters).ConfigureAwait(false);
 
         return new NodeExecutionContext
         {

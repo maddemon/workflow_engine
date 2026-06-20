@@ -34,11 +34,22 @@ public sealed class ExecutionStore : IExecutionStore
     {
         var entity = await _context.ExecutionRecords
             .AsNoTracking()
-            .Include(x => x.NodeExecutions)
             .FirstOrDefaultAsync(x => x.Id == executionId, cancellationToken)
             .ConfigureAwait(false);
 
-        return entity is null ? null : MapToDomain(entity);
+        if (entity is null)
+        {
+            return null;
+        }
+
+        var nodeRecordEntities = await _context.NodeExecutionRecords
+            .AsNoTracking()
+            .Where(x => x.ExecutionId == executionId)
+            .OrderBy(x => x.RunIndex)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return MapToDomain(entity, nodeRecordEntities);
     }
 
     /// <inheritdoc />
@@ -53,7 +64,20 @@ public sealed class ExecutionStore : IExecutionStore
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        return entities.Select(MapToDomain).ToList();
+        var results = new List<ExecutionRecord>();
+        foreach (var entity in entities)
+        {
+            var nodeRecordEntities = await _context.NodeExecutionRecords
+                .AsNoTracking()
+                .Where(x => x.ExecutionId == entity.Id)
+                .OrderBy(x => x.RunIndex)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            results.Add(MapToDomain(entity, nodeRecordEntities));
+        }
+
+        return results;
     }
 
     /// <inheritdoc />
@@ -68,7 +92,20 @@ public sealed class ExecutionStore : IExecutionStore
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        return entities.Select(MapToDomain).ToList();
+        var results = new List<ExecutionRecord>();
+        foreach (var entity in entities)
+        {
+            var nodeRecordEntities = await _context.NodeExecutionRecords
+                .AsNoTracking()
+                .Where(x => x.ExecutionId == entity.Id)
+                .OrderBy(x => x.RunIndex)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+
+            results.Add(MapToDomain(entity, nodeRecordEntities));
+        }
+
+        return results;
     }
 
     /// <inheritdoc />
@@ -89,7 +126,7 @@ public sealed class ExecutionStore : IExecutionStore
             _context.ExecutionRecords.Add(MapToEntity(executionRecord));
         }
 
-        await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        var changes = await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -103,7 +140,7 @@ public sealed class ExecutionStore : IExecutionStore
         var entity = MapToEntity(nodeRecord, executionId);
         _context.NodeExecutionRecords.Add(entity);
 
-        await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        var changes = await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -130,11 +167,20 @@ public sealed class ExecutionStore : IExecutionStore
         await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
-    private static ExecutionRecord MapToDomain(ExecutionRecordEntity entity)
+    private static ExecutionRecord MapToDomain(ExecutionRecordEntity entity, List<NodeExecutionRecordEntity> nodeRecordEntities)
     {
-        var nodeRecords = string.IsNullOrEmpty(entity.NodeRecordsJson)
-            ? new List<NodeExecutionRecord>()
-            : JsonSerializer.Deserialize<List<NodeExecutionRecord>>(entity.NodeRecordsJson, JsonOptions) ?? new List<NodeExecutionRecord>();
+        var nodeRecords = nodeRecordEntities.Select(ne => new NodeExecutionRecord
+        {
+            Id = ne.Id,
+            NodeDefinitionId = ne.NodeDefinitionId,
+            RunIndex = ne.RunIndex,
+            StartedAt = ne.StartedAt,
+            CompletedAt = ne.CompletedAt,
+            Inputs = DeserializeDict<String, DataBatch>(ne.InputsJson) ?? new Dictionary<string, DataBatch>(),
+            Output = DeserializeObj<NodeExecutionResult>(ne.OutputJson) ?? new NodeExecutionResult(),
+            RawParameters = DeserializeDict<String, object>(ne.RawParametersJson) ?? new Dictionary<string, object>(),
+            ResolvedParameters = DeserializeDict<String, object>(ne.ResolvedParametersJson) ?? new Dictionary<string, object>(),
+        }).ToList();
 
         return new ExecutionRecord
         {
@@ -146,6 +192,27 @@ public sealed class ExecutionStore : IExecutionStore
             Status = entity.Status,
             NodeRecords = nodeRecords
         };
+    }
+
+    private static Dictionary<TKey, TValue>? DeserializeDict<TKey, TValue>(string? json)
+        where TKey : notnull
+    {
+        if (string.IsNullOrEmpty(json))
+        {
+            return null;
+        }
+
+        return JsonSerializer.Deserialize<Dictionary<TKey, TValue>>(json, JsonOptions);
+    }
+
+    private static T? DeserializeObj<T>(string? json)
+    {
+        if (string.IsNullOrEmpty(json))
+        {
+            return default;
+        }
+
+        return JsonSerializer.Deserialize<T>(json, JsonOptions);
     }
 
     private static ExecutionRecordEntity MapToEntity(ExecutionRecord record)

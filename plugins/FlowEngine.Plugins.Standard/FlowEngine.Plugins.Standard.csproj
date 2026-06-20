@@ -3,6 +3,7 @@
   <PropertyGroup>
     <OutDir>..\</OutDir>
     <TargetFramework>net10.0</TargetFramework>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
   </PropertyGroup>
 
   <ItemGroup>

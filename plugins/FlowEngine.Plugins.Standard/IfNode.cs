@@ -22,7 +22,7 @@ public sealed class IfNode : INodeType
     public string Category => "Core";
 
     /// <inheritdoc />
-    public string Icon => "git-branch";
+    public string Icon => "shuffle";
 
     /// <inheritdoc />
     public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;

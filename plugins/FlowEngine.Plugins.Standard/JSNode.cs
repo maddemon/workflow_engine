@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
@@ -145,6 +146,26 @@ public sealed class JSNode : INodeType
                 Success = true,
                 SourceIndex = 0
             };
+        }
+
+        // Handle JS objects and arrays by converting to .NET object then serializing
+        if (result.IsObject() || result.IsArray())
+        {
+            try
+            {
+                var dotNetValue = result.ToObject();
+                var json = JsonSerializer.SerializeToNode(dotNetValue);
+                return new DataItem
+                {
+                    Data = json,
+                    Success = true,
+                    SourceIndex = 0
+                };
+            }
+            catch
+            {
+                // Fall through to string conversion
+            }
         }
 
         var str = result.ToString();

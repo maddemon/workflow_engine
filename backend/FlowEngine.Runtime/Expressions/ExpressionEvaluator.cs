@@ -59,16 +59,30 @@ public sealed class ExpressionEvaluator
             }
 
             var sb = new StringBuilder();
-            foreach (var segment in segments)
+            for (var i = 0; i < segments.Count; i++)
             {
-                if (segment is LiteralSegment literal)
-                {
-                    sb.Append(literal.Text);
-                }
-                else if (segment is ExpressionSegment expression)
+                var segment = segments[i];
+
+                if (segment is ExpressionSegment expression)
                 {
                     var value = EvaluateExpression(expression.Expression, context);
+
+                    // Check if followed by a comparison operator in the next literal segment
+                    // e.g. {{ input.statusCode }} == 200 → parse as binary expression
+                    if (i + 1 < segments.Count && segments[i + 1] is LiteralSegment nextLiteral)
+                    {
+                        var comparisonResult = TryParseComparisonFromLiteral(value, nextLiteral.Text, context, segments, ref i);
+                        if (comparisonResult.HasValue)
+                        {
+                            return comparisonResult.Value;
+                        }
+                    }
+
                     sb.Append(ConvertToString(value));
+                }
+                else if (segment is LiteralSegment literal)
+                {
+                    sb.Append(literal.Text);
                 }
             }
 
@@ -650,6 +664,114 @@ public sealed class ExpressionEvaluator
         }
 
         return value.ToString() ?? string.Empty;
+    }
+
+    /// <summary>
+    /// Try to parse a comparison expression from a literal segment following an expression result.
+    /// e.g. value=200, text=" == 200" → evaluates 200 == 200 → true.
+    /// </summary>
+    private bool? TryParseComparisonFromLiteral(
+        object? leftValue,
+        string literalText,
+        ExpressionContext context,
+        IReadOnlyList<Segment> segments,
+        ref int index)
+    {
+        var trimmed = literalText.TrimStart();
+
+        var operators = new[] { "==", "!=", ">=", "<=", ">", "<" };
+        foreach (var op in operators)
+        {
+            if (!trimmed.StartsWith(op, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var rightText = trimmed[op.Length..].Trim();
+
+            // If right side is empty, there might be another expression segment following
+            if (string.IsNullOrEmpty(rightText) && index + 2 < segments.Count && segments[index + 2] is ExpressionSegment rightExpr)
+            {
+                var rightValue = EvaluateExpression(rightExpr.Expression, context);
+                index += 2; // skip the literal and expression segments
+                return CompareValues(leftValue, rightValue, op);
+            }
+
+            // Right side is a literal value (number, string, etc.)
+            if (!string.IsNullOrEmpty(rightText))
+            {
+                var rightValue = ParseLiteralValue(rightText);
+                return CompareValues(leftValue, rightValue, op);
+            }
+        }
+
+        return null;
+    }
+
+    private static object? ParseLiteralValue(string text)
+    {
+        if (bool.TryParse(text, out var b))
+        {
+            return b;
+        }
+
+        if (double.TryParse(text, NumberStyles.Any, CultureInfo.InvariantCulture, out var n))
+        {
+            return n;
+        }
+
+        return text;
+    }
+
+    private static bool CompareValues(object? left, object? right, string op)
+    {
+        if (left is null && right is null)
+        {
+            return op == "==";
+        }
+
+        if (left is null || right is null)
+        {
+            return op == "!=";
+        }
+
+        // Try numeric comparison
+        if (left is IConvertible && right is IConvertible)
+        {
+            try
+            {
+                var leftNum = Convert.ToDouble(left, CultureInfo.InvariantCulture);
+                var rightNum = Convert.ToDouble(right, CultureInfo.InvariantCulture);
+                return op switch
+                {
+                    "==" => leftNum == rightNum,
+                    "!=" => leftNum != rightNum,
+                    ">=" => leftNum >= rightNum,
+                    "<=" => leftNum <= rightNum,
+                    ">" => leftNum > rightNum,
+                    "<" => leftNum < rightNum,
+                    _ => false,
+                };
+            }
+            catch
+            {
+                // Fall through to string comparison
+            }
+        }
+
+        var leftStr = left.ToString() ?? string.Empty;
+        var rightStr = right.ToString() ?? string.Empty;
+
+        return op switch
+        {
+            "==" => string.Equals(leftStr, rightStr, StringComparison.Ordinal),
+            "!=" => !string.Equals(leftStr, rightStr, StringComparison.Ordinal),
+            ">=" => string.Compare(leftStr, rightStr, StringComparison.Ordinal) >= 0,
+            "<=" => string.Compare(leftStr, rightStr, StringComparison.Ordinal) <= 0,
+            ">" => string.Compare(leftStr, rightStr, StringComparison.Ordinal) > 0,
+            "<" => string.Compare(leftStr, rightStr, StringComparison.Ordinal) < 0,
+            _ => false,
+        };
     }
 
     /// <summary>

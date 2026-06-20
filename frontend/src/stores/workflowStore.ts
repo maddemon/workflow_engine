@@ -4,6 +4,7 @@ import type { Node, Edge, NodeChange, EdgeChange } from '@xyflow/react';
 import type { NodeTypeDescriptor, ParameterDefinition, WorkflowStyleSettings } from '../types/workflow.ts';
 import { DEFAULT_STYLE_SETTINGS } from '../types/workflow.ts';
 import { deserializeWorkflow, serializeWorkflow } from '../utils/workflowSerializer.ts';
+import { validateParameters } from '../utils/validateParameters.ts';
 import * as api from '../services/api.ts';
 
 export type WorkflowNodeData = {
@@ -93,7 +94,7 @@ function buildNodeFromDescriptor(
       parameters: defaultParams,
       isEntry: descriptor.defaultIsEntry,
       descriptor,
-      errorStrategy: 'StopWorkflow',
+      errorStrategy: 'Terminate',
       retryPolicy: null,
       timeout: null,
     },
@@ -123,45 +124,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     parameters: Record<string, unknown>,
     definitions: ParameterDefinition[],
   ): Record<string, string> {
-    const errors: Record<string, string> = {};
-    for (const def of definitions) {
-      const value = parameters[def.name];
-      if (def.required && (value === undefined || value === null || value === '')) {
-        errors[def.name] = `${def.displayName} is required`;
-        continue;
-      }
-      if (value === undefined || value === null || value === '') continue;
-      for (const rule of def.validationRules) {
-        const ruleLower = rule.toLowerCase();
-        if (ruleLower.startsWith('minlength:')) {
-          const min = parseInt(rule.split(':')[1], 10);
-          if (typeof value === 'string' && value.length < min) {
-            errors[def.name] = `${def.displayName} must be at least ${min} characters`;
-          }
-        } else if (ruleLower.startsWith('maxlength:')) {
-          const max = parseInt(rule.split(':')[1], 10);
-          if (typeof value === 'string' && value.length > max) {
-            errors[def.name] = `${def.displayName} must be at most ${max} characters`;
-          }
-        } else if (ruleLower.startsWith('min:')) {
-          const min = parseFloat(rule.split(':')[1]);
-          if (typeof value === 'number' && value < min) {
-            errors[def.name] = `${def.displayName} must be at least ${min}`;
-          }
-        } else if (ruleLower.startsWith('max:')) {
-          const max = parseFloat(rule.split(':')[1]);
-          if (typeof value === 'number' && value > max) {
-            errors[def.name] = `${def.displayName} must be at most ${max}`;
-          }
-        } else if (ruleLower.startsWith('pattern:')) {
-          const pattern = rule.split(':').slice(1).join(':');
-          if (typeof value === 'string' && !new RegExp(pattern).test(value)) {
-            errors[def.name] = `${def.displayName} format is invalid`;
-          }
-        }
-      }
-    }
-    return errors;
+    return validateParameters(parameters, definitions);
   }
 
   return {
@@ -268,23 +231,28 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     setStyleSettings: (settings) => set({ styleSettings: settings, isDirty: true }),
 
     loadWorkflow: async (id) => {
-      const workflow = await api.getWorkflow(id);
-      const { nodes, edges } = deserializeWorkflow(workflow, get().nodeTypes);
-      undoStack.length = 0;
-      redoStack.length = 0;
-      set({
-        workflowId: workflow.id,
-        workflowName: workflow.name,
-        isActive: workflow.isActive,
-        styleSettings: workflow.styleSettings ? { ...DEFAULT_STYLE_SETTINGS, ...workflow.styleSettings } : { ...DEFAULT_STYLE_SETTINGS },
-        nodes,
-        edges,
-        selectedNodeId: null,
-        isDirty: false,
-        validationErrors: {},
-        canUndo: false,
-        canRedo: false,
-      });
+      try {
+        const workflow = await api.getWorkflow(id);
+        const { nodes, edges } = deserializeWorkflow(workflow, get().nodeTypes);
+        undoStack.length = 0;
+        redoStack.length = 0;
+        set({
+          workflowId: workflow.id,
+          workflowName: workflow.name,
+          isActive: workflow.isActive,
+          styleSettings: workflow.styleSettings ? { ...DEFAULT_STYLE_SETTINGS, ...workflow.styleSettings } : { ...DEFAULT_STYLE_SETTINGS },
+          nodes,
+          edges,
+          selectedNodeId: null,
+          isDirty: false,
+          validationErrors: {},
+          canUndo: false,
+          canRedo: false,
+        });
+      } catch (err) {
+        console.error('Failed to load workflow:', err);
+        throw err;
+      }
     },
 
     saveWorkflow: async () => {
@@ -314,6 +282,9 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         }
         set({ isDirty: false, validationErrors: {} });
         return true;
+      } catch (err) {
+        console.error('Failed to save workflow:', err);
+        throw err;
       } finally {
         set({ saving: false });
       }

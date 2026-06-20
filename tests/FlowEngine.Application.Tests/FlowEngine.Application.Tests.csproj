@@ -24,9 +24,8 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\backend\FlowEngine.Runtime\FlowEngine.Runtime.csproj" />
-    <ProjectReference Include="..\..\plugins\FlowEngine.Plugins.Standard\FlowEngine.Plugins.Standard.csproj" />
-    <ProjectReference Include="..\FlowEngine.TestPlugin\FlowEngine.TestPlugin.csproj" />
+    <ProjectReference Include="..\..\backend\FlowEngine.Application\FlowEngine.Application.csproj" />
+    <ProjectReference Include="..\..\backend\FlowEngine.Core\FlowEngine.Core.csproj" />
   </ItemGroup>
 
 </Project>

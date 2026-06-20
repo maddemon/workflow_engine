@@ -6,6 +6,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.ValueObjects;
 using FlowEngine.Runtime.WaitingArea;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Runtime.Executor;
@@ -26,6 +27,7 @@ public sealed class WorkflowExecutor : IEngine
     private readonly INodeRegistry _nodeRegistry;
     private readonly NodeExecutionContextFactory _contextFactory;
     private readonly ErrorStrategyHandler _errorHandler;
+    private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<WorkflowExecutor> _logger;
 
     /// <summary>
@@ -37,6 +39,7 @@ public sealed class WorkflowExecutor : IEngine
         INodeRegistry nodeRegistry,
         NodeExecutionContextFactory contextFactory,
         ErrorStrategyHandler errorHandler,
+        IServiceScopeFactory scopeFactory,
         ILogger<WorkflowExecutor> logger)
     {
         _workflowRepository = workflowRepository ?? throw new ArgumentNullException(nameof(workflowRepository));
@@ -44,6 +47,7 @@ public sealed class WorkflowExecutor : IEngine
         _nodeRegistry = nodeRegistry ?? throw new ArgumentNullException(nameof(nodeRegistry));
         _contextFactory = contextFactory ?? throw new ArgumentNullException(nameof(contextFactory));
         _errorHandler = errorHandler ?? throw new ArgumentNullException(nameof(errorHandler));
+        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -61,10 +65,8 @@ public sealed class WorkflowExecutor : IEngine
             throw new InvalidOperationException($"工作流 '{workflowDefinitionId}' 不存在。");
         }
 
-        var executionId = Guid.NewGuid();
         var executionRecord = new ExecutionRecord
         {
-            Id = executionId,
             WorkflowDefinitionId = workflowDefinitionId,
             StartedAt = DateTime.UtcNow,
             Status = ExecutionStatus.Pending,
@@ -75,24 +77,27 @@ public sealed class WorkflowExecutor : IEngine
 
         _ = Task.Run(async () =>
         {
+            using var scope = _scopeFactory.CreateScope();
+            var scopedExecutionStore = scope.ServiceProvider.GetRequiredService<IExecutionStore>();
+
             try
             {
-                await ExecuteLoopAsync(workflow, executionRecord, triggerPayload, cancellationToken)
+                await ExecuteLoopAsync(workflow, executionRecord, triggerPayload, scopedExecutionStore, cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
-                _logger.LogInformation("执行 {ExecutionId} 已取消。", executionId);
+                _logger.LogInformation("执行 {ExecutionId} 已取消。", executionRecord.Id);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "执行 {ExecutionId} 发生未处理异常。", executionId);
-                await _executionStore.UpdateStatusAsync(executionId, ExecutionStatus.Failed, default)
+                _logger.LogError(ex, "执行 {ExecutionId} 发生未处理异常。", executionRecord.Id);
+                await scopedExecutionStore.UpdateStatusAsync(executionRecord.Id, ExecutionStatus.Failed, default)
                     .ConfigureAwait(false);
             }
         }, CancellationToken.None);
 
-        return ExecutionId.From(executionId);
+        return ExecutionId.From(executionRecord.Id);
     }
 
     /// <inheritdoc />
@@ -105,6 +110,7 @@ public sealed class WorkflowExecutor : IEngine
         Workflow workflow,
         ExecutionRecord execution,
         object? triggerPayload,
+        IExecutionStore executionStore,
         CancellationToken cancellationToken)
     {
         var queue = new ExecutionQueue();
@@ -118,7 +124,7 @@ public sealed class WorkflowExecutor : IEngine
             .ToLookup(c => (c.SourceNodeId, c.SourcePortName));
 
         stateMachine.Start();
-        await _executionStore.UpdateStatusAsync(execution.Id, ExecutionStatus.Running, cancellationToken)
+        await executionStore.UpdateStatusAsync(execution.Id, ExecutionStatus.Running, cancellationToken)
             .ConfigureAwait(false);
 
         await EnqueueEntryNodesAsync(
@@ -141,6 +147,7 @@ public sealed class WorkflowExecutor : IEngine
                 queue,
                 nodeOutputs,
                 nodeBatches,
+                executionStore,
                 cancellationToken).ConfigureAwait(false);
 
             if (queue.Reader.TryRead(out var item))
@@ -155,6 +162,7 @@ public sealed class WorkflowExecutor : IEngine
                     waitingArea,
                     nodeOutputs,
                     nodeBatches,
+                    executionStore,
                     cancellationToken).ConfigureAwait(false);
 
                 if (shouldStop)
@@ -184,8 +192,8 @@ public sealed class WorkflowExecutor : IEngine
             stateMachine.Complete();
         }
 
-        await _executionStore.SaveAsync(execution, cancellationToken).ConfigureAwait(false);
-        await _executionStore.UpdateStatusAsync(execution.Id, stateMachine.Status, cancellationToken)
+        await executionStore.SaveAsync(execution, cancellationToken).ConfigureAwait(false);
+        await executionStore.UpdateStatusAsync(execution.Id, stateMachine.Status, cancellationToken)
             .ConfigureAwait(false);
     }
 
@@ -197,11 +205,17 @@ public sealed class WorkflowExecutor : IEngine
         CancellationToken cancellationToken)
     {
         var triggerBatch = CreateDataBatch(triggerPayload);
+        var hasInputConnections = workflow.Connections
+            .Select(c => c.TargetNodeId)
+            .ToHashSet();
 
         foreach (var node in workflow.Nodes)
         {
             var nodeType = _nodeRegistry.Get(node.TypeName);
-            if (!node.IsEntry && !nodeType.DefaultIsEntry)
+            var isExplicitEntry = node.IsEntry || nodeType.DefaultIsEntry;
+            var isImplicitEntry = !hasInputConnections.Contains(node.Id);
+
+            if (!isExplicitEntry && !isImplicitEntry)
             {
                 continue;
             }
@@ -229,6 +243,7 @@ public sealed class WorkflowExecutor : IEngine
         WaitingArea.WaitingArea waitingArea,
         Dictionary<string, DataBatch> nodeOutputs,
         Dictionary<string, DataBatch> nodeBatches,
+        IExecutionStore executionStore,
         CancellationToken cancellationToken)
     {
         if (!nodeMap.TryGetValue(item.NodeInstanceId, out var node))
@@ -247,7 +262,7 @@ public sealed class WorkflowExecutor : IEngine
         for (var runIndex = 0; runIndex < runCount; runIndex++)
         {
             var runInputs = BuildRunInputs(item.Inputs, executionMode, runIndex);
-            var context = _contextFactory.Create(
+            var context = await _contextFactory.CreateAsync(
                 workflow,
                 execution,
                 node,
@@ -256,14 +271,13 @@ public sealed class WorkflowExecutor : IEngine
                 nodeOutputs,
                 nodeBatches,
                 runIndex,
-                cancellationToken);
+                cancellationToken).ConfigureAwait(false);
 
             var result = await ExecuteNodeWithRetryAsync(node, nodeType, context, cancellationToken)
                 .ConfigureAwait(false);
 
             var record = new NodeExecutionRecord
             {
-                Id = Guid.NewGuid(),
                 NodeDefinitionId = node.Id,
                 RunIndex = runIndex,
                 StartedAt = DateTime.UtcNow,
@@ -275,14 +289,16 @@ public sealed class WorkflowExecutor : IEngine
             };
 
             execution.NodeRecords.Add(record);
-            await _executionStore.AddNodeRecordAsync(execution.Id, record, cancellationToken)
+            await executionStore.AddNodeRecordAsync(execution.Id, record, cancellationToken)
+                .ConfigureAwait(false);
+            await executionStore.SaveAsync(execution, cancellationToken)
                 .ConfigureAwait(false);
 
             finalResult = result;
 
             if (!result.Success && node.ErrorStrategy != ErrorStrategy.Continue)
             {
-                await _executionStore.UpdateStatusAsync(execution.Id, ExecutionStatus.Failed, cancellationToken)
+                await executionStore.UpdateStatusAsync(execution.Id, ExecutionStatus.Failed, cancellationToken)
                     .ConfigureAwait(false);
                 waitingArea.CleanupExecution(execution.Id);
                 return true;
@@ -416,6 +432,7 @@ public sealed class WorkflowExecutor : IEngine
         ExecutionQueue queue,
         Dictionary<string, DataBatch> nodeOutputs,
         Dictionary<string, DataBatch> nodeBatches,
+        IExecutionStore executionStore,
         CancellationToken cancellationToken)
     {
         foreach (var (executionId, nodeInstanceId) in waitingArea.GetTimeoutKeys().ToList())
@@ -441,7 +458,6 @@ public sealed class WorkflowExecutor : IEngine
 
             var record = new NodeExecutionRecord
             {
-                Id = Guid.NewGuid(),
                 NodeDefinitionId = node.Id,
                 RunIndex = 0,
                 StartedAt = DateTime.UtcNow,
@@ -453,12 +469,14 @@ public sealed class WorkflowExecutor : IEngine
             };
 
             execution.NodeRecords.Add(record);
-            await _executionStore.AddNodeRecordAsync(execution.Id, record, cancellationToken)
+            await executionStore.AddNodeRecordAsync(execution.Id, record, cancellationToken)
+                .ConfigureAwait(false);
+            await executionStore.SaveAsync(execution, cancellationToken)
                 .ConfigureAwait(false);
 
             if (node.ErrorStrategy != ErrorStrategy.Continue)
             {
-                await _executionStore.UpdateStatusAsync(execution.Id, ExecutionStatus.Failed, cancellationToken)
+                await executionStore.UpdateStatusAsync(execution.Id, ExecutionStatus.Failed, cancellationToken)
                     .ConfigureAwait(false);
                 waitingArea.CleanupExecution(execution.Id);
                 return;

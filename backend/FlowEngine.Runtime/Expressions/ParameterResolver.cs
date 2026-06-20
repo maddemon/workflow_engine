@@ -40,7 +40,7 @@ public sealed class ParameterResolver
         {
             try
             {
-                resolved[key] = ResolveValue(value, context);
+                resolved[key] = ResolveValue(value!, context);
             }
             catch (ExpressionEvaluationException ex)
             {
@@ -63,19 +63,33 @@ public sealed class ParameterResolver
             return _evaluator.Evaluate(template, context) ?? string.Empty;
         }
 
+        // JsonElement from JSON deserialization — convert to appropriate .NET type
+        if (value is System.Text.Json.JsonElement element)
+        {
+            return element.ValueKind switch
+            {
+                System.Text.Json.JsonValueKind.String => _evaluator.Evaluate(element.GetString() ?? string.Empty, context) ?? string.Empty,
+                System.Text.Json.JsonValueKind.Number => element.TryGetInt32(out var i) ? i : element.GetDouble(),
+                System.Text.Json.JsonValueKind.True => true,
+                System.Text.Json.JsonValueKind.False => false,
+                System.Text.Json.JsonValueKind.Null or System.Text.Json.JsonValueKind.Undefined => null!,
+                _ => element.GetRawText(),
+            };
+        }
+
         if (value is IEnumerable<KeyValuePair<string, object>> dictionary && value is not string)
         {
             return dictionary.ToDictionary(
                 x => x.Key,
-                x => ResolveValue(x.Value, context),
+                x => ResolveValue(x.Value!, context),
                 StringComparer.OrdinalIgnoreCase);
         }
 
         if (value is IEnumerable<object> list && value is not string)
         {
-            return list.Select(item => ResolveValue(item, context)).ToList();
+            return list.Select(item => ResolveValue(item!, context)).ToList();
         }
 
-        return value;
+        return value!;
     }
 }

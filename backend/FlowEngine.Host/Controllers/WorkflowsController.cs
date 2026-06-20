@@ -42,11 +42,11 @@ public class WorkflowsController(WorkflowService workflowService) : ControllerBa
     /// </summary>
     [HttpPost]
     public async Task<ActionResult<WorkflowDto>> Create(
-        [FromBody] CreateWorkflowDto dto,
+        [FromBody] CreateWorkflowDto workflow,
         CancellationToken cancellationToken)
     {
-        var workflow = await workflowService.CreateAsync(dto, cancellationToken).ConfigureAwait(false);
-        return CreatedAtAction(nameof(Get), new { id = workflow.Id }, workflow);
+        var result = await workflowService.CreateAsync(workflow, cancellationToken).ConfigureAwait(false);
+        return CreatedAtAction(nameof(Get), new { id = result.Id }, result);
     }
 
     /// <summary>
@@ -55,16 +55,16 @@ public class WorkflowsController(WorkflowService workflowService) : ControllerBa
     [HttpPut("{id:guid}")]
     public async Task<ActionResult<WorkflowDto>> Update(
         Guid id,
-        [FromBody] UpdateWorkflowDto dto,
+        [FromBody] UpdateWorkflowDto workflow,
         CancellationToken cancellationToken)
     {
-        var workflow = await workflowService.UpdateAsync(id, dto, cancellationToken).ConfigureAwait(false);
-        if (workflow is null)
+        var result = await workflowService.UpdateAsync(id, workflow, cancellationToken).ConfigureAwait(false);
+        if (result is null)
         {
             return NotFound();
         }
 
-        return Ok(workflow);
+        return Ok(result);
     }
 
     /// <summary>

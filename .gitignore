@@ -358,5 +358,6 @@ wwwroot/build/dist/
 .trae/
 docs/tasks/
 docs/chats/
+docs/reviews/
 /backend/FlowEngine.Host/wwwroot
 .mimocode/

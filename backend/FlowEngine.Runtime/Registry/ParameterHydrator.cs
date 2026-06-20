@@ -33,7 +33,7 @@ public sealed class ParameterHydrator
     /// </summary>
     /// <param name="instance">节点实例。</param>
     /// <param name="resolvedValues">已解析的参数（camelCase 键）。</param>
-    public void Hydrate(INodeType instance, IReadOnlyDictionary<string, object> resolvedValues)
+    public async Task HydrateAsync(INodeType instance, IReadOnlyDictionary<string, object> resolvedValues)
     {
         ArgumentNullException.ThrowIfNull(instance);
         ArgumentNullException.ThrowIfNull(resolvedValues);
@@ -69,7 +69,7 @@ public sealed class ParameterHydrator
 
             try
             {
-                var converted = ConvertValue(value, property.PropertyType, property);
+                var converted = await ConvertValueAsync(value, property.PropertyType, property).ConfigureAwait(false);
                 // 跳过非可空值类型赋 null，否则一律写入（包括可空值类型赋 null）
                 if (converted is null && property.PropertyType.IsValueType
                     && Nullable.GetUnderlyingType(property.PropertyType) is null)
@@ -85,7 +85,7 @@ public sealed class ParameterHydrator
         }
     }
 
-    private object? ConvertValue(object? value, Type targetType, PropertyInfo property)
+    private async Task<object?> ConvertValueAsync(object? value, Type targetType, PropertyInfo property)
     {
         if (value is null)
         {
@@ -146,7 +146,7 @@ public sealed class ParameterHydrator
 
         if (underlying == typeof(CredentialValue))
         {
-            return ConvertToCredential(value);
+            return await ConvertToCredentialAsync(value).ConfigureAwait(false);
         }
 
         if (IsGenericList(underlying, out var elementType))
@@ -318,8 +318,10 @@ public sealed class ParameterHydrator
         {
             JsonObject obj => obj,
             JsonNode node => node is JsonObject jo ? jo : null,
-            string s => JsonNode.Parse(s)?.AsObject(),
-            JsonElement element => JsonObject.Create(element),
+            string s when !string.IsNullOrWhiteSpace(s) => JsonNode.Parse(s)?.AsObject(),
+            JsonElement element => element.ValueKind == JsonValueKind.Object
+                ? JsonObject.Create(element)
+                : null,
             _ => null
         };
     }
@@ -335,7 +337,7 @@ public sealed class ParameterHydrator
         };
     }
 
-    private CredentialValue? ConvertToCredential(object value)
+    private async Task<CredentialValue?> ConvertToCredentialAsync(object value)
     {
         if (_credentialAccessor is null)
         {
@@ -346,8 +348,8 @@ public sealed class ParameterHydrator
         {
             try
             {
-                var task = _credentialAccessor.GetCredentialAsync(credentialId, CancellationToken.None);
-                return task.ConfigureAwait(false).GetAwaiter().GetResult();
+                return await _credentialAccessor.GetCredentialAsync(credentialId, CancellationToken.None)
+                    .ConfigureAwait(false);
             }
             catch (Exception ex)
             {

@@ -1,6 +1,104 @@
 using FlowEngine.Core.Entities;
+using FlowEngine.Core.Enums;
 
 namespace FlowEngine.Application.Dtos;
+
+/// <summary>
+/// API 接收的节点实例（不含 Entity 基类，接受字符串 ID）。
+/// </summary>
+public sealed record NodeInstanceDto
+{
+    /// <summary>
+    /// 节点 ID（前端生成的字符串标识）。
+    /// </summary>
+    public string Id { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 节点类型名。
+    /// </summary>
+    public string TypeName { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 节点名称。
+    /// </summary>
+    public string Name { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 参数映射。
+    /// </summary>
+    public Dictionary<string, object> Parameters { get; init; } = [];
+
+    /// <summary>
+    /// 端口实例列表。
+    /// </summary>
+    public List<PortInstance> Ports { get; init; } = [];
+
+    /// <summary>
+    /// X 坐标。
+    /// </summary>
+    public int PositionX { get; init; }
+
+    /// <summary>
+    /// Y 坐标。
+    /// </summary>
+    public int PositionY { get; init; }
+
+    /// <summary>
+    /// 是否为入口节点。
+    /// </summary>
+    public bool IsEntry { get; init; }
+
+    /// <summary>
+    /// 重试策略。
+    /// </summary>
+    public RetryPolicy? RetryPolicy { get; init; }
+
+    /// <summary>
+    /// 错误处理策略。
+    /// </summary>
+    public ErrorStrategy ErrorStrategy { get; init; }
+
+    /// <summary>
+    /// 超时时间。
+    /// </summary>
+    public TimeSpan? Timeout { get; init; }
+}
+
+/// <summary>
+/// API 接收的连接（不含 Entity 基类，接受字符串 ID）。
+/// </summary>
+public sealed record ConnectionDto
+{
+    /// <summary>
+    /// 连接 ID（前端生成的字符串标识）。
+    /// </summary>
+    public string Id { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 源节点 ID。
+    /// </summary>
+    public string SourceNodeId { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 源端口名称。
+    /// </summary>
+    public string SourcePortName { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 目标节点 ID。
+    /// </summary>
+    public string TargetNodeId { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 目标端口名称。
+    /// </summary>
+    public string TargetPortName { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 连接条件表达式。
+    /// </summary>
+    public string? Condition { get; init; }
+}
 
 /// <summary>
 /// 创建工作流请求。
@@ -30,12 +128,12 @@ public sealed record CreateWorkflowDto
     /// <summary>
     /// 节点实例列表。
     /// </summary>
-    public List<NodeInstance> Nodes { get; init; } = [];
+    public List<NodeInstanceDto> Nodes { get; init; } = [];
 
     /// <summary>
     /// 连接列表。
     /// </summary>
-    public List<Connection> Connections { get; init; } = [];
+    public List<ConnectionDto> Connections { get; init; } = [];
 }
 
 /// <summary>
@@ -61,12 +159,12 @@ public sealed record UpdateWorkflowDto
     /// <summary>
     /// 节点实例列表。
     /// </summary>
-    public List<NodeInstance> Nodes { get; init; } = [];
+    public List<NodeInstanceDto> Nodes { get; init; } = [];
 
     /// <summary>
     /// 连接列表。
     /// </summary>
-    public List<Connection> Connections { get; init; } = [];
+    public List<ConnectionDto> Connections { get; init; } = [];
 }
 
 /// <summary>
@@ -107,7 +205,7 @@ public sealed record WorkflowDto
     /// <summary>
     /// 更新时间。
     /// </summary>
-    public DateTime UpdatedAt { get; init; }
+    public DateTime? UpdatedAt { get; init; }
 
     /// <summary>
     /// 是否激活。
@@ -122,12 +220,12 @@ public sealed record WorkflowDto
     /// <summary>
     /// 节点实例列表。
     /// </summary>
-    public List<NodeInstance> Nodes { get; init; } = [];
+    public List<NodeInstanceDto> Nodes { get; init; } = [];
 
     /// <summary>
     /// 连接列表。
     /// </summary>
-    public List<Connection> Connections { get; init; } = [];
+    public List<ConnectionDto> Connections { get; init; } = [];
 }
 
 /// <summary>

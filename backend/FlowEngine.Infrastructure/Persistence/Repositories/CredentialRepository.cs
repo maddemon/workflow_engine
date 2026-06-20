@@ -9,7 +9,11 @@ namespace FlowEngine.Infrastructure.Persistence.Repositories;
 /// <summary>
 /// 凭据仓储实现。
 /// </summary>
-public sealed class CredentialRepository : ICredentialRepository
+/// <remarks>
+/// 初始化凭据仓储。
+/// </remarks>
+/// <param name="context">数据库上下文。</param>
+public sealed class CredentialRepository(FlowEngineDbContext context) : ICredentialRepository
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -17,16 +21,7 @@ public sealed class CredentialRepository : ICredentialRepository
         WriteIndented = false
     };
 
-    private readonly FlowEngineDbContext _context;
-
-    /// <summary>
-    /// 初始化凭据仓储。
-    /// </summary>
-    /// <param name="context">数据库上下文。</param>
-    public CredentialRepository(FlowEngineDbContext context)
-    {
-        _context = context ?? throw new ArgumentNullException(nameof(context));
-    }
+    private readonly FlowEngineDbContext _context = context ?? throw new ArgumentNullException(nameof(context));
 
     /// <inheritdoc />
     public async Task<Credential?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)

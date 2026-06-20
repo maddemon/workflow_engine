@@ -223,9 +223,28 @@ export function WorkflowList() {
 
 ## 9. 测试
 
-- 单元测试覆盖 hooks 和纯函数。
-- 组件测试覆盖用户交互路径。
-- 新增功能先写非法输入/异常复现用例，再写实现至用例通过。
+### 9.1 测试策略
+
+| 层级 | 覆盖目标 | 工具 |
+|------|----------|------|
+| 单元测试 | 工具函数、hooks、store 逻辑 | Vitest |
+| 组件测试 | 组件渲染、用户交互 | Vitest + React Testing Library |
+
+### 9.2 必须测试的场景
+
+1. **工具函数**：`validateParameters`、`computeDynamicPorts`、序列化/反序列化
+2. **Store 操作**：`addNode`、`saveWorkflow`、`loadWorkflow` 的状态变更
+3. **类型兼容**：前后端 DTO 字段类型一致（`string` ID vs `Guid`）
+
+### 9.3 测试命名规范
+
+```
+{函数名/组件名} - {场景} - {预期结果}
+```
+
+示例：
+- `validateParameters - required field empty - returns error`
+- `computeDynamicPorts - Switch with cases - generates correct output ports`
 
 ## 10. 错误示范速查
 
@@ -240,3 +259,39 @@ export function WorkflowList() {
 | 把画布状态放全局                       | 画布状态放 `modules/canvas/stores/`                 |
 | 在组件中硬编码 API URL                 | 通过 `services/` 集中管理                           |
 | 跨 module 直接引用内部文件             | 通过 module 暴露的公共入口引用                      |
+
+## 11. React Hooks 规范
+
+### 11.1 useEffect / useLayoutEffect 必须有依赖数组
+
+无依赖数组的 effect 会在每次渲染执行，导致性能问题和潜在无限循环。
+
+```tsx
+// ✅ 正确：有依赖数组
+useLayoutEffect(() => {
+  updateNodeInternals(id);
+}, [id, ports.length]);
+
+// ❌ 错误：无依赖数组，每次渲染都执行
+useLayoutEffect(() => {
+  updateNodeInternals(id);
+});
+```
+
+### 11.2 Zustand 选择器尽量精确
+
+避免订阅整个大数组。使用 `.length` 或 `.filter()` 等派生值减少不必要的重渲染。
+
+```tsx
+// ✅ 正确：只订阅长度
+const edgeCount = useWorkflowStore((s) => s.edges.length);
+
+// ❌ 错误：订阅整个数组
+const edges = useWorkflowStore((s) => s.edges);
+```
+
+## 12. 错误处理
+
+### 12.1 async 操作必须有错误处理
+
+Store 中的 async 操作（`loadWorkflow`、`saveWorkflow` 等）必须有 `try/catch`，至少记录错误日志。静默失败会导致用户无法感知问题。
