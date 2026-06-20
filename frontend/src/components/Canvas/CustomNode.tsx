@@ -2,6 +2,7 @@ import { memo, useLayoutEffect, useMemo } from 'react';
 import { Handle, Position, useUpdateNodeInternals } from '@xyflow/react';
 import type { NodeProps } from '@xyflow/react';
 import { Text } from '@mantine/core';
+import { Play } from 'lucide-react';
 import type { WorkflowNode } from '../../stores/workflowStore.ts';
 import type { PortDefinition } from '../../types/workflow.ts';
 import { NodeIcon } from '../common/NodeIcon.tsx';
@@ -173,11 +174,26 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
         )}
 
         <div style={{ display: 'flex', justifyContent: 'center', gap: 4, marginTop: 2 }}>
-          {data.isEntry && (
-            <Text size="xs" c="grape">
-              Entry
-            </Text>
-          )}
+        {data.isEntry && (
+          <div
+            style={{
+              position: 'absolute',
+              ...(isVertical
+                ? { top: -8, left: '50%', transform: 'translateX(-50%)' }
+                : { left: -8, top: '50%', transform: 'translateY(-50%)' }),
+              width: 16,
+              height: 16,
+              borderRadius: '50%',
+              background: '#40c057',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 11,
+            }}
+          >
+            <Play size={8} color="#fff" fill="#fff" style={{ marginLeft: 1 }} />
+          </div>
+        )}
           {status && status !== 'idle' && (
             <Text
               size="lg"
