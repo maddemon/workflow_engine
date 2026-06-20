@@ -51,13 +51,6 @@ function computePortLayouts(
   return layouts;
 }
 
-const statusIcon: Record<string, string> = {
-  success: '\u2713',
-  error: '\u2717',
-  running: '\u25CF',
-  waiting: '\u23F3',
-};
-
 function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
   const ports = useMemo(() => computeDynamicPorts(data), [data]);
   const inputPorts = ports.filter((p) => p.direction === 'Input');
@@ -112,10 +105,10 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
           <div
             style={{
               position: 'absolute',
-              top: -6,
-              right: -6,
-              width: 18,
-              height: 18,
+              top: 3,
+              right: 3,
+              width: 14,
+              height: 14,
               borderRadius: '50%',
               display: 'flex',
               alignItems: 'center',
@@ -132,10 +125,10 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
                       : {}),
             }}
           >
-            {data.isEntry && (!status || status === 'idle') && <Play size={9} color="#fff" fill="#fff" style={{ marginLeft: 1 }} />}
-            {status === 'running' && <Loader size={10} color="#fff" speed={2} />}
-            {status === 'success' && <Check size={11} color="#fff" strokeWidth={3} />}
-            {status === 'error' && <X size={11} color="#fff" strokeWidth={3} />}
+            {data.isEntry && (!status || status === 'idle') && <Play size={7} color="#fff" fill="#fff" style={{ marginLeft: 1 }} />}
+            {status === 'running' && <Loader size={8} color="#fff" speed={2} />}
+            {status === 'success' && <Check size={9} color="#fff" strokeWidth={3} />}
+            {status === 'error' && <X size={9} color="#fff" strokeWidth={3} />}
           </div>
         )}
       </div>
@@ -204,19 +197,6 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
             {subtitle}
           </Text>
         )}
-
-        <div style={{ display: 'flex', justifyContent: 'center', gap: 4, marginTop: 2 }}>
-          {status && status !== 'idle' && (
-            <Text
-              size="lg"
-              fw={700}
-              className={`node-status-icon status-${status}`}
-              style={{ lineHeight: 1 }}
-            >
-              {statusIcon[status] ?? ''}
-            </Text>
-          )}
-        </div>
       </div>
     </div>
   );
