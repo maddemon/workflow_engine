@@ -125,7 +125,7 @@ body {
 .node-status-icon.status-running { color: var(--color-primary); }
 .node-status-icon.status-waiting { color: #fab005; }
 
-/* 连接点（Handle）：默认灰色，hover 时显色 */
+/* 连接点（Handle）：默认灰色有连线才显，hover 时全部显色 */
 .port-handle {
   width: 12px !important;
   height: 12px !important;
@@ -139,18 +139,13 @@ body {
 
 .port-handle.port-connected {
   opacity: 0.55 !important;
-  background: #adb5bd !important;
 }
-
-.port-input.port-connected { background: #40c057 !important; }
-.port-output.port-connected { background: #339af0 !important; }
 
 .custom-node-wrapper:hover .port-handle {
-  opacity: 0.7 !important;
+  opacity: 0.85 !important;
 }
-.custom-node-wrapper:hover .port-handle.port-connected {
-  opacity: 1 !important;
-}
+.custom-node-wrapper:hover .port-input { background: #40c057 !important; }
+.custom-node-wrapper:hover .port-output { background: #339af0 !important; }
 
 /* ===== Node Card (NodePanel 拖拽项) ===== */
 .node-card {
