@@ -45,8 +45,14 @@ export function deserializeWorkflow(
   workflow: Workflow,
   availableTypes: NodeTypeDescriptor[],
 ): { nodes: WorkflowNode[]; edges: Edge[] } {
+  const inputNodeIds = new Set(workflow.connections.map((c) => c.targetNodeId));
+
   const nodes: WorkflowNode[] = workflow.nodes.map((ni) => {
     const descriptor = availableTypes.find((t) => t.typeName === ni.typeName) ?? fallbackDescriptor(ni);
+    const isExplicitEntry = ni.isEntry || descriptor.defaultIsEntry;
+    const isImplicitEntry = !inputNodeIds.has(ni.id);
+    const isEntry = isExplicitEntry || isImplicitEntry;
+
     return {
       id: ni.id,
       type: 'workflow' as const,
@@ -55,9 +61,9 @@ export function deserializeWorkflow(
         typeName: ni.typeName,
         name: ni.name,
         parameters: ni.parameters ?? {},
-        isEntry: ni.isEntry,
+        isEntry,
         descriptor,
-        errorStrategy: ni.errorStrategy ?? 'StopWorkflow',
+        errorStrategy: ni.errorStrategy ?? 'Terminate',
         retryPolicy: ni.retryPolicy,
         timeout: ni.timeout,
       },
