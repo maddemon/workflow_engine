@@ -2,7 +2,7 @@ import { memo, useLayoutEffect, useMemo } from 'react';
 import { Handle, Position, useUpdateNodeInternals } from '@xyflow/react';
 import type { NodeProps } from '@xyflow/react';
 import { Text } from '@mantine/core';
-import { Play } from 'lucide-react';
+import { Play, Check, X, Loader } from 'lucide-react';
 import type { WorkflowNode } from '../../stores/workflowStore.ts';
 import type { PortDefinition } from '../../types/workflow.ts';
 import { NodeIcon } from '../common/NodeIcon.tsx';
@@ -106,6 +106,38 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
         <div className="node-icon-box" style={{ width: nodeWidth - 8 }}>
           <NodeIcon icon={data.descriptor.icon} size={28} color={categoryColor} />
         </div>
+
+        {/* 状态指示器：入口节点=等待，运行中=转圈，成功=勾，失败=叉 */}
+        {(data.isEntry || (status && status !== 'idle')) && (
+          <div
+            style={{
+              position: 'absolute',
+              top: -6,
+              right: -6,
+              width: 18,
+              height: 18,
+              borderRadius: '50%',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              zIndex: 11,
+              ...(data.isEntry && (!status || status === 'idle')
+                ? { background: '#fab005' }
+                : status === 'running'
+                  ? { background: '#339af0' }
+                  : status === 'success'
+                    ? { background: '#40c057' }
+                    : status === 'error'
+                      ? { background: '#fa5252' }
+                      : {}),
+            }}
+          >
+            {data.isEntry && (!status || status === 'idle') && <Play size={9} color="#fff" fill="#fff" style={{ marginLeft: 1 }} />}
+            {status === 'running' && <Loader size={10} color="#fff" speed={2} />}
+            {status === 'success' && <Check size={11} color="#fff" strokeWidth={3} />}
+            {status === 'error' && <X size={11} color="#fff" strokeWidth={3} />}
+          </div>
+        )}
       </div>
 
       {inputPorts.map((port) => {
@@ -174,26 +206,6 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
         )}
 
         <div style={{ display: 'flex', justifyContent: 'center', gap: 4, marginTop: 2 }}>
-        {data.isEntry && (
-          <div
-            style={{
-              position: 'absolute',
-              ...(isVertical
-                ? { top: -8, left: '50%', transform: 'translateX(-50%)' }
-                : { left: -8, top: '50%', transform: 'translateY(-50%)' }),
-              width: 16,
-              height: 16,
-              borderRadius: '50%',
-              background: '#40c057',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 11,
-            }}
-          >
-            <Play size={8} color="#fff" fill="#fff" style={{ marginLeft: 1 }} />
-          </div>
-        )}
           {status && status !== 'idle' && (
             <Text
               size="lg"
