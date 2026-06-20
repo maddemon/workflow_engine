@@ -1,4 +1,3 @@
-using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 
 namespace FlowEngine.Core.Events;
@@ -6,21 +5,28 @@ namespace FlowEngine.Core.Events;
 /// <summary>
 /// 节点执行完成事件。
 /// </summary>
-/// <param name="EventId">事件 ID。</param>
-/// <param name="OccurredAt">事件发生时间。</param>
-/// <param name="ExecutionId">执行 ID。</param>
-/// <param name="NodeDefinitionId">节点定义 ID。</param>
-/// <param name="RunIndex">运行索引。</param>
-/// <param name="Result">节点执行结果。</param>
-public record NodeExecutedEvent(
-    Guid EventId,
-    DateTime OccurredAt,
-    Guid ExecutionId,
-    Guid NodeDefinitionId,
-    int RunIndex,
-    NodeExecutionResult Result)
-    : IDomainEvent
+public record NodeExecutedEvent : AuditEvent
 {
+    /// <summary>
+    /// 执行 ID。
+    /// </summary>
+    public Guid ExecutionId { get; init; }
+
+    /// <summary>
+    /// 节点定义 ID。
+    /// </summary>
+    public Guid NodeDefinitionId { get; init; }
+
+    /// <summary>
+    /// 运行索引。
+    /// </summary>
+    public int RunIndex { get; init; }
+
+    /// <summary>
+    /// 节点执行结果。
+    /// </summary>
+    public NodeExecutionResult Result { get; init; }
+
     /// <summary>
     /// 初始化节点执行完成事件。
     /// </summary>
@@ -33,13 +39,13 @@ public record NodeExecutedEvent(
         Guid nodeDefinitionId,
         int runIndex,
         NodeExecutionResult result)
-        : this(
-            Guid.NewGuid(),
-            DateTime.UtcNow,
-            executionId,
-            nodeDefinitionId,
-            runIndex,
-            result)
     {
+        ExecutionId = executionId;
+        NodeDefinitionId = nodeDefinitionId;
+        RunIndex = runIndex;
+        Result = result;
+        EventType = AuditEventTypes.NodeExecuted;
+        ResourceType = "Node";
+        ResourceId = executionId;
     }
 }

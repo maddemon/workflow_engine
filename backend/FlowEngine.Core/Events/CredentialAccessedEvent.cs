@@ -3,21 +3,28 @@ namespace FlowEngine.Core.Events;
 /// <summary>
 /// 凭据访问事件。
 /// </summary>
-/// <param name="EventId">事件 ID。</param>
-/// <param name="OccurredAt">事件发生时间。</param>
-/// <param name="CredentialId">凭据 ID。</param>
-/// <param name="ExecutionId">执行 ID。</param>
-/// <param name="NodeDefinitionId">节点定义 ID。</param>
-/// <param name="AccessType">访问类型。</param>
-public record CredentialAccessedEvent(
-    Guid EventId,
-    DateTime OccurredAt,
-    Guid CredentialId,
-    Guid ExecutionId,
-    Guid NodeDefinitionId,
-    string AccessType)
-    : AuditEvent(EventId, OccurredAt)
+public record CredentialAccessedEvent : AuditEvent
 {
+    /// <summary>
+    /// 凭据 ID。
+    /// </summary>
+    public Guid CredentialId { get; init; }
+
+    /// <summary>
+    /// 执行 ID。
+    /// </summary>
+    public Guid ExecutionId { get; init; }
+
+    /// <summary>
+    /// 节点定义 ID。
+    /// </summary>
+    public Guid NodeDefinitionId { get; init; }
+
+    /// <summary>
+    /// 访问类型。
+    /// </summary>
+    public string AccessType { get; init; } = string.Empty;
+
     /// <summary>
     /// 初始化凭据访问事件。
     /// </summary>
@@ -30,13 +37,13 @@ public record CredentialAccessedEvent(
         Guid executionId,
         Guid nodeDefinitionId,
         string accessType)
-        : this(
-            Guid.NewGuid(),
-            DateTime.UtcNow,
-            credentialId,
-            executionId,
-            nodeDefinitionId,
-            accessType)
     {
+        CredentialId = credentialId;
+        ExecutionId = executionId;
+        NodeDefinitionId = nodeDefinitionId;
+        AccessType = accessType;
+        EventType = AuditEventTypes.CredentialAccessed;
+        ResourceType = "Credential";
+        ResourceId = credentialId;
     }
 }

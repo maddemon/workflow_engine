@@ -1,6 +1,8 @@
+using FlowEngine.Application.Audit;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
+using FlowEngine.Core.Events;
 
 namespace FlowEngine.Application.Credentials;
 
@@ -15,6 +17,8 @@ public sealed class CredentialService
     private readonly IWorkflowRepository _workflowRepository;
     private readonly ICredentialEncryptionService _encryptionService;
     private readonly ICryptoKeyProvider _keyProvider;
+    private readonly IEventBus _eventBus;
+    private readonly AuditEventFactory _auditFactory;
 
     /// <summary>
     /// 初始化凭据应用服务。
@@ -23,12 +27,16 @@ public sealed class CredentialService
         ICredentialRepository credentialRepository,
         IWorkflowRepository workflowRepository,
         ICredentialEncryptionService encryptionService,
-        ICryptoKeyProvider keyProvider)
+        ICryptoKeyProvider keyProvider,
+        IEventBus eventBus,
+        AuditEventFactory auditFactory)
     {
         _credentialRepository = credentialRepository ?? throw new ArgumentNullException(nameof(credentialRepository));
         _workflowRepository = workflowRepository ?? throw new ArgumentNullException(nameof(workflowRepository));
         _encryptionService = encryptionService ?? throw new ArgumentNullException(nameof(encryptionService));
         _keyProvider = keyProvider ?? throw new ArgumentNullException(nameof(keyProvider));
+        _eventBus = eventBus;
+        _auditFactory = auditFactory;
     }
 
     /// <summary>
@@ -50,6 +58,13 @@ public sealed class CredentialService
         };
 
         await _credentialRepository.SaveAsync(credential, cancellationToken).ConfigureAwait(false);
+
+        await _eventBus.PublishAsync(_auditFactory.Create<AuditLogEvent>(
+            AuditEventTypes.CredentialCreated,
+            "Credential",
+            credential.Id,
+            new Dictionary<string, object> { ["name"] = credential.Name, ["type"] = credential.Type }),
+            cancellationToken).ConfigureAwait(false);
 
         return MapToDto(credential);
     }
@@ -116,6 +131,13 @@ public sealed class CredentialService
         }
 
         await _credentialRepository.DeleteAsync(id, cancellationToken).ConfigureAwait(false);
+
+        await _eventBus.PublishAsync(_auditFactory.Create<AuditLogEvent>(
+            AuditEventTypes.CredentialDeleted,
+            "Credential",
+            id),
+            cancellationToken).ConfigureAwait(false);
+
         return new CredentialDeleteResult { Deleted = true };
     }
 

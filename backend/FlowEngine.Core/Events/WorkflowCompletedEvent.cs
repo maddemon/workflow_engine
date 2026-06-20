@@ -1,4 +1,3 @@
-using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Enums;
 
 namespace FlowEngine.Core.Events;
@@ -6,19 +5,23 @@ namespace FlowEngine.Core.Events;
 /// <summary>
 /// 工作流执行完成事件。
 /// </summary>
-/// <param name="EventId">事件 ID。</param>
-/// <param name="OccurredAt">事件发生时间。</param>
-/// <param name="ExecutionId">执行 ID。</param>
-/// <param name="WorkflowDefinitionId">工作流定义 ID。</param>
-/// <param name="FinalStatus">最终状态。</param>
-public record WorkflowCompletedEvent(
-    Guid EventId,
-    DateTime OccurredAt,
-    Guid ExecutionId,
-    Guid WorkflowDefinitionId,
-    ExecutionStatus FinalStatus)
-    : IDomainEvent
+public record WorkflowCompletedEvent : AuditEvent
 {
+    /// <summary>
+    /// 执行 ID。
+    /// </summary>
+    public Guid ExecutionId { get; init; }
+
+    /// <summary>
+    /// 工作流定义 ID。
+    /// </summary>
+    public Guid WorkflowDefinitionId { get; init; }
+
+    /// <summary>
+    /// 最终状态。
+    /// </summary>
+    public ExecutionStatus FinalStatus { get; init; }
+
     /// <summary>
     /// 初始化工作流执行完成事件。
     /// </summary>
@@ -29,12 +32,12 @@ public record WorkflowCompletedEvent(
         Guid executionId,
         Guid workflowDefinitionId,
         ExecutionStatus finalStatus)
-        : this(
-            Guid.NewGuid(),
-            DateTime.UtcNow,
-            executionId,
-            workflowDefinitionId,
-            finalStatus)
     {
+        ExecutionId = executionId;
+        WorkflowDefinitionId = workflowDefinitionId;
+        FinalStatus = finalStatus;
+        EventType = AuditEventTypes.ExecutionCompleted;
+        ResourceType = "Execution";
+        ResourceId = executionId;
     }
 }
