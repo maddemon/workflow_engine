@@ -1,3 +1,4 @@
+using FlowEngine.Core.Identity;
 using FlowEngine.Infrastructure.Persistence.Entities;
 using Microsoft.EntityFrameworkCore;
 
@@ -27,6 +28,16 @@ public sealed class FlowEngineDbContext : DbContext
     /// 凭据数据集。
     /// </summary>
     public DbSet<CredentialEntity> Credentials => Set<CredentialEntity>();
+
+    /// <summary>
+    /// 用户数据集。
+    /// </summary>
+    public DbSet<User> Users => Set<User>();
+
+    /// <summary>
+    /// 用户角色数据集。
+    /// </summary>
+    public DbSet<UserRole> UserRoles => Set<UserRole>();
 
     /// <summary>
     /// 初始化数据库上下文。

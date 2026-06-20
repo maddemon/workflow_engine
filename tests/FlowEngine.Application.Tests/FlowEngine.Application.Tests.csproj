@@ -26,6 +26,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\backend\FlowEngine.Application\FlowEngine.Application.csproj" />
     <ProjectReference Include="..\..\backend\FlowEngine.Core\FlowEngine.Core.csproj" />
+    <ProjectReference Include="..\..\backend\FlowEngine.Infrastructure\FlowEngine.Infrastructure.csproj" />
   </ItemGroup>
 
 </Project>

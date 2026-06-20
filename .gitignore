@@ -379,3 +379,6 @@ plugins/FlowEngine.Core.dll
 plugins/FlowEngine.Plugins.Standard.dll
 backend/FlowEngine.Host/flowengine.db-shm
 backend/FlowEngine.Host/flowengine.db-wal
+.superpowers/
+.agents/skills/
+skills-lock.json
