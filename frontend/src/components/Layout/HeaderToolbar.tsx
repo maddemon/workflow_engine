@@ -1,7 +1,9 @@
+import { useState } from 'react';
 import { AppShell, Group, TextInput, Badge, Button, ActionIcon, Tooltip, Text } from '@mantine/core';
-import { Undo2, Redo2, Save, FilePlus } from 'lucide-react';
+import { Undo2, Redo2, Save, FilePlus, Key } from 'lucide-react';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
 import { ExecutionButton } from '../ExecutionPanel/ExecutionButton.tsx';
+import { CredentialListModal } from '../CredentialPanel/CredentialListModal.tsx';
 
 /**
  * 顶部工具栏：工作流名称、Undo/Redo、Save、Execute。
@@ -18,60 +20,69 @@ export function HeaderToolbar() {
   const undo = useWorkflowStore((s) => s.undo);
   const redo = useWorkflowStore((s) => s.redo);
   const validationErrors = useWorkflowStore((s) => s.validationErrors);
+  const [credModalOpen, setCredModalOpen] = useState(false);
 
   // validationErrors 改为字段级后，按 nodeId 聚合显示"错误节点数"
   const errorNodeCount = Object.keys(validationErrors).length;
 
   return (
-    <AppShell.Header>
-      <Group justify="space-between" h="100%" px="md" gap="sm" wrap="nowrap">
-        <Group gap="sm" wrap="nowrap">
-          <Button
-            variant="default"
-            leftSection={<FilePlus size={16} />}
-            onClick={newWorkflow}
-            title="New Workflow"
-          >
-            New
-          </Button>
-          <Group gap="xs">
-            <Tooltip label="Undo (Ctrl+Z)" disabled={!canUndo}>
-              <ActionIcon variant="default" onClick={undo} disabled={!canUndo} aria-label="Undo">
-                <Undo2 size={16} />
-              </ActionIcon>
-            </Tooltip>
-            <Tooltip label="Redo (Ctrl+Y)" disabled={!canRedo}>
-              <ActionIcon variant="default" onClick={redo} disabled={!canRedo} aria-label="Redo">
-                <Redo2 size={16} />
-              </ActionIcon>
-            </Tooltip>
+    <>
+      <AppShell.Header>
+        <Group justify="space-between" h="100%" px="md" gap="sm" wrap="nowrap">
+          <Group gap="sm" wrap="nowrap">
+            <Button
+              variant="default"
+              leftSection={<FilePlus size={16} />}
+              onClick={newWorkflow}
+              title="New Workflow"
+            >
+              New
+            </Button>
+            <Group gap="xs">
+              <Tooltip label="Undo (Ctrl+Z)" disabled={!canUndo}>
+                <ActionIcon variant="default" onClick={undo} disabled={!canUndo} aria-label="Undo">
+                  <Undo2 size={16} />
+                </ActionIcon>
+              </Tooltip>
+              <Tooltip label="Redo (Ctrl+Y)" disabled={!canRedo}>
+                <ActionIcon variant="default" onClick={redo} disabled={!canRedo} aria-label="Redo">
+                  <Redo2 size={16} />
+                </ActionIcon>
+              </Tooltip>
+            </Group>
+            <TextInput
+              variant="unstyled"
+              placeholder="Workflow name..."
+              value={workflowName}
+              onChange={(e) => setWorkflowName(e.target.value)}
+              w={260}
+              styles={{ input: { fontWeight: 600, fontSize: 14 } }}
+            />
+            {isDirty && (
+              <Text c="orange" fw={700} size="lg" component="span" title="Unsaved changes">
+                *
+              </Text>
+            )}
+            {errorNodeCount > 0 && (
+              <Badge color="red" variant="filled" title="Validation errors">
+                {errorNodeCount} error{errorNodeCount > 1 ? 's' : ''}
+              </Badge>
+            )}
           </Group>
-          <TextInput
-            variant="unstyled"
-            placeholder="Workflow name..."
-            value={workflowName}
-            onChange={(e) => setWorkflowName(e.target.value)}
-            w={260}
-            styles={{ input: { fontWeight: 600, fontSize: 14 } }}
-          />
-          {isDirty && (
-            <Text c="orange" fw={700} size="lg" component="span" title="Unsaved changes">
-              *
-            </Text>
-          )}
-          {errorNodeCount > 0 && (
-            <Badge color="red" variant="filled" title="Validation errors">
-              {errorNodeCount} error{errorNodeCount > 1 ? 's' : ''}
-            </Badge>
-          )}
+          <Group gap="sm">
+            <Tooltip label="Manage Credentials">
+              <ActionIcon variant="default" onClick={() => setCredModalOpen(true)} aria-label="Credentials">
+                <Key size={16} />
+              </ActionIcon>
+            </Tooltip>
+            <Button leftSection={<Save size={16} />} onClick={saveWorkflow} loading={saving}>
+              {saving ? 'Saving...' : 'Save'}
+            </Button>
+            <ExecutionButton />
+          </Group>
         </Group>
-        <Group gap="sm">
-          <Button leftSection={<Save size={16} />} onClick={saveWorkflow} loading={saving}>
-            {saving ? 'Saving...' : 'Save'}
-          </Button>
-          <ExecutionButton />
-        </Group>
-      </Group>
-    </AppShell.Header>
+      </AppShell.Header>
+      <CredentialListModal opened={credModalOpen} onClose={() => setCredModalOpen(false)} />
+    </>
   );
 }

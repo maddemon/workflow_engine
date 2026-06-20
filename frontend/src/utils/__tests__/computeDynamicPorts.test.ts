@@ -5,8 +5,8 @@ import type { NodeTypeDescriptor, PortDefinition } from '../../types/workflow';
 
 function makeData(overrides: Partial<WorkflowNodeData> = {}): WorkflowNodeData {
   const staticPorts: PortDefinition[] = [
-    { name: 'input', displayName: 'Input', direction: 'Input', type: 'Main' },
-    { name: 'output', displayName: 'Output', direction: 'Output', type: 'Main' },
+    { name: 'input', displayName: 'Input', direction: 'Input', type: 'Main', required: false },
+    { name: 'output', displayName: 'Output', direction: 'Output', type: 'Main', required: false },
   ];
 
   const descriptor: NodeTypeDescriptor = {
@@ -87,8 +87,8 @@ describe('computeDynamicPorts', () => {
           },
         ],
         ports: [
-          { name: 'input', displayName: 'Input', direction: 'Input', type: 'Main' },
-          { name: 'default', displayName: 'Default', direction: 'Output', type: 'Main' },
+          { name: 'input', displayName: 'Input', direction: 'Input', type: 'Main', required: false },
+          { name: 'default', displayName: 'Default', direction: 'Output', type: 'Main', required: false },
         ],
         defaultIsEntry: false,
       },
