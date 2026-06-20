@@ -1,12 +1,27 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { notifications } from '@mantine/notifications';
 import { executeWorkflow, getExecution } from '../services/api.ts';
-import type { ExecutionDto } from '../types/workflow.ts';
+import { useWorkflowStore } from '../stores/workflowStore.ts';
+import type { ExecutionDto, NodeExecutionRecordDto } from '../types/workflow.ts';
 
 type ExecutionHookStatus = 'idle' | 'loading' | 'running' | 'completed' | 'failed';
 
+function applyNodeStatuses(records: NodeExecutionRecordDto[]) {
+  const store = useWorkflowStore.getState();
+  for (const r of records) {
+    const mapped: Record<string, typeof store.nodes[0]['data']['executionStatus']> = {
+      Pending: 'waiting',
+      Running: 'running',
+      Completed: 'success',
+      Failed: 'error',
+      Cancelled: 'error',
+    };
+    store.updateNodeExecutionStatus(r.nodeDefinitionId, mapped[r.status] ?? 'idle');
+  }
+}
+
 export function useExecution() {
-  const [execution, setExecution] = useState<ExecutionDto | null>(null);
+  const [executionMeta, setExecutionMeta] = useState<ExecutionDto | null>(null);
   const [status, setStatus] = useState<ExecutionHookStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
@@ -18,7 +33,6 @@ export function useExecution() {
     }
   }, []);
 
-  // 组件卸载时清理轮询
   useEffect(() => {
     return () => {
       if (pollingRef.current) {
@@ -34,22 +48,27 @@ export function useExecution() {
       pollingRef.current = setInterval(async () => {
         try {
           const updated = await getExecution(executionId);
-          setExecution(updated);
+          setExecutionMeta((prev) => prev ? { ...prev, status: updated.status, startedAt: updated.startedAt, completedAt: updated.completedAt } : prev);
+          if (updated.nodeRecords.length > 0) {
+            useWorkflowStore.getState().upsertNodeExecutionRecords(updated.nodeRecords);
+            applyNodeStatuses(updated.nodeRecords);
+          }
           if (updated.status === 'Completed') {
             setStatus('completed');
             stopPolling();
-            notifications.show({ title: 'Execution Complete', message: 'Workflow executed successfully.', color: 'green' });
+            useWorkflowStore.getState().setIsExecuting(false);
           } else if (updated.status === 'Failed' || updated.status === 'Cancelled') {
             setStatus('failed');
             stopPolling();
-            notifications.show({ title: 'Execution Failed', message: `Workflow ${updated.status.toLowerCase()}.`, color: 'red' });
+            useWorkflowStore.getState().setIsExecuting(false);
           }
         } catch {
           setStatus('failed');
           stopPolling();
+          useWorkflowStore.getState().setIsExecuting(false);
           notifications.show({ title: 'Polling Error', message: 'Failed to fetch execution status.', color: 'red' });
         }
-      }, 1500);
+      }, 1000);
     },
     [stopPolling],
   );
@@ -58,22 +77,33 @@ export function useExecution() {
     async (workflowId: string) => {
       setStatus('loading');
       setError(null);
+      const store = useWorkflowStore.getState();
+      store.setIsExecuting(true);
+      store.clearExecutionStatuses();
+      store.clearNodeExecutionRecords();
+
       try {
         const result = await executeWorkflow(workflowId);
-        setExecution(result);
+        setExecutionMeta(result);
+        if (result.nodeRecords.length > 0) {
+          store.upsertNodeExecutionRecords(result.nodeRecords);
+          applyNodeStatuses(result.nodeRecords);
+        }
         if (result.status === 'Completed') {
           setStatus('completed');
+          store.setIsExecuting(false);
         } else if (result.status === 'Failed' || result.status === 'Cancelled') {
           setStatus('failed');
+          store.setIsExecuting(false);
         } else {
           setStatus('running');
           pollExecution(result.id);
         }
       } catch (err) {
         setStatus('failed');
+        store.setIsExecuting(false);
         const message = err instanceof Error ? err.message : 'Execution failed';
         setError(message);
-        notifications.show({ title: 'Execution Error', message, color: 'red' });
       }
     },
     [pollExecution],
@@ -81,12 +111,15 @@ export function useExecution() {
 
   const clearExecution = useCallback(() => {
     stopPolling();
-    setExecution(null);
+    setExecutionMeta(null);
     setStatus('idle');
     setError(null);
+    useWorkflowStore.getState().setIsExecuting(false);
+    useWorkflowStore.getState().clearExecutionStatuses();
+    useWorkflowStore.getState().clearNodeExecutionRecords();
   }, [stopPolling]);
 
-  return { execution, status, error, execute, clearExecution };
+  return { execution: executionMeta, status, error, execute, clearExecution };
 }
 
 export type { ExecutionHookStatus };

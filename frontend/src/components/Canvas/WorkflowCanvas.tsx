@@ -1,19 +1,11 @@
 import { notifications } from "@mantine/notifications"
-import {
-  Background,
-  BackgroundVariant,
-  Controls,
-  MiniMap,
-  ReactFlow,
-  useReactFlow,
-  type Connection,
-} from "@xyflow/react"
+import { Background, BackgroundVariant, MiniMap, ReactFlow, useReactFlow, type Connection } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
 import { useCallback, useEffect, useRef } from "react"
 import { useWorkflowStore } from "../../stores/workflowStore.ts"
+import { CanvasToolbar } from "./CanvasToolbar.tsx"
 import { CustomEdge } from "./CustomEdge.tsx"
 import { CustomNode } from "./CustomNode.tsx"
-import { CanvasToolbar } from "./CanvasToolbar.tsx"
 
 const nodeTypes = { workflow: CustomNode }
 const edgeTypes = { workflow: CustomEdge }
@@ -23,7 +15,11 @@ const defaultEdgeOptions = {
   animated: false,
 }
 
-export function WorkflowCanvas() {
+interface IWorkflowCanvasProps {
+  onExecute: (workflowId: string) => void
+}
+
+export function WorkflowCanvas({ onExecute }: IWorkflowCanvasProps) {
   const reactFlowWrapper = useRef<HTMLDivElement>(null)
   const { screenToFlowPosition } = useReactFlow()
   const nodes = useWorkflowStore((s) => s.nodes)
@@ -33,6 +29,7 @@ export function WorkflowCanvas() {
   const addEdge = useWorkflowStore((s) => s.addEdge)
   const addNode = useWorkflowStore((s) => s.addNode)
   const setSelectedNode = useWorkflowStore((s) => s.setSelectedNode)
+  const isExecuting = useWorkflowStore((s) => s.isExecuting)
 
   const edgesRef = useRef(edges)
   useEffect(() => {
@@ -122,13 +119,18 @@ export function WorkflowCanvas() {
     setSelectedNode(null)
   }, [setSelectedNode])
 
-  const onDragOver = useCallback((event: React.DragEvent) => {
-    event.preventDefault()
-    event.dataTransfer.dropEffect = "move"
-  }, [])
+  const onDragOver = useCallback(
+    (event: React.DragEvent) => {
+      if (isExecuting) return
+      event.preventDefault()
+      event.dataTransfer.dropEffect = "move"
+    },
+    [isExecuting],
+  )
 
   const onDrop = useCallback(
     (event: React.DragEvent) => {
+      if (isExecuting) return
       event.preventDefault()
       const typeName = event.dataTransfer.getData("application/reactflow")
       if (!typeName) return
@@ -139,16 +141,19 @@ export function WorkflowCanvas() {
       })
       addNode(typeName, position)
     },
-    [addNode, screenToFlowPosition],
+    [addNode, isExecuting, screenToFlowPosition],
   )
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <CanvasToolbar />
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      <CanvasToolbar onExecute={onExecute} />
       <div ref={reactFlowWrapper} className="workflow-canvas">
         <ReactFlow
           nodes={nodes}
           edges={edges}
+          nodesDraggable={!isExecuting}
+          nodesConnectable={!isExecuting}
+          elementsSelectable={!isExecuting}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}
@@ -160,9 +165,8 @@ export function WorkflowCanvas() {
           edgeTypes={edgeTypes}
           defaultEdgeOptions={defaultEdgeOptions}
         >
-          <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
-          <Controls />
-          <MiniMap />
+          <Background variant={BackgroundVariant.Lines} gap={200} color="rgba(128, 128, 128, 0.1)" size={1} />
+          <MiniMap pannable zoomable />
         </ReactFlow>
       </div>
     </div>

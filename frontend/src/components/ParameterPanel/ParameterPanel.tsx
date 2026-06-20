@@ -28,6 +28,7 @@ function groupParameters(
 export function ParameterPanel() {
   const selectedNodeId = useWorkflowStore((s) => s.selectedNodeId);
   const nodes = useWorkflowStore((s) => s.nodes);
+  const isExecuting = useWorkflowStore((s) => s.isExecuting);
   const updateNodeParameters = useWorkflowStore((s) => s.updateNodeParameters);
   const updateNodeName = useWorkflowStore((s) => s.updateNodeName);
   const updateNodeSettings = useWorkflowStore((s) => s.updateNodeSettings);
@@ -64,6 +65,11 @@ export function ParameterPanel() {
   if (!selectedNode) {
     return (
       <Stack gap="sm" p="sm" style={{ height: '100%', overflow: 'hidden' }}>
+        {isExecuting && (
+          <Text size="xs" c="blue" fw={500} p={4} style={{ background: 'var(--mantine-color-blue-light)', borderRadius: 4, textAlign: 'center' }}>
+            Execution in progress — canvas is read-only
+          </Text>
+        )}
         <Text fw={600} size="xs" tt="uppercase" c="dimmed" style={{ letterSpacing: '0.05em' }}>
           Workflow Settings
         </Text>
@@ -73,16 +79,17 @@ export function ParameterPanel() {
             value={workflowName}
             onChange={(e) => setWorkflowName(e.target.value)}
             placeholder="Enter workflow name..."
+            disabled={isExecuting}
             rightSection={isDirty ? <Text c="orange" fw={700} size="xs">*</Text> : undefined}
           />
           <Group
             justify="space-between"
             align="center"
-            onClick={() => setIsActive(!isActive)}
-            style={{ cursor: 'pointer' }}
+            onClick={() => !isExecuting && setIsActive(!isActive)}
+            style={{ cursor: isExecuting ? 'not-allowed' : 'pointer' }}
             p={4}
           >
-            <Switch checked={isActive} onChange={(e) => setIsActive(e.currentTarget.checked)} size="sm" onClick={(e) => e.stopPropagation()} />
+            <Switch checked={isActive} onChange={(e) => setIsActive(e.currentTarget.checked)} size="sm" disabled={isExecuting} onClick={(e) => e.stopPropagation()} />
             <Group gap={4} style={{ flex: 1 }}>
               <Text size="xs" fw={400}>Active</Text>
               <InfoTooltip label="Enable this workflow to be triggered" />
@@ -92,6 +99,7 @@ export function ParameterPanel() {
             label="Layout Direction"
             value={layoutDirection}
             onChange={handleLayoutChange}
+            disabled={isExecuting}
             data={[
               { label: 'Vertical (top to bottom)', value: 'vertical' },
               { label: 'Horizontal (left to right)', value: 'horizontal' },
@@ -133,6 +141,7 @@ export function ParameterPanel() {
         label="Node Name"
         value={name}
         onChange={(e) => updateNodeName(selectedNode.id, e.target.value)}
+        disabled={isExecuting}
       />
 
       {hasErrors && (
@@ -142,8 +151,18 @@ export function ParameterPanel() {
       )}
 
       {/* 参数列表 */}
-      <ScrollArea style={{ flex: 1 }} offsetScrollbars>
-        <Stack gap="sm">
+      <ScrollArea style={{ flex: 1, position: 'relative' }} offsetScrollbars>
+        {isExecuting && (
+          <div
+            style={{
+              position: 'absolute', inset: 0, zIndex: 10,
+              background: 'var(--mantine-color-body)',
+              opacity: 0.5, pointerEvents: 'none',
+              borderRadius: 4,
+            }}
+          />
+        )}
+        <Stack gap="sm" style={isExecuting ? { pointerEvents: 'none', opacity: 0.6 } : undefined}>
           {basic.length > 0 && basic.map((def) => {
             if (def.displayRule && !isVisible(def)) return null;
             return (

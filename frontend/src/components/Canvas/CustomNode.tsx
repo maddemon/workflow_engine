@@ -81,7 +81,7 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
     return connected;
   }, [edges, id]);
   const status = data.executionStatus;
-  const statusCls = status && status !== 'idle' ? ` status-${status}` : '';
+  const statusClass = status && status !== 'idle' ? `status-${status}` : '';
   const categoryColor = getNodeCategoryColor(data.descriptor.category);
   const updateNodeInternals = useUpdateNodeInternals();
 
@@ -102,12 +102,10 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
   const badgeKey = data.isEntry && (!status || status === 'idle') ? 'entry' : (status ?? '');
   const badgeColor = statusBadgeColor[badgeKey];
 
-  const iconBoxSize = 48;
-
   return (
     <div
-      className={`custom-node-wrapper${statusCls}${selected ? ' selected' : ''}`}
-      style={{ position: 'relative', width: nodeWidth, height: nodeHeight, overflow: 'visible' }}
+      className={`custom-node-wrapper${statusClass ? ` ${statusClass}` : ''}${selected ? ' selected' : ''}`}
+      style={{ width: nodeWidth, height: nodeHeight }}
     >
       <div
         className="custom-node"
@@ -120,35 +118,16 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
             : undefined,
         }}
       >
-        <div
-          className="node-icon-box"
-          style={{ width: iconBoxSize, height: iconBoxSize }}
-        >
+        <div className="node-icon-box">
           <NodeIcon icon={data.descriptor.icon} size={26} color={categoryColor} />
         </div>
 
         {badgeColor && (
-          <div
-            style={{
-              position: 'absolute',
-              top: 2,
-              right: 2,
-              width: 14,
-              height: 14,
-              borderRadius: '50%',
-              background: badgeColor,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              zIndex: 11,
-              boxShadow: '0 1px 2px rgba(0, 0, 0, 0.15)',
-              border: '1.5px solid var(--node-bg)',
-            }}
-          >
-            {data.isEntry && (!status || status === 'idle') && <Play size={7} color="#fff" fill="#fff" style={{ marginLeft: 1 }} />}
-            {status === 'running' && <Loader size={8} color="#fff" speed={2} />}
-            {status === 'success' && <Check size={9} color="#fff" strokeWidth={3} />}
-            {status === 'error' && <X size={9} color="#fff" strokeWidth={3} />}
+          <div className="node-badge" style={{ background: badgeColor }}>
+            {data.isEntry && (!status || status === 'idle') && <Play size={7} color="var(--mantine-color-white)" fill="var(--mantine-color-white)" />}
+            {status === 'running' && <Loader size={8} color="var(--mantine-color-white)" speed={2} />}
+            {status === 'success' && <Check size={9} color="var(--mantine-color-white)" strokeWidth={3} />}
+            {status === 'error' && <X size={9} color="var(--mantine-color-white)" strokeWidth={3} />}
           </div>
         )}
       </div>
@@ -185,41 +164,13 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
         );
       })}
 
-      <div
-        className="node-body"
-        style={{
-          position: 'absolute',
-          top: nodeHeight + 6,
-          left: 0,
-          right: 0,
-          textAlign: 'center',
-          maxWidth: nodeWidth + 20,
-        }}
-      >
-        <Text
-          size="xs"
-          fw={600}
-          style={{
-            overflow: 'hidden',
-            textOverflow: 'ellipsis',
-            whiteSpace: 'nowrap',
-            letterSpacing: '-0.01em',
-          }}
-        >
+      <div className="node-body-abs" style={{ top: nodeHeight + 6, maxWidth: nodeWidth * 2 }}>
+        <Text size="xs" fw={600} className="node-name">
           {data.name}
         </Text>
 
         {subtitle && (
-          <Text
-            size="xs"
-            c="dimmed"
-            style={{
-              overflow: 'hidden',
-              textOverflow: 'ellipsis',
-              whiteSpace: 'nowrap',
-              marginTop: 1,
-            }}
-          >
+          <Text size="xs" c="dimmed" className="node-subtitle">
             {subtitle}
           </Text>
         )}

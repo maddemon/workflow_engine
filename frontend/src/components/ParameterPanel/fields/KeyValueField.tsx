@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { TextInput, ActionIcon, Group, Text, Stack } from '@mantine/core';
 import { Plus, Trash, AlertTriangle } from 'lucide-react';
 import { InfoTooltip } from './InfoTooltip.tsx';
@@ -33,17 +33,13 @@ function parseJsonToEntries(jsonStr: string): KeyValueEntry[] {
 function entriesToJson(entries: KeyValueEntry[]): string {
   const obj: Record<string, string> = {};
   for (const entry of entries) {
-    if (entry.key.trim() !== '') {
-      obj[entry.key] = entry.value;
-    }
+    obj[entry.key] = entry.value;
   }
   return JSON.stringify(obj, null, 2);
 }
 
 export function KeyValueField({ definition, value, onChange, error }: KeyValueFieldProps) {
   const [entries, setEntries] = useState<KeyValueEntry[]>(() => parseJsonToEntries(String(value ?? '')));
-  const entriesRef = useRef(entries);
-  entriesRef.current = entries;
 
   useEffect(() => {
     setEntries(parseJsonToEntries(String(value ?? '')));
@@ -65,33 +61,25 @@ export function KeyValueField({ definition, value, onChange, error }: KeyValueFi
     return duplicates;
   }, [entries]);
 
-  const updateEntries = useCallback((updated: KeyValueEntry[]) => {
-    setEntries(updated);
-    onChange(entriesToJson(updated));
-  }, [onChange]);
-
-  const handleEntryChange = useCallback((index: number, field: 'key' | 'value', newValue: string) => {
-    const updated = entriesRef.current.map((entry, i) =>
-      i === index ? { ...entry, [field]: newValue } : entry,
-    );
-    updateEntries(updated);
-  }, [updateEntries]);
-
   const handleAddEntry = useCallback(() => {
-    setEntries((prev) => {
-      const next = [...prev, { key: '', value: '' }];
-      onChange(entriesToJson(next));
-      return next;
-    });
-  }, [onChange]);
+    const next = [...entries, { key: '', value: '' }];
+    onChange(entriesToJson(next));
+    setEntries(next);
+  }, [entries, onChange]);
 
   const handleRemoveEntry = useCallback((index: number) => {
-    setEntries((prev) => {
-      const next = prev.filter((_, i) => i !== index);
-      onChange(entriesToJson(next));
-      return next;
-    });
-  }, [onChange]);
+    const next = entries.filter((_, i) => i !== index);
+    onChange(entriesToJson(next));
+    setEntries(next);
+  }, [entries, onChange]);
+
+  const handleEntryChange = useCallback((index: number, field: 'key' | 'value', newValue: string) => {
+    const updated = entries.map((entry, i) =>
+      i === index ? { ...entry, [field]: newValue } : entry,
+    );
+    setEntries(updated);
+    onChange(entriesToJson(updated));
+  }, [entries, onChange]);
 
   return (
     <div>

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { applyNodeChanges, applyEdgeChanges } from '@xyflow/react';
 import type { Node, Edge, NodeChange, EdgeChange } from '@xyflow/react';
-import type { NodeTypeDescriptor, ParameterDefinition, WorkflowStyleSettings } from '../types/workflow.ts';
+import type { NodeTypeDescriptor, ParameterDefinition, WorkflowStyleSettings, NodeExecutionRecordDto } from '../types/workflow.ts';
 import { DEFAULT_STYLE_SETTINGS } from '../types/workflow.ts';
 import { deserializeWorkflow, serializeWorkflow } from '../utils/workflowSerializer.ts';
 import { validateParameters } from '../utils/validateParameters.ts';
@@ -42,6 +42,9 @@ interface WorkflowState {
   saving: boolean;
   /** 字段级校验错误：nodeId → fieldName → message */
   validationErrors: Record<string, Record<string, string>>;
+  isExecuting: boolean;
+  /** nodeDefinitionId → NodeExecutionRecordDto，累积存储，不覆盖 */
+  nodeExecutionRecords: Record<string, NodeExecutionRecordDto>;
 
   setNodes: (nodes: WorkflowNode[]) => void;
   setEdges: (edges: WorkflowEdge[]) => void;
@@ -65,6 +68,11 @@ interface WorkflowState {
   deleteWorkflow: (id: string) => Promise<void>;
   newWorkflow: () => void;
   validateAllNodes: () => boolean;
+  setIsExecuting: (executing: boolean) => void;
+  updateNodeExecutionStatus: (nodeId: string, status: WorkflowNodeData['executionStatus']) => void;
+  clearExecutionStatuses: () => void;
+  upsertNodeExecutionRecords: (records: NodeExecutionRecordDto[]) => void;
+  clearNodeExecutionRecords: () => void;
   canUndo: boolean;
   canRedo: boolean;
   undo: () => void;
@@ -138,10 +146,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     workflowName: '',
     isActive: false,
         styleSettings: { ...DEFAULT_STYLE_SETTINGS },
-    isDirty: false,
-    saving: false,
-    validationErrors: {},
-    canUndo: false,
+	    isDirty: false,
+	    saving: false,
+	    validationErrors: {},
+	    isExecuting: false,
+	    nodeExecutionRecords: {},
+	    canUndo: false,
     canRedo: false,
 
     setNodes: (nodes) => set({ nodes, isDirty: true }),
@@ -339,6 +349,42 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
 
       set({ validationErrors: errors });
       return Object.keys(errors).length === 0;
+    },
+
+    setIsExecuting: (executing) => {
+      set({ isExecuting: executing });
+    },
+
+    updateNodeExecutionStatus: (nodeId, status) => {
+      set({
+        nodes: get().nodes.map((n) =>
+          n.id === nodeId
+            ? { ...n, data: { ...n.data, executionStatus: status } }
+            : n,
+        ),
+      });
+    },
+
+    clearExecutionStatuses: () => {
+      set({
+        nodes: get().nodes.map((n) => ({
+          ...n,
+          data: { ...n.data, executionStatus: undefined },
+        })),
+      });
+    },
+
+    upsertNodeExecutionRecords: (records) => {
+      const existing = get().nodeExecutionRecords;
+      const merged = { ...existing };
+      for (const r of records) {
+        merged[r.nodeDefinitionId] = r;
+      }
+      set({ nodeExecutionRecords: merged });
+    },
+
+    clearNodeExecutionRecords: () => {
+      set({ nodeExecutionRecords: {} });
     },
 
     undo: () => {

@@ -343,7 +343,37 @@ public sealed class WorkflowExecutor : IEngine
         NodeExecutionResult result;
         for (var attempt = 0; attempt <= maxRetries; attempt++)
         {
-            result = await nodeType.ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                result = await nodeType.ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "节点 {NodeName} ({NodeId}) 执行时发生异常。", node.Name, node.Id);
+                var nodeError = new NodeError
+                {
+                    Code = ex.GetType().Name,
+                    Message = ex.Message,
+                    NodeDefinitionId = node.Id,
+                    StackTrace = ex.StackTrace
+                };
+                result = new NodeExecutionResult
+                {
+                    Success = false,
+                    Error = nodeError,
+                    Output = new DataBatch
+                    {
+                        Items =
+                        [
+                            new DataItem
+                            {
+                                Success = false,
+                                Error = nodeError
+                            }
+                        ]
+                    }
+                };
+            }
 
             if (result.Success || attempt == maxRetries)
             {

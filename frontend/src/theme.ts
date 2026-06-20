@@ -185,11 +185,7 @@ export const theme = createTheme({
         radius: 'sm',
       },
     },
-    Divider: {
-      defaultProps: {
-        color: 'gray.2',
-      },
-    },
+
     Modal: {
       defaultProps: {
         radius: 'md',

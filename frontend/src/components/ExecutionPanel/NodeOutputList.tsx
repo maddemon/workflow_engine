@@ -1,21 +1,202 @@
 import { useState } from 'react';
-import { Stack, Paper, Group, Text, Badge, UnstyledButton, ScrollArea, Box } from '@mantine/core';
-import { ChevronRight, ChevronDown } from 'lucide-react';
+import { Stack, Text, Box, Collapse, UnstyledButton, Group } from '@mantine/core';
+import { Check, X, Clock, Loader, AlertCircle, ChevronRight, ChevronDown } from 'lucide-react';
+import { CodeViewer } from './CodeViewer.tsx';
 import type { NodeExecutionRecordDto, ExecutionStatus } from '../../types/workflow.ts';
 
 interface NodeOutputListProps {
   records: NodeExecutionRecordDto[];
+  nodeNames?: Record<string, string>;
 }
 
-const statusColors: Record<ExecutionStatus, string> = {
-  Pending: 'orange',
-  Running: 'blue',
-  Completed: 'green',
-  Failed: 'red',
-  Cancelled: 'gray',
+const statusConfig: Record<ExecutionStatus, { icon: React.ReactNode; shade: string }> = {
+  Pending: { icon: <Clock size={13} />, shade: 'gray' },
+  Running: { icon: <Loader size={13} speed={2} />, shade: 'blue' },
+  Completed: { icon: <Check size={13} strokeWidth={3} />, shade: 'green' },
+  Failed: { icon: <X size={13} strokeWidth={3} />, shade: 'red' },
+  Cancelled: { icon: <X size={13} />, shade: 'gray' },
 };
 
-export function NodeOutputList({ records }: NodeOutputListProps) {
+function extractError(output: unknown): { code?: string; message?: string } | null {
+  if (!output || typeof output !== 'object') return null;
+  const obj = output as Record<string, unknown>;
+  if (obj.error && typeof obj.error === 'object') {
+    const err = obj.error as Record<string, unknown>;
+    return { code: String(err.code ?? ''), message: String(err.message ?? '') };
+  }
+  if (obj.output && typeof obj.output === 'object') {
+    const out = obj.output as Record<string, unknown>;
+    const items = out.items;
+    if (Array.isArray(items) && items.length > 0) {
+      const first = items[0] as Record<string, unknown>;
+      if (first.error && typeof first.error === 'object') {
+        const err = first.error as Record<string, unknown>;
+        return { code: String(err.code ?? ''), message: String(err.message ?? '') };
+      }
+      if (first.success === false && first.error) {
+        const err = first.error as Record<string, unknown>;
+        return { code: String(err.code ?? ''), message: String(err.message ?? '') };
+      }
+      if (first.success === false && !first.error) {
+        return { message: 'Node execution failed.' };
+      }
+    }
+  }
+  return null;
+}
+
+function formatDuration(startedAt: string | null, completedAt: string | null): string | null {
+  if (!startedAt) return null;
+  const start = new Date(startedAt).getTime();
+  const end = completedAt ? new Date(completedAt).getTime() : Date.now();
+  const ms = end - start;
+  if (ms < 0) return null;
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function StepItem({
+  record,
+  isLast,
+  isExpanded,
+  onToggle,
+  nodeName,
+}: {
+  record: NodeExecutionRecordDto;
+  isLast: boolean;
+  isExpanded: boolean;
+  onToggle: () => void;
+  nodeName?: string;
+}) {
+  const config = statusConfig[record.status] ?? statusConfig.Pending;
+  const nodeError = record.status === 'Failed' ? extractError(record.output) : null;
+  const duration = formatDuration(record.startedAt, record.completedAt);
+
+  const statusBg =
+    record.status === 'Completed' ? 'var(--exec-success-bg)'
+    : record.status === 'Failed' ? 'var(--exec-error-bg)'
+    : record.status === 'Running' ? 'var(--exec-running-bg)'
+    : 'var(--exec-pending-bg)';
+
+  return (
+    <div style={{ display: 'flex', gap: 10, position: 'relative' }}>
+      {/* Fixed icon + connector column */}
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
+        <div
+          style={{
+            width: 26,
+            height: 26,
+            borderRadius: '50%',
+            background: statusBg,
+            border: `1.5px solid var(--mantine-color-${config.shade}-3)`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            color: `var(--mantine-color-${config.shade}-6)`,
+            flexShrink: 0,
+          }}
+        >
+          {config.icon}
+        </div>
+        {!isLast && (
+          <div
+            style={{
+              width: 1.5,
+              flex: 1,
+              minHeight: 12,
+              background: 'var(--exec-connector)',
+              borderRadius: 1,
+            }}
+          />
+        )}
+      </div>
+
+      {/* Content column */}
+      <div style={{ flex: 1, minWidth: 0, paddingBottom: isLast ? 0 : 4 }}>
+        <UnstyledButton
+          w="100%"
+          onClick={onToggle}
+          style={{
+            borderRadius: 6,
+            padding: '6px 8px',
+            transition: 'background 0.15s ease',
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLElement).style.background = 'var(--exec-hover)';
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLElement).style.background = 'transparent';
+          }}
+        >
+          <Group gap="xs" wrap="nowrap">
+            <Text size="sm" fw={500} flex={1} truncate>
+              {nodeName || record.nodeDefinitionId.slice(0, 8)}
+            </Text>
+            {duration && (
+              <Text size="xs" c="dimmed" style={{ flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
+                {duration}
+              </Text>
+            )}
+            <div style={{ color: 'var(--mantine-color-dimmed)', flexShrink: 0 }}>
+              {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+            </div>
+          </Group>
+        </UnstyledButton>
+
+        {nodeError && !isExpanded && (
+          <Box
+            mt={4}
+            mx={4}
+            p="xs"
+            style={{
+              background: 'var(--exec-err-bg)',
+              border: '1px solid var(--exec-err-border)',
+              borderRadius: 4,
+            }}
+          >
+            <Group gap={4} wrap="nowrap" align="flex-start">
+              <AlertCircle size={12} color="var(--exec-err-color)" style={{ flexShrink: 0, marginTop: 1 }} />
+              <Text
+                size="xs"
+                style={{
+                  color: 'var(--exec-err-color)',
+                  lineHeight: 1.4,
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                }}
+              >
+                {nodeError.message}
+              </Text>
+            </Group>
+          </Box>
+        )}
+
+        <Collapse expanded={isExpanded}>
+          <Stack gap={6} mt={4}>
+            {record.output !== undefined && record.output !== null && (
+              <CodeViewer
+                label="Output"
+                code={typeof record.output === 'string' ? record.output : JSON.stringify(record.output, null, 2)}
+                maxHeight={150}
+              />
+            )}
+            {record.resolvedParameters && (
+              <CodeViewer
+                label="Parameters"
+                code={JSON.stringify(record.resolvedParameters, null, 2)}
+                maxHeight={100}
+              />
+            )}
+          </Stack>
+        </Collapse>
+      </div>
+    </div>
+  );
+}
+
+export function NodeOutputList({ records, nodeNames }: NodeOutputListProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const toggle = (id: string) => {
@@ -23,70 +204,25 @@ export function NodeOutputList({ records }: NodeOutputListProps) {
   };
 
   if (records.length === 0) {
-    return <Text size="sm" c="dimmed" ta="center" py="md">No node records</Text>;
+    return (
+      <Text size="sm" c="dimmed" ta="center" py="md">
+        No node records
+      </Text>
+    );
   }
 
   return (
-    <Stack gap="xs">
-      {records.map((record) => (
-        <Paper key={record.id} withBorder radius="sm" style={{ overflow: 'hidden' }}>
-          <UnstyledButton
-            w="100%"
-            px="sm"
-            py={6}
-            onClick={() => toggle(record.id)}
-          >
-            <Group gap="xs" wrap="nowrap">
-              {expanded[record.id]
-                ? <ChevronDown size={12} color="var(--mantine-color-dimmed)" />
-                : <ChevronRight size={12} color="var(--mantine-color-dimmed)" />
-              }
-              <Text size="sm" fw={500} flex={1} truncate>
-                {record.nodeDefinitionId}
-              </Text>
-              <Badge size="xs" variant="light" color={statusColors[record.status]}>
-                {record.status}
-              </Badge>
-            </Group>
-          </UnstyledButton>
-          {expanded[record.id] && (
-            <Stack gap="xs" p="sm" pt={0}>
-              {record.output !== undefined && record.output !== null && (
-                <Box>
-                  <Text size="xs" fw={600} c="dimmed" mb={4}>Output:</Text>
-                  <ScrollArea.Autosize mah={200} type="auto" offsetScrollbars>
-                    <pre className="output-json">
-                      {typeof record.output === 'string'
-                        ? record.output
-                        : JSON.stringify(record.output, null, 2)}
-                    </pre>
-                  </ScrollArea.Autosize>
-                </Box>
-              )}
-              {record.inputs && (
-                <Box>
-                  <Text size="xs" fw={600} c="dimmed" mb={4}>Inputs:</Text>
-                  <ScrollArea.Autosize mah={200} type="auto" offsetScrollbars>
-                    <pre className="output-json">
-                      {JSON.stringify(record.inputs, null, 2)}
-                    </pre>
-                  </ScrollArea.Autosize>
-                </Box>
-              )}
-              {record.resolvedParameters && (
-                <Box>
-                  <Text size="xs" fw={600} c="dimmed" mb={4}>Resolved Parameters:</Text>
-                  <ScrollArea.Autosize mah={200} type="auto" offsetScrollbars>
-                    <pre className="output-json">
-                      {JSON.stringify(record.resolvedParameters, null, 2)}
-                    </pre>
-                  </ScrollArea.Autosize>
-                </Box>
-              )}
-            </Stack>
-          )}
-        </Paper>
+    <div style={{ display: 'flex', flexDirection: 'column' }}>
+      {records.map((record, index) => (
+        <StepItem
+          key={record.id}
+          record={record}
+          isLast={index === records.length - 1}
+          isExpanded={!!expanded[record.id]}
+          onToggle={() => toggle(record.id)}
+          nodeName={nodeNames?.[record.nodeDefinitionId]}
+        />
       ))}
-    </Stack>
+    </div>
   );
 }

@@ -10,7 +10,7 @@ export function MainLayout({ children }: { children: ReactNode }) {
       <HeaderToolbar />
       <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
         {navbar && (
-          <div style={{ width: 220, flexShrink: 0, borderRight: '1px solid var(--mantine-color-gray-2)', overflowY: 'auto', background: 'var(--mantine-color-white)' }}>
+          <div style={{ width: 220, flexShrink: 0, borderRight: '1px solid var(--panel-border)', overflowY: 'auto', background: 'var(--bg-panel)' }}>
             {navbar}
           </div>
         )}
@@ -18,7 +18,7 @@ export function MainLayout({ children }: { children: ReactNode }) {
           {children}
         </main>
         {aside && (
-          <div style={{ width: 300, flexShrink: 0, borderLeft: '1px solid var(--mantine-color-gray-2)', overflowY: 'auto', background: 'var(--mantine-color-white)' }}>
+          <div style={{ width: 300, flexShrink: 0, borderLeft: '1px solid var(--panel-border)', overflowY: 'auto', background: 'var(--bg-panel)' }}>
             {aside}
           </div>
         )}
