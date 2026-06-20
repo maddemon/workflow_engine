@@ -125,26 +125,30 @@ body {
 .node-status-icon.status-running { color: var(--color-primary); }
 .node-status-icon.status-waiting { color: #fab005; }
 
-/* 连接点（Handle）：半透明常显 */
+/* 连接点（Handle）：默认灰色，hover 时显色 */
 .port-handle {
   width: 12px !important;
   height: 12px !important;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.2) !important;
-  opacity: 0.55 !important;
-  transition: opacity 0.15s !important;
+  background: #ced4da !important;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15) !important;
+  opacity: 0 !important;
+  transition: opacity 0.15s, background 0.15s !important;
   z-index: 10 !important;
   cursor: crosshair !important;
 }
 
-.port-input { background: #40c057 !important; }
-.port-output { background: #339af0 !important; }
-
-.port-handle[data-handleid="port-true"],
-.port-handle[data-handleid="port-false"] {
-  background: #339af0 !important;
+.port-handle.port-connected {
+  opacity: 0.55 !important;
+  background: #adb5bd !important;
 }
 
+.port-input.port-connected { background: #40c057 !important; }
+.port-output.port-connected { background: #339af0 !important; }
+
 .custom-node-wrapper:hover .port-handle {
+  opacity: 0.7 !important;
+}
+.custom-node-wrapper:hover .port-handle.port-connected {
   opacity: 1 !important;
 }
 

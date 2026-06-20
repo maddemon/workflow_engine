@@ -56,6 +56,7 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
   const inputPorts = ports.filter((p) => p.direction === 'Input');
   const outputPorts = ports.filter((p) => p.direction === 'Output');
   const styleSettings = useWorkflowStore((s) => s.styleSettings);
+  const edges = useWorkflowStore((s) => s.edges);
   const layoutDirection = styleSettings.layoutDirection;
   const isVertical = layoutDirection === 'vertical';
 
@@ -63,6 +64,15 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
   const nodeHeight = 64;
 
   const layouts = computePortLayouts(inputPorts, outputPorts, layoutDirection);
+
+  const connectedHandles = useMemo(() => {
+    const connected = new Set<string>();
+    for (const edge of edges) {
+      if (edge.source === id && edge.sourceHandle) connected.add(edge.sourceHandle);
+      if (edge.target === id && edge.targetHandle) connected.add(edge.targetHandle);
+    }
+    return connected;
+  }, [edges, id]);
   const status = data.executionStatus;
   const statusCls = status && status !== 'idle' ? ` status-${status}` : '';
   const categoryColor = getNodeCategoryColor(data.descriptor.category);
@@ -135,28 +145,32 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
 
       {inputPorts.map((port) => {
         const layout = layouts.get(port.name)!;
+        const handleId = `port-${port.name}`;
+        const isConnected = connectedHandles.has(handleId);
         return (
           <Handle
             key={port.name}
             type="target"
             position={layout.position}
             style={isVertical ? { left: `${layout.percent}%` } : { top: `${layout.percent}%` }}
-            id={`port-${port.name}`}
-            className="port-handle port-input"
+            id={handleId}
+            className={`port-handle port-input${isConnected ? ' port-connected' : ''}`}
           />
         );
       })}
 
       {outputPorts.map((port) => {
         const layout = layouts.get(port.name)!;
+        const handleId = `port-${port.name}`;
+        const isConnected = connectedHandles.has(handleId);
         return (
           <Handle
             key={port.name}
             type="source"
             position={layout.position}
             style={isVertical ? { left: `${layout.percent}%` } : { top: `${layout.percent}%` }}
-            id={`port-${port.name}`}
-            className="port-handle port-output"
+            id={handleId}
+            className={`port-handle port-output${isConnected ? ' port-connected' : ''}`}
           />
         );
       })}
