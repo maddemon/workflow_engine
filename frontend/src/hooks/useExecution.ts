@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { notifications } from '@mantine/notifications';
 import { executeWorkflow, getExecution } from '../services/api.ts';
 import type { ExecutionDto } from '../types/workflow.ts';
 
@@ -37,13 +38,16 @@ export function useExecution() {
           if (updated.status === 'Completed') {
             setStatus('completed');
             stopPolling();
+            notifications.show({ title: 'Execution Complete', message: 'Workflow executed successfully.', color: 'green' });
           } else if (updated.status === 'Failed' || updated.status === 'Cancelled') {
             setStatus('failed');
             stopPolling();
+            notifications.show({ title: 'Execution Failed', message: `Workflow ${updated.status.toLowerCase()}.`, color: 'red' });
           }
         } catch {
           setStatus('failed');
           stopPolling();
+          notifications.show({ title: 'Polling Error', message: 'Failed to fetch execution status.', color: 'red' });
         }
       }, 1500);
     },
@@ -67,7 +71,9 @@ export function useExecution() {
         }
       } catch (err) {
         setStatus('failed');
-        setError(err instanceof Error ? err.message : 'Execution failed');
+        const message = err instanceof Error ? err.message : 'Execution failed';
+        setError(message);
+        notifications.show({ title: 'Execution Error', message, color: 'red' });
       }
     },
     [pollExecution],
