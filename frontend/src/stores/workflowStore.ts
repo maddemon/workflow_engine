@@ -52,6 +52,7 @@ interface WorkflowState {
   updateNodePosition: (nodeId: string, position: { x: number; y: number }) => void;
   updateNodeParameters: (nodeId: string, parameters: Record<string, unknown>) => void;
   updateNodeName: (nodeId: string, name: string) => void;
+  updateNodeSettings: (nodeId: string, settings: { errorStrategy?: string; retryPolicy?: string | null }) => void;
   addEdge: (source: string, sourceHandle: string | null, target: string, targetHandle: string | null) => void;
   removeEdge: (edgeId: string) => void;
   setSelectedNode: (nodeId: string | null) => void;
@@ -196,6 +197,17 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       set({
         nodes: get().nodes.map((n) =>
           n.id === nodeId ? { ...n, data: { ...n.data, name } } : n,
+        ),
+        isDirty: true,
+      });
+    },
+
+    updateNodeSettings: (nodeId, settings) => {
+      set({
+        nodes: get().nodes.map((n) =>
+          n.id === nodeId
+            ? { ...n, data: { ...n.data, ...settings } }
+            : n,
         ),
         isDirty: true,
       });
