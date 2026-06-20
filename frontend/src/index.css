@@ -17,6 +17,7 @@ html, body {
   --bg-panel: var(--mantine-color-white);
   --bg-header: var(--mantine-color-white);
   --bg-page: var(--mantine-color-gray-1);
+  --panel-border: var(--mantine-color-gray-2);
   --node-bg: var(--mantine-color-white);
   --node-card-bg: transparent;
   --node-card-bg-hover: var(--mantine-color-gray-1);
@@ -25,10 +26,11 @@ html, body {
   --port-connected: var(--mantine-color-gray-5);
   --port-hover-input: var(--mantine-color-green-6);
   --port-hover-output: var(--mantine-color-blue-6);
-  --edge-color: var(--mantine-color-gray-5);
+  --edge-color: var(--mantine-color-gray-4);
   --edge-color-hover: var(--mantine-color-blue-6);
   --edge-label-bg: rgba(255, 255, 255, 0.9);
   --edge-label-color: var(--mantine-color-gray-6);
+  --edge-label-border: var(--mantine-color-gray-2);
   --status-success: var(--mantine-color-green-6);
   --status-error: var(--mantine-color-red-6);
   --status-running: var(--mantine-color-blue-6);
@@ -38,8 +40,21 @@ html, body {
   --node-category-utility: var(--mantine-color-gray-6);
   --node-category-entry: var(--mantine-color-violet-6);
   --node-category-unknown: var(--mantine-color-gray-5);
-  --output-json-bg: #1e293b;
-  --output-json-color: #e2e8f0;
+  --output-json-bg: var(--mantine-color-gray-1);
+  --output-json-color: var(--mantine-color-gray-8);
+
+  /* execution panel — inherits mantine shades in light mode */
+  --exec-hover: var(--mantine-color-gray-1);
+  --exec-code-border: var(--mantine-color-gray-3);
+  --exec-code-bg: var(--mantine-color-gray-0);
+  --exec-connector: var(--mantine-color-gray-3);
+  --exec-err-bg: var(--mantine-color-red-0);
+  --exec-err-border: var(--mantine-color-red-2);
+  --exec-err-color: var(--mantine-color-red-7);
+  --exec-success-bg: var(--mantine-color-green-1);
+  --exec-error-bg: var(--mantine-color-red-1);
+  --exec-running-bg: var(--mantine-color-blue-1);
+  --exec-pending-bg: var(--mantine-color-gray-1);
 }
 
 [data-mantine-color-scheme="dark"] {
@@ -47,16 +62,55 @@ html, body {
   --bg-panel: #25262b;
   --bg-header: #25262b;
   --bg-page: #141517;
+  --panel-border: var(--mantine-color-dark-5);
   --node-bg: #25262b;
   --node-card-bg-hover: var(--mantine-color-gray-8);
   --node-card-border-hover: var(--mantine-color-gray-6);
+  --edge-color: var(--mantine-color-dark-4);
+  --edge-color-hover: var(--mantine-color-blue-5);
   --edge-label-bg: rgba(37, 38, 43, 0.9);
   --edge-label-color: var(--mantine-color-gray-2);
+  --edge-label-border: var(--mantine-color-dark-3);
   --node-category-http: var(--mantine-color-blue-5);
   --node-category-core: var(--mantine-color-violet-5);
   --node-category-utility: var(--mantine-color-gray-4);
   --node-category-entry: var(--mantine-color-violet-5);
   --node-category-unknown: var(--mantine-color-gray-4);
-  --output-json-bg: var(--mantine-color-dark-9);
-  --output-json-color: var(--mantine-color-gray-1);
+
+  /* execution panel — dark */
+  --exec-hover: var(--mantine-color-dark-5);
+  --exec-code-border: var(--mantine-color-dark-4);
+  --exec-code-bg: var(--mantine-color-dark-7);
+  --exec-connector: var(--mantine-color-dark-4);
+  --exec-err-bg: rgba(239, 68, 68, 0.08);
+  --exec-err-border: rgba(239, 68, 68, 0.2);
+  --exec-err-color: rgba(239, 68, 68, 0.85);
+  --exec-success-bg: rgba(34, 197, 94, 0.12);
+  --exec-error-bg: rgba(239, 68, 68, 0.12);
+  --exec-running-bg: rgba(59, 130, 246, 0.12);
+  --exec-pending-bg: rgba(156, 163, 175, 0.1);
 }
+
+/* hljs token colors — light */
+.hljs { background: var(--mantine-color-gray-0); color: var(--mantine-color-gray-8); }
+.hljs-string { color: var(--mantine-color-green-7); }
+.hljs-number { color: var(--mantine-color-orange-7); }
+.hljs-literal { color: var(--mantine-color-orange-7); }
+.hljs-attr { color: var(--mantine-color-violet-7); }
+.hljs-keyword { color: var(--mantine-color-violet-7); }
+.hljs-built_in { color: var(--mantine-color-yellow-8); }
+.hljs-comment { color: var(--mantine-color-gray-5); }
+.hljs-title { color: var(--mantine-color-blue-7); }
+.hljs-params { color: var(--mantine-color-gray-7); }
+
+/* hljs token colors — dark */
+[data-mantine-color-scheme="dark"] .hljs { background: var(--mantine-color-dark-8); color: var(--mantine-color-gray-3); }
+[data-mantine-color-scheme="dark"] .hljs-string { color: var(--mantine-color-green-4); }
+[data-mantine-color-scheme="dark"] .hljs-number { color: var(--mantine-color-orange-4); }
+[data-mantine-color-scheme="dark"] .hljs-literal { color: var(--mantine-color-orange-4); }
+[data-mantine-color-scheme="dark"] .hljs-attr { color: var(--mantine-color-violet-3); }
+[data-mantine-color-scheme="dark"] .hljs-keyword { color: var(--mantine-color-violet-3); }
+[data-mantine-color-scheme="dark"] .hljs-built_in { color: var(--mantine-color-yellow-4); }
+[data-mantine-color-scheme="dark"] .hljs-comment { color: var(--mantine-color-dark-3); }
+[data-mantine-color-scheme="dark"] .hljs-title { color: var(--mantine-color-blue-3); }
+[data-mantine-color-scheme="dark"] .hljs-params { color: var(--mantine-color-dark-2); }

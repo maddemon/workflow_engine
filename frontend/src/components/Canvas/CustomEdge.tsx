@@ -117,6 +117,7 @@ function CustomEdgeComponent({
     : hovered
       ? 'var(--edge-color-hover)'
       : 'var(--edge-color)';
+  const strokeWidth = selected || hovered ? 2 : 1.5;
 
   return (
     <>
@@ -129,20 +130,17 @@ function CustomEdgeComponent({
           strokeWidth={20}
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
-          style={{ cursor: 'pointer' }}
+          className="edge-hitarea"
         />
       ))}
       {edgePaths.map((path, index) => (
         <path
           key={`edge-${index}`}
           d={path}
-          className="react-flow__edge-path"
+          className="react-flow__edge-path edge-visible-path"
           style={{
-            fill: 'none',
-            strokeWidth: selected || hovered ? 2.5 : 2,
+            strokeWidth,
             stroke: strokeColor,
-            pointerEvents: 'none',
-            transition: 'stroke 0.15s, stroke-width 0.15s',
           }}
           markerEnd={index === edgePaths.length - 1 ? `url(#edge-arrow-${id})` : undefined}
         />
@@ -163,21 +161,10 @@ function CustomEdgeComponent({
       {label && (
         <EdgeLabelRenderer>
           <div
+            className="nodrag nopan edge-label"
             style={{
-              position: 'absolute',
               transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
-              fontSize: 10,
-              color: 'var(--edge-label-color)',
-              background: 'var(--edge-label-bg)',
-              pointerEvents: 'none',
-              padding: '2px 8px',
-              borderRadius: 10,
-              fontWeight: 600,
-              letterSpacing: '0.02em',
-              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
-              border: '1px solid var(--mantine-color-gray-2)',
             }}
-            className="nodrag nopan"
           >
             {label}
           </div>

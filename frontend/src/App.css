@@ -54,7 +54,11 @@
 /* ===== Custom Node ===== */
 
 .custom-node-wrapper {
+  position: relative;
+  overflow: visible;
   transition: filter 0.15s;
+  width: var(--node-w);
+  height: var(--node-h);
 }
 
 .custom-node-wrapper:hover {
@@ -64,13 +68,15 @@
 .custom-node {
   position: relative;
   background: var(--node-bg);
-  border: 1.5px solid var(--mantine-color-gray-3);
+  border: 1.5px solid var(--node-bc, var(--mantine-color-gray-3));
   border-radius: 10px;
   transition: box-shadow 0.2s, border-color 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+  box-shadow: var(--node-bs, 0 1px 3px rgba(0, 0, 0, 0.04));
+  width: var(--node-w);
+  height: var(--node-h);
 }
 
 [data-mantine-color-scheme="dark"] .custom-node {
@@ -94,6 +100,8 @@
   display: flex;
   align-items: center;
   justify-content: center;
+  width: 48px;
+  height: 48px;
 }
 
 .node-body {
@@ -102,9 +110,53 @@
   max-width: 72px;
 }
 
+.node-body-abs {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  text-align: center;
+  white-space: nowrap;
+}
+
+.node-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  letter-spacing: -0.01em;
+}
+
+.node-subtitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-top: 1px;
+}
+
+.node-badge {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 11;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+  border: 1.5px solid var(--node-bg);
+  line-height: 0;
+  padding: 0;
+}
+
+.node-badge svg {
+  display: block;
+  margin: -1px 0 0 -1px;
+}
+
 /* 状态边框 */
 .custom-node-wrapper.status-success .custom-node {
-  border-color: var(--status-success);
+  border-color: rgba(34, 197, 94, 0.3);
 }
 
 .custom-node-wrapper.status-error .custom-node {
@@ -174,6 +226,33 @@
 .custom-node-wrapper:hover .port-input { background: var(--port-hover-input) !important; }
 .custom-node-wrapper:hover .port-output { background: var(--port-hover-output) !important; }
 
+/* ===== Custom Edge ===== */
+
+.edge-hitarea {
+  cursor: pointer;
+}
+
+.edge-visible-path {
+  fill: none;
+  pointer-events: none;
+  transition: stroke 0.15s, stroke-width 0.15s;
+}
+
+.edge-label {
+  position: absolute;
+  font-size: 10px;
+  color: var(--edge-label-color);
+  background: var(--edge-label-bg);
+  pointer-events: none;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  border: 1px solid var(--edge-label-border);
+  border-right: none;
+}
+
 /* ===== Node Card (NodePanel) ===== */
 
 .node-card {
@@ -200,20 +279,6 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
-}
-
-/* ===== Output JSON ===== */
-
-.output-json {
-  background: var(--output-json-bg);
-  color: var(--output-json-color);
-  padding: 8px 10px;
-  border-radius: 6px;
-  font-family: var(--mantine-font-family-monospace);
-  font-size: 11px;
-  white-space: pre-wrap;
-  word-break: break-all;
-  line-height: 1.5;
 }
 
 /* ===== Workflow Card ===== */
@@ -253,32 +318,6 @@
   border-bottom-color: var(--mantine-color-dark-5);
 }
 
-.header-left {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.header-logo {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  cursor: pointer;
-}
-
-.header-divider {
-  width: 1px;
-  height: 18px;
-  background: var(--mantine-color-gray-3);
-  flex-shrink: 0;
-}
-
-.header-right {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
 .nav-item {
   border: none;
   background: none;
@@ -299,12 +338,6 @@
   background: var(--mantine-color-gray-1);
   color: var(--mantine-color-text);
   font-weight: 500;
-}
-
-.nav-item-inner {
-  display: flex;
-  align-items: center;
-  gap: 4px;
 }
 
 [data-mantine-color-scheme="dark"] .nav-item:hover {
