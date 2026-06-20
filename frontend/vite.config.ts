@@ -16,4 +16,8 @@ export default defineConfig({
   build: {
     outDir: "../backend/FlowEngine.Host/wwwroot",
   },
+  test: {
+    environment: "jsdom",
+    globals: true,
+  },
 })
