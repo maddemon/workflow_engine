@@ -59,10 +59,10 @@ Flow Engine 是一个节点可热插拔的工作流自动化引擎。后端用 C
 | 文档                                                                              | 内容               |
 | ------------------------------------------------------------------------------- | ---------------- |
 | [AGENTS.md](../AGENTS.md)                                                       | AI Agent 路由文档    |
-| [.agents/rules/project-rules.md](../.agents/rules/project-rules.md)             | 项目总规则与协作流程       |
-| [.agents/rules/backend-code-rules.md](../.agents/rules/backend-code-rules.md)   | 后端代码规范、目录结构、错误示范 |
-| [.agents/rules/frontend-code-rules.md](../.agents/rules/frontend-code-rules.md) | 前端代码规范、目录结构、错误示范 |
-| [.agents/rules/docs-rules.md](../.agents/rules/docs-rules.md)                   | 文档规范与开发计划实施指南    |
+| [.agents/rules/project-rules.md](../.agents/rules/project-rules.md)              | 项目总规则与协作流程       |
+| [.agents/rules/backend-code-rules.md](../.agents/rules/backend-code-rules.md)    | 后端代码规范、目录结构、错误示范 |
+| [.agents/rules/frontend-code-rules.md](../.agents/rules/frontend-code-rules.md)  | 前端代码规范、目录结构、错误示范 |
+| [.agents/rules/docs-rules.md](../.agents/rules/docs-rules.md)                    | 文档规范与开发计划实施指南    |
 
 ## 待补充文档
 

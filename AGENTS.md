@@ -2,6 +2,10 @@
 
 # Flow Engine —— 工作流自动化引擎
 
+规则文件已按标准放在 `.agents/rules/`，通过 `opencode.json` 自动加载。规则文件含 `globs` 前 matter，编辑对应文件类型时会自动引入。
+
+**重要：`.agents/` 是唯一的规则和技能来源。** 其他 AI 工具（Cursor、Claude Code、Windsurf 等）的配置目录（`.cursor/`、`.claude/` 等）已被 `.gitignore` 禁止提交，不应在其中放置规则或技能文件。如需追加规则，一律放入 `.agents/rules/`。
+
 ## 1. 快速定位
 
 | 你想了解什么 | 读哪个文件 |

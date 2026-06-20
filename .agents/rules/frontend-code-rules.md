@@ -1,3 +1,7 @@
+---
+description: 前端 React / TypeScript 代码规范、目录结构、组件设计、状态管理、API 请求、样式、测试、Hooks 规范。
+globs: ["**/*.ts", "**/*.tsx"]
+---
 > 前端代码规范。所有参与本项目的 AI Agent 与协作者在修改前端代码前必须阅读。
 
 # 前端代码规范

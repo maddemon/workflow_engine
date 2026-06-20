@@ -361,3 +361,21 @@ docs/chats/
 docs/reviews/
 /backend/FlowEngine.Host/wwwroot
 .mimocode/
+
+# AI tool config directories — 统一使用 .opencode/，禁止其他工具目录被提交
+# 参见 AGENTS.md 说明
+.claude/
+.cursor/
+.windsurf/
+.continue/
+.aider/
+.copilot-instructions/
+.codebuddy/
+.qoder/
+opencode.json
+plugins/*.dll
+.opencode/
+plugins/FlowEngine.Core.dll
+plugins/FlowEngine.Plugins.Standard.dll
+backend/FlowEngine.Host/flowengine.db-shm
+backend/FlowEngine.Host/flowengine.db-wal
