@@ -32,8 +32,6 @@ export function ParameterPanel() {
   const updateNodeParameters = useWorkflowStore((s) => s.updateNodeParameters);
   const updateNodeName = useWorkflowStore((s) => s.updateNodeName);
   const validationErrors = useWorkflowStore((s) => s.validationErrors);
-  const workflowName = useWorkflowStore((s) => s.workflowName);
-  const setWorkflowName = useWorkflowStore((s) => s.setWorkflowName);
   const isActive = useWorkflowStore((s) => s.isActive);
   const setIsActive = useWorkflowStore((s) => s.setIsActive);
   const styleSettings = useWorkflowStore((s) => s.styleSettings);

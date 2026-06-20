@@ -153,7 +153,7 @@ export interface CreateWorkflowDto {
 export interface UpdateWorkflowDto {
   name: string;
   isActive: boolean;
-  styleSettings: string | null;
+  styleSettings: WorkflowStyleSettings | null;
   nodes: NodeInstance[];
   connections: Connection[];
 }

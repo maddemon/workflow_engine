@@ -61,6 +61,7 @@ interface WorkflowState {
   setStyleSettings: (settings: WorkflowStyleSettings) => void;
   loadWorkflow: (id: string) => Promise<void>;
   saveWorkflow: () => Promise<boolean>;
+  deleteWorkflow: (id: string) => Promise<void>;
   newWorkflow: () => void;
   validateAllNodes: () => boolean;
   canUndo: boolean;
@@ -306,6 +307,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         canUndo: false,
         canRedo: false,
       });
+    },
+
+    deleteWorkflow: async (id: string) => {
+      await api.deleteWorkflow(id);
     },
 
     validateAllNodes: () => {
