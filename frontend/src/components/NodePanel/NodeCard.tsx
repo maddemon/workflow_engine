@@ -1,5 +1,5 @@
 import { memo } from 'react';
-import { Group, Text } from '@mantine/core';
+import { Text } from '@mantine/core';
 import type { NodeTypeDescriptor } from '../../types/workflow.ts';
 import { NodeIcon } from '../common/NodeIcon.tsx';
 import { getNodeCategoryColor } from '../../theme.ts';
@@ -24,11 +24,12 @@ function NodeCardComponent({ descriptor, onClick }: NodeCardProps) {
       onDragStart={onDragStart}
       onClick={() => onClick(descriptor.typeName)}
       title={`Drag to canvas or click to add ${descriptor.displayName}`}
+      style={{ '--node-category-color': categoryColor } as React.CSSProperties}
     >
-      <Group gap="xs" wrap="nowrap">
-        <NodeIcon icon={descriptor.icon} size={16} color={categoryColor} />
-        <Text size="sm" flex={1} truncate>{descriptor.displayName}</Text>
-      </Group>
+      <div className="node-card-icon">
+        <NodeIcon icon={descriptor.icon} size={13} color={categoryColor} />
+      </div>
+      <Text size="xs" flex={1} truncate ml="xs" fw={500}>{descriptor.displayName}</Text>
     </div>
   );
 }

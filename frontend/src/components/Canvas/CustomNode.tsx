@@ -16,7 +16,7 @@ type PortLayout = {
 };
 
 function computeOutputWidth(n: number): number {
-  return Math.max(80, n * 32);
+  return Math.max(68, n * 32);
 }
 
 function distributePercent(n: number, i: number): number {
@@ -50,6 +50,13 @@ function computePortLayouts(
 
   return layouts;
 }
+
+const statusBadgeColor: Record<string, string> = {
+  entry: 'var(--status-waiting)',
+  running: 'var(--status-running)',
+  success: 'var(--status-success)',
+  error: 'var(--status-error)',
+};
 
 function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
   const ports = useMemo(() => computeDynamicPorts(data), [data]);
@@ -92,6 +99,11 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
     });
   }
 
+  const badgeKey = data.isEntry && (!status || status === 'idle') ? 'entry' : (status ?? '');
+  const badgeColor = statusBadgeColor[badgeKey];
+
+  const iconBoxSize = 48;
+
   return (
     <div
       className={`custom-node-wrapper${statusCls}${selected ? ' selected' : ''}`}
@@ -103,36 +115,34 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
           width: nodeWidth,
           height: nodeHeight,
           borderColor: selected ? categoryColor : undefined,
-          boxShadow: selected ? `0 0 0 2px ${categoryColor}33` : undefined,
+          boxShadow: selected
+            ? `0 0 0 2px color-mix(in srgb, ${categoryColor} 20%, transparent), 0 4px 12px color-mix(in srgb, ${categoryColor} 15%, transparent)`
+            : undefined,
         }}
       >
-        <div className="node-icon-box" style={{ width: nodeWidth - 8 }}>
-          <NodeIcon icon={data.descriptor.icon} size={28} color={categoryColor} />
+        <div
+          className="node-icon-box"
+          style={{ width: iconBoxSize, height: iconBoxSize }}
+        >
+          <NodeIcon icon={data.descriptor.icon} size={26} color={categoryColor} />
         </div>
 
-        {/* 状态指示器：入口节点=等待，运行中=转圈，成功=勾，失败=叉 */}
-        {(data.isEntry || (status && status !== 'idle')) && (
+        {badgeColor && (
           <div
             style={{
               position: 'absolute',
-              top: 3,
-              right: 3,
+              top: 2,
+              right: 2,
               width: 14,
               height: 14,
               borderRadius: '50%',
+              background: badgeColor,
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'center',
               zIndex: 11,
-              ...(data.isEntry && (!status || status === 'idle')
-                ? { background: '#fab005' }
-                : status === 'running'
-                  ? { background: '#339af0' }
-                  : status === 'success'
-                    ? { background: '#40c057' }
-                    : status === 'error'
-                      ? { background: '#fa5252' }
-                      : {}),
+              boxShadow: '0 1px 2px rgba(0, 0, 0, 0.15)',
+              border: '1.5px solid var(--node-bg)',
             }}
           >
             {data.isEntry && (!status || status === 'idle') && <Play size={7} color="#fff" fill="#fff" style={{ marginLeft: 1 }} />}
@@ -179,11 +189,11 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
         className="node-body"
         style={{
           position: 'absolute',
-          top: nodeHeight + 5,
+          top: nodeHeight + 6,
           left: 0,
           right: 0,
           textAlign: 'center',
-          maxWidth: nodeWidth,
+          maxWidth: nodeWidth + 20,
         }}
       >
         <Text
@@ -193,6 +203,7 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
             overflow: 'hidden',
             textOverflow: 'ellipsis',
             whiteSpace: 'nowrap',
+            letterSpacing: '-0.01em',
           }}
         >
           {data.name}
@@ -206,6 +217,7 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
               overflow: 'hidden',
               textOverflow: 'ellipsis',
               whiteSpace: 'nowrap',
+              marginTop: 1,
             }}
           >
             {subtitle}

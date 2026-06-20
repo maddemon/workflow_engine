@@ -14,12 +14,13 @@ export function ExecutionButton() {
   return (
     <Button
       color="green"
-      leftSection={<Play size={16} />}
+      leftSection={<Play size={12} />}
       onClick={() => workflowId && execute(workflowId)}
       disabled={disabled}
       loading={loading}
+      size="compact-xs"
     >
-      {loading ? 'Executing...' : 'Execute'}
+      {loading ? 'Running...' : 'Execute'}
     </Button>
   );
 }

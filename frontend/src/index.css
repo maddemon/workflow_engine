@@ -9,3 +9,54 @@ html, body {
   height: 100%;
   overflow: hidden;
 }
+
+/* ===== CSS 变量体系 ===== */
+
+:root {
+  --bg-canvas: var(--mantine-color-gray-0);
+  --bg-panel: var(--mantine-color-white);
+  --bg-header: var(--mantine-color-white);
+  --bg-page: var(--mantine-color-gray-1);
+  --node-bg: var(--mantine-color-white);
+  --node-card-bg: transparent;
+  --node-card-bg-hover: var(--mantine-color-gray-1);
+  --node-card-border-hover: var(--mantine-color-gray-3);
+  --node-icon-bg: transparent;
+  --port-connected: var(--mantine-color-gray-5);
+  --port-hover-input: var(--mantine-color-green-6);
+  --port-hover-output: var(--mantine-color-blue-6);
+  --edge-color: var(--mantine-color-gray-5);
+  --edge-color-hover: var(--mantine-color-blue-6);
+  --edge-label-bg: rgba(255, 255, 255, 0.9);
+  --edge-label-color: var(--mantine-color-gray-6);
+  --status-success: var(--mantine-color-green-6);
+  --status-error: var(--mantine-color-red-6);
+  --status-running: var(--mantine-color-blue-6);
+  --status-waiting: var(--mantine-color-yellow-6);
+  --node-category-http: var(--mantine-color-blue-6);
+  --node-category-core: var(--mantine-color-violet-6);
+  --node-category-utility: var(--mantine-color-gray-6);
+  --node-category-entry: var(--mantine-color-violet-6);
+  --node-category-unknown: var(--mantine-color-gray-5);
+  --output-json-bg: #1e293b;
+  --output-json-color: #e2e8f0;
+}
+
+[data-mantine-color-scheme="dark"] {
+  --bg-canvas: #1a1b1e;
+  --bg-panel: #25262b;
+  --bg-header: #25262b;
+  --bg-page: #141517;
+  --node-bg: #25262b;
+  --node-card-bg-hover: var(--mantine-color-gray-8);
+  --node-card-border-hover: var(--mantine-color-gray-6);
+  --edge-label-bg: rgba(37, 38, 43, 0.9);
+  --edge-label-color: var(--mantine-color-gray-2);
+  --node-category-http: var(--mantine-color-blue-5);
+  --node-category-core: var(--mantine-color-violet-5);
+  --node-category-utility: var(--mantine-color-gray-4);
+  --node-category-entry: var(--mantine-color-violet-5);
+  --node-category-unknown: var(--mantine-color-gray-4);
+  --output-json-bg: var(--mantine-color-dark-9);
+  --output-json-color: var(--mantine-color-gray-1);
+}

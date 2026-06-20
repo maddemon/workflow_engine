@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { TextInput, ActionIcon, Group, Text, Paper, Stack } from '@mantine/core';
+import { TextInput, ActionIcon, Group, Text, Stack } from '@mantine/core';
 import { Plus, Trash, AlertTriangle } from 'lucide-react';
+import { InfoTooltip } from './InfoTooltip.tsx';
 import type { ParameterDefinition } from '../../../types/workflow.ts';
 
 interface KeyValueFieldProps {
@@ -48,7 +49,6 @@ export function KeyValueField({ definition, value, onChange, error }: KeyValueFi
     setEntries(parseJsonToEntries(String(value ?? '')));
   }, [value]);
 
-  // 检测重复 Key
   const duplicateKeys = useMemo(() => {
     const seen = new Map<string, number>();
     const duplicates = new Set<number>();
@@ -78,60 +78,70 @@ export function KeyValueField({ definition, value, onChange, error }: KeyValueFi
   }, [updateEntries]);
 
   const handleAddEntry = useCallback(() => {
-    updateEntries([...entriesRef.current, { key: '', value: '' }]);
-  }, [updateEntries]);
+    setEntries((prev) => {
+      const next = [...prev, { key: '', value: '' }];
+      onChange(entriesToJson(next));
+      return next;
+    });
+  }, [onChange]);
 
   const handleRemoveEntry = useCallback((index: number) => {
-    updateEntries(entriesRef.current.filter((_, i) => i !== index));
-  }, [updateEntries]);
+    setEntries((prev) => {
+      const next = prev.filter((_, i) => i !== index);
+      onChange(entriesToJson(next));
+      return next;
+    });
+  }, [onChange]);
 
   return (
     <div>
       <Group justify="space-between" gap="xs" mb={4}>
-        <Text size="sm" fw={500}>
-          {definition.displayName}
-          {definition.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
-        </Text>
+        <Group gap={4}>
+          <Text size="xs" fw={400}>
+            {definition.displayName}
+            {definition.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
+          </Text>
+          {definition.description && <InfoTooltip label={definition.description} />}
+        </Group>
         <ActionIcon variant="subtle" color="blue" onClick={handleAddEntry} title="Add entry" size="sm">
-          <Plus size={16} />
+          <Plus size={14} />
         </ActionIcon>
       </Group>
 
-      <Stack gap="xs">
+      <Stack gap={4}>
         {duplicateKeys.size > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '6px', padding: '6px 10px', backgroundColor: 'var(--mantine-color-yellow-0)', borderRadius: '4px', border: '1px solid var(--mantine-color-yellow-3)' }}>
-            <AlertTriangle size={14} color="var(--mantine-color-yellow-7)" />
-            <Text size="xs" c="yellow.9">Duplicate keys detected. Later values will override earlier ones.</Text>
-          </div>
+          <Group gap="xs" p="xs" style={{ backgroundColor: 'var(--mantine-color-yellow-0)', borderRadius: 4 }}>
+            <AlertTriangle size={12} color="var(--mantine-color-yellow-7)" />
+            <Text size="xs" c="yellow.9">Duplicate keys detected.</Text>
+          </Group>
         )}
         {entries.map((entry, index) => (
-          <Paper key={index} withBorder p="xs" radius="sm" style={duplicateKeys.has(index) ? { borderColor: 'var(--mantine-color-red-4)' } : undefined}>
-            <Group gap="xs" align="flex-start">
-              <TextInput
-                placeholder="Key"
-                value={entry.key}
-                onChange={(e) => handleEntryChange(index, 'key', e.target.value)}
-                size="xs"
-                styles={{ root: { flex: 1 }, input: duplicateKeys.has(index) ? { borderColor: 'var(--mantine-color-red-5)' } : undefined }}
-              />
-              <TextInput
-                placeholder="Value"
-                value={entry.value}
-                onChange={(e) => handleEntryChange(index, 'value', e.target.value)}
-                size="xs"
-                styles={{ root: { flex: 2 } }}
-              />
-              <ActionIcon
-                variant="subtle"
-                color="red"
-                onClick={() => handleRemoveEntry(index)}
-                title="Remove entry"
-                size="sm"
-              >
-                <Trash size={14} />
-              </ActionIcon>
-            </Group>
-          </Paper>
+          <Group key={index} gap="xs" align="center">
+            <TextInput
+              placeholder="Key"
+              value={entry.key}
+              onChange={(e) => handleEntryChange(index, 'key', e.target.value)}
+              size="xs"
+              style={{ flex: 1 }}
+              error={duplicateKeys.has(index)}
+            />
+            <TextInput
+              placeholder="Value"
+              value={entry.value}
+              onChange={(e) => handleEntryChange(index, 'value', e.target.value)}
+              size="xs"
+              style={{ flex: 2 }}
+            />
+            <ActionIcon
+              variant="subtle"
+              color="red"
+              onClick={() => handleRemoveEntry(index)}
+              title="Remove entry"
+              size="sm"
+            >
+              <Trash size={12} />
+            </ActionIcon>
+          </Group>
         ))}
 
         {entries.length === 0 && (
@@ -141,9 +151,6 @@ export function KeyValueField({ definition, value, onChange, error }: KeyValueFi
         )}
       </Stack>
 
-      {definition.description && !error && (
-        <Text size="xs" c="dimmed" mt={4}>{definition.description}</Text>
-      )}
       {error && (
         <Text size="xs" c="red" mt={4}>{error}</Text>
       )}

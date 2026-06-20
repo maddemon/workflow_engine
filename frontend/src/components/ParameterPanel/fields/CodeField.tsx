@@ -1,4 +1,5 @@
-import { Textarea } from '@mantine/core';
+import { Textarea, Group, Text } from '@mantine/core';
+import { InfoTooltip } from './InfoTooltip.tsx';
 import type { ParameterDefinition } from '../../../types/workflow.ts';
 
 interface CodeFieldProps {
@@ -10,18 +11,24 @@ interface CodeFieldProps {
 
 export function CodeField({ definition, value, onChange, error }: CodeFieldProps) {
   return (
-    <Textarea
-      label={definition.displayName}
-      description={definition.description ?? undefined}
-      error={error}
-      required={definition.required}
-      value={String(value ?? '')}
-      onChange={(e) => onChange(e.target.value)}
-      autosize
-      minRows={6}
-      maxRows={20}
-      spellCheck={false}
-      styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)', fontSize: 12, minHeight: 160 } }}
-    />
+    <div>
+      <Group gap={4} mb={4}>
+        <Text size="xs" fw={400}>
+          {definition.displayName}
+          {definition.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
+        </Text>
+        {definition.description && <InfoTooltip label={definition.description} />}
+      </Group>
+      <Textarea
+        error={error}
+        value={String(value ?? '')}
+        onChange={(e) => onChange(e.target.value)}
+        autosize
+        minRows={6}
+        maxRows={20}
+        spellCheck={false}
+        styles={{ input: { fontFamily: 'var(--mantine-font-family-monospace)', fontSize: 12, minHeight: 160 } }}
+      />
+    </div>
   );
 }

@@ -1,4 +1,5 @@
-import { Select } from '@mantine/core';
+import { Select, Group, Text } from '@mantine/core';
+import { InfoTooltip } from './InfoTooltip.tsx';
 import type { ParameterDefinition } from '../../../types/workflow.ts';
 
 interface ResourceFieldProps {
@@ -8,25 +9,25 @@ interface ResourceFieldProps {
   error?: string;
 }
 
-/**
- * 动态资源选择，根据 resourceType 调用不同 API 拉取选项。
- * 本次先做静态选项框架，动态拉取后续按需扩展。
- */
 export function ResourceField({ definition, value, onChange, error }: ResourceFieldProps) {
-  // TODO: 根据 definition.resourceType 调用对应 API 拉取动态选项（如企业微信部门/应用/标签）
-  // 当前使用 definition.options 作为静态选项框架
   const options = definition.options ?? [];
   return (
-    <Select
-      label={definition.displayName}
-      description={definition.description ?? `Select a ${definition.resourceType ?? 'resource'}.`}
-      error={error}
-      required={definition.required}
-      value={String(value ?? '')}
-      onChange={(v) => onChange(v ?? '')}
-      placeholder={`-- Select ${definition.resourceType ?? 'resource'} --`}
-      data={options.map((opt) => ({ label: opt.label, value: opt.value }))}
-      searchable
-    />
+    <div>
+      <Group gap={4} mb={4}>
+        <Text size="xs" fw={400}>
+          {definition.displayName}
+          {definition.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
+        </Text>
+        <InfoTooltip label={definition.description ?? `Select a ${definition.resourceType ?? 'resource'}.`} />
+      </Group>
+      <Select
+        error={error}
+        value={String(value ?? '')}
+        onChange={(v) => onChange(v ?? '')}
+        placeholder={`-- Select ${definition.resourceType ?? 'resource'} --`}
+        data={options.map((opt) => ({ label: opt.label, value: opt.value }))}
+        searchable
+      />
+    </div>
   );
 }

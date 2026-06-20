@@ -1,50 +1,114 @@
-/* ===== Reset & Base ===== */
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-:root {
-  --color-text-secondary: #64748b;
-  --color-primary: #3b82f6;
-  --color-success: #22c55e;
-  --font-mono: ui-monospace, Consolas, "Courier New", monospace;
-}
-
-body {
-  font-family:
-    system-ui,
-    -apple-system,
-    "Segoe UI",
-    Roboto,
-    sans-serif;
-  font-size: 13px;
-  color: #1e293b;
-  background: #f8f9fa;
-}
-
-#root {
-  width: 100%;
-  height: 100vh;
-}
-
 /* ===== ReactFlow 容器 ===== */
 .workflow-canvas {
   position: absolute;
   inset: 0;
+  background: var(--bg-canvas);
 }
 
-/* ===== Custom Node (n8n style: icon square + label below) ===== */
+.canvas-toolbar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--mantine-color-white);
+  border-bottom: 1px solid var(--mantine-color-gray-2);
+  padding: 4px 8px;
+  z-index: 5;
+}
 
+[data-mantine-color-scheme="dark"] .canvas-toolbar {
+  background: var(--mantine-color-dark-7);
+  border-bottom-color: var(--mantine-color-dark-5);
+}
+
+.react-flow {
+  --xy-background-color: var(--bg-canvas) !important;
+}
+
+[data-mantine-color-scheme="dark"] .react-flow {
+  background: var(--bg-canvas);
+}
+
+[data-mantine-color-scheme="dark"] .react-flow__minimap {
+  background: var(--mantine-color-dark-8);
+  border-color: var(--mantine-color-dark-5);
+  border-radius: 6px;
+}
+
+[data-mantine-color-scheme="dark"] .react-flow__controls {
+  border-color: var(--mantine-color-dark-5);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+[data-mantine-color-scheme="dark"] .react-flow__controls-button {
+  background: var(--mantine-color-dark-7);
+  border-color: var(--mantine-color-dark-5);
+  fill: var(--mantine-color-gray-3);
+}
+
+[data-mantine-color-scheme="dark"] .react-flow__controls-button:hover {
+  background: var(--mantine-color-dark-6);
+}
+
+/* ===== Custom Node ===== */
+
+.custom-node-wrapper {
+  transition: filter 0.15s;
+}
+
+.custom-node-wrapper:hover {
+  filter: brightness(1.02);
+}
+
+.custom-node {
+  position: relative;
+  background: var(--node-bg);
+  border: 1.5px solid var(--mantine-color-gray-3);
+  border-radius: 10px;
+  transition: box-shadow 0.2s, border-color 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+}
+
+[data-mantine-color-scheme="dark"] .custom-node {
+  border-color: var(--mantine-color-dark-4);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.custom-node-wrapper:hover .custom-node {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
+}
+
+[data-mantine-color-scheme="dark"] .custom-node-wrapper:hover .custom-node {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3) !important;
+}
+
+.custom-node-wrapper.selected .custom-node {
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3) !important;
+}
+
+.node-icon-box {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.node-body {
+  margin-top: 4px;
+  text-align: center;
+  max-width: 72px;
+}
+
+/* 状态边框 */
 .custom-node-wrapper.status-success .custom-node {
-  border-color: var(--color-success);
-  border-width: 2px;
+  border-color: var(--status-success);
 }
 
 .custom-node-wrapper.status-error .custom-node {
-  border-color: #fa5252;
-  border-width: 2px;
+  border-color: var(--status-error);
 }
 
 .custom-node-wrapper.status-running .custom-node {
@@ -55,14 +119,14 @@ body {
   content: '';
   position: absolute;
   inset: -3px;
-  border-radius: 10px;
+  border-radius: 12px;
   background: conic-gradient(
     from var(--gradient-angle, 0deg),
-    rgba(59, 130, 246, 1),
-    rgba(59, 130, 246, 0.2) 30%,
-    rgba(59, 130, 246, 0.2) 70%,
-    rgba(59, 130, 246, 1) 90%,
-    rgba(59, 130, 246, 1)
+    var(--status-running),
+    color-mix(in srgb, var(--status-running) 15%, transparent) 30%,
+    color-mix(in srgb, var(--status-running) 15%, transparent) 70%,
+    var(--status-running) 90%,
+    var(--status-running)
   );
   animation: spin-border 1.2s linear infinite;
   z-index: -1;
@@ -79,104 +143,174 @@ body {
 }
 
 .custom-node-wrapper.status-waiting .custom-node {
-  border-color: #fab005;
-  border-width: 2px;
+  border-color: var(--status-waiting);
 }
 
-/* 图标方块：节点的视觉主体 */
-.custom-node {
-  width: 64px;
-  height: 64px;
-  position: relative;
-  background: #fff;
-  border: 1px solid #e9ecef;
-  border-radius: 10px;
-  transition:
-    box-shadow 0.15s,
-    border-color 0.15s;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+.node-status-icon.status-success { color: var(--status-success); }
+.node-status-icon.status-error { color: var(--status-error); }
+.node-status-icon.status-running { color: var(--status-running); }
+.node-status-icon.status-waiting { color: var(--status-waiting); }
 
-.custom-node-wrapper:hover .custom-node {
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1) !important;
-}
+/* ===== Port Handle ===== */
 
-.node-icon-box {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 56px;
-  height: 56px;
-  border-radius: 8px;
-  background: transparent;
-}
-
-/* 标签区域：图标下方的名称、副标题等 */
-.node-body {
-  margin-top: 5px;
-  text-align: center;
-  max-width: 64px;
-}
-
-.node-status-icon.status-success { color: var(--color-success); }
-.node-status-icon.status-error { color: #fa5252; }
-.node-status-icon.status-running { color: var(--color-primary); }
-.node-status-icon.status-waiting { color: #fab005; }
-
-/* 连接点（Handle）：默认灰色有连线才显，hover 时全部显色 */
 .port-handle {
   width: 12px !important;
   height: 12px !important;
-  background: #ced4da !important;
-  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.15) !important;
   opacity: 0 !important;
   transition: opacity 0.15s, background 0.15s !important;
   z-index: 10 !important;
   cursor: crosshair !important;
+  border: 2px solid var(--bg-canvas) !important;
 }
 
 .port-handle.port-connected {
-  opacity: 0.55 !important;
+  opacity: 0.5 !important;
+  background: var(--port-connected) !important;
 }
 
 .custom-node-wrapper:hover .port-handle {
   opacity: 0.85 !important;
 }
-.custom-node-wrapper:hover .port-input { background: #40c057 !important; }
-.custom-node-wrapper:hover .port-output { background: #339af0 !important; }
+.custom-node-wrapper:hover .port-input { background: var(--port-hover-input) !important; }
+.custom-node-wrapper:hover .port-output { background: var(--port-hover-output) !important; }
 
-/* ===== Node Card (NodePanel 拖拽项) ===== */
+/* ===== Node Card (NodePanel) ===== */
+
 .node-card {
   display: flex;
   align-items: center;
-  padding: 6px 8px;
+  padding: 5px 8px;
   border-radius: 4px;
   cursor: grab;
-  transition:
-    background 0.15s,
-    border-color 0.15s;
+  transition: background 0.12s, border-color 0.12s;
   border: 1px solid transparent;
 }
 
 .node-card:hover {
-  background: #f1f5f9;
-  border-color: #e2e8f0;
+  background: var(--node-card-bg-hover);
+  border-color: var(--node-card-border-hover);
 }
 
 .node-card:active {
   cursor: grabbing;
 }
 
-/* ===== Output JSON (执行结果展示) ===== */
+.node-card-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+/* ===== Output JSON ===== */
+
 .output-json {
-  background: #1e293b;
-  color: #e2e8f0;
-  padding: 8px;
-  border-radius: 4px;
-  font-family: var(--font-mono);
+  background: var(--output-json-bg);
+  color: var(--output-json-color);
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-family: var(--mantine-font-family-monospace);
   font-size: 11px;
   white-space: pre-wrap;
   word-break: break-all;
+  line-height: 1.5;
+}
+
+/* ===== Workflow Card ===== */
+
+.workflow-card {
+  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+}
+
+.workflow-card:hover {
+  border-color: var(--mantine-color-blue-4);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  transform: translateY(-2px);
+}
+
+[data-mantine-color-scheme="dark"] .workflow-card:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
+}
+
+/* ===== Header ===== */
+
+.app-header {
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--mantine-color-white);
+  border-bottom: 1px solid var(--mantine-color-gray-2);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+  flex-shrink: 0;
+  padding: 0 12px;
+  position: relative;
+  z-index: 200;
+}
+
+[data-mantine-color-scheme="dark"] .app-header {
+  background: var(--mantine-color-dark-7);
+  border-bottom-color: var(--mantine-color-dark-5);
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-logo {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+
+.header-divider {
+  width: 1px;
+  height: 18px;
+  background: var(--mantine-color-gray-3);
+  flex-shrink: 0;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav-item {
+  border: none;
+  background: none;
+  cursor: pointer;
+  border-radius: 4px;
+  padding: 4px 8px;
+  transition: background 0.12s, color 0.12s;
+  color: var(--mantine-color-dimmed);
+  font: inherit;
+}
+
+.nav-item:hover {
+  background: var(--mantine-color-gray-1);
+  color: var(--mantine-color-text);
+}
+
+.nav-item.active {
+  background: var(--mantine-color-gray-1);
+  color: var(--mantine-color-text);
+  font-weight: 500;
+}
+
+.nav-item-inner {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+[data-mantine-color-scheme="dark"] .nav-item:hover {
+  background: var(--mantine-color-dark-6);
+}
+
+[data-mantine-color-scheme="dark"] .nav-item.active {
+  background: var(--mantine-color-dark-6);
 }

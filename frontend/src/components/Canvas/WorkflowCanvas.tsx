@@ -13,6 +13,7 @@ import { useCallback, useEffect, useRef } from "react"
 import { useWorkflowStore } from "../../stores/workflowStore.ts"
 import { CustomEdge } from "./CustomEdge.tsx"
 import { CustomNode } from "./CustomNode.tsx"
+import { CanvasToolbar } from "./CanvasToolbar.tsx"
 
 const nodeTypes = { workflow: CustomNode }
 const edgeTypes = { workflow: CustomEdge }
@@ -40,7 +41,8 @@ export function WorkflowCanvas() {
 
   const onConnect = useCallback(
     (params: Connection) => {
-      let { source, sourceHandle, target, targetHandle } = params
+      const { source, sourceHandle, target } = params
+      let { targetHandle } = params
 
       // 禁止自连接
       if (source === target) {
@@ -141,25 +143,28 @@ export function WorkflowCanvas() {
   )
 
   return (
-    <div ref={reactFlowWrapper} className="workflow-canvas">
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        onNodesChange={onNodesChange}
-        onEdgesChange={onEdgesChange}
-        onConnect={onConnect}
-        onNodeClick={onNodeClick}
-        onPaneClick={onPaneClick}
-        onDragOver={onDragOver}
-        onDrop={onDrop}
-        nodeTypes={nodeTypes}
-        edgeTypes={edgeTypes}
-        defaultEdgeOptions={defaultEdgeOptions}
-      >
-        <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
-        <Controls />
-        <MiniMap />
-      </ReactFlow>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      <CanvasToolbar />
+      <div ref={reactFlowWrapper} className="workflow-canvas">
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          onNodesChange={onNodesChange}
+          onEdgesChange={onEdgesChange}
+          onConnect={onConnect}
+          onNodeClick={onNodeClick}
+          onPaneClick={onPaneClick}
+          onDragOver={onDragOver}
+          onDrop={onDrop}
+          nodeTypes={nodeTypes}
+          edgeTypes={edgeTypes}
+          defaultEdgeOptions={defaultEdgeOptions}
+        >
+          <Background variant={BackgroundVariant.Dots} gap={16} size={1} />
+          <Controls />
+          <MiniMap />
+        </ReactFlow>
+      </div>
     </div>
   )
 }

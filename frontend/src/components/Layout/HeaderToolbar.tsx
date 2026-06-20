@@ -1,87 +1,82 @@
 import { useState } from 'react';
-import { AppShell, Group, TextInput, Badge, Button, ActionIcon, Tooltip, Text } from '@mantine/core';
-import { Undo2, Redo2, Save, FilePlus, Key } from 'lucide-react';
-import { useWorkflowStore } from '../../stores/workflowStore.ts';
-import { ExecutionButton } from '../ExecutionPanel/ExecutionButton.tsx';
+import { ActionIcon, Tooltip, Text, useComputedColorScheme, useMantineColorScheme, Avatar, Menu, Box, Anchor } from '@mantine/core';
+import { Workflow, Sun, Moon, User, Bell, Key, Home, Settings, BarChart3 } from 'lucide-react';
+import { Link, useLocation } from 'react-router-dom';
 import { CredentialListModal } from '../CredentialPanel/CredentialListModal.tsx';
 
-/**
- * 顶部工具栏：工作流名称、Undo/Redo、Save、Execute。
- */
-export function HeaderToolbar() {
-  const workflowName = useWorkflowStore((s) => s.workflowName);
-  const setWorkflowName = useWorkflowStore((s) => s.setWorkflowName);
-  const isDirty = useWorkflowStore((s) => s.isDirty);
-  const saving = useWorkflowStore((s) => s.saving);
-  const saveWorkflow = useWorkflowStore((s) => s.saveWorkflow);
-  const newWorkflow = useWorkflowStore((s) => s.newWorkflow);
-  const canUndo = useWorkflowStore((s) => s.canUndo);
-  const canRedo = useWorkflowStore((s) => s.canRedo);
-  const undo = useWorkflowStore((s) => s.undo);
-  const redo = useWorkflowStore((s) => s.redo);
-  const validationErrors = useWorkflowStore((s) => s.validationErrors);
-  const [credModalOpen, setCredModalOpen] = useState(false);
+const navItems = [
+  { label: 'Workflows', icon: Home, path: '/' },
+  { label: 'Executions', icon: BarChart3, path: '/executions' },
+  { label: 'Settings', icon: Settings, path: '/settings' },
+];
 
-  // validationErrors 改为字段级后，按 nodeId 聚合显示"错误节点数"
-  const errorNodeCount = Object.keys(validationErrors).length;
+export function HeaderToolbar() {
+  const [credModalOpen, setCredModalOpen] = useState(false);
+  const colorScheme = useComputedColorScheme('light');
+  const { toggleColorScheme } = useMantineColorScheme();
+  const location = useLocation();
 
   return (
     <>
-      <AppShell.Header>
-        <Group justify="space-between" h="100%" px="md" gap="sm" wrap="nowrap">
-          <Group gap="sm" wrap="nowrap">
-            <Button
-              variant="default"
-              leftSection={<FilePlus size={16} />}
-              onClick={newWorkflow}
-              title="New Workflow"
-            >
-              New
-            </Button>
-            <Group gap="xs">
-              <Tooltip label="Undo (Ctrl+Z)" disabled={!canUndo}>
-                <ActionIcon variant="default" onClick={undo} disabled={!canUndo} aria-label="Undo">
-                  <Undo2 size={16} />
-                </ActionIcon>
-              </Tooltip>
-              <Tooltip label="Redo (Ctrl+Y)" disabled={!canRedo}>
-                <ActionIcon variant="default" onClick={redo} disabled={!canRedo} aria-label="Redo">
-                  <Redo2 size={16} />
-                </ActionIcon>
-              </Tooltip>
-            </Group>
-            <TextInput
-              variant="unstyled"
-              placeholder="Workflow name..."
-              value={workflowName}
-              onChange={(e) => setWorkflowName(e.target.value)}
-              w={260}
-              styles={{ input: { fontWeight: 600, fontSize: 14 } }}
-            />
-            {isDirty && (
-              <Text c="orange" fw={700} size="lg" component="span" title="Unsaved changes">
-                *
-              </Text>
-            )}
-            {errorNodeCount > 0 && (
-              <Badge color="red" variant="filled" title="Validation errors">
-                {errorNodeCount} error{errorNodeCount > 1 ? 's' : ''}
-              </Badge>
-            )}
-          </Group>
-          <Group gap="sm">
-            <Tooltip label="Manage Credentials">
-              <ActionIcon variant="default" onClick={() => setCredModalOpen(true)} aria-label="Credentials">
-                <Key size={16} />
+      <Box component="header" className="app-header">
+        <Box className="header-left">
+          <Anchor component={Link} to="/" underline="never" className="header-logo">
+            <Workflow size={18} style={{ color: 'var(--mantine-color-blue-6)' }} />
+            <Text fw={700} size="sm" style={{ letterSpacing: '-0.02em', color: 'inherit' }}>FlowEngine</Text>
+          </Anchor>
+          <Box className="header-divider" />
+          {navItems.map((item) => {
+            const active = item.path === '/'
+              ? location.pathname === '/' || location.pathname.startsWith('/workflow')
+              : location.pathname.startsWith(item.path);
+            return (
+              <Anchor
+                key={item.path}
+                component={Link}
+                to={item.path}
+                underline="never"
+                className={`nav-item${active ? ' active' : ''}`}
+              >
+                <Box className="nav-item-inner">
+                  <item.icon size={13} />
+                  <Text size="xs">{item.label}</Text>
+                </Box>
+              </Anchor>
+            );
+          })}
+        </Box>
+
+        <Box className="header-right">
+          <Tooltip label="Manage Credentials">
+            <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => setCredModalOpen(true)} aria-label="Credentials">
+              <Key size={16} />
+            </ActionIcon>
+          </Tooltip>
+          <Tooltip label={`Switch to ${colorScheme === 'dark' ? 'light' : 'dark'} mode`}>
+            <ActionIcon variant="subtle" color="gray" size="sm" onClick={toggleColorScheme} aria-label="Toggle color scheme">
+              {colorScheme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+            </ActionIcon>
+          </Tooltip>
+          <ActionIcon variant="subtle" color="gray" size="sm" aria-label="Notifications">
+            <Bell size={16} />
+          </ActionIcon>
+          <Menu shadow="md" width={180}>
+            <Menu.Target>
+              <ActionIcon variant="subtle" color="gray" size="lg" radius="sm" aria-label="Menu">
+                <Avatar size={24} radius="sm" color="blue" variant="filled">
+                  <User size={14} />
+                </Avatar>
               </ActionIcon>
-            </Tooltip>
-            <Button leftSection={<Save size={16} />} onClick={saveWorkflow} loading={saving}>
-              {saving ? 'Saving...' : 'Save'}
-            </Button>
-            <ExecutionButton />
-          </Group>
-        </Group>
-      </AppShell.Header>
+            </Menu.Target>
+            <Menu.Dropdown>
+              <Menu.Item>Profile</Menu.Item>
+              <Menu.Item>Settings</Menu.Item>
+              <Menu.Divider />
+              <Menu.Item color="red">Logout</Menu.Item>
+            </Menu.Dropdown>
+          </Menu>
+        </Box>
+      </Box>
       <CredentialListModal opened={credModalOpen} onClose={() => setCredModalOpen(false)} />
     </>
   );

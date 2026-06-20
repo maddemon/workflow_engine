@@ -13,17 +13,10 @@ export function WorkflowCard({ workflow, onClick, onDelete }: WorkflowCardProps)
     <Paper
       withBorder
       p="md"
-      radius="md"
-      style={{ cursor: 'pointer', transition: 'border-color 0.15s, box-shadow 0.15s' }}
+      radius="lg"
+      className="workflow-card"
+      style={{ cursor: 'pointer' }}
       onClick={() => onClick(workflow.id)}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.borderColor = 'var(--mantine-color-blue-4)';
-        e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.08)';
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.borderColor = '';
-        e.currentTarget.style.boxShadow = '';
-      }}
     >
       <Group justify="space-between" align="flex-start">
         <div style={{ flex: 1, minWidth: 0 }}>

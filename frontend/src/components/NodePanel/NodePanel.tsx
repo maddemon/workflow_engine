@@ -1,5 +1,6 @@
 import { useState, useMemo, useCallback } from 'react';
-import { Stack, TextInput, Text, Badge, UnstyledButton, Group, Box } from '@mantine/core';
+import { Stack, TextInput, Text, Badge, UnstyledButton, Group, Box, Divider } from '@mantine/core';
+import { Search, ChevronRight, ChevronDown } from 'lucide-react';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
 import { NodeCard } from './NodeCard.tsx';
 
@@ -42,38 +43,39 @@ export function NodePanel() {
   );
 
   return (
-    <Stack gap="sm" p="sm">
-      <Text fw={600} size="md">Nodes</Text>
+    <Stack gap="xs" p="xs">
+      <Text fw={600} size="xs" tt="uppercase" c="dimmed" style={{ letterSpacing: '0.05em' }}>
+        Nodes
+      </Text>
       <TextInput
-        placeholder="Search nodes..."
+        placeholder="Search..."
         value={search}
         onChange={(e) => setSearch(e.target.value)}
-        size="sm"
+        leftSection={<Search size={12} />}
       />
-      <Text size="xs" c="dimmed">
-        Drag a node to canvas, or click to add. Connect ports by dragging from an output dot to an input dot.
-      </Text>
 
-      <Stack gap="xs">
-        {Array.from(grouped.entries()).map(([category, types]) => (
+      <Stack gap="sm">
+        {Array.from(grouped.entries()).map(([category, types], idx) => (
           <Box key={category}>
+            {idx > 0 && <Divider mb="xs" />}
             <UnstyledButton
               w="100%"
               px="xs"
-              py={6}
+              py={4}
               onClick={() => toggleCategory(category)}
               style={{ borderRadius: 4 }}
             >
               <Group gap="xs" wrap="nowrap">
-                <Text size="xs" c="dimmed" style={{ width: 12 }}>
-                  {collapsed[category] ? '▶' : '▼'}
-                </Text>
-                <Text size="sm" fw={600} flex={1}>{category}</Text>
+                {collapsed[category]
+                  ? <ChevronRight size={10} color="var(--mantine-color-dimmed)" />
+                  : <ChevronDown size={10} color="var(--mantine-color-dimmed)" />
+                }
+                <Text size="xs" fw={600} flex={1}>{category}</Text>
                 <Badge size="xs" variant="light" color="gray">{types.length}</Badge>
               </Group>
             </UnstyledButton>
             {!collapsed[category] && (
-              <Stack gap={2} mt={2}>
+              <Stack gap={1} mt={2}>
                 {types.map((t) => (
                   <NodeCard key={t.typeName} descriptor={t} onClick={handleAddNode} />
                 ))}

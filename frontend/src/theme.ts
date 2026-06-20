@@ -1,25 +1,16 @@
 import { createTheme, type MantineColorsTuple } from '@mantine/core';
 
-/**
- * 节点分类色，用于节点卡片左侧色条与图标着色。
- * key 为 NodeTypeDescriptor.category，缺失时回退到 gray。
- */
-export const nodeCategoryColors: Record<string, string> = {
-  HTTP: '#3b82f6',
-  Core: '#8b5cf6',
-  Utility: '#64748b',
-  Entry: '#8b5cf6',
-  Unknown: '#94a3b8',
+const nodeCategoryVarMap: Record<string, string> = {
+  HTTP: 'var(--node-category-http)',
+  Core: 'var(--node-category-core)',
+  Utility: 'var(--node-category-utility)',
+  Entry: 'var(--node-category-entry)',
 };
 
-/**
- * 获取节点分类色，未匹配时回退到灰色。
- */
 export function getNodeCategoryColor(category: string): string {
-  return nodeCategoryColors[category] ?? nodeCategoryColors.Unknown;
+  return nodeCategoryVarMap[category] ?? 'var(--node-category-unknown)';
 }
 
-// 自定义主色：蓝色（与原 --color-primary 一致）
 const brandBlue: MantineColorsTuple = [
   '#e0f2fe',
   '#bae6fd',
@@ -33,46 +24,205 @@ const brandBlue: MantineColorsTuple = [
   '#082f49',
 ];
 
+const inputStyles = {
+  input: {
+    height: 28,
+    minHeight: 28,
+    fontSize: '0.8125rem',
+  },
+};
+
 export const theme = createTheme({
   primaryColor: 'brand-blue',
-  defaultRadius: 'md',
+  defaultRadius: 'sm',
   fontFamily:
-    "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
+    "Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
   fontFamilyMonospace:
-    "ui-monospace, Consolas, 'Courier New', monospace",
+    "ui-monospace, SFMono-Regular, Consolas, 'Courier New', monospace",
+  fontSizes: {
+    xs: '0.75rem',
+    sm: '0.8125rem',
+    md: '0.875rem',
+    lg: '1rem',
+    xl: '1.125rem',
+  },
+  spacing: {
+    xs: '4px',
+    sm: '8px',
+    md: '12px',
+    lg: '16px',
+    xl: '24px',
+  },
   colors: {
     'brand-blue': brandBlue,
   },
   components: {
     Button: {
       defaultProps: {
-        size: 'sm',
+        size: 'compact-sm',
+        radius: 'sm',
+      },
+      styles: {
+        root: {
+          fontWeight: 500,
+        },
+      },
+    },
+    ActionIcon: {
+      defaultProps: {
+        size: 'compact-sm',
+        radius: 'sm',
       },
     },
     TextInput: {
       defaultProps: {
-        size: 'sm',
+        size: 'xs',
+        radius: 'sm',
+      },
+      styles: {
+        ...inputStyles,
+        label: { fontWeight: 400 },
+      },
+    },
+    NumberInput: {
+      defaultProps: {
+        size: 'xs',
+        radius: 'sm',
+      },
+      styles: {
+        ...inputStyles,
+        label: { fontWeight: 400 },
+      },
+    },
+    PasswordInput: {
+      defaultProps: {
+        size: 'xs',
+        radius: 'sm',
+      },
+      styles: {
+        ...inputStyles,
+        label: { fontWeight: 400 },
       },
     },
     Select: {
       defaultProps: {
-        size: 'sm',
+        size: 'xs',
+        radius: 'sm',
+      },
+      styles: {
+        ...inputStyles,
+        label: { fontWeight: 400 },
+      },
+    },
+    MultiSelect: {
+      defaultProps: {
+        size: 'xs',
+        radius: 'sm',
+      },
+      styles: {
+        ...inputStyles,
+        label: { fontWeight: 400 },
+      },
+    },
+    NativeSelect: {
+      defaultProps: {
+        size: 'xs',
+        radius: 'sm',
+      },
+      styles: {
+        ...inputStyles,
+        label: { fontWeight: 400 },
       },
     },
     Textarea: {
       defaultProps: {
-        size: 'sm',
+        size: 'xs',
+        radius: 'sm',
+      },
+      styles: {
+        label: { fontWeight: 400 },
       },
     },
     Switch: {
+      defaultProps: {
+        size: 'sm',
+        radius: 'xl',
+      },
+    },
+    Checkbox: {
+      defaultProps: {
+        size: 'sm',
+        radius: 'sm',
+      },
+    },
+    Radio: {
       defaultProps: {
         size: 'sm',
       },
     },
     Paper: {
       defaultProps: {
+        radius: 'sm',
+      },
+    },
+    Badge: {
+      defaultProps: {
+        radius: 'sm',
+        size: 'sm',
+      },
+      styles: {
+        root: {
+          fontWeight: 500,
+          textTransform: 'none',
+          fontSize: '0.6875rem',
+          height: 20,
+          padding: '0 6px',
+        },
+      },
+    },
+    Tabs: {
+      defaultProps: {
+        radius: 'sm',
+      },
+    },
+    Divider: {
+      defaultProps: {
+        color: 'gray.2',
+      },
+    },
+    Modal: {
+      defaultProps: {
         radius: 'md',
+        padding: 'lg',
+      },
+    },
+    Menu: {
+      defaultProps: {
+        radius: 'sm',
+        shadow: 'md',
+      },
+    },
+    Tooltip: {
+      defaultProps: {
+        radius: 'sm',
+        color: 'dark',
+        size: 'sm',
       },
     },
   },
+  other: {
+    shadowCard: '0 1px 3px rgba(0, 0, 0, 0.08)',
+    shadowCardHover: '0 4px 12px rgba(0, 0, 0, 0.12)',
+    shadowNode: '0 1px 4px rgba(0, 0, 0, 0.06)',
+    shadowNodeHover: '0 4px 12px rgba(0, 0, 0, 0.1)',
+  },
 });
+
+declare module '@mantine/core' {
+  interface MantineThemeOther {
+    shadowCard: string;
+    shadowCardHover: string;
+    shadowNode: string;
+    shadowNodeHover: string;
+  }
+}

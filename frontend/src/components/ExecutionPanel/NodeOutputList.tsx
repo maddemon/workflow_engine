@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Stack, Paper, Group, Text, Badge, UnstyledButton, ScrollArea, Box } from '@mantine/core';
+import { ChevronRight, ChevronDown } from 'lucide-react';
 import type { NodeExecutionRecordDto, ExecutionStatus } from '../../types/workflow.ts';
 
 interface NodeOutputListProps {
@@ -36,9 +37,10 @@ export function NodeOutputList({ records }: NodeOutputListProps) {
             onClick={() => toggle(record.id)}
           >
             <Group gap="xs" wrap="nowrap">
-              <Text size="xs" c="dimmed" style={{ width: 12 }}>
-                {expanded[record.id] ? '▼' : '▶'}
-              </Text>
+              {expanded[record.id]
+                ? <ChevronDown size={12} color="var(--mantine-color-dimmed)" />
+                : <ChevronRight size={12} color="var(--mantine-color-dimmed)" />
+              }
               <Text size="sm" fw={500} flex={1} truncate>
                 {record.nodeDefinitionId}
               </Text>

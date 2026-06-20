@@ -54,7 +54,7 @@ export function ArrayField({ definition, value, onChange, error }: ArrayFieldPro
   return (
     <div>
       <Group justify="space-between" mb={4}>
-        <Text size="sm" fw={500}>
+        <Text size="sm" fw={400}>
           {definition.displayName}
           {definition.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
         </Text>

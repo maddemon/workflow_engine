@@ -1,4 +1,5 @@
-import { SegmentedControl, Text } from '@mantine/core';
+import { Button, Group, Text } from '@mantine/core';
+import { InfoTooltip } from './InfoTooltip.tsx';
 import type { ParameterDefinition } from '../../../types/workflow.ts';
 
 interface ButtonGroupFieldProps {
@@ -8,27 +9,32 @@ interface ButtonGroupFieldProps {
   error?: string;
 }
 
-/**
- * 横向按钮组，用于少量互斥选项（如 HTTP method）。
- * 选项 > 6 时不建议使用，会自动回退到 OptionsField（由 FieldResolver 控制）。
- */
 export function ButtonGroupField({ definition, value, onChange, error }: ButtonGroupFieldProps) {
   const options = definition.options ?? [];
+  const current = String(value ?? '');
+
   return (
     <div>
-      <Text size="sm" fw={500} mb={4}>
-        {definition.displayName}
-        {definition.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
-      </Text>
-      <SegmentedControl
-        value={String(value ?? '')}
-        onChange={(v) => onChange(v)}
-        data={options.map((opt) => ({ label: opt.label, value: opt.value }))}
-        fullWidth
-      />
-      {definition.description && (
-        <Text size="xs" c="dimmed" mt={4}>{definition.description}</Text>
-      )}
+      <Group gap={4} mb={4}>
+        <Text size="xs" fw={400}>
+          {definition.displayName}
+          {definition.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
+        </Text>
+        {definition.description && <InfoTooltip label={definition.description} />}
+      </Group>
+      <Button.Group>
+        {options.map((opt) => (
+          <Button
+            key={opt.value}
+            size="xs"
+            variant={current === opt.value ? 'filled' : 'default'}
+            onClick={() => onChange(opt.value)}
+            style={{ flex: 1 }}
+          >
+            {opt.label}
+          </Button>
+        ))}
+      </Button.Group>
       {error && (
         <Text size="xs" c="red" mt={4}>{error}</Text>
       )}

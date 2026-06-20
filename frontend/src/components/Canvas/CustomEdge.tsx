@@ -112,7 +112,11 @@ function CustomEdgeComponent({
     labelY = ly;
   }
 
-  const strokeColor = selected ? '#3b82f6' : hovered ? '#fa5252' : '#b1b1b7';
+  const strokeColor = selected
+    ? 'var(--edge-color-hover)'
+    : hovered
+      ? 'var(--edge-color-hover)'
+      : 'var(--edge-color)';
 
   return (
     <>
@@ -135,10 +139,10 @@ function CustomEdgeComponent({
           className="react-flow__edge-path"
           style={{
             fill: 'none',
-            strokeWidth: selected ? 2 : 1,
+            strokeWidth: selected || hovered ? 2.5 : 2,
             stroke: strokeColor,
             pointerEvents: 'none',
-            transition: 'stroke 0.15s',
+            transition: 'stroke 0.15s, stroke-width 0.15s',
           }}
           markerEnd={index === edgePaths.length - 1 ? `url(#edge-arrow-${id})` : undefined}
         />
@@ -163,9 +167,15 @@ function CustomEdgeComponent({
               position: 'absolute',
               transform: `translate(-50%, -50%) translate(${labelX}px,${labelY}px)`,
               fontSize: 10,
-              color: '#868e96',
+              color: 'var(--edge-label-color)',
+              background: 'var(--edge-label-bg)',
               pointerEvents: 'none',
-              padding: '1px 4px',
+              padding: '2px 8px',
+              borderRadius: 10,
+              fontWeight: 600,
+              letterSpacing: '0.02em',
+              boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)',
+              border: '1px solid var(--mantine-color-gray-2)',
             }}
             className="nodrag nopan"
           >

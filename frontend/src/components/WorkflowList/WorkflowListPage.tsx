@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Stack, Text, SimpleGrid, Button, Loader, Center, Alert, Group } from '@mantine/core';
-import { Plus, AlertCircle } from 'lucide-react';
+import { Stack, Text, SimpleGrid, Button, Loader, Center, Alert, Group, ThemeIcon } from '@mantine/core';
+import { Plus, AlertCircle, Workflow } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { getWorkflows } from '../../services/api.ts';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
@@ -55,7 +55,7 @@ export function WorkflowListPage() {
 
   if (loading) {
     return (
-      <Center h="100%">
+      <Center h="100%" style={{ background: 'var(--bg-page)' }}>
         <Loader size="md" />
       </Center>
     );
@@ -63,7 +63,7 @@ export function WorkflowListPage() {
 
   if (error) {
     return (
-      <Center h="100%" p="md">
+      <Center h="100%" p="md" style={{ background: 'var(--bg-page)' }}>
         <Alert icon={<AlertCircle size={16} />} title="Error" color="red" w={400}>
           {error}
         </Alert>
@@ -72,7 +72,7 @@ export function WorkflowListPage() {
   }
 
   return (
-    <Stack gap="md" p="md" h="100%" style={{ overflow: 'auto' }}>
+    <Stack gap="md" p="md" h="100%" style={{ overflow: 'auto', background: 'var(--bg-page)' }}>
       <Group justify="space-between">
         <Text fw={700} size="lg">Workflows</Text>
         <Button leftSection={<Plus size={16} />} onClick={handleNew}>
@@ -83,6 +83,9 @@ export function WorkflowListPage() {
       {workflows.length === 0 ? (
         <Center h="60%">
           <Stack align="center" gap="md">
+            <ThemeIcon size={64} radius="xl" variant="light" color="gray">
+              <Workflow size={32} />
+            </ThemeIcon>
             <Text c="dimmed" size="sm">No workflows yet.</Text>
             <Button leftSection={<Plus size={16} />} onClick={handleNew}>
               Create your first workflow

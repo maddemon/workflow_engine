@@ -1,4 +1,5 @@
-import { Textarea } from '@mantine/core';
+import { Textarea, Group, Text } from '@mantine/core';
+import { InfoTooltip } from './InfoTooltip.tsx';
 import type { ParameterDefinition } from '../../../types/workflow.ts';
 
 interface TextAreaFieldProps {
@@ -8,22 +9,25 @@ interface TextAreaFieldProps {
   error?: string;
 }
 
-/**
- * 多行文本，支持自动高度。
- */
 export function TextAreaField({ definition, value, onChange, error }: TextAreaFieldProps) {
   return (
-    <Textarea
-      label={definition.displayName}
-      description={definition.description ?? undefined}
-      error={error}
-      required={definition.required}
-      value={String(value ?? '')}
-      onChange={(e) => onChange(e.target.value)}
-      autosize
-      minRows={3}
-      maxRows={10}
-      placeholder={`Enter ${definition.displayName.toLowerCase()}`}
-    />
+    <div>
+      <Group gap={4} mb={4}>
+        <Text size="xs" fw={400}>
+          {definition.displayName}
+          {definition.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
+        </Text>
+        {definition.description && <InfoTooltip label={definition.description} />}
+      </Group>
+      <Textarea
+        error={error}
+        value={String(value ?? '')}
+        onChange={(e) => onChange(e.target.value)}
+        autosize
+        minRows={3}
+        maxRows={10}
+        placeholder={`Enter ${definition.displayName.toLowerCase()}`}
+      />
+    </div>
   );
 }
