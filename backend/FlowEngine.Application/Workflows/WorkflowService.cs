@@ -1,6 +1,8 @@
+using FlowEngine.Application.Audit;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
+using FlowEngine.Core.Events;
 
 namespace FlowEngine.Application.Workflows;
 
@@ -11,14 +13,22 @@ public sealed class WorkflowService
 {
     private readonly IWorkflowRepository _workflowRepository;
     private readonly WorkflowValidator _workflowValidator;
+    private readonly IEventBus _eventBus;
+    private readonly AuditEventFactory _auditFactory;
 
     /// <summary>
     /// 初始化工作流应用服务。
     /// </summary>
-    public WorkflowService(IWorkflowRepository workflowRepository, WorkflowValidator workflowValidator)
+    public WorkflowService(
+        IWorkflowRepository workflowRepository,
+        WorkflowValidator workflowValidator,
+        IEventBus eventBus,
+        AuditEventFactory auditFactory)
     {
         _workflowRepository = workflowRepository ?? throw new ArgumentNullException(nameof(workflowRepository));
         _workflowValidator = workflowValidator ?? throw new ArgumentNullException(nameof(workflowValidator));
+        _eventBus = eventBus;
+        _auditFactory = auditFactory;
     }
 
     /// <summary>
@@ -42,6 +52,13 @@ public sealed class WorkflowService
 
         ValidateOrThrow(workflow);
         await _workflowRepository.SaveAsync(workflow, cancellationToken).ConfigureAwait(false);
+
+        await _eventBus.PublishAsync(_auditFactory.Create<AuditLogEvent>(
+            AuditEventTypes.WorkflowCreated,
+            "Workflow",
+            workflow.Id,
+            new Dictionary<string, object> { ["name"] = workflow.Name }),
+            cancellationToken).ConfigureAwait(false);
 
         return MapToDto(workflow, dto.Nodes, dto.Connections, nodeIdMap);
     }
@@ -92,6 +109,13 @@ public sealed class WorkflowService
         ValidateOrThrow(existing);
         await _workflowRepository.SaveAsync(existing, cancellationToken).ConfigureAwait(false);
 
+        await _eventBus.PublishAsync(_auditFactory.Create<AuditLogEvent>(
+            AuditEventTypes.WorkflowUpdated,
+            "Workflow",
+            existing.Id,
+            new Dictionary<string, object> { ["name"] = existing.Name }),
+            cancellationToken).ConfigureAwait(false);
+
         return MapToDto(existing, dto.Nodes, dto.Connections, nodeIdMap);
     }
 
@@ -107,6 +131,13 @@ public sealed class WorkflowService
         }
 
         await _workflowRepository.DeleteAsync(id, cancellationToken).ConfigureAwait(false);
+
+        await _eventBus.PublishAsync(_auditFactory.Create<AuditLogEvent>(
+            AuditEventTypes.WorkflowDeleted,
+            "Workflow",
+            id),
+            cancellationToken).ConfigureAwait(false);
+
         return true;
     }
 
