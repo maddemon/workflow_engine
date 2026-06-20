@@ -5,7 +5,65 @@
 
 ---
 
-## 1. 执行错误反馈（高优先级）
+## 1. 工作流管理页（最高优先级 — MVP 必须）
+
+### 问题
+
+用户可以创建和保存工作流，但无法浏览、加载、删除已保存的工作流。这是 MVP 核心功能缺口。
+
+### 现状
+
+| 组件 | 状态 |
+|------|------|
+| API `getWorkflows()` | ✅ 已实现 |
+| API `getWorkflow(id)` | ✅ 已实现 |
+| API `deleteWorkflow(id)` | ✅ 已实现 |
+| Store `loadWorkflow(id)` | ✅ 已实现 |
+| Store `newWorkflow()` | ✅ 已实现 |
+| **UI — Open 按钮** | ❌ 缺失 |
+| **UI — 工作流列表** | ❌ 缺失 |
+| **UI — 删除功能** | ❌ 缺失 |
+
+### 涉及文件
+
+- `frontend/src/components/Layout/HeaderToolbar.tsx` — 新增 "Open" 按钮
+- 新增 `frontend/src/components/WorkflowList/WorkflowListModal.tsx` — 模态框
+- `frontend/src/stores/workflowStore.ts` — 新增 `listWorkflows`、`deleteWorkflow`
+
+### 实现方案
+
+**方案：顶部工具栏 + 模态框（最简）**
+
+1. HeaderToolbar 新增 "Open" 按钮（与 New 按钮相邻）
+2. 点击弹出 Mantine `Modal`，调用 `getWorkflows()` 获取列表
+3. 列表显示：名称、版本、状态、最后修改时间
+4. 点击某行调用 `loadWorkflow(id)` 加载到画布
+5. 每行右侧有删除按钮（确认后调用 `deleteWorkflow(id)`）
+
+```
+┌─────────────────────────────────────┐
+│ Open Workflows                  [X] │
+├─────────────────────────────────────┤
+│ Name              Version  Updated  │
+│ ─────────────────────────────────── │
+│ HTTP → If → Code     v3   2min ago │
+│ 测试工作流            v1   1hr ago  │
+│                                     │
+│ [+ New Workflow]                    │
+└─────────────────────────────────────┘
+```
+
+### 验收标准
+
+- [ ] 点击 "Open" 弹出工作流列表
+- [ ] 列表显示名称、版本号、更新时间
+- [ ] 点击工作流加载到画布（节点、连线、参数全部恢复）
+- [ ] 可删除工作流（有确认提示）
+- [ ] 列表为空时显示引导文字
+
+---
+
+## 2. 执行错误反馈（高优先级）
 
 ### 问题
 
@@ -192,6 +250,7 @@ const duration = record.completedAt && record.startedAt
 
 | 优先级 | 工作项 | 预估工时 |
 |--------|--------|----------|
+| **P0** | **工作流管理页（Open + 列表 + 删除）** | **1.5 天** |
 | P0 | 执行错误反馈 | 0.5 天 |
 | P0 | 凭据管理页面 | 2 天 |
 | P0 | 前端单元测试 | 1 天 |
