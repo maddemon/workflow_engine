@@ -8,6 +8,7 @@ using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Events;
 using FlowEngine.Host.Middlewares;
+using FlowEngine.Host.WebSocketHandlers;
 using FlowEngine.Infrastructure.Audit;
 using FlowEngine.Infrastructure.Identity;
 using FlowEngine.Infrastructure.Persistence;
@@ -106,6 +107,11 @@ builder.Services.AddScoped<NodeExecutionContextFactory>(provider =>
 builder.Services.AddScoped<ErrorStrategyHandler>();
 builder.Services.AddScoped<IEngine, WorkflowExecutor>();
 
+builder.Services.AddSingleton<WebSocketConnectionManager>();
+builder.Services.AddSingleton<WebSocketEventPushService>();
+builder.Services.AddSingleton<WebSocketReplayService>();
+builder.Services.AddScoped<ExecutionWebSocketHandler>();
+
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
@@ -174,6 +180,17 @@ var api = app.MapGroup("/api/v1");
 api.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 
 app.MapControllers();
+
+app.UseWebSockets(new WebSocketOptions
+{
+    KeepAliveInterval = TimeSpan.FromSeconds(30),
+});
+
+app.Map("/ws/execution", async (HttpContext context) =>
+{
+    var handler = context.RequestServices.GetRequiredService<ExecutionWebSocketHandler>();
+    await handler.HandleAsync(context, async () => { });
+});
 
 app.MapFallbackToFile("index.html");
 
