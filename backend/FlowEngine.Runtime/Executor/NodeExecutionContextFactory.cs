@@ -18,6 +18,7 @@ public sealed class NodeExecutionContextFactory
     private readonly ICredentialAccessor _credentialAccessor;
     private readonly IReadOnlySet<string> _environmentWhitelist;
     private readonly ParameterHydrator _parameterHydrator;
+    private readonly ILlmClient? _llmClient;
 
     /// <summary>
     /// 初始化工厂。
@@ -28,7 +29,8 @@ public sealed class NodeExecutionContextFactory
         ParameterResolver parameterResolver,
         ICredentialAccessor credentialAccessor,
         IReadOnlySet<string> environmentWhitelist,
-        ILogger<ParameterHydrator>? hydratorLogger = null)
+        ILogger<ParameterHydrator>? hydratorLogger = null,
+        ILlmClient? llmClient = null)
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _expressionEvaluator = expressionEvaluator ?? throw new ArgumentNullException(nameof(expressionEvaluator));
@@ -36,6 +38,7 @@ public sealed class NodeExecutionContextFactory
         _credentialAccessor = credentialAccessor ?? throw new ArgumentNullException(nameof(credentialAccessor));
         _environmentWhitelist = environmentWhitelist ?? throw new ArgumentNullException(nameof(environmentWhitelist));
         _parameterHydrator = new ParameterHydrator(credentialAccessor, hydratorLogger);
+        _llmClient = llmClient;
     }
 
     /// <summary>
@@ -96,7 +99,9 @@ public sealed class NodeExecutionContextFactory
             ResolvedParameters = resolvedParameters,
             Credentials = _credentialAccessor,
             Logger = NullExecutionLogger.Instance,
-            CancellationToken = cancellationToken
+            CancellationToken = cancellationToken,
+            LlmClient = _llmClient,
+            NodeRegistry = _registry
         };
     }
 

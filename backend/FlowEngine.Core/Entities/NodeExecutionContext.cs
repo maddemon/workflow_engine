@@ -58,6 +58,16 @@ public class NodeExecutionContext
     /// </summary>
     public CancellationToken CancellationToken { get; set; }
 
+    /// <summary>
+    /// LLM 客户端，供 Agent 等节点调用大语言模型。
+    /// </summary>
+    public ILlmClient? LlmClient { get; set; }
+
+    /// <summary>
+    /// 节点注册中心，供 Agent 等节点查找下游节点类型。
+    /// </summary>
+    public INodeRegistry? NodeRegistry { get; set; }
+
 
     public T? GetParameter<T>(string name) where T : class
     {
