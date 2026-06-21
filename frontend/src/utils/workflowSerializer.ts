@@ -1,7 +1,7 @@
 import type { Edge } from '@xyflow/react';
 import type {
   Workflow,
-  NodeInstance,
+  NodeDefinition,
   Connection,
   NodeTypeDescriptor,
   PortDefinition,
@@ -12,8 +12,8 @@ export function serializeWorkflow(
   nodes: WorkflowNode[],
   edges: Edge[],
   _name: string,
-): { nodeInstances: NodeInstance[]; connections: Connection[] } {
-  const nodeInstances: NodeInstance[] = nodes.map((node) => {
+): { nodeDefinitions: NodeDefinition[]; connections: Connection[] } {
+  const nodeDefinitions: NodeDefinition[] = nodes.map((node) => {
     const data = node.data as WorkflowNodeData;
     return {
       id: node.id,
@@ -24,6 +24,7 @@ export function serializeWorkflow(
       positionX: Math.round(node.position.x),
       positionY: Math.round(node.position.y),
       isEntry: data.isEntry,
+      disabled: false,
       errorStrategy: data.errorStrategy,
       retryPolicy: data.retryPolicy,
       timeout: data.timeout,
@@ -38,7 +39,7 @@ export function serializeWorkflow(
     targetPortName: (edge.targetHandle ?? 'in').replace(/^port-/, ''),
   }));
 
-  return { nodeInstances, connections };
+  return { nodeDefinitions, connections };
 }
 
 export function deserializeWorkflow(
@@ -83,7 +84,7 @@ export function deserializeWorkflow(
   return { nodes, edges };
 }
 
-function fallbackDescriptor(ni: NodeInstance): NodeTypeDescriptor {
+function fallbackDescriptor(ni: NodeDefinition): NodeTypeDescriptor {
   const inputPorts: PortDefinition[] = (ni.ports ?? [])
     .filter((p) => p.direction === 'Input')
     .map((p) => ({ ...p }));

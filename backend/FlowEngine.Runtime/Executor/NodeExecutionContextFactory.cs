@@ -1,4 +1,5 @@
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Runtime.Expressions;
@@ -19,7 +20,7 @@ public sealed class NodeExecutionContextFactory
     private readonly IReadOnlySet<string> _environmentWhitelist;
     private readonly ParameterHydrator _parameterHydrator;
     private readonly ILlmClient? _llmClient;
-    private readonly IExecutionStore? _executionStore;
+    private readonly FlowEngineDbContext? _dbContext;
 
     /// <summary>
     /// 初始化工厂。
@@ -32,7 +33,7 @@ public sealed class NodeExecutionContextFactory
         IReadOnlySet<string> environmentWhitelist,
         ILogger<ParameterHydrator>? hydratorLogger = null,
         ILlmClient? llmClient = null,
-        IExecutionStore? executionStore = null)
+        FlowEngineDbContext? dbContext = null)
     {
         _registry = registry ?? throw new ArgumentNullException(nameof(registry));
         _expressionEvaluator = expressionEvaluator ?? throw new ArgumentNullException(nameof(expressionEvaluator));
@@ -41,7 +42,7 @@ public sealed class NodeExecutionContextFactory
         _environmentWhitelist = environmentWhitelist ?? throw new ArgumentNullException(nameof(environmentWhitelist));
         _parameterHydrator = new ParameterHydrator(credentialAccessor, hydratorLogger);
         _llmClient = llmClient;
-        _executionStore = executionStore;
+        _dbContext = dbContext;
     }
 
     /// <summary>
@@ -59,7 +60,7 @@ public sealed class NodeExecutionContextFactory
     public async Task<NodeExecutionContext> CreateAsync(
         Workflow workflow,
         ExecutionRecord execution,
-        NodeInstance node,
+        NodeDefinition node,
         INodeType nodeInstance,
         IReadOnlyDictionary<string, DataBatch> inputs,
         IReadOnlyDictionary<string, DataBatch> nodeOutputs,
@@ -67,7 +68,7 @@ public sealed class NodeExecutionContextFactory
         int runIndex,
         CancellationToken cancellationToken)
     {
-        var nodeDefinition = CreateNodeDefinition(node, nodeInstance);
+        var nodeDefinition = node;
         var descriptor = _registry.GetDescriptor(node.TypeName);
         var rawParameters = MergeParameters(nodeDefinition, descriptor);
         var metadata = new ExpressionMetadata
@@ -104,25 +105,7 @@ public sealed class NodeExecutionContextFactory
             Logger = NullExecutionLogger.Instance,
             CancellationToken = cancellationToken,
             LlmClient = _llmClient,
-            NodeRegistry = _registry,
-            ExecutionStore = _executionStore
-        };
-    }
-
-    private static NodeDefinition CreateNodeDefinition(NodeInstance node, INodeType nodeType)
-    {
-        return new NodeDefinition
-        {
-            Id = node.Id,
-            TypeName = node.TypeName,
-            Name = node.Name,
-            Parameters = new Dictionary<string, object>(node.Parameters, StringComparer.OrdinalIgnoreCase),
-            Ports = node.Ports.ToList(),
-            Disabled = false,
-            RetryPolicy = node.RetryPolicy,
-            ErrorStrategy = node.ErrorStrategy,
-            Timeout = node.Timeout,
-            IsEntry = node.IsEntry || nodeType.DefaultIsEntry
+            NodeRegistry = _registry
         };
     }
 

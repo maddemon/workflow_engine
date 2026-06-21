@@ -1,8 +1,11 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace FlowEngine.Core.Entities;
 
 /// <summary>
 /// 重试策略。
 /// </summary>
+[NotMapped]
 public class RetryPolicy
 {
     /// <summary>

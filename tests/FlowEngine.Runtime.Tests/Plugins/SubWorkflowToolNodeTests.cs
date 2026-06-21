@@ -54,7 +54,7 @@ public class SubWorkflowToolNodeTests
     [Fact]
     public async Task Execute_SimpleWorkflow_ExecutesSuccessfully()
     {
-        var scriptNode = new NodeInstance
+        var scriptNode = new NodeDefinition
         {
             Id = Guid.NewGuid(),
             TypeName = "script",

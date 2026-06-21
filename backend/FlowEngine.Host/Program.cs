@@ -16,8 +16,7 @@ using FlowEngine.Host.Webhooks;
 using FlowEngine.Host.Scheduling;
 using FlowEngine.Infrastructure.Audit;
 using FlowEngine.Infrastructure.Identity;
-using FlowEngine.Infrastructure.Persistence;
-using FlowEngine.Infrastructure.Persistence.Repositories;
+using FlowEngine.Core.Data;
 using FlowEngine.Infrastructure.Security;
 using FlowEngine.Runtime.Credentials;
 using FlowEngine.Runtime.Expressions;
@@ -89,10 +88,6 @@ builder.Services.AddScoped<IUserStore, UserStore>();
 builder.Services.AddScoped<IUserContext, HttpContextUserContext>();
 builder.Services.AddScoped<AuthenticationService>();
 builder.Services.AddScoped<AuditEventFactory>();
-builder.Services.AddScoped<IWorkflowRepository, WorkflowRepository>();
-builder.Services.AddScoped<IExecutionStore, ExecutionStore>();
-builder.Services.AddScoped<ICredentialRepository, CredentialRepository>();
-builder.Services.AddScoped<ITriggerRepository, TriggerRepository>();
 builder.Services.AddSingleton<ICryptoKeyProvider, CryptoKeyProvider>();
 builder.Services.AddSingleton<ICredentialEncryptionService, CredentialEncryptionService>();
 builder.Services.AddScoped<CredentialService>();
@@ -120,9 +115,10 @@ builder.Services.AddScoped<NodeExecutionContextFactory>(provider =>
         provider.GetRequiredService<ParameterResolver>(),
         provider.GetRequiredService<ICredentialAccessor>(),
         new HashSet<string>(whitelist, StringComparer.OrdinalIgnoreCase),
-        provider.GetService<ILogger<ParameterHydrator>>(),
-        executionStore: provider.GetService<IExecutionStore>());
+        provider.GetService<ILogger<ParameterHydrator>>()
+    );
 });
+
 builder.Services.AddScoped<ErrorStrategyHandler>();
 builder.Services.AddScoped<IEngine, WorkflowExecutor>();
 
@@ -188,20 +184,17 @@ app.Services.GetRequiredService<AuditLogFileSink>();
 
 {
     using var scope = app.Services.CreateScope();
-    var triggerRepo = scope.ServiceProvider.GetRequiredService<ITriggerRepository>();
+    var dbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
     var scheduleManager = scope.ServiceProvider.GetRequiredService<IScheduleManager>();
 
     await scheduleManager.StartAsync().ConfigureAwait(false);
 
-    var activeTriggers = await triggerRepo.GetActiveAsync().ConfigureAwait(false);
+    var activeTriggers = await dbContext.Triggers.Where(t => t.IsActive).ToListAsync().ConfigureAwait(false);
     foreach (var trigger in activeTriggers)
     {
         if (trigger.Type != TriggerType.Schedule) continue;
 
-        var settings = string.IsNullOrEmpty(trigger.SettingsJson) || trigger.SettingsJson == "{}"
-            ? null
-            : System.Text.Json.JsonSerializer.Deserialize<TriggerSettingsDto>(trigger.SettingsJson);
-
+        var settings = trigger.Settings;
         if (settings?.CronExpression is null) continue;
 
         await scheduleManager.RegisterScheduleAsync(
@@ -230,8 +223,8 @@ app.MapControllers();
 
 {
     using var scope = app.Services.CreateScope();
-    var triggerRepo = scope.ServiceProvider.GetRequiredService<ITriggerRepository>();
-    var webhookRoutes = await triggerRepo.GetAllWebhookRoutesAsync().ConfigureAwait(false);
+    var dbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
+    var webhookRoutes = await dbContext.WebhookRoutes.ToListAsync().ConfigureAwait(false);
 
     foreach (var route in webhookRoutes)
     {

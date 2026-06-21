@@ -1,8 +1,11 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace FlowEngine.Core.Entities;
 
 /// <summary>
 /// 节点执行结果。
 /// </summary>
+[NotMapped]
 public class NodeExecutionResult
 {
     /// <summary>

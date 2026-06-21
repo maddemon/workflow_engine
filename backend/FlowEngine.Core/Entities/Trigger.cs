@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Enums;
 using Microsoft.EntityFrameworkCore;
 
@@ -55,8 +56,9 @@ public class Trigger : Entity
     /// 触发器配置 JSON。
     /// </summary>
     [Column("settings")]
-    [Comment("触发器配置 JSON")]
-    public string SettingsJson { get; set; } = "{}";
+    [Comment("触发器配置")]
+    [JsonColumn]
+    public TriggerSettings Settings { get; set; } = new();
 
     /// <summary>
     /// 最后触发时间。
@@ -71,4 +73,58 @@ public class Trigger : Entity
     [Column("next_trigger_at")]
     [Comment("下次触发时间")]
     public DateTime? NextTriggerAt { get; set; }
+}
+
+[NotMapped]
+public sealed class TriggerSettings
+{
+    /// <summary>
+    /// Cron 表达式（Schedule 类型）。
+    /// </summary>
+    public string? CronExpression { get; set; }
+
+    /// <summary>
+    /// 时区（Schedule 类型）。
+    /// </summary>
+    public string? TimeZone { get; set; }
+
+    /// <summary>
+    /// 开始时间（Schedule 类型）。
+    /// </summary>
+    public DateTime? StartAt { get; set; }
+
+    /// <summary>
+    /// 结束时间（Schedule 类型）。
+    /// </summary>
+    public DateTime? EndAt { get; set; }
+
+    /// <summary>
+    /// Webhook 路径（Webhook 类型）。
+    /// </summary>
+    public string? WebhookPath { get; set; }
+
+    /// <summary>
+    /// 签名密钥（Webhook 类型）。
+    /// </summary>
+    public string? Secret { get; set; }
+
+    /// <summary>
+    /// IP 白名单（Webhook 类型）。
+    /// </summary>
+    public List<string>? AllowedIps { get; set; }
+
+    /// <summary>
+    /// 来源域白名单（Webhook 类型）。
+    /// </summary>
+    public List<string>? AllowedOrigins { get; set; }
+
+    /// <summary>
+    /// 是否同步响应（Webhook 类型）。
+    /// </summary>
+    public bool IsSync { get; set; }
+
+    /// <summary>
+    /// 同步响应最大等待时间（秒）（Webhook 类型）。
+    /// </summary>
+    public int MaxWaitSeconds { get; set; } = 30;
 }

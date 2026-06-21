@@ -1,7 +1,7 @@
 using FlowEngine.Application.Identity;
 using FlowEngine.Core.Identity;
 using FlowEngine.Infrastructure.Identity;
-using FlowEngine.Infrastructure.Persistence;
+using FlowEngine.Core.Data;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Tests.Identity;

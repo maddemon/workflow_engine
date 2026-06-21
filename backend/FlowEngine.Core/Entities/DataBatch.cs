@@ -1,8 +1,11 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace FlowEngine.Core.Entities;
 
 /// <summary>
 /// 数据批次，包含一组数据项。
 /// </summary>
+[NotMapped]
 public class DataBatch
 {
     /// <summary>

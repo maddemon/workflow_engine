@@ -1,10 +1,12 @@
 using FlowEngine.Core.Enums;
+using System.ComponentModel.DataAnnotations.Schema;
 
 namespace FlowEngine.Core.Entities;
 
 /// <summary>
 /// 端口实例。
 /// </summary>
+[NotMapped]
 public class PortInstance
 {
     /// <summary>

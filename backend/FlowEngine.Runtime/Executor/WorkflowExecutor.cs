@@ -2,10 +2,12 @@ using System.Collections;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.ValueObjects;
 using FlowEngine.Runtime.WaitingArea;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
@@ -22,8 +24,7 @@ public sealed class WorkflowExecutor : IEngine
         WriteIndented = false
     };
 
-    private readonly IWorkflowRepository _workflowRepository;
-    private readonly IExecutionStore _executionStore;
+    private readonly FlowEngineDbContext _dbContext;
     private readonly INodeRegistry _nodeRegistry;
     private readonly NodeExecutionContextFactory _contextFactory;
     private readonly ErrorStrategyHandler _errorHandler;
@@ -34,16 +35,14 @@ public sealed class WorkflowExecutor : IEngine
     /// 初始化执行引擎。
     /// </summary>
     public WorkflowExecutor(
-        IWorkflowRepository workflowRepository,
-        IExecutionStore executionStore,
+        FlowEngineDbContext dbContext,
         INodeRegistry nodeRegistry,
         NodeExecutionContextFactory contextFactory,
         ErrorStrategyHandler errorHandler,
         IServiceScopeFactory scopeFactory,
         ILogger<WorkflowExecutor> logger)
     {
-        _workflowRepository = workflowRepository ?? throw new ArgumentNullException(nameof(workflowRepository));
-        _executionStore = executionStore ?? throw new ArgumentNullException(nameof(executionStore));
+        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _nodeRegistry = nodeRegistry ?? throw new ArgumentNullException(nameof(nodeRegistry));
         _contextFactory = contextFactory ?? throw new ArgumentNullException(nameof(contextFactory));
         _errorHandler = errorHandler ?? throw new ArgumentNullException(nameof(errorHandler));
@@ -57,7 +56,8 @@ public sealed class WorkflowExecutor : IEngine
         object? triggerPayload = null,
         CancellationToken cancellationToken = default)
     {
-        var workflow = await _workflowRepository.GetByIdAsync(workflowDefinitionId, cancellationToken)
+        var workflow = await _dbContext.Workflows
+            .FirstOrDefaultAsync(w => w.Id == workflowDefinitionId, cancellationToken)
             .ConfigureAwait(false);
 
         if (workflow is null)
@@ -73,16 +73,21 @@ public sealed class WorkflowExecutor : IEngine
             NodeRecords = []
         };
 
-        await _executionStore.SaveAsync(executionRecord, cancellationToken).ConfigureAwait(false);
+        _dbContext.ExecutionRecords.Add(executionRecord);
+        await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         _ = Task.Run(async () =>
         {
             using var scope = _scopeFactory.CreateScope();
-            var scopedExecutionStore = scope.ServiceProvider.GetRequiredService<IExecutionStore>();
+            var scopedDbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
+            var loadedExecution = await scopedDbContext.ExecutionRecords
+                .FirstOrDefaultAsync(e => e.Id == executionRecord.Id, default)
+                .ConfigureAwait(false);
+            if (loadedExecution is null) return;
 
             try
             {
-                await ExecuteLoopAsync(workflow, executionRecord, triggerPayload, scopedExecutionStore, cancellationToken)
+                await ExecuteLoopAsync(workflow, loadedExecution, triggerPayload, scopedDbContext, cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (OperationCanceledException)
@@ -92,8 +97,8 @@ public sealed class WorkflowExecutor : IEngine
             catch (Exception ex)
             {
                 _logger.LogError(ex, "执行 {ExecutionId} 发生未处理异常。", executionRecord.Id);
-                await scopedExecutionStore.UpdateStatusAsync(executionRecord.Id, ExecutionStatus.Failed, default)
-                    .ConfigureAwait(false);
+                loadedExecution.Status = ExecutionStatus.Failed;
+                await scopedDbContext.SaveChangesAsync(default).ConfigureAwait(false);
             }
         }, CancellationToken.None);
 
@@ -110,7 +115,7 @@ public sealed class WorkflowExecutor : IEngine
         Workflow workflow,
         ExecutionRecord execution,
         object? triggerPayload,
-        IExecutionStore executionStore,
+        FlowEngineDbContext executionStore,
         CancellationToken cancellationToken)
     {
         var queue = new ExecutionQueue();
@@ -125,8 +130,8 @@ public sealed class WorkflowExecutor : IEngine
             .ToLookup(c => (c.SourceNodeId, c.SourcePortName));
 
         stateMachine.Start();
-        await executionStore.UpdateStatusAsync(execution.Id, ExecutionStatus.Running, cancellationToken)
-            .ConfigureAwait(false);
+        execution.Status = ExecutionStatus.Running;
+        await executionStore.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         await EnqueueEntryNodesAsync(
             workflow,
@@ -194,9 +199,8 @@ public sealed class WorkflowExecutor : IEngine
             stateMachine.Complete();
         }
 
-        await executionStore.SaveAsync(execution, cancellationToken).ConfigureAwait(false);
-        await executionStore.UpdateStatusAsync(execution.Id, stateMachine.Status, cancellationToken)
-            .ConfigureAwait(false);
+        execution.Status = stateMachine.Status;
+        await executionStore.SaveChangesAsync(default).ConfigureAwait(false);
     }
 
     private async Task EnqueueEntryNodesAsync(
@@ -239,14 +243,14 @@ public sealed class WorkflowExecutor : IEngine
         NodeWorkItem item,
         Workflow workflow,
         ExecutionRecord execution,
-        Dictionary<Guid, NodeInstance> nodeMap,
+        Dictionary<Guid, NodeDefinition> nodeMap,
         ILookup<(Guid SourceNodeId, string SourcePortName), Connection> connectionsBySource,
         ExecutionQueue queue,
         WaitingArea.WaitingArea waitingArea,
         Dictionary<string, DataBatch> nodeOutputs,
         Dictionary<string, DataBatch> nodeBatches,
         Dictionary<Guid, ILlmClient> nodeLlmClients,
-        IExecutionStore executionStore,
+        FlowEngineDbContext executionStore,
         CancellationToken cancellationToken)
     {
         if (!nodeMap.TryGetValue(item.NodeInstanceId, out var node))
@@ -296,24 +300,22 @@ public sealed class WorkflowExecutor : IEngine
                 RunIndex = runIndex,
                 StartedAt = DateTime.UtcNow,
                 CompletedAt = DateTime.UtcNow,
-                Inputs = runInputs,
+                Inputs = runInputs.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
                 Output = result,
-                RawParameters = context.RawParameters,
-                ResolvedParameters = context.ResolvedParameters
+                RawParameters = context.RawParameters.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
+                ResolvedParameters = context.ResolvedParameters.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase)
             };
 
-            execution.NodeRecords.Add(record);
-            await executionStore.AddNodeRecordAsync(execution.Id, record, cancellationToken)
-                .ConfigureAwait(false);
-            await executionStore.SaveAsync(execution, cancellationToken)
+            execution.NodeRecords = [.. execution.NodeRecords, record];
+            await executionStore.SaveChangesAsync(cancellationToken)
                 .ConfigureAwait(false);
 
             finalResult = result;
 
             if (!result.Success && node.ErrorStrategy != ErrorStrategy.Continue)
             {
-                await executionStore.UpdateStatusAsync(execution.Id, ExecutionStatus.Failed, cancellationToken)
-                    .ConfigureAwait(false);
+                execution.Status = ExecutionStatus.Failed;
+                await executionStore.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                 waitingArea.CleanupExecution(execution.Id);
                 return true;
             }
@@ -345,7 +347,7 @@ public sealed class WorkflowExecutor : IEngine
     }
 
     private async Task<NodeExecutionResult> ExecuteNodeWithRetryAsync(
-        NodeInstance node,
+        NodeDefinition node,
         INodeType nodeType,
         NodeExecutionContext context,
         CancellationToken cancellationToken)
@@ -415,11 +417,11 @@ public sealed class WorkflowExecutor : IEngine
     }
 
     private async Task RouteOutputsAsync(
-        NodeInstance node,
+        NodeDefinition node,
         INodeType nodeType,
         NodeExecutionResult result,
         Guid executionId,
-        Dictionary<Guid, NodeInstance> nodeMap,
+        Dictionary<Guid, NodeDefinition> nodeMap,
         ILookup<(Guid SourceNodeId, string SourcePortName), Connection> connectionsBySource,
         ExecutionQueue queue,
         WaitingArea.WaitingArea waitingArea,
@@ -470,13 +472,13 @@ public sealed class WorkflowExecutor : IEngine
     private async Task ProcessTimeoutsAsync(
         Workflow workflow,
         ExecutionRecord execution,
-        Dictionary<Guid, NodeInstance> nodeMap,
+        Dictionary<Guid, NodeDefinition> nodeMap,
         ILookup<(Guid SourceNodeId, string SourcePortName), Connection> connectionsBySource,
         WaitingArea.WaitingArea waitingArea,
         ExecutionQueue queue,
         Dictionary<string, DataBatch> nodeOutputs,
         Dictionary<string, DataBatch> nodeBatches,
-        IExecutionStore executionStore,
+        FlowEngineDbContext executionStore,
         CancellationToken cancellationToken)
     {
         foreach (var (executionId, nodeInstanceId) in waitingArea.GetTimeoutKeys().ToList())
@@ -512,16 +514,14 @@ public sealed class WorkflowExecutor : IEngine
                 ResolvedParameters = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
             };
 
-            execution.NodeRecords.Add(record);
-            await executionStore.AddNodeRecordAsync(execution.Id, record, cancellationToken)
-                .ConfigureAwait(false);
-            await executionStore.SaveAsync(execution, cancellationToken)
+            execution.NodeRecords = [.. execution.NodeRecords, record];
+            await executionStore.SaveChangesAsync(cancellationToken)
                 .ConfigureAwait(false);
 
             if (node.ErrorStrategy != ErrorStrategy.Continue)
             {
-                await executionStore.UpdateStatusAsync(execution.Id, ExecutionStatus.Failed, cancellationToken)
-                    .ConfigureAwait(false);
+                execution.Status = ExecutionStatus.Failed;
+                await executionStore.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
                 waitingArea.CleanupExecution(execution.Id);
                 return;
             }
@@ -680,9 +680,9 @@ public sealed class WorkflowExecutor : IEngine
     }
 
     private static ILlmClient? ResolveLlmClientForNode(
-        NodeInstance node,
+        NodeDefinition node,
         INodeType nodeType,
-        Dictionary<Guid, NodeInstance> nodeMap,
+        Dictionary<Guid, NodeDefinition> nodeMap,
         ILookup<(Guid SourceNodeId, string SourcePortName), Connection> connectionsBySource,
         Dictionary<Guid, ILlmClient> nodeLlmClients)
     {

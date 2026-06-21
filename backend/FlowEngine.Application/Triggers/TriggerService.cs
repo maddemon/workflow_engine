@@ -2,40 +2,22 @@ using System.Text.Json;
 using FlowEngine.Application.Audit;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
+using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Triggers;
 
 /// <summary>
 /// 触发器应用服务。
 /// </summary>
-public sealed class TriggerService
+/// <remarks>
+/// 初始化触发器应用服务。
+/// </remarks>
+public sealed class TriggerService(FlowEngineDbContext dbContext, IEventBus eventBus, AuditEventFactory auditFactory)
 {
-    private readonly ITriggerRepository _triggerRepository;
-    private readonly IEventBus _eventBus;
-    private readonly AuditEventFactory _auditFactory;
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false,
-    };
-
-    /// <summary>
-    /// 初始化触发器应用服务。
-    /// </summary>
-    public TriggerService(
-        ITriggerRepository triggerRepository,
-        IEventBus eventBus,
-        AuditEventFactory auditFactory)
-    {
-        _triggerRepository = triggerRepository ?? throw new ArgumentNullException(nameof(triggerRepository));
-        _eventBus = eventBus;
-        _auditFactory = auditFactory;
-    }
-
     /// <summary>
     /// 创建触发器。
     /// </summary>
@@ -43,6 +25,7 @@ public sealed class TriggerService
     {
         ArgumentNullException.ThrowIfNull(dto);
 
+        var triggerSettings = dto.Settings is not null ? ConvertToTriggerSettings(dto.Settings) : new TriggerSettings();
         var trigger = new Trigger
         {
             WorkflowDefinitionId = dto.WorkflowDefinitionId,
@@ -50,37 +33,33 @@ public sealed class TriggerService
             Type = dto.Type,
             Name = dto.Name,
             IsActive = dto.IsActive,
-            SettingsJson = dto.Settings is not null
-                ? JsonSerializer.Serialize(dto.Settings, JsonOptions)
-                : "{}",
+            Settings = triggerSettings
         };
 
-        await _triggerRepository.SaveAsync(trigger, cancellationToken).ConfigureAwait(false);
 
-        if (dto.Type == TriggerType.Webhook && dto.Settings?.WebhookPath is not null)
+        if (dto.Type == TriggerType.Webhook && triggerSettings.WebhookPath is not null)
         {
             var route = new WebhookRoute
             {
-                Path = dto.Settings.WebhookPath,
+                Path = triggerSettings.WebhookPath,
                 Method = "POST",
                 WorkflowDefinitionId = dto.WorkflowDefinitionId,
                 TriggerId = trigger.Id,
                 IsStatic = false,
-                Secret = dto.Settings.Secret,
-                AllowedIpsJson = dto.Settings.AllowedIps is not null
-                    ? JsonSerializer.Serialize(dto.Settings.AllowedIps, JsonOptions)
-                    : null,
-                AllowedOriginsJson = dto.Settings.AllowedOrigins is not null
-                    ? JsonSerializer.Serialize(dto.Settings.AllowedOrigins, JsonOptions)
-                    : null,
-                IsSync = dto.Settings.IsSync,
-                MaxWaitSeconds = dto.Settings.MaxWaitSeconds,
+                Secret = triggerSettings.Secret,
+                AllowedIps = triggerSettings.AllowedIps,
+                AllowedOrigins = triggerSettings.AllowedOrigins,
+                IsSync = triggerSettings.IsSync,
+                MaxWaitSeconds = triggerSettings.MaxWaitSeconds,
             };
 
-            await _triggerRepository.SaveWebhookRouteAsync(route, cancellationToken).ConfigureAwait(false);
+            dbContext.WebhookRoutes.Add(route);
         }
 
-        await _eventBus.PublishAsync(_auditFactory.Create<AuditLogEvent>(
+        dbContext.Triggers.Add(trigger);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
             "Trigger.Created",
             "Trigger",
             trigger.Id,
@@ -99,7 +78,9 @@ public sealed class TriggerService
     /// </summary>
     public async Task<TriggerDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var trigger = await _triggerRepository.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
+        var trigger = await dbContext.Triggers
+            .FirstOrDefaultAsync(t => t.Id == id, cancellationToken)
+            .ConfigureAwait(false);
         return trigger is null ? null : MapToDto(trigger);
     }
 
@@ -109,8 +90,9 @@ public sealed class TriggerService
     public async Task<IReadOnlyCollection<TriggerDto>> GetByWorkflowDefinitionIdAsync(
         Guid workflowDefinitionId, CancellationToken cancellationToken = default)
     {
-        var triggers = await _triggerRepository
-            .GetByWorkflowDefinitionIdAsync(workflowDefinitionId, cancellationToken)
+        var triggers = await dbContext.Triggers
+            .Where(t => t.WorkflowDefinitionId == workflowDefinitionId)
+            .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
         return triggers.Select(MapToDto).ToList();
@@ -124,7 +106,9 @@ public sealed class TriggerService
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        var trigger = await _triggerRepository.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
+        var trigger = await dbContext.Triggers
+            .FirstOrDefaultAsync(t => t.Id == id, cancellationToken)
+            .ConfigureAwait(false);
         if (trigger is null)
         {
             return null;
@@ -132,12 +116,10 @@ public sealed class TriggerService
 
         trigger.Name = dto.Name;
         trigger.IsActive = dto.IsActive;
-        trigger.SettingsJson = dto.Settings is not null
-            ? JsonSerializer.Serialize(dto.Settings, JsonOptions)
-            : trigger.SettingsJson;
+        trigger.Settings = dto.Settings is not null ? ConvertToTriggerSettings(dto.Settings) : new TriggerSettings();
         trigger.UpdatedAt = DateTime.UtcNow;
 
-        await _triggerRepository.SaveAsync(trigger, cancellationToken).ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         return MapToDto(trigger);
     }
@@ -147,19 +129,25 @@ public sealed class TriggerService
     /// </summary>
     public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var trigger = await _triggerRepository.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
+        var trigger = await dbContext.Triggers
+            .FirstOrDefaultAsync(t => t.Id == id, cancellationToken)
+            .ConfigureAwait(false);
         if (trigger is null)
         {
             return false;
         }
 
-        await _triggerRepository.DeleteAsync(id, cancellationToken).ConfigureAwait(false);
+        dbContext.Triggers.Remove(trigger);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         if (trigger.Type == TriggerType.Webhook)
         {
-            await _triggerRepository
-                .DeleteWebhookRoutesByTriggerIdAsync(id, cancellationToken)
+            var routes = await dbContext.WebhookRoutes
+                .Where(r => r.TriggerId == id)
+                .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
+            dbContext.WebhookRoutes.RemoveRange(routes);
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
 
         return true;
@@ -171,13 +159,19 @@ public sealed class TriggerService
     public async Task DeleteByWorkflowDefinitionIdAsync(
         Guid workflowDefinitionId, CancellationToken cancellationToken = default)
     {
-        await _triggerRepository
-            .DeleteByWorkflowDefinitionIdAsync(workflowDefinitionId, cancellationToken)
+        var triggers = await dbContext.Triggers
+            .Where(t => t.WorkflowDefinitionId == workflowDefinitionId)
+            .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
+        dbContext.Triggers.RemoveRange(triggers);
 
-        await _triggerRepository
-            .DeleteWebhookRoutesByWorkflowDefinitionIdAsync(workflowDefinitionId, cancellationToken)
+        var routes = await dbContext.WebhookRoutes
+            .Where(r => r.WorkflowDefinitionId == workflowDefinitionId)
+            .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
+        dbContext.WebhookRoutes.RemoveRange(routes);
+
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -185,7 +179,10 @@ public sealed class TriggerService
     /// </summary>
     public async Task<IReadOnlyCollection<TriggerDto>> GetActiveAsync(CancellationToken cancellationToken = default)
     {
-        var triggers = await _triggerRepository.GetActiveAsync(cancellationToken).ConfigureAwait(false);
+        var triggers = await dbContext.Triggers
+            .Where(t => t.IsActive)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
         return triggers.Select(MapToDto).ToList();
     }
 
@@ -195,22 +192,24 @@ public sealed class TriggerService
     public async Task UpdateTriggerTimestampsAsync(
         Guid triggerId, DateTime lastTriggeredAt, DateTime? nextTriggerAt, CancellationToken cancellationToken = default)
     {
-        var trigger = await _triggerRepository.GetByIdAsync(triggerId, cancellationToken).ConfigureAwait(false);
+        var trigger = await dbContext.Triggers
+            .FirstOrDefaultAsync(t => t.Id == triggerId, cancellationToken)
+            .ConfigureAwait(false);
         if (trigger is null) return;
 
         trigger.LastTriggeredAt = lastTriggeredAt;
         trigger.NextTriggerAt = nextTriggerAt;
         trigger.UpdatedAt = DateTime.UtcNow;
 
-        await _triggerRepository.SaveAsync(trigger, cancellationToken).ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private static TriggerDto MapToDto(Trigger trigger)
     {
         TriggerSettingsDto? settings = null;
-        if (!string.IsNullOrEmpty(trigger.SettingsJson) && trigger.SettingsJson != "{}")
+        if (trigger.Settings is not null)
         {
-            settings = JsonSerializer.Deserialize<TriggerSettingsDto>(trigger.SettingsJson, JsonOptions);
+            settings = ConvertToTriggerSettingsDto(trigger.Settings);
         }
 
         return new TriggerDto
@@ -224,6 +223,40 @@ public sealed class TriggerService
             Settings = settings,
             LastTriggeredAt = trigger.LastTriggeredAt,
             NextTriggerAt = trigger.NextTriggerAt,
+        };
+    }
+
+    private static TriggerSettings ConvertToTriggerSettings(TriggerSettingsDto dto)
+    {
+        return new TriggerSettings
+        {
+            CronExpression = dto.CronExpression,
+            TimeZone = dto.TimeZone,
+            StartAt = dto.StartAt,
+            EndAt = dto.EndAt,
+            WebhookPath = dto.WebhookPath,
+            Secret = dto.Secret,
+            AllowedIps = dto.AllowedIps,
+            AllowedOrigins = dto.AllowedOrigins,
+            IsSync = dto.IsSync,
+            MaxWaitSeconds = dto.MaxWaitSeconds,
+        };
+    }
+
+    private static TriggerSettingsDto ConvertToTriggerSettingsDto(TriggerSettings settings)
+    {
+        return new TriggerSettingsDto
+        {
+            CronExpression = settings.CronExpression,
+            TimeZone = settings.TimeZone,
+            StartAt = settings.StartAt,
+            EndAt = settings.EndAt,
+            WebhookPath = settings.WebhookPath,
+            Secret = settings.Secret,
+            AllowedIps = settings.AllowedIps,
+            AllowedOrigins = settings.AllowedOrigins,
+            IsSync = settings.IsSync,
+            MaxWaitSeconds = settings.MaxWaitSeconds,
         };
     }
 }

@@ -4,7 +4,7 @@ using FlowEngine.Application.Identity;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Events;
 using FlowEngine.Infrastructure.Identity;
-using FlowEngine.Infrastructure.Persistence;
+using FlowEngine.Core.Data;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Tests.Identity;

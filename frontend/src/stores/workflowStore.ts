@@ -282,7 +282,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       if (!get().validateAllNodes()) return false;
 
       const { workflowId, workflowName, isActive, styleSettings, nodes, edges } = get();
-      const { nodeInstances, connections } = serializeWorkflow(nodes, edges, workflowName);
+      const { nodeDefinitions, connections } = serializeWorkflow(nodes, edges, workflowName);
 
       set({ saving: true });
       try {
@@ -291,14 +291,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
             name: workflowName,
             isActive,
             styleSettings,
-            nodes: nodeInstances,
+            nodes: nodeDefinitions,
             connections,
           });
         } else {
           const created = await api.createWorkflow({
             name: workflowName || 'Untitled Workflow',
             createdBy: 'user',
-            nodes: nodeInstances,
+            nodes: nodeDefinitions,
             connections,
           });
           set({ workflowId: created.id });

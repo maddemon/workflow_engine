@@ -1,5 +1,7 @@
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
+using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Runtime.Credentials;
 
@@ -8,7 +10,7 @@ namespace FlowEngine.Runtime.Credentials;
 /// </summary>
 public sealed class CredentialAccessor : ICredentialAccessor
 {
-    private readonly ICredentialRepository _credentialRepository;
+    private readonly FlowEngineDbContext _dbContext;
     private readonly ICredentialEncryptionService _encryptionService;
     private readonly ICryptoKeyProvider _keyProvider;
 
@@ -16,11 +18,11 @@ public sealed class CredentialAccessor : ICredentialAccessor
     /// 初始化凭据访问器。
     /// </summary>
     public CredentialAccessor(
-        ICredentialRepository credentialRepository,
+        FlowEngineDbContext dbContext,
         ICredentialEncryptionService encryptionService,
         ICryptoKeyProvider keyProvider)
     {
-        _credentialRepository = credentialRepository ?? throw new ArgumentNullException(nameof(credentialRepository));
+        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _encryptionService = encryptionService ?? throw new ArgumentNullException(nameof(encryptionService));
         _keyProvider = keyProvider ?? throw new ArgumentNullException(nameof(keyProvider));
     }
@@ -28,7 +30,8 @@ public sealed class CredentialAccessor : ICredentialAccessor
     /// <inheritdoc />
     public async Task<CredentialValue> GetCredentialAsync(Guid credentialId, CancellationToken cancellationToken = default)
     {
-        var credential = await _credentialRepository.GetByIdAsync(credentialId, cancellationToken)
+        var credential = await _dbContext.Credentials
+            .FirstOrDefaultAsync(c => c.Id == credentialId, cancellationToken)
             .ConfigureAwait(false);
 
         if (credential is null)

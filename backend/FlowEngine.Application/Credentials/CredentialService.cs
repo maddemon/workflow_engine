@@ -1,43 +1,28 @@
 using FlowEngine.Application.Audit;
 using FlowEngine.Application.Dtos;
+using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Events;
+using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Credentials;
 
 /// <summary>
 /// 凭据应用服务，编排凭据 CRUD 与加密。
 /// </summary>
-public sealed class CredentialService
+/// <remarks>
+/// 初始化凭据应用服务。
+/// </remarks>
+public sealed class CredentialService(
+    FlowEngineDbContext dbContext,
+    ICredentialEncryptionService _encryptionService,
+    ICryptoKeyProvider _keyProvider,
+    IEventBus eventBus,
+    AuditEventFactory auditFactory)
 {
     private const string KeyVersion = "v1";
-
-    private readonly ICredentialRepository _credentialRepository;
-    private readonly IWorkflowRepository _workflowRepository;
-    private readonly ICredentialEncryptionService _encryptionService;
-    private readonly ICryptoKeyProvider _keyProvider;
-    private readonly IEventBus _eventBus;
-    private readonly AuditEventFactory _auditFactory;
-
-    /// <summary>
-    /// 初始化凭据应用服务。
-    /// </summary>
-    public CredentialService(
-        ICredentialRepository credentialRepository,
-        IWorkflowRepository workflowRepository,
-        ICredentialEncryptionService encryptionService,
-        ICryptoKeyProvider keyProvider,
-        IEventBus eventBus,
-        AuditEventFactory auditFactory)
-    {
-        _credentialRepository = credentialRepository ?? throw new ArgumentNullException(nameof(credentialRepository));
-        _workflowRepository = workflowRepository ?? throw new ArgumentNullException(nameof(workflowRepository));
-        _encryptionService = encryptionService ?? throw new ArgumentNullException(nameof(encryptionService));
-        _keyProvider = keyProvider ?? throw new ArgumentNullException(nameof(keyProvider));
-        _eventBus = eventBus;
-        _auditFactory = auditFactory;
-    }
 
     /// <summary>
     /// 创建凭据。
@@ -57,9 +42,10 @@ public sealed class CredentialService
             KeyVersion = KeyVersion,
         };
 
-        await _credentialRepository.SaveAsync(credential, cancellationToken).ConfigureAwait(false);
+        dbContext.Credentials.Add(credential);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await _eventBus.PublishAsync(_auditFactory.Create<AuditLogEvent>(
+        await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
             AuditEventTypes.CredentialCreated,
             "Credential",
             credential.Id,
@@ -74,7 +60,9 @@ public sealed class CredentialService
     /// </summary>
     public async Task<CredentialDto?> GetAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var credential = await _credentialRepository.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
+        var credential = await dbContext.Credentials
+            .FirstOrDefaultAsync(c => c.Id == id, cancellationToken)
+            .ConfigureAwait(false);
         return credential is null ? null : MapToDto(credential);
     }
 
@@ -83,7 +71,9 @@ public sealed class CredentialService
     /// </summary>
     public async Task<IReadOnlyCollection<CredentialDto>> GetAllAsync(CancellationToken cancellationToken = default)
     {
-        var credentials = await _credentialRepository.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        var credentials = await dbContext.Credentials
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
         return credentials.Select(MapToDto).ToList();
     }
 
@@ -94,7 +84,9 @@ public sealed class CredentialService
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        var credential = await _credentialRepository.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
+        var credential = await dbContext.Credentials
+            .FirstOrDefaultAsync(c => c.Id == id, cancellationToken)
+            .ConfigureAwait(false);
         if (credential is null)
         {
             return null;
@@ -108,7 +100,7 @@ public sealed class CredentialService
         credential.KeyVersion = KeyVersion;
         credential.UpdatedAt = DateTime.UtcNow;
 
-        await _credentialRepository.UpdateAsync(credential, cancellationToken).ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         return MapToDto(credential);
     }
@@ -118,7 +110,9 @@ public sealed class CredentialService
     /// </summary>
     public async Task<CredentialDeleteResult> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var credential = await _credentialRepository.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
+        var credential = await dbContext.Credentials
+            .FirstOrDefaultAsync(c => c.Id == id, cancellationToken)
+            .ConfigureAwait(false);
         if (credential is null)
         {
             return new CredentialDeleteResult { NotFound = true };
@@ -130,9 +124,10 @@ public sealed class CredentialService
             return new CredentialDeleteResult { ReferencedBy = referencingWorkflows };
         }
 
-        await _credentialRepository.DeleteAsync(id, cancellationToken).ConfigureAwait(false);
+        dbContext.Credentials.Remove(credential);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await _eventBus.PublishAsync(_auditFactory.Create<AuditLogEvent>(
+        await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
             AuditEventTypes.CredentialDeleted,
             "Credential",
             id),
@@ -153,13 +148,14 @@ public sealed class CredentialService
 
     private async Task<List<string>> FindReferencingWorkflowsAsync(Guid credentialId, CancellationToken cancellationToken)
     {
-        var credentialIdStr = credentialId.ToString();
-        var workflows = await _workflowRepository.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        var workflows = await dbContext.Workflows
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
         var referencing = new List<string>();
 
         foreach (var workflow in workflows)
         {
-            if (WorkflowReferencesCredential(workflow, credentialIdStr))
+            if (WorkflowReferencesCredential(workflow, credentialId.ToString()))
             {
                 referencing.Add(workflow.Name);
             }

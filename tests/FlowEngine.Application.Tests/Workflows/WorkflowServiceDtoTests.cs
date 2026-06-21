@@ -19,7 +19,7 @@ public class WorkflowServiceDtoTests
             CreatedBy = "test",
             Nodes =
             [
-                new NodeInstanceDto
+                new NodeDefinitionDto
                 {
                     Id = "node_a",
                     TypeName = "httpRequest",
@@ -48,8 +48,8 @@ public class WorkflowServiceDtoTests
             CreatedBy = "test",
             Nodes =
             [
-                new NodeInstanceDto { Id = "a", TypeName = "httpRequest", Name = "A", Ports = [], ErrorStrategy = ErrorStrategy.Terminate },
-                new NodeInstanceDto { Id = "b", TypeName = "if", Name = "B", Ports = [], ErrorStrategy = ErrorStrategy.Terminate },
+                new NodeDefinitionDto { Id = "a", TypeName = "httpRequest", Name = "A", Ports = [], ErrorStrategy = ErrorStrategy.Terminate },
+                new NodeDefinitionDto { Id = "b", TypeName = "if", Name = "B", Ports = [], ErrorStrategy = ErrorStrategy.Terminate },
             ],
             Connections =
             [
@@ -70,11 +70,11 @@ public class WorkflowServiceDtoTests
     }
 
     [Fact]
-    public void NodeInstanceDto_Accepts_All_ErrorStrategies()
+    public void NodeDefinitionDto_Accepts_All_ErrorStrategies()
     {
         foreach (var strategy in Enum.GetValues<ErrorStrategy>())
         {
-            var dto = new NodeInstanceDto
+            var dto = new NodeDefinitionDto
             {
                 Id = "test",
                 TypeName = "script",
@@ -111,7 +111,7 @@ public class WorkflowServiceDtoTests
             Name = "Test",
             Nodes =
             [
-                new NodeInstanceDto { Id = "n1", TypeName = "httpRequest", Name = "HTTP", Ports = [], ErrorStrategy = ErrorStrategy.Terminate },
+                new NodeDefinitionDto { Id = "n1", TypeName = "httpRequest", Name = "HTTP", Ports = [], ErrorStrategy = ErrorStrategy.Terminate },
             ],
             Connections =
             [

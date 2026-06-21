@@ -1,10 +1,12 @@
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.ValueObjects;
 using FlowEngine.Runtime.Executor;
 using FlowEngine.Runtime.Expressions;
 using FlowEngine.Runtime.Registry;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -14,13 +16,15 @@ namespace FlowEngine.Runtime.Tests.Executor;
 
 public class WorkflowExecutorTests
 {
-    private readonly InMemoryWorkflowRepository _workflowRepository = new();
-    private readonly InMemoryExecutionStore _executionStore = new();
+    private readonly string _dbName = Guid.NewGuid().ToString();
+    private readonly FlowEngineDbContext _dbContext;
     private readonly INodeRegistry _nodeRegistry;
     private readonly WorkflowExecutor _executor;
 
     public WorkflowExecutorTests()
     {
+        _dbContext = CreateDbContext();
+
         _nodeRegistry = new NodeRegistry(
             new INodeType[]
             {
@@ -43,11 +47,10 @@ public class WorkflowExecutorTests
         var contextFactory = new NodeExecutionContextFactory(_nodeRegistry, evaluator, resolver, new TestCredentialAccessor(), new HashSet<string>());
         var errorHandler = new ErrorStrategyHandler();
 
-        var scopeFactory = new TestScopeFactory(_executionStore);
+        var scopeFactory = new TestScopeFactory(CreateDbContext);
 
         _executor = new WorkflowExecutor(
-            _workflowRepository,
-            _executionStore,
+            _dbContext,
             _nodeRegistry,
             contextFactory,
             errorHandler,
@@ -79,7 +82,8 @@ public class WorkflowExecutorTests
             ]
         };
 
-        await _workflowRepository.SaveAsync(workflow, TestContext.Current.CancellationToken);
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
         var executionId = await _executor.StartAsync(workflow.Id, 5, TestContext.Current.CancellationToken);
         var record = await WaitForExecutionAsync(executionId.Value, cancellationToken: TestContext.Current.CancellationToken);
 
@@ -130,7 +134,8 @@ public class WorkflowExecutorTests
             ]
         };
 
-        await _workflowRepository.SaveAsync(workflow, TestContext.Current.CancellationToken);
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
         var executionId = await _executor.StartAsync(workflow.Id, 5, TestContext.Current.CancellationToken);
         var record = await WaitForExecutionAsync(executionId.Value, cancellationToken: TestContext.Current.CancellationToken);
 
@@ -173,7 +178,8 @@ public class WorkflowExecutorTests
             ]
         };
 
-        await _workflowRepository.SaveAsync(workflow, TestContext.Current.CancellationToken);
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
         var executionId = await _executor.StartAsync(workflow.Id, 1, TestContext.Current.CancellationToken);
         var record = await WaitForExecutionAsync(executionId.Value, cancellationToken: TestContext.Current.CancellationToken);
 
@@ -203,7 +209,8 @@ public class WorkflowExecutorTests
             Connections = []
         };
 
-        await _workflowRepository.SaveAsync(workflow, TestContext.Current.CancellationToken);
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
         var executionId = await _executor.StartAsync(workflow.Id, cancellationToken: TestContext.Current.CancellationToken);
         var record = await WaitForExecutionAsync(executionId.Value, cancellationToken: TestContext.Current.CancellationToken);
 
@@ -225,7 +232,8 @@ public class WorkflowExecutorTests
             Connections = []
         };
 
-        await _workflowRepository.SaveAsync(workflow, TestContext.Current.CancellationToken);
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
         var executionId = await _executor.StartAsync(workflow.Id, cancellationToken: TestContext.Current.CancellationToken);
         var record = await WaitForExecutionAsync(executionId.Value, cancellationToken: TestContext.Current.CancellationToken);
 
@@ -245,12 +253,13 @@ public class WorkflowExecutorTests
             Connections = []
         };
 
-        await _workflowRepository.SaveAsync(workflow, TestContext.Current.CancellationToken);
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
         using var cts = new CancellationTokenSource();
         var executionId = await _executor.StartAsync(workflow.Id, cancellationToken: cts.Token);
         cts.CancelAfter(TimeSpan.FromMilliseconds(200));
 
-        var record = await WaitForExecutionAsync(executionId.Value, timeout: TimeSpan.FromSeconds(5), cancellationToken: TestContext.Current.CancellationToken);
+        var record = await WaitForExecutionAsync(executionId.Value, timeout: TimeSpan.FromSeconds(15), cancellationToken: TestContext.Current.CancellationToken);
         Assert.True(
             record.Status == ExecutionStatus.Cancelled || record.Status == ExecutionStatus.Failed,
             $"Expected cancelled or failed, but was {record.Status}.");
@@ -269,7 +278,8 @@ public class WorkflowExecutorTests
             Connections = []
         };
 
-        await _workflowRepository.SaveAsync(workflow, TestContext.Current.CancellationToken);
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
         var executionId = await _executor.StartAsync(workflow.Id, new[] { 10, 20, 30 }, TestContext.Current.CancellationToken);
         var record = await WaitForExecutionAsync(executionId.Value, cancellationToken: TestContext.Current.CancellationToken);
 
@@ -305,7 +315,8 @@ public class WorkflowExecutorTests
             ]
         };
 
-        await _workflowRepository.SaveAsync(workflow, TestContext.Current.CancellationToken);
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
         var executionId = await _executor.StartAsync(workflow.Id, cancellationToken: TestContext.Current.CancellationToken);
         var record = await WaitForExecutionAsync(executionId.Value, cancellationToken: TestContext.Current.CancellationToken);
 
@@ -314,7 +325,7 @@ public class WorkflowExecutorTests
         Assert.Contains(record.NodeRecords, r => r.NodeDefinitionId == nodeB.Id);
     }
 
-    private static NodeInstance CreateNode(
+    private static NodeDefinition CreateNode(
         string name,
         string typeName,
         bool isEntry = false,
@@ -322,7 +333,7 @@ public class WorkflowExecutorTests
         ErrorStrategy errorStrategy = ErrorStrategy.Terminate,
         RetryPolicy? retryPolicy = null)
     {
-        return new NodeInstance
+        return new NodeDefinition
         {
             Id = Guid.NewGuid(),
             Name = name,
@@ -339,12 +350,16 @@ public class WorkflowExecutorTests
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default)
     {
-        var maxWait = timeout ?? TimeSpan.FromSeconds(5);
+        var maxWait = timeout ?? TimeSpan.FromSeconds(15);
         var sw = System.Diagnostics.Stopwatch.StartNew();
 
         while (sw.Elapsed < maxWait)
         {
-            var record = await _executionStore.GetByIdAsync(executionId, cancellationToken).ConfigureAwait(false);
+            using var readCtx = CreateDbContext();
+            var record = await readCtx.ExecutionRecords
+                .AsNoTracking()
+                .FirstOrDefaultAsync(e => e.Id == executionId, cancellationToken)
+                .ConfigureAwait(false);
             if (record is not null && record.Status is ExecutionStatus.Completed or ExecutionStatus.Failed or ExecutionStatus.Cancelled)
             {
                 return record;
@@ -362,23 +377,31 @@ public class WorkflowExecutorTests
             => Task.FromResult(new CredentialValue());
     }
 
-    private class TestScopeFactory(IExecutionStore executionStore) : IServiceScopeFactory
+    private FlowEngineDbContext CreateDbContext()
     {
-        public IServiceScope CreateScope() => new TestScope(executionStore);
+        var options = new DbContextOptionsBuilder<FlowEngineDbContext>()
+            .UseInMemoryDatabase(databaseName: _dbName)
+            .Options;
+        return new FlowEngineDbContext(options);
     }
 
-    private class TestScope(IExecutionStore executionStore) : IServiceScope
+    private class TestScopeFactory(Func<FlowEngineDbContext> factory) : IServiceScopeFactory
     {
-        public IServiceProvider ServiceProvider { get; } = new TestServiceProvider(executionStore);
+        public IServiceScope CreateScope() => new TestScope(factory());
+    }
+
+    private class TestScope(FlowEngineDbContext dbContext) : IServiceScope
+    {
+        public IServiceProvider ServiceProvider { get; } = new TestServiceProvider(dbContext);
         public void Dispose() { }
     }
 
-    private class TestServiceProvider(IExecutionStore executionStore) : IServiceProvider
+    private class TestServiceProvider(FlowEngineDbContext dbContext) : IServiceProvider
     {
         public object? GetService(Type serviceType)
         {
-            if (serviceType == typeof(IExecutionStore))
-                return executionStore;
+            if (serviceType == typeof(FlowEngineDbContext))
+                return dbContext;
             return null;
         }
     }

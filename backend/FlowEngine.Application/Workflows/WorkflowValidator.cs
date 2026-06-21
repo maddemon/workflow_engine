@@ -7,18 +7,12 @@ namespace FlowEngine.Application.Workflows;
 /// <summary>
 /// 工作流保存校验器。
 /// </summary>
-public sealed class WorkflowValidator
+/// <remarks>
+/// 初始化校验器。
+/// </remarks>
+/// <param name="registry">节点注册中心。</param>
+public sealed class WorkflowValidator(INodeRegistry registry)
 {
-    private readonly INodeRegistry _registry;
-
-    /// <summary>
-    /// 初始化校验器。
-    /// </summary>
-    /// <param name="registry">节点注册中心。</param>
-    public WorkflowValidator(INodeRegistry registry)
-    {
-        _registry = registry ?? throw new ArgumentNullException(nameof(registry));
-    }
 
     /// <summary>
     /// 校验工作流是否可保存。
@@ -159,7 +153,7 @@ public sealed class WorkflowValidator
 
     private NodeTypeDescriptor? GetNodeDescriptor(string typeName)
     {
-        return _registry.GetDescriptors()
+        return registry.GetDescriptors()
             .FirstOrDefault(d => d.TypeName.Equals(typeName, StringComparison.OrdinalIgnoreCase));
     }
 }

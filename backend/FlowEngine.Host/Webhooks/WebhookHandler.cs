@@ -4,11 +4,13 @@ using System.Text.Json;
 using FlowEngine.Application.Audit;
 using FlowEngine.Application.Triggers;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.ValueObjects;
 using Microsoft.AspNetCore.Http;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Host.Webhooks;
@@ -18,29 +20,26 @@ namespace FlowEngine.Host.Webhooks;
 /// </summary>
 public sealed class WebhookHandler
 {
-    private readonly ITriggerRepository _triggerRepository;
+    private readonly FlowEngineDbContext _dbContext;
     private readonly IEngine _engine;
     private readonly IEventBus _eventBus;
     private readonly AuditEventFactory _auditFactory;
-    private readonly IExecutionStore _executionStore;
     private readonly ILogger<WebhookHandler> _logger;
 
     /// <summary>
     /// 初始化 Webhook 处理器。
     /// </summary>
     public WebhookHandler(
-        ITriggerRepository triggerRepository,
+        FlowEngineDbContext dbContext,
         IEngine engine,
         IEventBus eventBus,
         AuditEventFactory auditFactory,
-        IExecutionStore executionStore,
         ILogger<WebhookHandler> logger)
     {
-        _triggerRepository = triggerRepository ?? throw new ArgumentNullException(nameof(triggerRepository));
+        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         _eventBus = eventBus;
         _auditFactory = auditFactory;
-        _executionStore = executionStore;
         _logger = logger;
     }
 
@@ -49,8 +48,8 @@ public sealed class WebhookHandler
     /// </summary>
     public async Task HandleAsync(HttpContext context, string routePath)
     {
-        var route = await _triggerRepository
-            .GetWebhookRouteByPathAsync(routePath, context.RequestAborted)
+        var route = await _dbContext.WebhookRoutes
+            .FirstOrDefaultAsync(r => r.Path == routePath, context.RequestAborted)
             .ConfigureAwait(false);
 
         if (route is null)
@@ -61,8 +60,8 @@ public sealed class WebhookHandler
             return;
         }
 
-        var trigger = await _triggerRepository
-            .GetByIdAsync(route.TriggerId, context.RequestAborted)
+        var trigger = await _dbContext.Triggers
+            .FirstOrDefaultAsync(t => t.Id == route.TriggerId, context.RequestAborted)
             .ConfigureAwait(false);
 
         if (trigger is null || !trigger.IsActive)
@@ -120,7 +119,8 @@ public sealed class WebhookHandler
 
                 while (DateTime.UtcNow - startWait < maxWait)
                 {
-                    var record = await _executionStore.GetByIdAsync(executionId.Value, context.RequestAborted)
+                    var record = await _dbContext.ExecutionRecords
+                        .FirstOrDefaultAsync(e => e.Id == executionId.Value, context.RequestAborted)
                         .ConfigureAwait(false);
 
                     if (record is not null && record.Status is ExecutionStatus.Completed or ExecutionStatus.Failed)
@@ -200,41 +200,33 @@ public sealed class WebhookHandler
             context.Request.Body.Position = 0;
         }
 
-        if (!string.IsNullOrEmpty(route.AllowedIpsJson))
+        if (route.AllowedIps?.Count > 0)
         {
-            var allowedIps = JsonSerializer.Deserialize<List<string>>(route.AllowedIpsJson);
-            if (allowedIps?.Count > 0)
+            var remoteIp = context.Connection.RemoteIpAddress?.ToString();
+            if (string.IsNullOrEmpty(remoteIp) || !route.AllowedIps.Contains(remoteIp))
             {
-                var remoteIp = context.Connection.RemoteIpAddress?.ToString();
-                if (string.IsNullOrEmpty(remoteIp) || !allowedIps.Contains(remoteIp))
-                {
-                    _logger.LogWarning("Webhook IP 白名单拒绝: Path={Path}, IP={IP}", route.Path, remoteIp);
-                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                    await context.Response.WriteAsJsonAsync(
-                        new { error = "IP not allowed" },
-                        context.RequestAborted).ConfigureAwait(false);
-                    return false;
-                }
+                _logger.LogWarning("Webhook IP 白名单拒绝: Path={Path}, IP={IP}", route.Path, remoteIp);
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(
+                    new { error = "IP not allowed" },
+                    context.RequestAborted).ConfigureAwait(false);
+                return false;
             }
         }
 
-        if (!string.IsNullOrEmpty(route.AllowedOriginsJson))
+        if (route.AllowedOrigins?.Count > 0)
         {
-            var allowedOrigins = JsonSerializer.Deserialize<List<string>>(route.AllowedOriginsJson);
-            if (allowedOrigins?.Count > 0)
+            if (context.Request.Headers.TryGetValue("Origin", out var originValues))
             {
-                if (context.Request.Headers.TryGetValue("Origin", out var originValues))
+                var origin = originValues.FirstOrDefault();
+                if (string.IsNullOrEmpty(origin) || !route.AllowedOrigins.Contains(origin))
                 {
-                    var origin = originValues.FirstOrDefault();
-                    if (string.IsNullOrEmpty(origin) || !allowedOrigins.Contains(origin))
-                    {
-                        _logger.LogWarning("Webhook 来源域拒绝: Path={Path}, Origin={Origin}", route.Path, origin);
-                        context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                        await context.Response.WriteAsJsonAsync(
-                            new { error = "Origin not allowed" },
-                            context.RequestAborted).ConfigureAwait(false);
-                        return false;
-                    }
+                    _logger.LogWarning("Webhook 来源域拒绝: Path={Path}, Origin={Origin}", route.Path, origin);
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    await context.Response.WriteAsJsonAsync(
+                        new { error = "Origin not allowed" },
+                        context.RequestAborted).ConfigureAwait(false);
+                    return false;
                 }
             }
         }

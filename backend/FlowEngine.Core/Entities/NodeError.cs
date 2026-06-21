@@ -1,8 +1,11 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace FlowEngine.Core.Entities;
 
 /// <summary>
 /// 节点错误信息。
 /// </summary>
+[NotMapped]
 public class NodeError
 {
     /// <summary>

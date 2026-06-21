@@ -68,11 +68,6 @@ public class NodeExecutionContext
     /// </summary>
     public INodeRegistry? NodeRegistry { get; set; }
 
-    /// <summary>
-    /// 执行记录存储，供 Agent 等节点写入工具调用的审计记录。
-    /// </summary>
-    public IExecutionStore? ExecutionStore { get; set; }
-
 
     public T? GetParameter<T>(string name) where T : class
     {

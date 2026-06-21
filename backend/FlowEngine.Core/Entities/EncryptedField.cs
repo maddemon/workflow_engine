@@ -1,8 +1,11 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace FlowEngine.Core.Entities;
 
 /// <summary>
 /// 加密字段数据。
 /// </summary>
+[NotMapped]
 public class EncryptedField
 {
     /// <summary>

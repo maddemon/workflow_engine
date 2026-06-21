@@ -325,17 +325,11 @@ public sealed class AgentNode : INodeType
                 RunIndex = 0,
                 StartedAt = startedAt,
                 CompletedAt = DateTime.UtcNow,
-                Inputs = toolContext.Inputs,
+                Inputs = toolContext.Inputs.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
                 Output = result,
-                RawParameters = toolContext.RawParameters,
-                ResolvedParameters = toolContext.ResolvedParameters
+                RawParameters = toolContext.RawParameters.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
+                ResolvedParameters = toolContext.ResolvedParameters.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase)
             };
-
-            if (parentContext.ExecutionStore is not null)
-            {
-                await parentContext.ExecutionStore.AddNodeRecordAsync(
-                    parentContext.ExecutionId, record, cancellationToken).ConfigureAwait(false);
-            }
 
             if (!result.Success)
             {
@@ -355,33 +349,6 @@ public sealed class AgentNode : INodeType
         }
         catch (Exception ex)
         {
-            if (parentContext.ExecutionStore is not null)
-            {
-                var failRecord = new NodeExecutionRecord
-                {
-                    NodeDefinitionId = toolNode.Id,
-                    RunIndex = 0,
-                    StartedAt = startedAt,
-                    CompletedAt = DateTime.UtcNow,
-                    Inputs = toolContext.Inputs,
-                    Output = new NodeExecutionResult
-                    {
-                        Success = false,
-                        Error = new NodeError
-                        {
-                            Code = ex.GetType().Name,
-                            Message = ex.Message,
-                            NodeDefinitionId = toolNode.Id
-                        }
-                    },
-                    RawParameters = toolContext.RawParameters,
-                    ResolvedParameters = toolContext.ResolvedParameters
-                };
-
-                await parentContext.ExecutionStore.AddNodeRecordAsync(
-                    parentContext.ExecutionId, failRecord, cancellationToken).ConfigureAwait(false);
-            }
-
             return ResultSanitizer.Sanitize(toolCall.Name, $"Tool execution error: {ex.Message}");
         }
     }

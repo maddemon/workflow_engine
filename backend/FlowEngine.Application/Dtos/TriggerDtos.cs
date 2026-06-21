@@ -51,6 +51,7 @@ public sealed class TriggerDto
     /// 下次触发时间。
     /// </summary>
     public DateTime? NextTriggerAt { get; set; }
+    public DateTime? UpdatedAt { get; set; }
 }
 
 /// <summary>

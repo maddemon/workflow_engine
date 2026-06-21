@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using FlowEngine.Core.Attributes;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Core.Entities;
@@ -48,13 +49,15 @@ public class Workflow : Entity
     /// </summary>
     [Column("nodes")]
     [Comment("节点实例列表")]
-    public List<NodeInstance> Nodes { get; set; } = [];
+    [JsonColumn]
+    public List<NodeDefinition> Nodes { get; set; } = [];
 
     /// <summary>
     /// 连接列表。
     /// </summary>
     [Column("connections")]
     [Comment("连接列表")]
+    [JsonColumn]
     public List<Connection> Connections { get; set; } = [];
 
     /// <summary>

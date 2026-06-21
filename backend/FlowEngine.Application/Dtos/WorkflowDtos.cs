@@ -4,9 +4,9 @@ using FlowEngine.Core.Enums;
 namespace FlowEngine.Application.Dtos;
 
 /// <summary>
-/// API 接收的节点实例（不含 Entity 基类，接受字符串 ID）。
+/// API 接收的节点定义（不含 Entity 基类，接受字符串 ID）。
 /// </summary>
-public sealed record NodeInstanceDto
+public sealed record NodeDefinitionDto
 {
     /// <summary>
     /// 节点 ID（前端生成的字符串标识）。
@@ -128,7 +128,7 @@ public sealed record CreateWorkflowDto
     /// <summary>
     /// 节点实例列表。
     /// </summary>
-    public List<NodeInstanceDto> Nodes { get; init; } = [];
+    public List<NodeDefinitionDto> Nodes { get; init; } = [];
 
     /// <summary>
     /// 连接列表。
@@ -159,7 +159,7 @@ public sealed record UpdateWorkflowDto
     /// <summary>
     /// 节点实例列表。
     /// </summary>
-    public List<NodeInstanceDto> Nodes { get; init; } = [];
+    public List<NodeDefinitionDto> Nodes { get; init; } = [];
 
     /// <summary>
     /// 连接列表。
@@ -220,7 +220,7 @@ public sealed record WorkflowDto
     /// <summary>
     /// 节点实例列表。
     /// </summary>
-    public List<NodeInstanceDto> Nodes { get; init; } = [];
+    public List<NodeDefinitionDto> Nodes { get; init; } = [];
 
     /// <summary>
     /// 连接列表。

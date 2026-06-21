@@ -1,3 +1,5 @@
+using FlowEngine.Core.Attributes;
+
 namespace FlowEngine.Core.Entities;
 
 /// <summary>
@@ -18,6 +20,7 @@ public class Credential : Entity
     /// <summary>
     /// 加密字段数据映射。
     /// </summary>
+    [JsonColumn]
     public Dictionary<string, EncryptedField> Data { get; set; } = [];
 
     /// <summary>

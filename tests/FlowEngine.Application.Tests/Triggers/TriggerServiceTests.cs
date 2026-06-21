@@ -3,25 +3,35 @@ using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
 using FlowEngine.Application.Triggers;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
+using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Tests.Triggers;
 
-public class TriggerServiceTests
+public class TriggerServiceTests : IDisposable
 {
-    private readonly InMemoryTriggerRepository _repository;
+    private readonly FlowEngineDbContext _dbContext;
     private readonly InMemoryEventBus _eventBus;
     private readonly TriggerService _service;
 
     public TriggerServiceTests()
     {
-        _repository = new InMemoryTriggerRepository();
+        var options = new DbContextOptionsBuilder<FlowEngineDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        _dbContext = new FlowEngineDbContext(options);
         _eventBus = new InMemoryEventBus();
         var userContext = new FakeUserContext();
         var auditFactory = new AuditEventFactory(userContext);
-        _service = new TriggerService(_repository, _eventBus, auditFactory);
+        _service = new TriggerService(_dbContext, _eventBus, auditFactory);
+    }
+
+    public void Dispose()
+    {
+        _dbContext.Dispose();
     }
 
     [Fact]
@@ -73,7 +83,9 @@ public class TriggerServiceTests
         Assert.NotEqual(Guid.Empty, result.Id);
         Assert.Equal(TriggerType.Webhook, result.Type);
 
-        var routes = await _repository.GetWebhookRoutesByWorkflowDefinitionIdAsync(workflowId, ct);
+        var routes = await _dbContext.WebhookRoutes
+            .Where(r => r.WorkflowDefinitionId == workflowId)
+            .ToListAsync(ct);
         Assert.Single(routes);
         Assert.Equal("/webhooks/test", routes.First().Path);
         Assert.Equal("my-secret", routes.First().Secret);
@@ -84,7 +96,8 @@ public class TriggerServiceTests
     {
         var ct = TestContext.Current.CancellationToken;
         var trigger = CreateTestTrigger(TriggerType.Schedule);
-        await _repository.SaveAsync(trigger, ct);
+        _dbContext.Triggers.Add(trigger);
+        await _dbContext.SaveChangesAsync(ct);
 
         var result = await _service.GetByIdAsync(trigger.Id, ct);
 
@@ -108,9 +121,8 @@ public class TriggerServiceTests
         var trigger1 = CreateTestTrigger(TriggerType.Schedule, workflowId);
         var trigger2 = CreateTestTrigger(TriggerType.Webhook, workflowId);
         var trigger3 = CreateTestTrigger(TriggerType.Schedule, Guid.NewGuid());
-        await _repository.SaveAsync(trigger1, ct);
-        await _repository.SaveAsync(trigger2, ct);
-        await _repository.SaveAsync(trigger3, ct);
+        _dbContext.Triggers.AddRange(trigger1, trigger2, trigger3);
+        await _dbContext.SaveChangesAsync(ct);
 
         var results = await _service.GetByWorkflowDefinitionIdAsync(workflowId, ct);
 
@@ -122,7 +134,8 @@ public class TriggerServiceTests
     {
         var ct = TestContext.Current.CancellationToken;
         var trigger = CreateTestTrigger(TriggerType.Schedule);
-        await _repository.SaveAsync(trigger, ct);
+        _dbContext.Triggers.Add(trigger);
+        await _dbContext.SaveChangesAsync(ct);
 
         var dto = new UpdateTriggerDto
         {
@@ -160,12 +173,13 @@ public class TriggerServiceTests
     {
         var ct = TestContext.Current.CancellationToken;
         var trigger = CreateTestTrigger(TriggerType.Schedule);
-        await _repository.SaveAsync(trigger, ct);
+        _dbContext.Triggers.Add(trigger);
+        await _dbContext.SaveChangesAsync(ct);
 
         var result = await _service.DeleteAsync(trigger.Id, ct);
 
         Assert.True(result);
-        var deleted = await _repository.GetByIdAsync(trigger.Id, ct);
+        var deleted = await _dbContext.Triggers.FindAsync([trigger.Id], ct);
         Assert.Null(deleted);
     }
 
@@ -184,12 +198,14 @@ public class TriggerServiceTests
         var workflowId = Guid.NewGuid();
         var trigger1 = CreateTestTrigger(TriggerType.Schedule, workflowId);
         var trigger2 = CreateTestTrigger(TriggerType.Webhook, workflowId);
-        await _repository.SaveAsync(trigger1, ct);
-        await _repository.SaveAsync(trigger2, ct);
+        _dbContext.Triggers.AddRange(trigger1, trigger2);
+        await _dbContext.SaveChangesAsync(ct);
 
         await _service.DeleteByWorkflowDefinitionIdAsync(workflowId, ct);
 
-        var remaining = await _repository.GetByWorkflowDefinitionIdAsync(workflowId, ct);
+        var remaining = await _dbContext.Triggers
+            .Where(t => t.WorkflowDefinitionId == workflowId)
+            .ToListAsync(ct);
         Assert.Empty(remaining);
     }
 
@@ -201,8 +217,8 @@ public class TriggerServiceTests
         active.IsActive = true;
         var inactive = CreateTestTrigger(TriggerType.Schedule);
         inactive.IsActive = false;
-        await _repository.SaveAsync(active, ct);
-        await _repository.SaveAsync(inactive, ct);
+        _dbContext.Triggers.AddRange(active, inactive);
+        await _dbContext.SaveChangesAsync(ct);
 
         var results = await _service.GetActiveAsync(ct);
 
@@ -236,7 +252,7 @@ public class TriggerServiceTests
             Type = type,
             Name = $"Test {type}",
             IsActive = true,
-            SettingsJson = "{}",
+            Settings = new TriggerSettings(),
         };
     }
 
@@ -246,107 +262,6 @@ public class TriggerServiceTests
         public Guid? UserId => Guid.NewGuid();
         public string? Email => "test@test.com";
         public IReadOnlyList<string> Roles => [];
-    }
-
-    private sealed class InMemoryTriggerRepository : ITriggerRepository
-    {
-        private readonly Dictionary<Guid, Trigger> _triggers = new();
-        private readonly Dictionary<Guid, WebhookRoute> _routes = new();
-
-        public Task<Trigger?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
-        {
-            _triggers.TryGetValue(id, out var trigger);
-            return Task.FromResult(trigger);
-        }
-
-        public Task<IReadOnlyCollection<Trigger>> GetByWorkflowDefinitionIdAsync(
-            Guid workflowDefinitionId, CancellationToken cancellationToken = default)
-        {
-            var result = _triggers.Values
-                .Where(t => t.WorkflowDefinitionId == workflowDefinitionId)
-                .ToList();
-            return Task.FromResult<IReadOnlyCollection<Trigger>>(result);
-        }
-
-        public Task<IReadOnlyCollection<Trigger>> GetActiveAsync(CancellationToken cancellationToken = default)
-        {
-            var result = _triggers.Values.Where(t => t.IsActive).ToList();
-            return Task.FromResult<IReadOnlyCollection<Trigger>>(result);
-        }
-
-        public Task SaveAsync(Trigger trigger, CancellationToken cancellationToken = default)
-        {
-            _triggers[trigger.Id] = trigger;
-            return Task.CompletedTask;
-        }
-
-        public Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
-        {
-            _triggers.Remove(id);
-            return Task.CompletedTask;
-        }
-
-        public Task DeleteByWorkflowDefinitionIdAsync(Guid workflowDefinitionId, CancellationToken cancellationToken = default)
-        {
-            var keys = _triggers.Values
-                .Where(t => t.WorkflowDefinitionId == workflowDefinitionId)
-                .Select(t => t.Id)
-                .ToList();
-            foreach (var key in keys) _triggers.Remove(key);
-            return Task.CompletedTask;
-        }
-
-        public Task<IReadOnlyCollection<WebhookRoute>> GetWebhookRoutesByWorkflowDefinitionIdAsync(
-            Guid workflowDefinitionId, CancellationToken cancellationToken = default)
-        {
-            var result = _routes.Values
-                .Where(r => r.WorkflowDefinitionId == workflowDefinitionId)
-                .ToList();
-            return Task.FromResult<IReadOnlyCollection<WebhookRoute>>(result);
-        }
-
-        public Task<WebhookRoute?> GetWebhookRouteByPathAsync(string path, CancellationToken cancellationToken = default)
-        {
-            var result = _routes.Values.FirstOrDefault(r => r.Path == path);
-            return Task.FromResult(result);
-        }
-
-        public Task<IReadOnlyCollection<WebhookRoute>> GetAllWebhookRoutesAsync(CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult<IReadOnlyCollection<WebhookRoute>>(_routes.Values.ToList());
-        }
-
-        public Task SaveWebhookRouteAsync(WebhookRoute route, CancellationToken cancellationToken = default)
-        {
-            _routes[route.Id] = route;
-            return Task.CompletedTask;
-        }
-
-        public Task DeleteWebhookRouteAsync(Guid id, CancellationToken cancellationToken = default)
-        {
-            _routes.Remove(id);
-            return Task.CompletedTask;
-        }
-
-        public Task DeleteWebhookRoutesByWorkflowDefinitionIdAsync(Guid workflowDefinitionId, CancellationToken cancellationToken = default)
-        {
-            var keys = _routes.Values
-                .Where(r => r.WorkflowDefinitionId == workflowDefinitionId)
-                .Select(r => r.Id)
-                .ToList();
-            foreach (var key in keys) _routes.Remove(key);
-            return Task.CompletedTask;
-        }
-
-        public Task DeleteWebhookRoutesByTriggerIdAsync(Guid triggerId, CancellationToken cancellationToken = default)
-        {
-            var keys = _routes.Values
-                .Where(r => r.TriggerId == triggerId)
-                .Select(r => r.Id)
-                .ToList();
-            foreach (var key in keys) _routes.Remove(key);
-            return Task.CompletedTask;
-        }
     }
 
     private sealed class InMemoryEventBus : IEventBus

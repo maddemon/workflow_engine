@@ -1,17 +1,15 @@
 using System.Collections.Concurrent;
-using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 
 namespace FlowEngine.Runtime.Tests.Executor;
 
 /// <summary>
-/// 内存中的工作流仓储，用于执行引擎单元测试。
+/// 内存中的工作流服务，用于执行引擎单元测试。
 /// </summary>
-public sealed class InMemoryWorkflowRepository : IWorkflowRepository
+public sealed class InMemoryWorkflowService
 {
     private readonly ConcurrentDictionary<Guid, SortedDictionary<int, Workflow>> _store = new();
 
-    /// <inheritdoc />
     public Task<Workflow?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
         if (!_store.TryGetValue(id, out var versions) || versions.Count == 0)
@@ -23,7 +21,6 @@ public sealed class InMemoryWorkflowRepository : IWorkflowRepository
         return Task.FromResult<Workflow?>(Clone(latest));
     }
 
-    /// <inheritdoc />
     public Task<IReadOnlyCollection<Workflow>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         var result = _store.Values
@@ -34,7 +31,6 @@ public sealed class InMemoryWorkflowRepository : IWorkflowRepository
         return Task.FromResult<IReadOnlyCollection<Workflow>>(result);
     }
 
-    /// <inheritdoc />
     public Task SaveAsync(Workflow workflow, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(workflow);
@@ -49,14 +45,12 @@ public sealed class InMemoryWorkflowRepository : IWorkflowRepository
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
     public Task DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
         _store.TryRemove(id, out _);
         return Task.CompletedTask;
     }
 
-    /// <inheritdoc />
     public Task<Workflow?> GetByVersionAsync(Guid id, int version, CancellationToken cancellationToken = default)
     {
         if (!_store.TryGetValue(id, out var versions) || !versions.TryGetValue(version, out var workflow))
@@ -67,7 +61,6 @@ public sealed class InMemoryWorkflowRepository : IWorkflowRepository
         return Task.FromResult<Workflow?>(Clone(workflow));
     }
 
-    /// <inheritdoc />
     public Task<IReadOnlyCollection<int>> GetVersionsAsync(Guid id, CancellationToken cancellationToken = default)
     {
         if (!_store.TryGetValue(id, out var versions))

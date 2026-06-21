@@ -1,7 +1,10 @@
 using System.Text.Json;
 using FlowEngine.Application.Dtos;
+using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Data;
 using FlowEngine.Core.Enums;
+using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Executions;
 
@@ -17,20 +20,20 @@ public sealed class ExecutionService
     };
 
     private readonly IEngine _engine;
-    private readonly IExecutionStore _executionStore;
-    private readonly IWorkflowRepository _workflowRepository;
+    private readonly FlowEngineDbContext _dbContext;
+    private readonly WorkflowService _workflowService;
 
     /// <summary>
     /// 初始化执行应用服务。
     /// </summary>
     public ExecutionService(
         IEngine engine,
-        IExecutionStore executionStore,
-        IWorkflowRepository workflowRepository)
+        FlowEngineDbContext dbContext,
+        WorkflowService workflowService)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
-        _executionStore = executionStore ?? throw new ArgumentNullException(nameof(executionStore));
-        _workflowRepository = workflowRepository ?? throw new ArgumentNullException(nameof(workflowRepository));
+        _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _workflowService = workflowService ?? throw new ArgumentNullException(nameof(workflowService));
     }
 
     /// <summary>
@@ -38,7 +41,7 @@ public sealed class ExecutionService
     /// </summary>
     public async Task<ExecutionDto?> ExecuteAsync(Guid workflowId, CancellationToken cancellationToken = default)
     {
-        var workflow = await _workflowRepository.GetByIdAsync(workflowId, cancellationToken).ConfigureAwait(false);
+        var workflow = await _workflowService.GetAsync(workflowId, cancellationToken).ConfigureAwait(false);
         if (workflow is null)
         {
             return null;
@@ -46,7 +49,9 @@ public sealed class ExecutionService
 
         var executionId = await _engine.StartAsync(workflowId, null, cancellationToken).ConfigureAwait(false);
 
-        var record = await _executionStore.GetByIdAsync(executionId.Value, cancellationToken).ConfigureAwait(false);
+        var record = await _dbContext.ExecutionRecords
+            .FirstOrDefaultAsync(e => e.Id == executionId.Value, cancellationToken)
+            .ConfigureAwait(false);
         if (record is null)
         {
             return new ExecutionDto
@@ -66,7 +71,9 @@ public sealed class ExecutionService
     /// </summary>
     public async Task<ExecutionDto?> GetAsync(Guid executionId, CancellationToken cancellationToken = default)
     {
-        var record = await _executionStore.GetByIdAsync(executionId, cancellationToken).ConfigureAwait(false);
+        var record = await _dbContext.ExecutionRecords
+            .FirstOrDefaultAsync(e => e.Id == executionId, cancellationToken)
+            .ConfigureAwait(false);
         return record is null ? null : MapToDto(record);
     }
 
@@ -77,7 +84,10 @@ public sealed class ExecutionService
         Guid workflowId,
         CancellationToken cancellationToken = default)
     {
-        var records = await _executionStore.GetByWorkflowDefinitionIdAsync(workflowId, cancellationToken)
+        var records = await _dbContext.ExecutionRecords
+            .Where(e => e.WorkflowDefinitionId == workflowId)
+            .OrderByDescending(e => e.StartedAt)
+            .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
         return records.Select(MapToSummary).ToList();
     }
@@ -103,7 +113,7 @@ public sealed class ExecutionService
             NodeDefinitionId = node.NodeDefinitionId,
             RunIndex = node.RunIndex,
             Status = node.Output.Success ? "Completed" : "Failed",
-            StartedAt = node.StartedAt,
+            StartedAt = node.StartedAt ?? default,
             CompletedAt = node.CompletedAt,
             Inputs = SerializeInputs(node.Inputs),
             Output = node.Output is null ? null : JsonSerializer.SerializeToNode(node.Output, JsonOptions),

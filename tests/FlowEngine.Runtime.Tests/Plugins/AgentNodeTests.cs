@@ -81,8 +81,8 @@ public class AgentNodeTests
     [Fact]
     public async Task ExecuteAsync_Collects_Tools_From_Connections()
     {
-        var toolNode = CreateNodeInstance("tool1", "passThrough");
-        var agentNode = CreateNodeInstance("agent1", "agent", isEntry: true);
+        var toolNode = CreateNodeDefinition("tool1", "passThrough");
+        var agentNode = CreateNodeDefinition("agent1", "agent", isEntry: true);
 
         var workflow = new Workflow
         {
@@ -124,7 +124,7 @@ public class AgentNodeTests
     [Fact]
     public async Task ExecuteAsync_Returns_Empty_Tools_When_No_Connections()
     {
-        var agentNode = CreateNodeInstance("agent1", "agent", isEntry: true);
+        var agentNode = CreateNodeDefinition("agent1", "agent", isEntry: true);
 
         var workflow = new Workflow
         {
@@ -154,8 +154,8 @@ public class AgentNodeTests
     [Fact]
     public async Task ExecuteAsync_Executes_Tool_And_Feeds_Back_To_LLM()
     {
-        var toolNode = CreateNodeInstance("tool1", "passThrough");
-        var agentNode = CreateNodeInstance("agent1", "agent", isEntry: true);
+        var toolNode = CreateNodeDefinition("tool1", "passThrough");
+        var agentNode = CreateNodeDefinition("agent1", "agent", isEntry: true);
 
         var workflow = new Workflow
         {
@@ -212,7 +212,7 @@ public class AgentNodeTests
     [Fact]
     public async Task ExecuteAsync_Stops_After_MaxIterations()
     {
-        var agentNode = CreateNodeInstance("agent1", "agent", isEntry: true);
+        var agentNode = CreateNodeDefinition("agent1", "agent", isEntry: true);
 
         var workflow = new Workflow
         {
@@ -256,7 +256,7 @@ public class AgentNodeTests
     [Fact]
     public async Task ExecuteAsync_Handles_LLM_Error()
     {
-        var agentNode = CreateNodeInstance("agent1", "agent", isEntry: true);
+        var agentNode = CreateNodeDefinition("agent1", "agent", isEntry: true);
 
         var workflow = new Workflow
         {
@@ -281,7 +281,7 @@ public class AgentNodeTests
     [Fact]
     public async Task ExecuteAsync_Tool_Not_Found_Returns_Error_Message()
     {
-        var agentNode = CreateNodeInstance("agent1", "agent", isEntry: true);
+        var agentNode = CreateNodeDefinition("agent1", "agent", isEntry: true);
 
         var workflow = new Workflow
         {
@@ -327,7 +327,7 @@ public class AgentNodeTests
     [Fact]
     public async Task ExecuteAsync_Passes_Input_To_LLM()
     {
-        var agentNode = CreateNodeInstance("agent1", "agent", isEntry: true);
+        var agentNode = CreateNodeDefinition("agent1", "agent", isEntry: true);
 
         var workflow = new Workflow
         {
@@ -377,7 +377,7 @@ public class AgentNodeTests
             PromptTemplate = "You are a helpful assistant."
         };
 
-        var agentNodeInst = CreateNodeInstance("agent1", "agent", isEntry: true);
+        var agentNodeInst = CreateNodeDefinition("agent1", "agent", isEntry: true);
 
         var workflow = new Workflow
         {
@@ -401,8 +401,8 @@ public class AgentNodeTests
     [Fact]
     public async Task ExecuteAsync_Tool_Result_Fed_Back_To_LLM()
     {
-        var toolNode = CreateNodeInstance("tool1", "passThrough");
-        var agentNode = CreateNodeInstance("agent1", "agent", isEntry: true);
+        var toolNode = CreateNodeDefinition("tool1", "passThrough");
+        var agentNode = CreateNodeDefinition("agent1", "agent", isEntry: true);
 
         var workflow = new Workflow
         {
@@ -469,7 +469,7 @@ public class AgentNodeTests
             TimeoutSeconds = 1
         };
 
-        var agentNodeInst = CreateNodeInstance("agent1", "agent", isEntry: true);
+        var agentNodeInst = CreateNodeDefinition("agent1", "agent", isEntry: true);
 
         var workflow = new Workflow
         {
@@ -504,8 +504,8 @@ public class AgentNodeTests
     [Fact]
     public async Task ExecuteAsync_Creates_NodeExecutionRecord_For_Tool_Execution()
     {
-        var toolNode = CreateNodeInstance("tool1", "passThrough");
-        var agentNode = CreateNodeInstance("agent1", "agent", isEntry: true);
+        var toolNode = CreateNodeDefinition("tool1", "passThrough");
+        var agentNode = CreateNodeDefinition("agent1", "agent", isEntry: true);
 
         var workflow = new Workflow
         {
@@ -549,19 +549,15 @@ public class AgentNodeTests
             return new LlmResponse { Content = "Final answer" };
         });
 
-        var executionStore = new InMemoryTestExecutionStore();
         var context = CreateContext(
             workflow: workflow,
             llmClient: llmClient,
-            currentNodeId: agentNode.Id,
-            executionStore: executionStore);
+            currentNodeId: agentNode.Id);
 
         var agent = new AgentNode();
         var result = await agent.ExecuteAsync(context);
 
         Assert.True(result.Success);
-        Assert.Single(executionStore.NodeRecords);
-        Assert.Equal(toolNode.Id, executionStore.NodeRecords[0].NodeDefinitionId);
         Assert.Equal("Final answer", GetResultContent(result));
     }
 
@@ -569,8 +565,7 @@ public class AgentNodeTests
         Workflow? workflow = null,
         ILlmClient? llmClient = null,
         Guid? currentNodeId = null,
-        IReadOnlyDictionary<string, DataBatch>? inputs = null,
-        IExecutionStore? executionStore = null)
+        IReadOnlyDictionary<string, DataBatch>? inputs = null)
     {
         var nodeId = currentNodeId ?? Guid.NewGuid();
         return new NodeExecutionContext
@@ -591,8 +586,7 @@ public class AgentNodeTests
             Logger = NullExecutionLogger.Instance,
             CancellationToken = CancellationToken.None,
             LlmClient = llmClient,
-            NodeRegistry = _nodeRegistry,
-            ExecutionStore = executionStore
+            NodeRegistry = _nodeRegistry
         };
     }
 
@@ -608,12 +602,12 @@ public class AgentNodeTests
         };
     }
 
-    private static NodeInstance CreateNodeInstance(
+    private static NodeDefinition CreateNodeDefinition(
         string name,
         string typeName,
         bool isEntry = false)
     {
-        return new NodeInstance
+        return new NodeDefinition
         {
             Id = Guid.NewGuid(),
             Name = name,
@@ -683,35 +677,5 @@ public class AgentNodeTests
         public void LogInformation(string message, params object?[] args) { }
         public void LogWarning(string message, params object?[] args) { }
         public void LogError(Exception? exception, string message, params object?[] args) { }
-    }
-
-    private sealed class InMemoryTestExecutionStore : IExecutionStore
-    {
-        public List<NodeExecutionRecord> NodeRecords { get; } = [];
-
-        public Task<ExecutionRecord?> GetByIdAsync(Guid executionId, CancellationToken cancellationToken = default)
-            => Task.FromResult<ExecutionRecord?>(null);
-
-        public Task<IReadOnlyCollection<ExecutionRecord>> GetByWorkflowDefinitionIdAsync(
-            Guid workflowDefinitionId, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyCollection<ExecutionRecord>>([]);
-
-        public Task<IReadOnlyCollection<ExecutionRecord>> GetByStatusAsync(
-            FlowEngine.Core.Enums.ExecutionStatus status, CancellationToken cancellationToken = default)
-            => Task.FromResult<IReadOnlyCollection<ExecutionRecord>>([]);
-
-        public Task SaveAsync(ExecutionRecord executionRecord, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
-
-        public Task AddNodeRecordAsync(
-            Guid executionId, NodeExecutionRecord nodeRecord, CancellationToken cancellationToken = default)
-        {
-            NodeRecords.Add(nodeRecord);
-            return Task.CompletedTask;
-        }
-
-        public Task UpdateStatusAsync(
-            Guid executionId, FlowEngine.Core.Enums.ExecutionStatus status, CancellationToken cancellationToken = default)
-            => Task.CompletedTask;
     }
 }

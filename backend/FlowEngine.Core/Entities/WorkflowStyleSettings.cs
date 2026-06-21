@@ -1,8 +1,11 @@
+using System.ComponentModel.DataAnnotations.Schema;
+
 namespace FlowEngine.Core.Entities;
 
 /// <summary>
 /// 工作流样式设置。
 /// </summary>
+[NotMapped]
 public sealed class WorkflowStyleSettings
 {
     /// <summary>

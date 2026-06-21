@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations.Schema;
 using System.Text.Json.Nodes;
 
 namespace FlowEngine.Core.Entities;
@@ -5,6 +6,7 @@ namespace FlowEngine.Core.Entities;
 /// <summary>
 /// 数据项。
 /// </summary>
+[NotMapped]
 public class DataItem
 {
     /// <summary>

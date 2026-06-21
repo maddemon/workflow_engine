@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
+using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Enums;
 using Microsoft.EntityFrameworkCore;
 
@@ -52,5 +53,6 @@ public class ExecutionRecord : Entity
     /// </summary>
     [Column("node_records")]
     [Comment("节点执行记录列表")]
+    [JsonColumn]
     public List<NodeExecutionRecord> NodeRecords { get; set; } = [];
 }

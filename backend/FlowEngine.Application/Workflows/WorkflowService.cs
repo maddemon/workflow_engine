@@ -2,43 +2,28 @@ using FlowEngine.Application.Audit;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Triggers;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
+using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Workflows;
 
 /// <summary>
 /// 工作流应用服务，编排工作流 CRUD 与保存校验。
 /// </summary>
-public sealed class WorkflowService
+/// <remarks>
+/// 初始化工作流应用服务。
+/// </remarks>
+public sealed class WorkflowService(
+    FlowEngineDbContext dbContext,
+    WorkflowValidator _workflowValidator,
+    IEventBus eventBus,
+    AuditEventFactory auditFactory,
+    TriggerService _triggerService,
+    IScheduleManager _scheduleManager)
 {
-    private readonly IWorkflowRepository _workflowRepository;
-    private readonly WorkflowValidator _workflowValidator;
-    private readonly IEventBus _eventBus;
-    private readonly AuditEventFactory _auditFactory;
-    private readonly ITriggerRepository _triggerRepository;
-    private readonly IScheduleManager _scheduleManager;
-
-    /// <summary>
-    /// 初始化工作流应用服务。
-    /// </summary>
-    public WorkflowService(
-        IWorkflowRepository workflowRepository,
-        WorkflowValidator workflowValidator,
-        IEventBus eventBus,
-        AuditEventFactory auditFactory,
-        ITriggerRepository triggerRepository,
-        IScheduleManager scheduleManager)
-    {
-        _workflowRepository = workflowRepository ?? throw new ArgumentNullException(nameof(workflowRepository));
-        _workflowValidator = workflowValidator ?? throw new ArgumentNullException(nameof(workflowValidator));
-        _eventBus = eventBus;
-        _auditFactory = auditFactory;
-        _triggerRepository = triggerRepository ?? throw new ArgumentNullException(nameof(triggerRepository));
-        _scheduleManager = scheduleManager ?? throw new ArgumentNullException(nameof(scheduleManager));
-    }
-
     /// <summary>
     /// 创建工作流。
     /// </summary>
@@ -59,9 +44,10 @@ public sealed class WorkflowService
         };
 
         ValidateOrThrow(workflow);
-        await _workflowRepository.SaveAsync(workflow, cancellationToken).ConfigureAwait(false);
+        dbContext.Workflows.Add(workflow);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await _eventBus.PublishAsync(_auditFactory.Create<AuditLogEvent>(
+        await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
             AuditEventTypes.WorkflowCreated,
             "Workflow",
             workflow.Id,
@@ -76,7 +62,9 @@ public sealed class WorkflowService
     /// </summary>
     public async Task<WorkflowDto?> GetAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var workflow = await _workflowRepository.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
+        var workflow = await dbContext.Workflows
+            .FirstOrDefaultAsync(w => w.Id == id, cancellationToken)
+            .ConfigureAwait(false);
         return workflow is null ? null : MapToDto(workflow);
     }
 
@@ -85,7 +73,9 @@ public sealed class WorkflowService
     /// </summary>
     public async Task<IReadOnlyCollection<WorkflowSummaryDto>> GetAllAsync(CancellationToken cancellationToken = default)
     {
-        var workflows = await _workflowRepository.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        var workflows = await dbContext.Workflows
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
         return workflows.Select(MapToSummary).ToList();
     }
 
@@ -99,7 +89,9 @@ public sealed class WorkflowService
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        var existing = await _workflowRepository.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
+        var existing = await dbContext.Workflows
+            .FirstOrDefaultAsync(w => w.Id == id, cancellationToken)
+            .ConfigureAwait(false);
         if (existing is null)
         {
             return null;
@@ -116,7 +108,7 @@ public sealed class WorkflowService
         existing.UpdatedAt = DateTime.UtcNow;
 
         ValidateOrThrow(existing);
-        await _workflowRepository.SaveAsync(existing, cancellationToken).ConfigureAwait(false);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         if (previousIsActive && !existing.IsActive)
         {
@@ -127,7 +119,7 @@ public sealed class WorkflowService
             await RegisterTriggersAsync(existing.Id, cancellationToken).ConfigureAwait(false);
         }
 
-        await _eventBus.PublishAsync(_auditFactory.Create<AuditLogEvent>(
+        await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
             AuditEventTypes.WorkflowUpdated,
             "Workflow",
             existing.Id,
@@ -142,19 +134,21 @@ public sealed class WorkflowService
     /// </summary>
     public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var existing = await _workflowRepository.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
+        var existing = await dbContext.Workflows
+            .FirstOrDefaultAsync(w => w.Id == id, cancellationToken)
+            .ConfigureAwait(false);
         if (existing is null)
         {
             return false;
         }
 
-        await _workflowRepository.DeleteAsync(id, cancellationToken).ConfigureAwait(false);
+        dbContext.Workflows.Remove(existing);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         await UnregisterTriggersAsync(id, cancellationToken).ConfigureAwait(false);
-        await _triggerRepository.DeleteWebhookRoutesByWorkflowDefinitionIdAsync(id, cancellationToken).ConfigureAwait(false);
-        await _triggerRepository.DeleteByWorkflowDefinitionIdAsync(id, cancellationToken).ConfigureAwait(false);
+        await _triggerService.DeleteByWorkflowDefinitionIdAsync(id, cancellationToken).ConfigureAwait(false);
 
-        await _eventBus.PublishAsync(_auditFactory.Create<AuditLogEvent>(
+        await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
             AuditEventTypes.WorkflowDeleted,
             "Workflow",
             id),
@@ -171,7 +165,8 @@ public sealed class WorkflowService
         int version,
         CancellationToken cancellationToken = default)
     {
-        var workflow = await _workflowRepository.GetByVersionAsync(id, version, cancellationToken)
+        var workflow = await dbContext.Workflows
+            .FirstOrDefaultAsync(w => w.Id == id && w.Version == version, cancellationToken)
             .ConfigureAwait(false);
         return workflow is null ? null : MapToDto(workflow);
     }
@@ -181,21 +176,25 @@ public sealed class WorkflowService
     /// </summary>
     public async Task<IReadOnlyCollection<int>> GetVersionsAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        return await _workflowRepository.GetVersionsAsync(id, cancellationToken).ConfigureAwait(false);
+        return await dbContext.Workflows
+            .Where(w => w.Id == id)
+            .Select(w => w.Version)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
     }
 
     /// <summary>
     /// 将 API DTO 转换为领域实体，生成新的 Guid ID 并建立前端字符串 ID 到 Guid 的映射。
     /// </summary>
-    private static (List<NodeInstance> Nodes, List<Connection> Connections, Dictionary<string, Guid> NodeIdMap) ConvertFromDtos(
-        List<NodeInstanceDto> nodeDtos,
+    private static (List<NodeDefinition> Nodes, List<Connection> Connections, Dictionary<string, Guid> NodeIdMap) ConvertFromDtos(
+        List<NodeDefinitionDto> nodeDtos,
         List<ConnectionDto> connectionDtos)
     {
         var nodeIdMap = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
 
         var nodes = nodeDtos.Select(dto =>
         {
-            var node = new NodeInstance
+            var node = new NodeDefinition
             {
                 TypeName = dto.TypeName,
                 Name = dto.Name,
@@ -249,7 +248,7 @@ public sealed class WorkflowService
     /// </summary>
     private static WorkflowDto MapToDto(Workflow workflow)
     {
-        var nodeDtos = workflow.Nodes.Select(n => new NodeInstanceDto
+        var nodeDtos = workflow.Nodes.Select(n => new NodeDefinitionDto
         {
             Id = n.Id.ToString(),
             TypeName = n.TypeName,
@@ -295,7 +294,7 @@ public sealed class WorkflowService
     /// </summary>
     private static WorkflowDto MapToDto(
         Workflow workflow,
-        List<NodeInstanceDto> originalNodeDtos,
+        List<NodeDefinitionDto> originalNodeDtos,
         List<ConnectionDto> originalConnectionDtos,
         Dictionary<string, Guid> nodeIdMap)
     {
@@ -304,7 +303,7 @@ public sealed class WorkflowService
         var nodeDtos = workflow.Nodes.Select(n =>
         {
             var originalId = reverseNodeIdMap.TryGetValue(n.Id, out var origId) ? origId : n.Id.ToString();
-            return new NodeInstanceDto
+            return new NodeDefinitionDto
             {
                 Id = originalId,
                 TypeName = n.TypeName,
@@ -367,7 +366,7 @@ public sealed class WorkflowService
 
     private async Task RegisterTriggersAsync(Guid workflowDefinitionId, CancellationToken cancellationToken)
     {
-        var triggers = await _triggerRepository
+        var triggers = await _triggerService
             .GetByWorkflowDefinitionIdAsync(workflowDefinitionId, cancellationToken)
             .ConfigureAwait(false);
 
@@ -375,9 +374,7 @@ public sealed class WorkflowService
         {
             if (trigger.Type == TriggerType.Schedule)
             {
-                var settings = string.IsNullOrEmpty(trigger.SettingsJson) || trigger.SettingsJson == "{}"
-                    ? null
-                    : System.Text.Json.JsonSerializer.Deserialize<TriggerSettingsDto>(trigger.SettingsJson);
+                var settings = trigger.Settings;
 
                 if (settings?.CronExpression is not null)
                 {
@@ -396,7 +393,7 @@ public sealed class WorkflowService
 
     private async Task UnregisterTriggersAsync(Guid workflowDefinitionId, CancellationToken cancellationToken)
     {
-        var triggers = await _triggerRepository
+        var triggers = await _triggerService
             .GetByWorkflowDefinitionIdAsync(workflowDefinitionId, cancellationToken)
             .ConfigureAwait(false);
 

@@ -1,7 +1,9 @@
 using FlowEngine.Application.Triggers;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Data;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.ValueObjects;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Quartz;
 
@@ -12,7 +14,7 @@ namespace FlowEngine.Host.Jobs;
 /// </summary>
 public sealed class ScheduleTriggerJob(
     IEngine engine,
-    ITriggerRepository triggerRepository,
+    FlowEngineDbContext dbContext,
     TriggerService triggerService,
     ILogger<ScheduleTriggerJob> logger) : IJob
 {
@@ -37,7 +39,7 @@ public sealed class ScheduleTriggerJob(
             "定时触发器执行: TriggerId={TriggerId}, WorkflowDefinitionId={WorkflowDefinitionId}",
             triggerId, workflowDefinitionId);
 
-        var trigger = await triggerRepository.GetByIdAsync(triggerId, context.CancellationToken)
+        var trigger = await dbContext.Triggers.FirstOrDefaultAsync(t => t.Id == triggerId, context.CancellationToken)
             .ConfigureAwait(false);
 
         if (trigger is null || !trigger.IsActive)

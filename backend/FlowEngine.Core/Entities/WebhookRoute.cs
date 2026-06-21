@@ -65,14 +65,14 @@ public class WebhookRoute : Entity
     /// </summary>
     [Column("allowed_ips")]
     [Comment("IP 白名单 JSON")]
-    public string? AllowedIpsJson { get; set; }
+    public List<string>? AllowedIps { get; set; }
 
     /// <summary>
     /// 来源域白名单 JSON。
     /// </summary>
     [Column("allowed_origins")]
     [Comment("来源域白名单 JSON")]
-    public string? AllowedOriginsJson { get; set; }
+    public List<string>? AllowedOrigins { get; set; }
 
     /// <summary>
     /// 是否同步响应（等待执行完成）。

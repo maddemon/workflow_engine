@@ -97,7 +97,7 @@ export interface NodeTypeDescriptor {
   displayTemplate?: string | null;
 }
 
-export interface NodeInstance {
+export interface NodeDefinition {
   id: string;
   typeName: string;
   name: string;
@@ -106,6 +106,7 @@ export interface NodeInstance {
   positionX: number;
   positionY: number;
   isEntry: boolean;
+  disabled: boolean;
   errorStrategy: string;
   retryPolicy: string | null;
   timeout: number | null;
@@ -129,7 +130,7 @@ export interface Workflow {
   updatedAt: string;
   isActive: boolean;
   styleSettings: WorkflowStyleSettings | null;
-  nodes: NodeInstance[];
+  nodes: NodeDefinition[];
   connections: Connection[];
 }
 
@@ -146,7 +147,7 @@ export interface WorkflowSummary {
 export interface CreateWorkflowDto {
   name: string;
   createdBy: string;
-  nodes: NodeInstance[];
+  nodes: NodeDefinition[];
   connections: Connection[];
 }
 
@@ -154,7 +155,7 @@ export interface UpdateWorkflowDto {
   name: string;
   isActive: boolean;
   styleSettings: WorkflowStyleSettings | null;
-  nodes: NodeInstance[];
+  nodes: NodeDefinition[];
   connections: Connection[];
 }
 
