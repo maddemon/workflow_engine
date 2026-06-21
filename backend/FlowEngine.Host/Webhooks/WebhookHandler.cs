@@ -61,6 +61,18 @@ public sealed class WebhookHandler
             return;
         }
 
+        var trigger = await _triggerRepository
+            .GetByIdAsync(route.TriggerId, context.RequestAborted)
+            .ConfigureAwait(false);
+
+        if (trigger is null || !trigger.IsActive)
+        {
+            context.Response.StatusCode = StatusCodes.Status404NotFound;
+            await context.Response.WriteAsJsonAsync(new { error = "Webhook route not found" }, context.RequestAborted)
+                .ConfigureAwait(false);
+            return;
+        }
+
         if (!await ValidateRequestAsync(context, route).ConfigureAwait(false))
         {
             return;

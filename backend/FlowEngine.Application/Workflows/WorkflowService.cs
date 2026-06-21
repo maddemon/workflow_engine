@@ -151,6 +151,7 @@ public sealed class WorkflowService
         await _workflowRepository.DeleteAsync(id, cancellationToken).ConfigureAwait(false);
 
         await UnregisterTriggersAsync(id, cancellationToken).ConfigureAwait(false);
+        await _triggerRepository.DeleteWebhookRoutesByWorkflowDefinitionIdAsync(id, cancellationToken).ConfigureAwait(false);
         await _triggerRepository.DeleteByWorkflowDefinitionIdAsync(id, cancellationToken).ConfigureAwait(false);
 
         await _eventBus.PublishAsync(_auditFactory.Create<AuditLogEvent>(
