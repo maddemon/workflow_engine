@@ -2,9 +2,11 @@ using System.Collections;
 using System.Globalization;
 using System.Text;
 using System.Text.Json.Nodes;
+using DevLab.JmesPath;
 using FlowEngine.Core.Entities;
 using FlowEngine.Runtime.Expressions.Ast;
 using Microsoft.Extensions.Caching.Memory;
+using Newtonsoft.Json.Linq;
 
 namespace FlowEngine.Runtime.Expressions;
 
@@ -32,7 +34,19 @@ public sealed class ExpressionEvaluator
     /// <returns>求值后的字符串。</returns>
     public string EvaluateToString(string template, ExpressionContext context)
     {
-        var result = Evaluate(template, context);
+        return EvaluateToString(template, context, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// 求值模板字符串并返回字符串结果。
+    /// </summary>
+    /// <param name="template">模板字符串。</param>
+    /// <param name="context">求值上下文。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>求值后的字符串。</returns>
+    public string EvaluateToString(string template, ExpressionContext context, CancellationToken cancellationToken)
+    {
+        var result = Evaluate(template, context, cancellationToken);
         return result?.ToString() ?? string.Empty;
     }
 
@@ -44,6 +58,20 @@ public sealed class ExpressionEvaluator
     /// <returns>求值结果。</returns>
     public object? Evaluate(string template, ExpressionContext context)
     {
+        return Evaluate(template, context, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// 求值模板字符串并返回原始对象结果。
+    /// </summary>
+    /// <param name="template">模板字符串。</param>
+    /// <param name="context">求值上下文。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>求值结果。</returns>
+    public object? Evaluate(string template, ExpressionContext context, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
         var cacheKey = CreateCacheKey(template, context);
         if (!_cache.TryGetValue(cacheKey, out IReadOnlyList<Segment>? segments) || segments is null)
         {
@@ -55,23 +83,25 @@ public sealed class ExpressionEvaluator
         {
             if (segments.Count == 1 && segments[0] is ExpressionSegment singleExpression)
             {
-                return EvaluateExpression(singleExpression.Expression, context);
+                return EvaluateExpression(singleExpression.Expression, context, cancellationToken);
             }
 
             var sb = new StringBuilder();
             for (var i = 0; i < segments.Count; i++)
             {
+                cancellationToken.ThrowIfCancellationRequested();
+
                 var segment = segments[i];
 
                 if (segment is ExpressionSegment expression)
                 {
-                    var value = EvaluateExpression(expression.Expression, context);
+                    var value = EvaluateExpression(expression.Expression, context, cancellationToken);
 
                     // Check if followed by a comparison operator in the next literal segment
                     // e.g. {{ input.statusCode }} == 200 → parse as binary expression
                     if (i + 1 < segments.Count && segments[i + 1] is LiteralSegment nextLiteral)
                     {
-                        var comparisonResult = TryParseComparisonFromLiteral(value, nextLiteral.Text, context, segments, ref i);
+                        var comparisonResult = TryParseComparisonFromLiteral(value, nextLiteral.Text, context, segments, ref i, cancellationToken);
                         if (comparisonResult.HasValue)
                         {
                             return comparisonResult.Value;
@@ -193,16 +223,30 @@ public sealed class ExpressionEvaluator
     /// <returns>求值结果。</returns>
     public object? EvaluateExpression(ExpressionNode node, ExpressionContext context)
     {
+        return EvaluateExpression(node, context, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// 求值单个表达式节点。
+    /// </summary>
+    /// <param name="node">表达式节点。</param>
+    /// <param name="context">求值上下文。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>求值结果。</returns>
+    public object? EvaluateExpression(ExpressionNode node, ExpressionContext context, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
         return node switch
         {
             LiteralNode literal => literal.Value,
             IdentifierNode identifier => ResolveIdentifier(identifier.Name, context),
-            MemberAccessNode memberAccess => EvaluateMemberAccess(memberAccess, context),
-            IndexerNode indexer => EvaluateIndexer(indexer, context),
-            FunctionCallNode functionCall => EvaluateFunctionCall(functionCall, context),
-            BinaryOperationNode binary => EvaluateBinary(binary, context),
-            UnaryOperationNode unary => EvaluateUnary(unary, context),
-            TernaryNode ternary => EvaluateTernary(ternary, context),
+            MemberAccessNode memberAccess => EvaluateMemberAccess(memberAccess, context, cancellationToken),
+            IndexerNode indexer => EvaluateIndexer(indexer, context, cancellationToken),
+            FunctionCallNode functionCall => EvaluateFunctionCall(functionCall, context, cancellationToken),
+            BinaryOperationNode binary => EvaluateBinary(binary, context, cancellationToken),
+            UnaryOperationNode unary => EvaluateUnary(unary, context, cancellationToken),
+            TernaryNode ternary => EvaluateTernary(ternary, context, cancellationToken),
             _ => throw new ExpressionEvaluationException(new ExpressionError
             {
                 Type = ExpressionErrorType.SyntaxError,
@@ -243,9 +287,9 @@ public sealed class ExpressionEvaluator
         };
     }
 
-    private object? EvaluateMemberAccess(MemberAccessNode memberAccess, ExpressionContext context)
+    private object? EvaluateMemberAccess(MemberAccessNode memberAccess, ExpressionContext context, CancellationToken cancellationToken)
     {
-        var target = EvaluateExpression(memberAccess.Target, context);
+        var target = EvaluateExpression(memberAccess.Target, context, cancellationToken);
 
         if (target is EnvironmentWrapper wrapper)
         {
@@ -312,10 +356,10 @@ public sealed class ExpressionEvaluator
         };
     }
 
-    private object? EvaluateIndexer(IndexerNode indexer, ExpressionContext context)
+    private object? EvaluateIndexer(IndexerNode indexer, ExpressionContext context, CancellationToken cancellationToken)
     {
-        var target = EvaluateExpression(indexer.Target, context);
-        var index = EvaluateExpression(indexer.Index, context);
+        var target = EvaluateExpression(indexer.Target, context, cancellationToken);
+        var index = EvaluateExpression(indexer.Index, context, cancellationToken);
 
         if (target is NodeOutputsWrapper nodeOutputs)
         {
@@ -369,9 +413,9 @@ public sealed class ExpressionEvaluator
         return ValueAccessor.GetIndex(target, index);
     }
 
-    private object? EvaluateFunctionCall(FunctionCallNode functionCall, ExpressionContext context)
+    private object? EvaluateFunctionCall(FunctionCallNode functionCall, ExpressionContext context, CancellationToken cancellationToken)
     {
-        var args = functionCall.Arguments.Select(a => EvaluateExpression(a, context)).ToList();
+        var args = functionCall.Arguments.Select(a => EvaluateExpression(a, context, cancellationToken)).ToList();
 
         return functionCall.FunctionName.ToLowerInvariant() switch
         {
@@ -381,10 +425,12 @@ public sealed class ExpressionEvaluator
             "lower" => EvaluateLower(args),
             "now" => context.Metadata.Now,
             "items" => EvaluateItems(args, context),
+            "jmespath" => EvaluateJmesPath(args),
             _ => throw new ExpressionEvaluationException(new ExpressionError
             {
-                Type = ExpressionErrorType.SyntaxError,
-                Reason = $"未识别的函数 '{functionCall.FunctionName}'。"
+                Type = ExpressionErrorType.SecurityViolation,
+                Expression = $"{functionCall.FunctionName}(...)",
+                Reason = $"函数 '{functionCall.FunctionName}' 不在白名单中，不允许调用。"
             })
         };
     }
@@ -432,6 +478,79 @@ public sealed class ExpressionEvaluator
         return value.ToLowerInvariant();
     }
 
+    private static object? EvaluateJmesPath(IReadOnlyList<object?> args)
+    {
+        if (args.Count != 2)
+        {
+            throw new ExpressionEvaluationException(new ExpressionError
+            {
+                Type = ExpressionErrorType.TypeMismatch,
+                Reason = "jmespath() 函数需要 2 个参数（data, query）。"
+            });
+        }
+
+        var data = args[0];
+        var query = args[1]?.ToString()
+            ?? throw new ExpressionEvaluationException(new ExpressionError
+            {
+                Type = ExpressionErrorType.TypeMismatch,
+                Reason = "jmespath() 查询表达式不能为 null。"
+            });
+
+        try
+        {
+            var json = ConvertToJToken(data);
+            var jmespath = new DevLab.JmesPath.JmesPath();
+            var result = jmespath.Transform(json.ToString(Newtonsoft.Json.Formatting.None), query);
+            return ConvertFromJToken(JToken.Parse(result));
+        }
+        catch (Exception ex)
+        {
+            throw new ExpressionEvaluationException(new ExpressionError
+            {
+                Type = ExpressionErrorType.SyntaxError,
+                Expression = $"jmespath(..., \"{query}\")",
+                Reason = $"JMESPath 查询失败：{ex.Message}"
+            });
+        }
+    }
+
+    private static JToken ConvertToJToken(object? value)
+    {
+        return value switch
+        {
+            null => JValue.CreateNull(),
+            JToken jToken => jToken,
+            JsonNode jsonNode => JToken.Parse(jsonNode.ToJsonString()),
+            string s => JValue.CreateString(s),
+            int i => new JValue(i),
+            long l => new JValue(l),
+            double d => new JValue(d),
+            float f => new JValue(f),
+            bool b => new JValue(b),
+            _ => JValue.CreateString(value.ToString())
+        };
+    }
+
+    private static object? ConvertFromJToken(JToken? token)
+    {
+        if (token is null or JValue { Type: JTokenType.Null })
+        {
+            return null;
+        }
+
+        return token.Type switch
+        {
+            JTokenType.Integer => token.Value<long>(),
+            JTokenType.Float => token.Value<double>(),
+            JTokenType.Boolean => token.Value<bool>(),
+            JTokenType.String => token.Value<string>(),
+            JTokenType.Array => JsonNode.Parse(token.ToString()),
+            JTokenType.Object => JsonNode.Parse(token.ToString()),
+            _ => token.ToString()
+        };
+    }
+
     private static string GetSingleString(IReadOnlyList<object?> args, string functionName)
     {
         if (args.Count != 1)
@@ -476,25 +595,25 @@ public sealed class ExpressionEvaluator
         return batch;
     }
 
-    private object? EvaluateBinary(BinaryOperationNode binary, ExpressionContext context)
+    private object? EvaluateBinary(BinaryOperationNode binary, ExpressionContext context, CancellationToken cancellationToken)
     {
-        var left = EvaluateExpression(binary.Left, context);
+        var left = EvaluateExpression(binary.Left, context, cancellationToken);
 
         return binary.Operator switch
         {
-            BinaryOperator.Add => Add(left, EvaluateExpression(binary.Right, context)),
-            BinaryOperator.Subtract => Subtract(left, EvaluateExpression(binary.Right, context)),
-            BinaryOperator.Multiply => Multiply(left, EvaluateExpression(binary.Right, context)),
-            BinaryOperator.Divide => Divide(left, EvaluateExpression(binary.Right, context)),
-            BinaryOperator.Modulo => Modulo(left, EvaluateExpression(binary.Right, context)),
-            BinaryOperator.Equal => Equal(left, EvaluateExpression(binary.Right, context)),
-            BinaryOperator.NotEqual => !Equal(left, EvaluateExpression(binary.Right, context)),
-            BinaryOperator.GreaterThan => Compare(left, EvaluateExpression(binary.Right, context)) > 0,
-            BinaryOperator.LessThan => Compare(left, EvaluateExpression(binary.Right, context)) < 0,
-            BinaryOperator.GreaterThanOrEqual => Compare(left, EvaluateExpression(binary.Right, context)) >= 0,
-            BinaryOperator.LessThanOrEqual => Compare(left, EvaluateExpression(binary.Right, context)) <= 0,
-            BinaryOperator.And => ToBoolean(left) && ToBoolean(EvaluateExpression(binary.Right, context)),
-            BinaryOperator.Or => ToBoolean(left) || ToBoolean(EvaluateExpression(binary.Right, context)),
+            BinaryOperator.Add => Add(left, EvaluateExpression(binary.Right, context, cancellationToken)),
+            BinaryOperator.Subtract => Subtract(left, EvaluateExpression(binary.Right, context, cancellationToken)),
+            BinaryOperator.Multiply => Multiply(left, EvaluateExpression(binary.Right, context, cancellationToken)),
+            BinaryOperator.Divide => Divide(left, EvaluateExpression(binary.Right, context, cancellationToken)),
+            BinaryOperator.Modulo => Modulo(left, EvaluateExpression(binary.Right, context, cancellationToken)),
+            BinaryOperator.Equal => Equal(left, EvaluateExpression(binary.Right, context, cancellationToken)),
+            BinaryOperator.NotEqual => !Equal(left, EvaluateExpression(binary.Right, context, cancellationToken)),
+            BinaryOperator.GreaterThan => Compare(left, EvaluateExpression(binary.Right, context, cancellationToken)) > 0,
+            BinaryOperator.LessThan => Compare(left, EvaluateExpression(binary.Right, context, cancellationToken)) < 0,
+            BinaryOperator.GreaterThanOrEqual => Compare(left, EvaluateExpression(binary.Right, context, cancellationToken)) >= 0,
+            BinaryOperator.LessThanOrEqual => Compare(left, EvaluateExpression(binary.Right, context, cancellationToken)) <= 0,
+            BinaryOperator.And => ToBoolean(left) && ToBoolean(EvaluateExpression(binary.Right, context, cancellationToken)),
+            BinaryOperator.Or => ToBoolean(left) || ToBoolean(EvaluateExpression(binary.Right, context, cancellationToken)),
             _ => throw new ExpressionEvaluationException(new ExpressionError
             {
                 Type = ExpressionErrorType.SyntaxError,
@@ -503,9 +622,9 @@ public sealed class ExpressionEvaluator
         };
     }
 
-    private object? EvaluateUnary(UnaryOperationNode unary, ExpressionContext context)
+    private object? EvaluateUnary(UnaryOperationNode unary, ExpressionContext context, CancellationToken cancellationToken)
     {
-        var operand = EvaluateExpression(unary.Operand, context);
+        var operand = EvaluateExpression(unary.Operand, context, cancellationToken);
 
         return unary.Operator switch
         {
@@ -520,12 +639,12 @@ public sealed class ExpressionEvaluator
         };
     }
 
-    private object? EvaluateTernary(TernaryNode ternary, ExpressionContext context)
+    private object? EvaluateTernary(TernaryNode ternary, ExpressionContext context, CancellationToken cancellationToken)
     {
-        var condition = ToBoolean(EvaluateExpression(ternary.Condition, context));
+        var condition = ToBoolean(EvaluateExpression(ternary.Condition, context, cancellationToken));
         return condition
-            ? EvaluateExpression(ternary.TrueExpression, context)
-            : EvaluateExpression(ternary.FalseExpression, context);
+            ? EvaluateExpression(ternary.TrueExpression, context, cancellationToken)
+            : EvaluateExpression(ternary.FalseExpression, context, cancellationToken);
     }
 
     private static object Add(object? left, object? right)
@@ -675,7 +794,8 @@ public sealed class ExpressionEvaluator
         string literalText,
         ExpressionContext context,
         IReadOnlyList<Segment> segments,
-        ref int index)
+        ref int index,
+        CancellationToken cancellationToken)
     {
         var trimmed = literalText.TrimStart();
 
@@ -692,7 +812,7 @@ public sealed class ExpressionEvaluator
             // If right side is empty, there might be another expression segment following
             if (string.IsNullOrEmpty(rightText) && index + 2 < segments.Count && segments[index + 2] is ExpressionSegment rightExpr)
             {
-                var rightValue = EvaluateExpression(rightExpr.Expression, context);
+                var rightValue = EvaluateExpression(rightExpr.Expression, context, cancellationToken);
                 index += 2; // skip the literal and expression segments
                 return CompareValues(leftValue, rightValue, op);
             }

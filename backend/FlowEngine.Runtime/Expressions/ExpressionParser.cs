@@ -9,6 +9,8 @@ namespace FlowEngine.Runtime.Expressions;
 /// </summary>
 public sealed class ExpressionParser
 {
+    private const int DefaultMaxDepth = 32;
+
     /// <summary>
     /// 解析模板字符串。
     /// </summary>
@@ -16,6 +18,18 @@ public sealed class ExpressionParser
     /// <returns>模板片段序列。</returns>
     /// <exception cref="ExpressionEvaluationException">语法错误时抛出。</exception>
     public IReadOnlyList<Segment> Parse(string template)
+    {
+        return Parse(template, DefaultMaxDepth);
+    }
+
+    /// <summary>
+    /// 解析模板字符串，限制递归深度。
+    /// </summary>
+    /// <param name="template">模板字符串。</param>
+    /// <param name="maxDepth">最大递归深度。</param>
+    /// <returns>模板片段序列。</returns>
+    /// <exception cref="ExpressionEvaluationException">语法错误或深度超限时抛出。</exception>
+    public IReadOnlyList<Segment> Parse(string template, int maxDepth)
     {
         ArgumentNullException.ThrowIfNull(template);
 
@@ -53,7 +67,7 @@ public sealed class ExpressionParser
                 throw CreateSyntaxError(template, startIndex, "表达式不能为空。");
             }
 
-            var expression = ParseExpression(expressionText);
+            var expression = ParseExpression(expressionText, maxDepth);
             segments.Add(new ExpressionSegment(expression));
             position = endIndex + 2;
         }
@@ -109,10 +123,10 @@ public sealed class ExpressionParser
         return -1;
     }
 
-    private static ExpressionNode ParseExpression(string expressionText)
+    private static ExpressionNode ParseExpression(string expressionText, int maxDepth)
     {
         var tokenizer = new Tokenizer(expressionText);
-        var parser = new ExpressionParserInternal(tokenizer, expressionText);
+        var parser = new ExpressionParserInternal(tokenizer, expressionText, maxDepth);
         return parser.ParseConditional();
     }
 
@@ -358,12 +372,16 @@ public sealed class ExpressionParser
     {
         private readonly Tokenizer _tokenizer;
         private readonly string _expressionText;
+        private readonly int _maxDepth;
+        private int _depth;
         private Token _currentToken;
 
-        public ExpressionParserInternal(Tokenizer tokenizer, string expressionText)
+        public ExpressionParserInternal(Tokenizer tokenizer, string expressionText, int maxDepth)
         {
             _tokenizer = tokenizer;
             _expressionText = expressionText;
+            _maxDepth = maxDepth;
+            _depth = 0;
             _currentToken = tokenizer.NextToken();
         }
 
@@ -379,6 +397,24 @@ public sealed class ExpressionParser
         }
 
         public ExpressionNode ParseConditional()
+        {
+            if (_depth >= _maxDepth)
+            {
+                throw CreateSyntaxError(_currentToken.Position, $"表达式递归深度超过上限 {_maxDepth}。");
+            }
+
+            _depth++;
+            try
+            {
+                return ParseConditionalCore();
+            }
+            finally
+            {
+                _depth--;
+            }
+        }
+
+        private ExpressionNode ParseConditionalCore()
         {
             var condition = ParseOr();
 
