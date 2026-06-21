@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Runtime.Tools;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -179,12 +180,12 @@ public sealed class AgentNode : INodeType
                 // Descriptor not found, skip
             }
 
-            var parametersSchema = BuildParametersSchema(descriptor?.Parameters);
+            var parametersSchema = SchemaDerivation.DeriveSchema(descriptor?.Parameters);
 
             tools.Add(new ToolDefinition
             {
                 Name = toolNode.Name,
-                Description = nodeType.DisplayName,
+                Description = ResolveToolDescription(nodeType, descriptor),
                 TargetNodeDefinitionId = toolNode.Id,
                 ParametersSchema = parametersSchema
             });
@@ -193,65 +194,22 @@ public sealed class AgentNode : INodeType
         return tools;
     }
 
-    private static JsonObject? BuildParametersSchema(IReadOnlyList<ParameterDefinition>? parameters)
+    private static string ResolveToolDescription(INodeType nodeType, NodeTypeDescriptor? descriptor)
     {
-        if (parameters is null || parameters.Count == 0)
+        var description = nodeType.DisplayName;
+        if (descriptor?.Parameters is { Count: > 0 })
         {
-            return null;
-        }
-
-        var properties = new JsonObject();
-        var required = new JsonArray();
-
-        foreach (var param in parameters)
-        {
-            var prop = new JsonObject
+            var aiParamParam = descriptor.Parameters.FirstOrDefault(p =>
+                SchemaDerivation.HasAiParamPlaceholder(p.Description));
+            if (aiParamParam?.Description is not null)
             {
-                ["type"] = MapParameterType(param.Type),
-                ["description"] = param.Description ?? param.DisplayName
-            };
-
-            if (param.Options.Count > 0)
-            {
-                var enumArray = new JsonArray();
-                foreach (var option in param.Options)
-                {
-                    enumArray.Add(JsonValue.Create(option.Value.ToString()));
-                }
-                prop["enum"] = enumArray;
-            }
-
-            properties[param.Name] = prop;
-
-            if (param.Required)
-            {
-                required.Add(param.Name);
+                description = SchemaDerivation.ResolveAiParamDescription(aiParamParam.Description)
+                    ?? description;
             }
         }
 
-        var schema = new JsonObject
-        {
-            ["type"] = "object",
-            ["properties"] = properties
-        };
-
-        if (required.Count > 0)
-        {
-            schema["required"] = required;
-        }
-
-        return schema;
+        return description;
     }
-
-    private static string MapParameterType(ParameterType type) => type switch
-    {
-        ParameterType.String => "string",
-        ParameterType.Number => "number",
-        ParameterType.Boolean => "boolean",
-        ParameterType.Json => "object",
-        ParameterType.Array => "array",
-        _ => "string"
-    };
 
     private List<LlmMessage> BuildMessages(NodeExecutionContext context)
     {
@@ -299,18 +257,18 @@ public sealed class AgentNode : INodeType
         var tool = tools.FirstOrDefault(t => t.Name == toolCall.Name);
         if (tool is null)
         {
-            return $"Tool '{toolCall.Name}' not found.";
+            return ResultSanitizer.Sanitize(toolCall.Name, $"Tool '{toolCall.Name}' not found.");
         }
 
         var toolNode = parentContext.Workflow.Nodes.FirstOrDefault(n => n.Id == tool.TargetNodeDefinitionId);
         if (toolNode is null)
         {
-            return $"Tool node '{tool.TargetNodeDefinitionId}' not found.";
+            return ResultSanitizer.Sanitize(toolCall.Name, $"Tool node '{tool.TargetNodeDefinitionId}' not found.");
         }
 
         if (parentContext.NodeRegistry?.TryGet(toolNode.TypeName, out var nodeType) != true || nodeType is null)
         {
-            return $"Node type '{toolNode.TypeName}' not found.";
+            return ResultSanitizer.Sanitize(toolCall.Name, $"Node type '{toolNode.TypeName}' not found.");
         }
 
         JsonNode? args;
@@ -381,7 +339,7 @@ public sealed class AgentNode : INodeType
 
             if (!result.Success)
             {
-                return $"Tool execution failed: {result.Error?.Message ?? "Unknown error"}";
+                return ResultSanitizer.Sanitize(toolCall.Name, $"Tool execution failed: {result.Error?.Message ?? "Unknown error"}");
             }
 
             if (result.Output.Items.Count > 0)
@@ -389,11 +347,11 @@ public sealed class AgentNode : INodeType
                 var data = result.Output.Items[0].Data;
                 if (data is not null)
                 {
-                    return data.ToJsonString();
+                    return ResultSanitizer.Sanitize(toolCall.Name, data.ToJsonString());
                 }
             }
 
-            return "Tool executed successfully.";
+            return ResultSanitizer.Sanitize(toolCall.Name, "Tool executed successfully.");
         }
         catch (Exception ex)
         {
@@ -424,7 +382,7 @@ public sealed class AgentNode : INodeType
                     parentContext.ExecutionId, failRecord, cancellationToken).ConfigureAwait(false);
             }
 
-            return $"Tool execution error: {ex.Message}";
+            return ResultSanitizer.Sanitize(toolCall.Name, $"Tool execution error: {ex.Message}");
         }
     }
 

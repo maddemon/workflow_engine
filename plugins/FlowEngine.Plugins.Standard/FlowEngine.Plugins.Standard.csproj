@@ -8,6 +8,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\backend\FlowEngine.Core\FlowEngine.Core.csproj" />
+    <ProjectReference Include="..\..\backend\FlowEngine.Runtime\FlowEngine.Runtime.csproj" />
   </ItemGroup>
 
   <ItemGroup>
