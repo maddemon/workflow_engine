@@ -1,7 +1,9 @@
 using FlowEngine.Application.Audit;
 using FlowEngine.Application.Dtos;
+using FlowEngine.Application.Triggers;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
+using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
 
 namespace FlowEngine.Application.Workflows;
@@ -15,6 +17,8 @@ public sealed class WorkflowService
     private readonly WorkflowValidator _workflowValidator;
     private readonly IEventBus _eventBus;
     private readonly AuditEventFactory _auditFactory;
+    private readonly ITriggerRepository _triggerRepository;
+    private readonly IScheduleManager _scheduleManager;
 
     /// <summary>
     /// 初始化工作流应用服务。
@@ -23,12 +27,16 @@ public sealed class WorkflowService
         IWorkflowRepository workflowRepository,
         WorkflowValidator workflowValidator,
         IEventBus eventBus,
-        AuditEventFactory auditFactory)
+        AuditEventFactory auditFactory,
+        ITriggerRepository triggerRepository,
+        IScheduleManager scheduleManager)
     {
         _workflowRepository = workflowRepository ?? throw new ArgumentNullException(nameof(workflowRepository));
         _workflowValidator = workflowValidator ?? throw new ArgumentNullException(nameof(workflowValidator));
         _eventBus = eventBus;
         _auditFactory = auditFactory;
+        _triggerRepository = triggerRepository ?? throw new ArgumentNullException(nameof(triggerRepository));
+        _scheduleManager = scheduleManager ?? throw new ArgumentNullException(nameof(scheduleManager));
     }
 
     /// <summary>
@@ -97,6 +105,7 @@ public sealed class WorkflowService
             return null;
         }
 
+        var previousIsActive = existing.IsActive;
         var (nodes, connections, nodeIdMap) = ConvertFromDtos(dto.Nodes, dto.Connections);
 
         existing.Name = dto.Name;
@@ -108,6 +117,15 @@ public sealed class WorkflowService
 
         ValidateOrThrow(existing);
         await _workflowRepository.SaveAsync(existing, cancellationToken).ConfigureAwait(false);
+
+        if (previousIsActive && !existing.IsActive)
+        {
+            await UnregisterTriggersAsync(existing.Id, cancellationToken).ConfigureAwait(false);
+        }
+        else if (!previousIsActive && existing.IsActive)
+        {
+            await RegisterTriggersAsync(existing.Id, cancellationToken).ConfigureAwait(false);
+        }
 
         await _eventBus.PublishAsync(_auditFactory.Create<AuditLogEvent>(
             AuditEventTypes.WorkflowUpdated,
@@ -131,6 +149,9 @@ public sealed class WorkflowService
         }
 
         await _workflowRepository.DeleteAsync(id, cancellationToken).ConfigureAwait(false);
+
+        await UnregisterTriggersAsync(id, cancellationToken).ConfigureAwait(false);
+        await _triggerRepository.DeleteByWorkflowDefinitionIdAsync(id, cancellationToken).ConfigureAwait(false);
 
         await _eventBus.PublishAsync(_auditFactory.Create<AuditLogEvent>(
             AuditEventTypes.WorkflowDeleted,
@@ -341,5 +362,49 @@ public sealed class WorkflowService
             Version = workflow.Version,
             IsActive = workflow.IsActive
         };
+    }
+
+    private async Task RegisterTriggersAsync(Guid workflowDefinitionId, CancellationToken cancellationToken)
+    {
+        var triggers = await _triggerRepository
+            .GetByWorkflowDefinitionIdAsync(workflowDefinitionId, cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var trigger in triggers.Where(t => t.IsActive))
+        {
+            if (trigger.Type == TriggerType.Schedule)
+            {
+                var settings = string.IsNullOrEmpty(trigger.SettingsJson) || trigger.SettingsJson == "{}"
+                    ? null
+                    : System.Text.Json.JsonSerializer.Deserialize<TriggerSettingsDto>(trigger.SettingsJson);
+
+                if (settings?.CronExpression is not null)
+                {
+                    await _scheduleManager.RegisterScheduleAsync(
+                        trigger.Id,
+                        workflowDefinitionId,
+                        settings.CronExpression,
+                        settings.TimeZone,
+                        settings.StartAt,
+                        settings.EndAt,
+                        cancellationToken).ConfigureAwait(false);
+                }
+            }
+        }
+    }
+
+    private async Task UnregisterTriggersAsync(Guid workflowDefinitionId, CancellationToken cancellationToken)
+    {
+        var triggers = await _triggerRepository
+            .GetByWorkflowDefinitionIdAsync(workflowDefinitionId, cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var trigger in triggers)
+        {
+            if (trigger.Type == TriggerType.Schedule)
+            {
+                await _scheduleManager.UnregisterScheduleAsync(trigger.Id, cancellationToken).ConfigureAwait(false);
+            }
+        }
     }
 }

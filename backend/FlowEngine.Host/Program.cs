@@ -2,13 +2,18 @@ using System.Text;
 using System.Text.Json.Serialization;
 using FlowEngine.Application.Audit;
 using FlowEngine.Application.Credentials;
+using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Executions;
 using FlowEngine.Application.Identity;
+using FlowEngine.Application.Triggers;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
 using FlowEngine.Host.Middlewares;
 using FlowEngine.Host.WebSocketHandlers;
+using FlowEngine.Host.Webhooks;
+using FlowEngine.Host.Scheduling;
 using FlowEngine.Infrastructure.Audit;
 using FlowEngine.Infrastructure.Identity;
 using FlowEngine.Infrastructure.Persistence;
@@ -21,6 +26,7 @@ using FlowEngine.Runtime.Registry;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using Quartz;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -86,12 +92,24 @@ builder.Services.AddScoped<AuditEventFactory>();
 builder.Services.AddScoped<IWorkflowRepository, WorkflowRepository>();
 builder.Services.AddScoped<IExecutionStore, ExecutionStore>();
 builder.Services.AddScoped<ICredentialRepository, CredentialRepository>();
+builder.Services.AddScoped<ITriggerRepository, TriggerRepository>();
 builder.Services.AddSingleton<ICryptoKeyProvider, CryptoKeyProvider>();
 builder.Services.AddSingleton<ICredentialEncryptionService, CredentialEncryptionService>();
 builder.Services.AddScoped<CredentialService>();
 builder.Services.AddScoped<ICredentialAccessor, CredentialAccessor>();
 builder.Services.AddScoped<WorkflowValidator>();
 builder.Services.AddScoped<WorkflowService>();
+builder.Services.AddScoped<TriggerService>();
+builder.Services.AddScoped<IScheduleManager, QuartzScheduleManager>();
+builder.Services.AddScoped<WebhookHandler>();
+
+builder.Services.AddQuartz(q =>
+{
+});
+builder.Services.AddQuartzHostedService(options =>
+{
+    options.WaitForJobsToComplete = true;
+});
 builder.Services.AddScoped<ExecutionService>();
 builder.Services.AddScoped<NodeExecutionContextFactory>(provider =>
 {
@@ -167,6 +185,34 @@ using (var scope = app.Services.CreateScope())
 
 app.Services.GetRequiredService<AuditLogFileSink>();
 
+{
+    using var scope = app.Services.CreateScope();
+    var triggerRepo = scope.ServiceProvider.GetRequiredService<ITriggerRepository>();
+    var scheduleManager = scope.ServiceProvider.GetRequiredService<IScheduleManager>();
+
+    await scheduleManager.StartAsync().ConfigureAwait(false);
+
+    var activeTriggers = await triggerRepo.GetActiveAsync().ConfigureAwait(false);
+    foreach (var trigger in activeTriggers)
+    {
+        if (trigger.Type != TriggerType.Schedule) continue;
+
+        var settings = string.IsNullOrEmpty(trigger.SettingsJson) || trigger.SettingsJson == "{}"
+            ? null
+            : System.Text.Json.JsonSerializer.Deserialize<TriggerSettingsDto>(trigger.SettingsJson);
+
+        if (settings?.CronExpression is null) continue;
+
+        await scheduleManager.RegisterScheduleAsync(
+            trigger.Id,
+            trigger.WorkflowDefinitionId,
+            settings.CronExpression,
+            settings.TimeZone,
+            settings.StartAt,
+            settings.EndAt).ConfigureAwait(false);
+    }
+}
+
 app.UseCors();
 app.UseAuthentication();
 app.UseMiddleware<CurrentUserMiddleware>();
@@ -180,6 +226,24 @@ var api = app.MapGroup("/api/v1");
 api.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 
 app.MapControllers();
+
+{
+    using var scope = app.Services.CreateScope();
+    var triggerRepo = scope.ServiceProvider.GetRequiredService<ITriggerRepository>();
+    var webhookRoutes = await triggerRepo.GetAllWebhookRoutesAsync().ConfigureAwait(false);
+
+    foreach (var route in webhookRoutes)
+    {
+        var capturedPath = route.Path;
+        app.MapPost(capturedPath, async (HttpContext context) =>
+        {
+            var handler = context.RequestServices.GetRequiredService<WebhookHandler>();
+            await handler.HandleAsync(context, capturedPath).ConfigureAwait(false);
+        })
+        .WithName($"webhook_{route.Id}")
+        .WithMetadata(new { IsWebhook = true });
+    }
+}
 
 app.UseWebSockets(new WebSocketOptions
 {

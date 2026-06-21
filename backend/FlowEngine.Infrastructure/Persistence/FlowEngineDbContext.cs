@@ -30,6 +30,16 @@ public sealed class FlowEngineDbContext : DbContext
     public DbSet<CredentialEntity> Credentials => Set<CredentialEntity>();
 
     /// <summary>
+    /// 触发器数据集。
+    /// </summary>
+    public DbSet<TriggerEntity> Triggers => Set<TriggerEntity>();
+
+    /// <summary>
+    /// Webhook 路由数据集。
+    /// </summary>
+    public DbSet<WebhookRouteEntity> WebhookRoutes => Set<WebhookRouteEntity>();
+
+    /// <summary>
     /// 用户数据集。
     /// </summary>
     public DbSet<User> Users => Set<User>();
