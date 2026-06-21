@@ -461,11 +461,116 @@ public class AgentNodeTests
         Assert.Contains("hello", toolMsg.Content);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_Returns_Timeout_When_LLM_Calls_Timed_Out()
+    {
+        var agentNode = new AgentNode
+        {
+            TimeoutSeconds = 1
+        };
+
+        var agentNodeInst = CreateNodeInstance("agent1", "agent", isEntry: true);
+
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "test",
+            CreatedBy = "test",
+            Nodes = [agentNodeInst],
+            Connections = []
+        };
+
+        using var timeoutCts = new CancellationTokenSource();
+        timeoutCts.CancelAfter(TimeSpan.FromMilliseconds(50));
+
+        var llmClient = new MockLlmClient(async (tools, ct) =>
+        {
+            await Task.Delay(TimeSpan.FromSeconds(10), ct);
+            return new LlmResponse { Content = "Done" };
+        });
+
+        var context = CreateContext(
+            workflow: workflow,
+            llmClient: llmClient,
+            currentNodeId: agentNodeInst.Id);
+
+        var result = await agentNode.ExecuteAsync(context, timeoutCts.Token);
+
+        Assert.False(result.Success);
+        Assert.Equal("AgentTimeout", result.Error?.Code);
+        Assert.Contains("timed out", result.Error!.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Creates_NodeExecutionRecord_For_Tool_Execution()
+    {
+        var toolNode = CreateNodeInstance("tool1", "passThrough");
+        var agentNode = CreateNodeInstance("agent1", "agent", isEntry: true);
+
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "test",
+            CreatedBy = "test",
+            Nodes = [agentNode, toolNode],
+            Connections =
+            [
+                new Connection
+                {
+                    Id = Guid.NewGuid(),
+                    SourceNodeId = agentNode.Id,
+                    SourcePortName = "tools",
+                    TargetNodeId = toolNode.Id,
+                    TargetPortName = "input"
+                }
+            ]
+        };
+
+        var callCount = 0;
+        var llmClient = new MockLlmClient(_ =>
+        {
+            callCount++;
+            if (callCount == 1)
+            {
+                return new LlmResponse
+                {
+                    Content = null,
+                    ToolCalls =
+                    [
+                        new LlmToolCall
+                        {
+                            Id = "call1",
+                            Name = "tool1",
+                            Arguments = "{\"value\": 42}"
+                        }
+                    ]
+                };
+            }
+            return new LlmResponse { Content = "Final answer" };
+        });
+
+        var executionStore = new InMemoryTestExecutionStore();
+        var context = CreateContext(
+            workflow: workflow,
+            llmClient: llmClient,
+            currentNodeId: agentNode.Id,
+            executionStore: executionStore);
+
+        var agent = new AgentNode();
+        var result = await agent.ExecuteAsync(context);
+
+        Assert.True(result.Success);
+        Assert.Single(executionStore.NodeRecords);
+        Assert.Equal(toolNode.Id, executionStore.NodeRecords[0].NodeDefinitionId);
+        Assert.Equal("Final answer", GetResultContent(result));
+    }
+
     private NodeExecutionContext CreateContext(
         Workflow? workflow = null,
         ILlmClient? llmClient = null,
         Guid? currentNodeId = null,
-        IReadOnlyDictionary<string, DataBatch>? inputs = null)
+        IReadOnlyDictionary<string, DataBatch>? inputs = null,
+        IExecutionStore? executionStore = null)
     {
         var nodeId = currentNodeId ?? Guid.NewGuid();
         return new NodeExecutionContext
@@ -486,7 +591,8 @@ public class AgentNodeTests
             Logger = NullExecutionLogger.Instance,
             CancellationToken = CancellationToken.None,
             LlmClient = llmClient,
-            NodeRegistry = _nodeRegistry
+            NodeRegistry = _nodeRegistry,
+            ExecutionStore = executionStore
         };
     }
 
@@ -540,22 +646,27 @@ public class AgentNodeTests
 
     private sealed class MockLlmClient : ILlmClient
     {
-        private readonly Func<IReadOnlyList<ToolDefinition>, LlmResponse> _responder;
+        private readonly Func<IReadOnlyList<ToolDefinition>, CancellationToken, Task<LlmResponse>> _responder;
 
         public IReadOnlyList<LlmMessage>? LastMessages { get; private set; }
 
         public MockLlmClient(Func<IReadOnlyList<ToolDefinition>, LlmResponse> responder)
         {
+            _responder = (tools, _) => Task.FromResult(responder(tools));
+        }
+
+        public MockLlmClient(Func<IReadOnlyList<ToolDefinition>, CancellationToken, Task<LlmResponse>> responder)
+        {
             _responder = responder;
         }
 
-        public Task<LlmResponse> ChatAsync(
+        public async Task<LlmResponse> ChatAsync(
             IReadOnlyList<LlmMessage> messages,
             IReadOnlyList<ToolDefinition> tools,
             CancellationToken cancellationToken = default)
         {
             LastMessages = messages;
-            return Task.FromResult(_responder(tools));
+            return await _responder(tools, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -572,5 +683,35 @@ public class AgentNodeTests
         public void LogInformation(string message, params object?[] args) { }
         public void LogWarning(string message, params object?[] args) { }
         public void LogError(Exception? exception, string message, params object?[] args) { }
+    }
+
+    private sealed class InMemoryTestExecutionStore : IExecutionStore
+    {
+        public List<NodeExecutionRecord> NodeRecords { get; } = [];
+
+        public Task<ExecutionRecord?> GetByIdAsync(Guid executionId, CancellationToken cancellationToken = default)
+            => Task.FromResult<ExecutionRecord?>(null);
+
+        public Task<IReadOnlyCollection<ExecutionRecord>> GetByWorkflowDefinitionIdAsync(
+            Guid workflowDefinitionId, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<ExecutionRecord>>([]);
+
+        public Task<IReadOnlyCollection<ExecutionRecord>> GetByStatusAsync(
+            FlowEngine.Core.Enums.ExecutionStatus status, CancellationToken cancellationToken = default)
+            => Task.FromResult<IReadOnlyCollection<ExecutionRecord>>([]);
+
+        public Task SaveAsync(ExecutionRecord executionRecord, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
+
+        public Task AddNodeRecordAsync(
+            Guid executionId, NodeExecutionRecord nodeRecord, CancellationToken cancellationToken = default)
+        {
+            NodeRecords.Add(nodeRecord);
+            return Task.CompletedTask;
+        }
+
+        public Task UpdateStatusAsync(
+            Guid executionId, FlowEngine.Core.Enums.ExecutionStatus status, CancellationToken cancellationToken = default)
+            => Task.CompletedTask;
     }
 }

@@ -293,6 +293,9 @@ public sealed class AgentNode : INodeType
         NodeExecutionContext parentContext,
         CancellationToken cancellationToken)
     {
+        // TODO: This method manually constructs NodeExecutionContext, bypassing NodeExecutionContextFactory.
+        // Basic parameter resolution works via direct copy. Full factory integration (expression evaluation,
+        // credential hydration, parameter resolution) should be added in a later phase.
         var tool = tools.FirstOrDefault(t => t.Name == toolCall.Name);
         if (tool is null)
         {
@@ -353,9 +356,28 @@ public sealed class AgentNode : INodeType
             CancellationToken = cancellationToken
         };
 
+        var startedAt = DateTime.UtcNow;
         try
         {
             var result = await nodeType.ExecuteAsync(toolContext, cancellationToken).ConfigureAwait(false);
+
+            var record = new NodeExecutionRecord
+            {
+                NodeDefinitionId = toolNode.Id,
+                RunIndex = 0,
+                StartedAt = startedAt,
+                CompletedAt = DateTime.UtcNow,
+                Inputs = toolContext.Inputs,
+                Output = result,
+                RawParameters = toolContext.RawParameters,
+                ResolvedParameters = toolContext.ResolvedParameters
+            };
+
+            if (parentContext.ExecutionStore is not null)
+            {
+                await parentContext.ExecutionStore.AddNodeRecordAsync(
+                    parentContext.ExecutionId, record, cancellationToken).ConfigureAwait(false);
+            }
 
             if (!result.Success)
             {
@@ -375,6 +397,33 @@ public sealed class AgentNode : INodeType
         }
         catch (Exception ex)
         {
+            if (parentContext.ExecutionStore is not null)
+            {
+                var failRecord = new NodeExecutionRecord
+                {
+                    NodeDefinitionId = toolNode.Id,
+                    RunIndex = 0,
+                    StartedAt = startedAt,
+                    CompletedAt = DateTime.UtcNow,
+                    Inputs = toolContext.Inputs,
+                    Output = new NodeExecutionResult
+                    {
+                        Success = false,
+                        Error = new NodeError
+                        {
+                            Code = ex.GetType().Name,
+                            Message = ex.Message,
+                            NodeDefinitionId = toolNode.Id
+                        }
+                    },
+                    RawParameters = toolContext.RawParameters,
+                    ResolvedParameters = toolContext.ResolvedParameters
+                };
+
+                await parentContext.ExecutionStore.AddNodeRecordAsync(
+                    parentContext.ExecutionId, failRecord, cancellationToken).ConfigureAwait(false);
+            }
+
             return $"Tool execution error: {ex.Message}";
         }
     }

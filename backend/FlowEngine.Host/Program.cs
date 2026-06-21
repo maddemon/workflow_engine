@@ -120,7 +120,8 @@ builder.Services.AddScoped<NodeExecutionContextFactory>(provider =>
         provider.GetRequiredService<ParameterResolver>(),
         provider.GetRequiredService<ICredentialAccessor>(),
         new HashSet<string>(whitelist, StringComparer.OrdinalIgnoreCase),
-        provider.GetService<ILogger<ParameterHydrator>>());
+        provider.GetService<ILogger<ParameterHydrator>>(),
+        executionStore: provider.GetService<IExecutionStore>());
 });
 builder.Services.AddScoped<ErrorStrategyHandler>();
 builder.Services.AddScoped<IEngine, WorkflowExecutor>();
