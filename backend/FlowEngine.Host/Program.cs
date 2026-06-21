@@ -100,7 +100,7 @@ builder.Services.AddScoped<ICredentialAccessor, CredentialAccessor>();
 builder.Services.AddScoped<WorkflowValidator>();
 builder.Services.AddScoped<WorkflowService>();
 builder.Services.AddScoped<TriggerService>();
-builder.Services.AddScoped<IScheduleManager, QuartzScheduleManager>();
+builder.Services.AddSingleton<IScheduleManager, QuartzScheduleManager>();
 builder.Services.AddScoped<WebhookHandler>();
 
 builder.Services.AddQuartz(q =>
@@ -235,13 +235,33 @@ app.MapControllers();
     foreach (var route in webhookRoutes)
     {
         var capturedPath = route.Path;
-        app.MapPost(capturedPath, async (HttpContext context) =>
+        var method = route.Method?.ToUpperInvariant() ?? "POST";
+        IEndpointConventionBuilder routeBuilder = method switch
         {
-            var handler = context.RequestServices.GetRequiredService<WebhookHandler>();
-            await handler.HandleAsync(context, capturedPath).ConfigureAwait(false);
-        })
-        .WithName($"webhook_{route.Id}")
-        .WithMetadata(new { IsWebhook = true });
+            "GET" => app.MapGet(capturedPath, async (HttpContext context) =>
+            {
+                var handler = context.RequestServices.GetRequiredService<WebhookHandler>();
+                await handler.HandleAsync(context, capturedPath).ConfigureAwait(false);
+            }),
+            "PUT" => app.MapPut(capturedPath, async (HttpContext context) =>
+            {
+                var handler = context.RequestServices.GetRequiredService<WebhookHandler>();
+                await handler.HandleAsync(context, capturedPath).ConfigureAwait(false);
+            }),
+            "DELETE" => app.MapDelete(capturedPath, async (HttpContext context) =>
+            {
+                var handler = context.RequestServices.GetRequiredService<WebhookHandler>();
+                await handler.HandleAsync(context, capturedPath).ConfigureAwait(false);
+            }),
+            _ => app.MapPost(capturedPath, async (HttpContext context) =>
+            {
+                var handler = context.RequestServices.GetRequiredService<WebhookHandler>();
+                await handler.HandleAsync(context, capturedPath).ConfigureAwait(false);
+            }),
+        };
+        routeBuilder
+            .WithName($"webhook_{route.Id}")
+            .WithMetadata(new { IsWebhook = true });
     }
 }
 

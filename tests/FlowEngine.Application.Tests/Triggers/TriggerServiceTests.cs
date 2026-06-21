@@ -337,6 +337,16 @@ public class TriggerServiceTests
             foreach (var key in keys) _routes.Remove(key);
             return Task.CompletedTask;
         }
+
+        public Task DeleteWebhookRoutesByTriggerIdAsync(Guid triggerId, CancellationToken cancellationToken = default)
+        {
+            var keys = _routes.Values
+                .Where(r => r.TriggerId == triggerId)
+                .Select(r => r.Id)
+                .ToList();
+            foreach (var key in keys) _routes.Remove(key);
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class InMemoryEventBus : IEventBus

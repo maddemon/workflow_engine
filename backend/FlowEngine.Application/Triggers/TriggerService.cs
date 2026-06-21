@@ -49,7 +49,7 @@ public sealed class TriggerService
             WorkflowVersion = dto.WorkflowVersion,
             Type = dto.Type,
             Name = dto.Name,
-            IsActive = true,
+            IsActive = dto.IsActive,
             SettingsJson = dto.Settings is not null
                 ? JsonSerializer.Serialize(dto.Settings, JsonOptions)
                 : "{}",
@@ -158,7 +158,7 @@ public sealed class TriggerService
         if (trigger.Type == TriggerType.Webhook)
         {
             await _triggerRepository
-                .DeleteWebhookRoutesByWorkflowDefinitionIdAsync(trigger.WorkflowDefinitionId, cancellationToken)
+                .DeleteWebhookRoutesByTriggerIdAsync(id, cancellationToken)
                 .ConfigureAwait(false);
         }
 

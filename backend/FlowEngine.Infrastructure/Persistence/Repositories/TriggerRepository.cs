@@ -187,6 +187,22 @@ public sealed class TriggerRepository : ITriggerRepository
         }
     }
 
+    /// <inheritdoc />
+    public async Task DeleteWebhookRoutesByTriggerIdAsync(
+        Guid triggerId, CancellationToken cancellationToken = default)
+    {
+        var entities = await _context.Set<WebhookRouteEntity>()
+            .Where(x => x.TriggerId == triggerId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (entities.Count > 0)
+        {
+            _context.Set<WebhookRouteEntity>().RemoveRange(entities);
+            await _context.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     private static Trigger MapToDomain(TriggerEntity entity)
     {
         return new Trigger

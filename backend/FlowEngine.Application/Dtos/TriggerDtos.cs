@@ -79,6 +79,11 @@ public sealed class CreateTriggerDto
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
+    /// 是否激活。
+    /// </summary>
+    public bool IsActive { get; set; } = true;
+
+    /// <summary>
     /// 触发器配置。
     /// </summary>
     public TriggerSettingsDto? Settings { get; set; }

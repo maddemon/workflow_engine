@@ -68,4 +68,9 @@ public interface ITriggerRepository
     /// 按工作流定义 ID 删除所有 Webhook 路由。
     /// </summary>
     Task DeleteWebhookRoutesByWorkflowDefinitionIdAsync(Guid workflowDefinitionId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 按触发器 ID 删除 Webhook 路由。
+    /// </summary>
+    Task DeleteWebhookRoutesByTriggerIdAsync(Guid triggerId, CancellationToken cancellationToken = default);
 }

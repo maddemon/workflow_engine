@@ -22,6 +22,7 @@ public sealed class WebhookHandler
     private readonly IEngine _engine;
     private readonly IEventBus _eventBus;
     private readonly AuditEventFactory _auditFactory;
+    private readonly IExecutionStore _executionStore;
     private readonly ILogger<WebhookHandler> _logger;
 
     /// <summary>
@@ -32,12 +33,14 @@ public sealed class WebhookHandler
         IEngine engine,
         IEventBus eventBus,
         AuditEventFactory auditFactory,
+        IExecutionStore executionStore,
         ILogger<WebhookHandler> logger)
     {
         _triggerRepository = triggerRepository ?? throw new ArgumentNullException(nameof(triggerRepository));
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         _eventBus = eventBus;
         _auditFactory = auditFactory;
+        _executionStore = executionStore;
         _logger = logger;
     }
 
@@ -103,12 +106,9 @@ public sealed class WebhookHandler
                 var maxWait = TimeSpan.FromSeconds(route.MaxWaitSeconds);
                 var startWait = DateTime.UtcNow;
 
-                using var scope = context.RequestServices.CreateScope();
-                var executionStore = scope.ServiceProvider.GetRequiredService<IExecutionStore>();
-
                 while (DateTime.UtcNow - startWait < maxWait)
                 {
-                    var record = await executionStore.GetByIdAsync(executionId.Value, context.RequestAborted)
+                    var record = await _executionStore.GetByIdAsync(executionId.Value, context.RequestAborted)
                         .ConfigureAwait(false);
 
                     if (record is not null && record.Status is ExecutionStatus.Completed or ExecutionStatus.Failed)
