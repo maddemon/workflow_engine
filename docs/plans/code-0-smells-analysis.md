@@ -40,7 +40,7 @@
 
 ---
 
-### 1.3 `MapToDto` 重复映射逻辑 ❌ 未修复
+### 1.3 `MapToDto` 重复映射逻辑 ✅ 已修复
 
 `WorkflowService.MapToDto(Workflow)` 与 `MapToDto(Workflow, originalNodeDtos, originalConnectionDtos, nodeIdMap)` 中，对 `NodeDefinitionDto` 和 `ConnectionDto` 的字段赋值逻辑高度重叠（约 30 行），仅在 `Id` 字段的来源上有差异。
 
@@ -60,7 +60,7 @@
 
 ## 2. 上帝类与大方法（God Class / Long Method）
 
-### 2.1 `ExpressionEvaluator`（934 行）❌ 未修复
+### 2.1 `ExpressionEvaluator`（934 行）✅ 已替换为 JsEngine（Jint）
 
 单个类承载了以下六个独立职责：
 
@@ -77,7 +77,7 @@
 
 ---
 
-### 2.2 `WorkflowExecutor`（717 行）❌ 未修复
+### 2.2 `WorkflowExecutor`（717 行）✅ 已修复
 
 核心方法 `ExecuteLoopAsync` 直接操作 5 个可变字典（`nodeOutputs`、`nodeBatches`、`nodeLlmClients` 等）以及队列、等待区、状态机，职责过于集中。
 
@@ -87,7 +87,7 @@
 
 ---
 
-### 2.3 `Program.cs`（317 行）❌ 未修复
+### 2.3 `Program.cs`（321 行）✅ 已修复
 
 单文件承载了 DI 注册、JWT 配置、CORS 配置、数据库切换、迁移执行、触发器恢复、Webhook 动态路由注册、WebSocket 路由注册共八项职责。
 
@@ -144,7 +144,7 @@ var expirationMinutes = int.Parse(configuration["Jwt:ExpirationMinutes"] ?? "60"
 
 ## 4. 架构与耦合问题（Architecture & Coupling）
 
-### 4.1 应用服务直接依赖 `FlowEngineDbContext` ❌ 未修复
+### 4.1 应用服务直接依赖 `FlowEngineDbContext` ❌ 未修复（架构决策保持现状）
 
 `WorkflowService`、`ExecutionService`、`CredentialService`、`TriggerService` 均直接注入 `FlowEngineDbContext`，而非通过仓储接口。这导致：
 
@@ -156,7 +156,7 @@ var expirationMinutes = int.Parse(configuration["Jwt:ExpirationMinutes"] ?? "60"
 
 ---
 
-### 4.2 `WorkflowExecutor.StartAsync` 的 fire-and-forget 模式 ❌ 未修复
+### 4.2 `WorkflowExecutor.StartAsync` 的 fire-and-forget 模式 ✅ 已修复
 
 ```csharp
 // WorkflowExecutor.cs:79
@@ -172,7 +172,7 @@ _ = Task.Run(async () => { ... }, CancellationToken.None);
 
 ---
 
-### 4.3 `WorkflowService` 与 `TriggerService` 双向依赖 ❌ 未修复
+### 4.3 `WorkflowService` 与 `TriggerService` 双向依赖 ✅ 已修复
 
 - `WorkflowService` 构造注入 `TriggerService`（用于注册/注销触发器）
 - `TriggerService` 独立操作 `FlowEngineDbContext`（与 WorkflowService 共享同一个 DbContext 实例）
@@ -181,7 +181,7 @@ _ = Task.Run(async () => { ... }, CancellationToken.None);
 
 ---
 
-### 4.4 `CryptoKeyProvider` 注册为 `Singleton` 但无接口隔离 ❌ 未修复
+### 4.4 `CryptoKeyProvider` 注册为 `Singleton` 但无接口隔离 ✅ 已修复
 
 ```csharp
 // Program.cs:136
@@ -197,7 +197,7 @@ builder.Services.AddSingleton<ICredentialEncryptionService, CredentialEncryption
 
 ## 5. 并发安全问题（Concurrency）
 
-### 5.1 `WebSocketConnectionManager` 的锁粒度不一致 ❌ 未修复
+### 5.1 `WebSocketConnectionManager` 的锁粒度不一致 ✅ 已修复
 
 `_subscriptions` 是 `ConcurrentDictionary<Guid, HashSet<WebSocketConnection>>`，`HashSet` 本身不是线程安全的，代码通过 `lock(set)` 保护。但：
 
@@ -209,7 +209,7 @@ builder.Services.AddSingleton<ICredentialEncryptionService, CredentialEncryption
 
 ---
 
-### 5.2 `WorkflowExecutor` 中的普通 `Dictionary` 在并发场景下不安全 ❌ 未修复
+### 5.2 `WorkflowExecutor` 中的普通 `Dictionary` 在并发场景下不安全 ✅ 已修复
 
 `nodeOutputs`、`nodeBatches`、`nodeLlmClients` 均为普通 `Dictionary`，在 `Task.Run` 开启的后台线程中被读写。虽然当前是单执行串行处理，但一旦引入并行节点执行（如 `Parallel.ForEach`）即会出现数据竞争。
 
@@ -246,7 +246,7 @@ var json = JsonSerializer.Serialize(message, new JsonSerializerOptions
 
 ---
 
-### 6.3 `WorkflowService.GetAllAsync` 无分页 ❌ 未修复
+### 6.3 `WorkflowService.GetAllAsync` 无分页 ✅ 已修复
 
 ```csharp
 // WorkflowService.cs:77
@@ -289,13 +289,13 @@ await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(AuditEventTypes.W
 
 ---
 
-### 7.3 `nodeBatches` vs `nodeOutputs` 语义混淆 ❌ 未修复
+### 7.3 `nodeBatches` vs `nodeOutputs` 语义混淆 ✅ 已修复
 
 `WorkflowExecutor` 中同时维护了 `nodeOutputs`（仅存成功的输出）和 `nodeBatches`（存最后一次执行的输出，不论成败），命名未能清晰区分两者的用途差异，且两者均传入 `NodeExecutionContext`，增加了理解成本。
 
 ---
 
-## 8. 混合使用 JSON 库 ❌ 未修复
+## 8. 混合使用 JSON 库 ✅ 已修复
 
 `ExpressionEvaluator` 中同时使用了 `System.Text.Json`（`JsonNode`）和 `Newtonsoft.Json`（`JToken`），并在 `ConvertToJToken` / `ConvertFromJToken` 方法中频繁在两套库之间转换（第 518–553 行）。
 
@@ -308,7 +308,7 @@ await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(AuditEventTypes.W
 
 ---
 
-## 9. 测试覆盖缺口（Test Coverage Gaps）⚠️ 部分修复
+## 9. 测试覆盖缺口（Test Coverage Gaps）⚠️ 部分修复（新增 22 个测试用例）
 
 以下关键模块**完全没有单元测试**：
 
@@ -325,7 +325,7 @@ await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(AuditEventTypes.W
 
 ---
 
-## 10. 接口隔离违反（Interface Segregation Violation）❌ 未修复
+## 10. 接口隔离违反（Interface Segregation Violation）✅ 已修复
 
 `IEngine` 接口包含 `ResumeAsync` 方法，但实现中直接抛出 `NotSupportedException`：
 
@@ -361,7 +361,7 @@ public Task ResumeAsync(ExecutionId executionId, CancellationToken cancellationT
 
 ## 12. 修复状态总结（2026-06-21 核查）
 
-### ✅ 已修复（22 项）
+### ✅ 已修复（23 项）
 
 | # | 问题 | 修复方式 |
 |---|------|----------|
@@ -386,11 +386,17 @@ public Task ResumeAsync(ExecutionId executionId, CancellationToken cancellationT
 | 7.3 | nodeBatches vs nodeOutputs 语义混淆 | 重命名为 `SuccessfulOutputs` / `LatestBatches`，同步更新所有使用处 |
 | 8 | 混合使用 System.Text.Json + Newtonsoft.Json | 移除 Newtonsoft 包引用，JMESPath 改用 `JsonSerializer` + `JsonNode.Parse` |
 | 10 | IEngine.ResumeAsync 抛 NotSupportedException | 从 `IEngine` 接口移除 |
+| 2.3 | Program.cs（321 行）未拆分 | 提取 `ServiceCollectionExtensions.AddFlowEngine()` + `ApplicationBuilderExtensions.UseFlowEngineAsync()`，Program.cs 压缩为 5 行 |
 | — | [新增] Workflow.Nodes/Connections JSON 列未持久化 + 表达式引擎替换 | 实现通用 `[JsonColumn]` 扫描 + `JsonValueConverter<T>`；统一替换为 `Jint` 引擎，移除 ExpressionEvaluator/Parser/AST（~1500 行） |
 
 ### ❌ 未修复（1 项）
 
 | # | 问题 | 影响 |
 |---|------|------|
-| 2.1 | ExpressionEvaluator 已替换为 JsEngine（Jint） | 架构已升级，不再属于旧坏味道 |
 | 4.1 | 应用服务直接依赖 EF Core DbContext | 架构取舍，引入仓储接口在当前项目语境下弊大于利，保持现状 |
+
+### ⚠️ 部分修复（1 项）
+
+| # | 问题 | 影响 |
+|---|------|------|
+| 9 | 测试覆盖缺口 | WorkflowExecutor + CredentialService + WorkflowValidator + NodeExecutionContextFactory 已有测试（22 个新增用例）；TriggerService 同步已有；仅 QuartzScheduleManager 仍缺 |

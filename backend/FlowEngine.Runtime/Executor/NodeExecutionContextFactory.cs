@@ -12,36 +12,16 @@ namespace FlowEngine.Runtime.Executor;
 /// <summary>
 /// 构造节点执行上下文。
 /// </summary>
-public sealed class NodeExecutionContextFactory
+public sealed class NodeExecutionContextFactory(
+    INodeRegistry registry,
+    ParameterResolver parameterResolver,
+    ICredentialAccessor credentialAccessor,
+    IReadOnlySet<string> environmentWhitelist,
+    ILogger<ParameterHydrator>? hydratorLogger = null,
+    ILogger<JsEngine>? jsLogger = null,
+    ILlmClient? llmClient = null)
 {
-    private readonly INodeRegistry _registry;
-    private readonly ParameterResolver _parameterResolver;
-    private readonly ICredentialAccessor _credentialAccessor;
-    private readonly IReadOnlySet<string> _environmentWhitelist;
-    private readonly ParameterHydrator _parameterHydrator;
-    private readonly ILogger<JsEngine>? _jsLogger;
-    private readonly ILlmClient? _llmClient;
-    private readonly FlowEngineDbContext? _dbContext;
-
-    public NodeExecutionContextFactory(
-        INodeRegistry registry,
-        ParameterResolver parameterResolver,
-        ICredentialAccessor credentialAccessor,
-        IReadOnlySet<string> environmentWhitelist,
-        ILogger<ParameterHydrator>? hydratorLogger = null,
-        ILogger<JsEngine>? jsLogger = null,
-        ILlmClient? llmClient = null,
-        FlowEngineDbContext? dbContext = null)
-    {
-        _registry = registry ?? throw new ArgumentNullException(nameof(registry));
-        _parameterResolver = parameterResolver ?? throw new ArgumentNullException(nameof(parameterResolver));
-        _credentialAccessor = credentialAccessor ?? throw new ArgumentNullException(nameof(credentialAccessor));
-        _environmentWhitelist = environmentWhitelist ?? throw new ArgumentNullException(nameof(environmentWhitelist));
-        _parameterHydrator = new ParameterHydrator(credentialAccessor, hydratorLogger);
-        _jsLogger = jsLogger;
-        _llmClient = llmClient;
-        _dbContext = dbContext;
-    }
+    private readonly ParameterHydrator ParameterHydrator = new(credentialAccessor, hydratorLogger);
 
     public async Task<NodeExecutionContext> CreateAsync(
         Workflow workflow,
@@ -55,10 +35,10 @@ public sealed class NodeExecutionContextFactory
         CancellationToken cancellationToken)
     {
         var nodeDefinition = node;
-        var descriptor = _registry.GetDescriptor(node.TypeName);
+        var descriptor = registry.GetDescriptor(node.TypeName);
         var rawParameters = MergeParameters(nodeDefinition, descriptor);
 
-        using var js = JsEngine.Create(logger: _jsLogger);
+        using var js = JsEngine.Create(logger: jsLogger);
         js.SetValue("input", GetCurrentInput(inputs, runIndex));
         js.SetValue("inputs", inputs);
         js.SetValue("parameter", rawParameters);
@@ -78,12 +58,12 @@ public sealed class NodeExecutionContextFactory
         });
         js.SetValue("runIndex", runIndex);
         js.SetValue("run_index", runIndex);
-        js.SetValue("env", new EnvironmentAccessor(_environmentWhitelist));
+        js.SetValue("env", new EnvironmentAccessor(environmentWhitelist));
         js.SetValue("now", DateTime.UtcNow);
 
-        var resolvedParameters = _parameterResolver.Resolve(rawParameters, js);
+        var resolvedParameters = parameterResolver.Resolve(rawParameters, js);
 
-        await _parameterHydrator.HydrateAsync(nodeInstance, resolvedParameters).ConfigureAwait(false);
+        await ParameterHydrator.HydrateAsync(nodeInstance, resolvedParameters).ConfigureAwait(false);
 
         return new NodeExecutionContext
         {
@@ -94,11 +74,11 @@ public sealed class NodeExecutionContextFactory
             Inputs = inputs,
             RawParameters = rawParameters,
             ResolvedParameters = resolvedParameters,
-            Credentials = _credentialAccessor,
+            Credentials = credentialAccessor,
             Logger = NullExecutionLogger.Instance,
             CancellationToken = cancellationToken,
-            LlmClient = _llmClient,
-            NodeRegistry = _registry
+            LlmClient = llmClient,
+            NodeRegistry = registry
         };
     }
 
