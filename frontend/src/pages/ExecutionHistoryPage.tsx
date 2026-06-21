@@ -11,8 +11,9 @@ import {
   Select,
   Paper,
   Divider,
+  Pagination,
 } from '@mantine/core';
-import { ArrowLeft, RefreshCw, Check, X, Clock, Loader as LoaderIcon } from 'lucide-react';
+import { ArrowLeft, RefreshCw, Check, X, Clock, Loader as LoaderIcon, Eye, ChevronDown, ChevronRight } from 'lucide-react';
 import { getWorkflowExecutions, getExecution } from '../services/api.ts';
 import type { ExecutionDto, ExecutionStatus } from '../types/workflow.ts';
 
@@ -52,6 +53,8 @@ export function ExecutionHistoryPage() {
   const [selectedExecution, setSelectedExecution] = useState<ExecutionDto | null>(null);
 
   const [refreshKey, setRefreshKey] = useState(0);
+  const [page, setPage] = useState(1);
+  const [expandedOutputs, setExpandedOutputs] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     const fetchData = async () => {
@@ -70,18 +73,39 @@ export function ExecutionHistoryPage() {
     fetchData();
   }, [id, refreshKey]);
 
+  const PAGE_SIZE = 20;
+
   const filteredExecutions = useMemo(() => {
     if (statusFilter === 'all') return executions;
     return executions.filter((e) => e.status === statusFilter);
   }, [executions, statusFilter]);
 
+  const totalPages = Math.ceil(filteredExecutions.length / PAGE_SIZE);
+  const paginatedExecutions = useMemo(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return filteredExecutions.slice(start, start + PAGE_SIZE);
+  }, [filteredExecutions, page]);
+
   const handleViewExecution = async (execution: ExecutionDto) => {
     try {
       const detailed = await getExecution(execution.id);
       setSelectedExecution(detailed);
+      setExpandedOutputs(new Set());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to fetch execution details');
     }
+  };
+
+  const toggleOutput = (recordId: string) => {
+    setExpandedOutputs((prev) => {
+      const next = new Set(prev);
+      if (next.has(recordId)) {
+        next.delete(recordId);
+      } else {
+        next.add(recordId);
+      }
+      return next;
+    });
   };
 
   const statusOptions = [
@@ -106,7 +130,7 @@ export function ExecutionHistoryPage() {
           <Select
             data={statusOptions}
             value={statusFilter}
-            onChange={(value) => setStatusFilter(value ?? 'all')}
+            onChange={(value) => { setStatusFilter(value ?? 'all'); setPage(1); }}
             size="xs"
             w={140}
           />
@@ -137,51 +161,63 @@ export function ExecutionHistoryPage() {
       )}
 
       {!loading && !error && filteredExecutions.length > 0 && (
-        <Table striped highlightOnHover>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Status</Table.Th>
-              <Table.Th>Started</Table.Th>
-              <Table.Th>Completed</Table.Th>
-              <Table.Th>Duration</Table.Th>
-              <Table.Th>Nodes</Table.Th>
-              <Table.Th>Actions</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {filteredExecutions.map((execution) => {
-              const statusInfo = statusConfig[execution.status] ?? statusConfig.Pending;
-              const duration = formatDuration(execution.startedAt, execution.completedAt);
-              return (
-                <Table.Tr key={execution.id}>
-                  <Table.Td>
-                    <Badge
-                      color={statusInfo.color}
-                      variant="light"
-                      size="sm"
-                      leftSection={statusInfo.icon}
-                    >
-                      {execution.status}
-                    </Badge>
-                  </Table.Td>
-                  <Table.Td>{formatDate(execution.startedAt)}</Table.Td>
-                  <Table.Td>{formatDate(execution.completedAt)}</Table.Td>
-                  <Table.Td>{duration ?? '-'}</Table.Td>
-                  <Table.Td>{execution.nodeRecords.length}</Table.Td>
-                  <Table.Td>
-                    <ActionIcon
-                      variant="subtle"
-                      size="sm"
-                      onClick={() => handleViewExecution(execution)}
-                    >
-                      <Check size={14} />
-                    </ActionIcon>
-                  </Table.Td>
-                </Table.Tr>
-              );
-            })}
-          </Table.Tbody>
-        </Table>
+        <>
+          <Table striped highlightOnHover>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>Status</Table.Th>
+                <Table.Th>Started</Table.Th>
+                <Table.Th>Completed</Table.Th>
+                <Table.Th>Duration</Table.Th>
+                <Table.Th>Nodes</Table.Th>
+                <Table.Th>Actions</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {paginatedExecutions.map((execution) => {
+                const statusInfo = statusConfig[execution.status] ?? statusConfig.Pending;
+                const duration = formatDuration(execution.startedAt, execution.completedAt);
+                return (
+                  <Table.Tr key={execution.id}>
+                    <Table.Td>
+                      <Badge
+                        color={statusInfo.color}
+                        variant="light"
+                        size="sm"
+                        leftSection={statusInfo.icon}
+                      >
+                        {execution.status}
+                      </Badge>
+                    </Table.Td>
+                    <Table.Td>{formatDate(execution.startedAt)}</Table.Td>
+                    <Table.Td>{formatDate(execution.completedAt)}</Table.Td>
+                    <Table.Td>{duration ?? '-'}</Table.Td>
+                    <Table.Td>{execution.nodeRecords.length}</Table.Td>
+                    <Table.Td>
+                      <ActionIcon
+                        variant="subtle"
+                        size="sm"
+                        onClick={() => handleViewExecution(execution)}
+                      >
+                        <Eye size={14} />
+                      </ActionIcon>
+                    </Table.Td>
+                  </Table.Tr>
+                );
+              })}
+            </Table.Tbody>
+          </Table>
+          {totalPages > 1 && (
+            <Group justify="center">
+              <Pagination
+                value={page}
+                onChange={setPage}
+                total={totalPages}
+                size="sm"
+              />
+            </Group>
+          )}
+        </>
       )}
 
       {selectedExecution && (
@@ -219,12 +255,17 @@ export function ExecutionHistoryPage() {
                       <Table.Th>Node</Table.Th>
                       <Table.Th>Status</Table.Th>
                       <Table.Th>Duration</Table.Th>
+                      <Table.Th>Output</Table.Th>
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
                     {selectedExecution.nodeRecords.map((record) => {
                       const recordStatus = statusConfig[record.status] ?? statusConfig.Pending;
                       const recordDuration = formatDuration(record.startedAt, record.completedAt);
+                      const isExpanded = expandedOutputs.has(record.id);
+                      const outputStr = record.output != null
+                        ? JSON.stringify(record.output, null, 2)
+                        : null;
                       return (
                         <Table.Tr key={record.id}>
                           <Table.Td>{record.nodeDefinitionId.slice(0, 8)}</Table.Td>
@@ -238,11 +279,41 @@ export function ExecutionHistoryPage() {
                             </Badge>
                           </Table.Td>
                           <Table.Td>{recordDuration ?? '-'}</Table.Td>
+                          <Table.Td>
+                            {outputStr && (
+                              <ActionIcon
+                                variant="subtle"
+                                size="xs"
+                                onClick={() => toggleOutput(record.id)}
+                              >
+                                {isExpanded
+                                  ? <ChevronDown size={12} />
+                                  : <ChevronRight size={12} />
+                                }
+                              </ActionIcon>
+                            )}
+                          </Table.Td>
                         </Table.Tr>
                       );
                     })}
                   </Table.Tbody>
                 </Table>
+                {selectedExecution.nodeRecords.map((record) => {
+                  const outputStr = record.output != null
+                    ? JSON.stringify(record.output, null, 2)
+                    : null;
+                  if (!outputStr || !expandedOutputs.has(record.id)) return null;
+                  return (
+                    <Paper key={`output-${record.id}`} p="xs" withBorder mt="xs" bg="gray.0">
+                      <Text size="xs" fw={500} mb={4}>
+                        {record.nodeDefinitionId.slice(0, 8)} output:
+                      </Text>
+                      <pre style={{ margin: 0, fontSize: 'var(--mantine-font-size-xs)', whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
+                        {outputStr}
+                      </pre>
+                    </Paper>
+                  );
+                })}
               </>
             )}
           </Stack>

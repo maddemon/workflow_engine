@@ -27,7 +27,8 @@ interface WebSocketPushMessage {
 
 export function useWebSocketExecution() {
   const [status, setStatus] = useState<WebSocketStatus>('disconnected');
-  const [lastSequence, setLastSequence] = useState<number>(0);
+  const [lastSequence, setLastSequence] = useState(0);
+  const lastSequenceRef = useRef(0);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const subscribedExecutionsRef = useRef<Set<string>>(new Set());
@@ -149,10 +150,11 @@ export function useWebSocketExecution() {
       reconnectAttemptsRef.current = 0;
 
       for (const executionId of subscribedExecutionsRef.current) {
+        const seq = lastSequenceRef.current;
         ws.send(JSON.stringify({
           type: 'subscribe',
           executionId,
-          lastSequence: lastSequence > 0 ? lastSequence : undefined,
+          lastSequence: seq > 0 ? seq : undefined,
         }));
       }
     };
@@ -160,6 +162,7 @@ export function useWebSocketExecution() {
     ws.onmessage = (event) => {
       try {
         const message = JSON.parse(event.data) as WebSocketPushMessage;
+        lastSequenceRef.current = message.sequence;
         setLastSequence(message.sequence);
         processMessage(message);
       } catch {
@@ -184,7 +187,7 @@ export function useWebSocketExecution() {
     };
 
     wsRef.current = ws;
-  }, [getWebSocketUrl, lastSequence, processMessage]);
+  }, [getWebSocketUrl, processMessage]);
 
   useEffect(() => {
     connectFnRef.current = doConnect;
@@ -214,13 +217,14 @@ export function useWebSocketExecution() {
     subscribedExecutionsRef.current.add(executionId);
 
     if (wsRef.current?.readyState === WebSocket.OPEN) {
+      const seq = lastSequenceRef.current;
       wsRef.current.send(JSON.stringify({
         type: 'subscribe',
         executionId,
-        lastSequence: lastSequence > 0 ? lastSequence : undefined,
+        lastSequence: seq > 0 ? seq : undefined,
       }));
     }
-  }, [lastSequence]);
+  }, []);
 
   const unsubscribe = useCallback((executionId: string) => {
     subscribedExecutionsRef.current.delete(executionId);
