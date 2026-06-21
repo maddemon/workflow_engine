@@ -118,6 +118,7 @@ public sealed class WorkflowExecutor : IEngine
         var stateMachine = new ExecutionStateMachine(ExecutionStatus.Pending);
         var nodeOutputs = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase);
         var nodeBatches = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase);
+        var nodeLlmClients = new Dictionary<Guid, ILlmClient>();
 
         var nodeMap = workflow.Nodes.ToDictionary(n => n.Id);
         var connectionsBySource = workflow.Connections
@@ -162,6 +163,7 @@ public sealed class WorkflowExecutor : IEngine
                     waitingArea,
                     nodeOutputs,
                     nodeBatches,
+                    nodeLlmClients,
                     executionStore,
                     cancellationToken).ConfigureAwait(false);
 
@@ -243,6 +245,7 @@ public sealed class WorkflowExecutor : IEngine
         WaitingArea.WaitingArea waitingArea,
         Dictionary<string, DataBatch> nodeOutputs,
         Dictionary<string, DataBatch> nodeBatches,
+        Dictionary<Guid, ILlmClient> nodeLlmClients,
         IExecutionStore executionStore,
         CancellationToken cancellationToken)
     {
@@ -273,8 +276,19 @@ public sealed class WorkflowExecutor : IEngine
                 runIndex,
                 cancellationToken).ConfigureAwait(false);
 
+            var resolvedLlmClient = ResolveLlmClientForNode(node, nodeType, nodeMap, connectionsBySource, nodeLlmClients);
+            if (resolvedLlmClient is not null)
+            {
+                context.LlmClient = resolvedLlmClient;
+            }
+
             var result = await ExecuteNodeWithRetryAsync(node, nodeType, context, cancellationToken)
                 .ConfigureAwait(false);
+
+            if (result.LlmClient is not null)
+            {
+                nodeLlmClients[node.Id] = result.LlmClient;
+            }
 
             var record = new NodeExecutionRecord
             {
@@ -663,5 +677,41 @@ public sealed class WorkflowExecutor : IEngine
             .Where(p => p.Direction == PortDirection.Output)
             .Select(p => p.Name)
             .ToList();
+    }
+
+    private static ILlmClient? ResolveLlmClientForNode(
+        NodeInstance node,
+        INodeType nodeType,
+        Dictionary<Guid, NodeInstance> nodeMap,
+        ILookup<(Guid SourceNodeId, string SourcePortName), Connection> connectionsBySource,
+        Dictionary<Guid, ILlmClient> nodeLlmClients)
+    {
+        var supplyInputPorts = nodeType.Ports
+            .Where(p => p.Direction == PortDirection.Input && p.Type == PortType.LLMSupply)
+            .ToList();
+
+        if (supplyInputPorts.Count == 0)
+        {
+            return null;
+        }
+
+        foreach (var port in supplyInputPorts)
+        {
+            var incomingConnections = connectionsBySource
+                .Where(g => g.Key.SourceNodeId != node.Id)
+                .SelectMany(g => g)
+                .Where(c => c.TargetNodeId == node.Id && c.TargetPortName == port.Name)
+                .ToList();
+
+            foreach (var connection in incomingConnections)
+            {
+                if (nodeLlmClients.TryGetValue(connection.SourceNodeId, out var client))
+                {
+                    return client;
+                }
+            }
+        }
+
+        return null;
     }
 }
