@@ -31,6 +31,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlowEngine.Application.Test
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlowEngine.Host.Tests", "tests\FlowEngine.Host.Tests\FlowEngine.Host.Tests.csproj", "{F9C947A7-AC4C-4244-A754-B9486BC2B96C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "FlowEngine.Migrations", "backend\FlowEngine.Migrations\FlowEngine.Migrations.csproj", "{3211059B-1778-407C-BADF-A1339DB2510B}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -173,6 +175,18 @@ Global
 		{F9C947A7-AC4C-4244-A754-B9486BC2B96C}.Release|x64.Build.0 = Release|Any CPU
 		{F9C947A7-AC4C-4244-A754-B9486BC2B96C}.Release|x86.ActiveCfg = Release|Any CPU
 		{F9C947A7-AC4C-4244-A754-B9486BC2B96C}.Release|x86.Build.0 = Release|Any CPU
+		{3211059B-1778-407C-BADF-A1339DB2510B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3211059B-1778-407C-BADF-A1339DB2510B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3211059B-1778-407C-BADF-A1339DB2510B}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{3211059B-1778-407C-BADF-A1339DB2510B}.Debug|x64.Build.0 = Debug|Any CPU
+		{3211059B-1778-407C-BADF-A1339DB2510B}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{3211059B-1778-407C-BADF-A1339DB2510B}.Debug|x86.Build.0 = Debug|Any CPU
+		{3211059B-1778-407C-BADF-A1339DB2510B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3211059B-1778-407C-BADF-A1339DB2510B}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3211059B-1778-407C-BADF-A1339DB2510B}.Release|x64.ActiveCfg = Release|Any CPU
+		{3211059B-1778-407C-BADF-A1339DB2510B}.Release|x64.Build.0 = Release|Any CPU
+		{3211059B-1778-407C-BADF-A1339DB2510B}.Release|x86.ActiveCfg = Release|Any CPU
+		{3211059B-1778-407C-BADF-A1339DB2510B}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -189,5 +203,6 @@ Global
 		{58BDDEE5-80EC-41CF-B7AF-3E2138DB150E} = {07D57EEB-2F50-60C4-C011-FE4FA775C9A8}
 		{77EDE999-C31F-4F99-B70D-2AFE8D86B33D} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
 		{F9C947A7-AC4C-4244-A754-B9486BC2B96C} = {0AB3BF05-4346-4AA6-1389-037BE0695223}
+		{3211059B-1778-407C-BADF-A1339DB2510B} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

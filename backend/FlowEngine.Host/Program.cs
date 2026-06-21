@@ -8,16 +8,17 @@ using FlowEngine.Application.Identity;
 using FlowEngine.Application.Triggers;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Data;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
 using FlowEngine.Host.Middlewares;
-using FlowEngine.Host.WebSocketHandlers;
-using FlowEngine.Host.Webhooks;
 using FlowEngine.Host.Scheduling;
+using FlowEngine.Host.Webhooks;
+using FlowEngine.Host.WebSocketHandlers;
 using FlowEngine.Infrastructure.Audit;
 using FlowEngine.Infrastructure.Identity;
-using FlowEngine.Core.Data;
 using FlowEngine.Infrastructure.Security;
+using FlowEngine.Migrations;
 using FlowEngine.Runtime.Credentials;
 using FlowEngine.Runtime.Expressions;
 using FlowEngine.Runtime.Executor;
@@ -25,9 +26,12 @@ using FlowEngine.Runtime.Registry;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
+using MySql.EntityFrameworkCore.Extensions;
 using Quartz;
 
 var builder = WebApplication.CreateBuilder(args);
+
+// ── Controllers & JSON ────────────────────────────────────────────
 
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
@@ -36,14 +40,49 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
     });
 builder.Services.AddMemoryCache();
-builder.Services.AddSingleton<ExpressionEvaluator>();
-builder.Services.AddScoped<ParameterResolver>();
+
+// ── Database ──────────────────────────────────────────────────────
+
+var dbProvider = builder.Configuration["Database:Provider"] ?? "sqlite";
+var connectionString = builder.Configuration.GetConnectionString("Default")
+    ?? throw new InvalidOperationException("ConnectionStrings:Default is not configured.");
 
 builder.Services.AddDbContext<FlowEngineDbContext>(options =>
-    options.UseSqlite(builder.Configuration.GetConnectionString("Default")));
+{
+    switch (dbProvider.ToLowerInvariant())
+    {
+        case "sqlite":
+            options.UseSqlite(connectionString, x =>
+                x.MigrationsAssembly("FlowEngine.Migrations")
+                 .MigrationsHistoryTable("__ef_migrations_history"));
+            break;
+        case "postgresql" or "npgsql" or "kingbasees" or "kingbase":
+            options.UseNpgsql(connectionString, x =>
+                x.MigrationsAssembly("FlowEngine.Migrations")
+                 .MigrationsHistoryTable("__ef_migrations_history", "flow"));
+            break;
+        case "mysql" or "pomelo" or "tidb" or "oceanbase":
+            options.UseMySQL(connectionString, x =>
+                x.MigrationsAssembly("FlowEngine.Migrations")
+                 .MigrationsHistoryTable("__ef_migrations_history"));
+            break;
+        case "dameng" or "dm":
+            options.UseDm(connectionString, x =>
+                x.MigrationsAssembly("FlowEngine.Migrations")
+                 .MigrationsHistoryTable("__ef_migrations_history"));
+            break;
+        default:
+            throw new ArgumentException($"Unsupported database provider: {dbProvider}");
+    }
+});
+
+// ── Infrastructure ────────────────────────────────────────────────
 
 builder.Services.AddSingleton<InternalErrorSink>();
 builder.Services.AddSingleton<IEventBus, InMemoryEventBus>();
+builder.Services.AddSingleton<ExpressionEvaluator>();
+builder.Services.AddScoped<ParameterResolver>();
+
 builder.Services.AddSingleton<AuditLogFileSink>(sp =>
 {
     var config = sp.GetRequiredService<IConfiguration>();
@@ -59,6 +98,8 @@ builder.Services.AddSingleton(sp =>
     var logPath = config["Audit:LogPath"] ?? "./storage/audit";
     return new AuditLogReader(logPath);
 });
+
+// ── Authentication & Authorization ────────────────────────────────
 
 var jwtSecret = builder.Configuration["Jwt:Secret"]
     ?? throw new InvalidOperationException("JWT Secret is not configured.");
@@ -77,9 +118,10 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
         };
     });
-
 builder.Services.AddAuthorization();
 builder.Services.AddHttpContextAccessor();
+
+// ── Identity ──────────────────────────────────────────────────────
 
 builder.Services.AddScoped<IPasswordHasher, PasswordHasher>();
 builder.Services.AddScoped<IPasswordValidator, PasswordValidator>();
@@ -88,6 +130,9 @@ builder.Services.AddScoped<IUserStore, UserStore>();
 builder.Services.AddScoped<IUserContext, HttpContextUserContext>();
 builder.Services.AddScoped<AuthenticationService>();
 builder.Services.AddScoped<AuditEventFactory>();
+
+// ── Business ──────────────────────────────────────────────────────
+
 builder.Services.AddSingleton<ICryptoKeyProvider, CryptoKeyProvider>();
 builder.Services.AddSingleton<ICredentialEncryptionService, CredentialEncryptionService>();
 builder.Services.AddScoped<CredentialService>();
@@ -95,16 +140,16 @@ builder.Services.AddScoped<ICredentialAccessor, CredentialAccessor>();
 builder.Services.AddScoped<WorkflowValidator>();
 builder.Services.AddScoped<WorkflowService>();
 builder.Services.AddScoped<TriggerService>();
-builder.Services.AddSingleton<IScheduleManager, QuartzScheduleManager>();
 builder.Services.AddScoped<WebhookHandler>();
+builder.Services.AddScoped<ErrorStrategyHandler>();
+builder.Services.AddScoped<IEngine, WorkflowExecutor>();
 
-builder.Services.AddQuartz(q =>
-{
-});
-builder.Services.AddQuartzHostedService(options =>
-{
-    options.WaitForJobsToComplete = true;
-});
+// ── Scheduling & Execution ────────────────────────────────────────
+
+builder.Services.AddSingleton<IScheduleManager, QuartzScheduleManager>();
+builder.Services.AddQuartz();
+builder.Services.AddQuartzHostedService(options => options.WaitForJobsToComplete = true);
+
 builder.Services.AddScoped<ExecutionService>();
 builder.Services.AddScoped<NodeExecutionContextFactory>(provider =>
 {
@@ -115,23 +160,23 @@ builder.Services.AddScoped<NodeExecutionContextFactory>(provider =>
         provider.GetRequiredService<ParameterResolver>(),
         provider.GetRequiredService<ICredentialAccessor>(),
         new HashSet<string>(whitelist, StringComparer.OrdinalIgnoreCase),
-        provider.GetService<ILogger<ParameterHydrator>>()
-    );
+        provider.GetService<ILogger<ParameterHydrator>>());
 });
 
-builder.Services.AddScoped<ErrorStrategyHandler>();
-builder.Services.AddScoped<IEngine, WorkflowExecutor>();
+// ── WebSocket ─────────────────────────────────────────────────────
 
 builder.Services.AddSingleton<WebSocketConnectionManager>();
 builder.Services.AddSingleton<WebSocketEventPushService>();
 builder.Services.AddSingleton<WebSocketReplayService>();
 builder.Services.AddScoped<ExecutionWebSocketHandler>();
 
+// ── CORS ──────────────────────────────────────────────────────────
+
 builder.Services.AddCors(options =>
 {
     options.AddDefaultPolicy(policy =>
     {
-        var origins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? Array.Empty<string>();
+        var origins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
         if (origins.Length > 0)
         {
             policy.WithOrigins(origins)
@@ -147,6 +192,8 @@ builder.Services.AddCors(options =>
         }
     });
 });
+
+// ── Plugins & Node Registry ───────────────────────────────────────
 
 var pluginsPath = builder.Configuration.GetSection("Plugins")["Path"] ?? "../../plugins";
 if (!Path.IsPathRooted(pluginsPath))
@@ -171,25 +218,30 @@ builder.Services.AddSingleton<INodeRegistry>(provider =>
     return registry;
 });
 
+// ══════════════════════════════════════════════════════════════════
+//  App Pipeline
+// ══════════════════════════════════════════════════════════════════
+
 var app = builder.Build();
+
+// ── Migrations ────────────────────────────────────────────────────
+
+await app.Services.ApplyFlowEngineMigrationsAsync(
+    dbProvider,
+    app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("FlowEngine.Migrations"));
+
+// ── Startup Initialization ────────────────────────────────────────
+
+app.Services.GetRequiredService<AuditLogFileSink>();
 
 using (var scope = app.Services.CreateScope())
 {
     var dbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
-    dbContext.Database.Migrate();
-    dbContext.Database.ExecuteSqlRaw("PRAGMA journal_mode=WAL;");
-}
-
-app.Services.GetRequiredService<AuditLogFileSink>();
-
-{
-    using var scope = app.Services.CreateScope();
-    var dbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
     var scheduleManager = scope.ServiceProvider.GetRequiredService<IScheduleManager>();
 
-    await scheduleManager.StartAsync().ConfigureAwait(false);
+    await scheduleManager.StartAsync();
 
-    var activeTriggers = await dbContext.Triggers.Where(t => t.IsActive).ToListAsync().ConfigureAwait(false);
+    var activeTriggers = await dbContext.Triggers.Where(t => t.IsActive).ToListAsync();
     foreach (var trigger in activeTriggers)
     {
         if (trigger.Type != TriggerType.Schedule) continue;
@@ -203,15 +255,19 @@ app.Services.GetRequiredService<AuditLogFileSink>();
             settings.CronExpression,
             settings.TimeZone,
             settings.StartAt,
-            settings.EndAt).ConfigureAwait(false);
+            settings.EndAt);
     }
 }
+
+// ── Middleware ────────────────────────────────────────────────────
 
 app.UseCors();
 app.UseAuthentication();
 app.UseMiddleware<CurrentUserMiddleware>();
 app.UseAuthorization();
 app.UseStaticFiles();
+
+// ── Routes ────────────────────────────────────────────────────────
 
 app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 app.MapGet("/health/ready", () => Results.Ok(new { status = "ready" }));
@@ -221,43 +277,29 @@ api.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
 
 app.MapControllers();
 
+// ── Webhook Routes ────────────────────────────────────────────────
+
+using (var scope = app.Services.CreateScope())
 {
-    using var scope = app.Services.CreateScope();
     var dbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
-    var webhookRoutes = await dbContext.WebhookRoutes.ToListAsync().ConfigureAwait(false);
+    var webhookRoutes = await dbContext.WebhookRoutes.ToListAsync();
 
     foreach (var route in webhookRoutes)
     {
         var capturedPath = route.Path;
         var method = route.Method?.ToUpperInvariant() ?? "POST";
-        IEndpointConventionBuilder routeBuilder = method switch
+
+        app.MapMethods(capturedPath, new[] { method }, async (HttpContext context) =>
         {
-            "GET" => app.MapGet(capturedPath, async (HttpContext context) =>
-            {
-                var handler = context.RequestServices.GetRequiredService<WebhookHandler>();
-                await handler.HandleAsync(context, capturedPath).ConfigureAwait(false);
-            }),
-            "PUT" => app.MapPut(capturedPath, async (HttpContext context) =>
-            {
-                var handler = context.RequestServices.GetRequiredService<WebhookHandler>();
-                await handler.HandleAsync(context, capturedPath).ConfigureAwait(false);
-            }),
-            "DELETE" => app.MapDelete(capturedPath, async (HttpContext context) =>
-            {
-                var handler = context.RequestServices.GetRequiredService<WebhookHandler>();
-                await handler.HandleAsync(context, capturedPath).ConfigureAwait(false);
-            }),
-            _ => app.MapPost(capturedPath, async (HttpContext context) =>
-            {
-                var handler = context.RequestServices.GetRequiredService<WebhookHandler>();
-                await handler.HandleAsync(context, capturedPath).ConfigureAwait(false);
-            }),
-        };
-        routeBuilder
-            .WithName($"webhook_{route.Id}")
-            .WithMetadata(new { IsWebhook = true });
+            var handler = context.RequestServices.GetRequiredService<WebhookHandler>();
+            await handler.HandleAsync(context, capturedPath);
+        })
+        .WithName($"webhook_{route.Id}")
+        .WithMetadata(new { IsWebhook = true });
     }
 }
+
+// ── WebSocket ─────────────────────────────────────────────────────
 
 app.UseWebSockets(new WebSocketOptions
 {

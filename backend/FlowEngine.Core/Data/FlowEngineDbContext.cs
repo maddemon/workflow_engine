@@ -56,20 +56,26 @@ public sealed class FlowEngineDbContext : DbContext
                 v => JsonSerializer.Serialize(v, JsonOptions),
                 v => JsonSerializer.Deserialize<List<NodeExecutionRecord>>(v, JsonOptions) ?? new());
 
+        modelBuilder.Entity<Trigger>()
+            .Property(t => t.Settings)
+            .HasConversion(
+                v => JsonSerializer.Serialize(v, JsonOptions),
+                v => JsonSerializer.Deserialize<TriggerSettings>(v, JsonOptions) ?? new());
+
         foreach (var entityType in modelBuilder.Model.GetEntityTypes())
         {
             foreach (var property in entityType.GetProperties())
             {
-                if (property.PropertyInfo?.GetCustomAttribute<JsonColumnAttribute>() != null)
+                if (property.PropertyInfo?.GetCustomAttribute<JsonColumnAttribute>() == null)
+                    continue;
+
+                var providerName = Database.ProviderName;
+                var columnType = providerName switch
                 {
-                    var providerName = Database.ProviderName;
-                    var columnType = providerName switch
-                    {
-                        "Npgsql" => "jsonb",
-                        _ => "json"
-                    };
-                    property.SetColumnType(columnType);
-                }
+                    "Npgsql" => "jsonb",
+                    _ => "json"
+                };
+                property.SetColumnType(columnType);
             }
         }
     }

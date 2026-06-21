@@ -384,3 +384,5 @@ backend/FlowEngine.Host/storage/
 .superpowers/
 .agents/skills/
 skills-lock.json
+backend/FlowEngine.Host/App_Data/crypto.key
+backend/FlowEngine.Host/App_Data/flowengine.db

@@ -8,6 +8,7 @@
     <ProjectReference Include="..\FlowEngine.Application\FlowEngine.Application.csproj" />
     <ProjectReference Include="..\FlowEngine.Infrastructure\FlowEngine.Infrastructure.csproj" />
     <ProjectReference Include="..\FlowEngine.Runtime\FlowEngine.Runtime.csproj" />
+    <ProjectReference Include="..\FlowEngine.Migrations\FlowEngine.Migrations.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -15,7 +16,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
     </PackageReference>
-    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.0" />
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.9" />
     <PackageReference Include="Quartz" Version="3.18.1" />
     <PackageReference Include="Quartz.Extensions.Hosting" Version="3.18.1" />
   </ItemGroup>
