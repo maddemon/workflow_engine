@@ -527,6 +527,7 @@ public sealed class ExpressionEvaluator
             long l => new JValue(l),
             double d => new JValue(d),
             float f => new JValue(f),
+            decimal d => new JValue(d),
             bool b => new JValue(b),
             _ => JValue.CreateString(value.ToString())
         };

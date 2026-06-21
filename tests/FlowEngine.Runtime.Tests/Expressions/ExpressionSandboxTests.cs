@@ -126,7 +126,7 @@ public class ExpressionSandboxTests
     }
 
     [Fact]
-    public void Depth_Limiting_Exceeded_Throws_SyntaxError()
+    public void Depth_Limiting_Exceeded_Throws_SecurityViolation()
     {
         var context = CreateContext();
 
@@ -134,7 +134,7 @@ public class ExpressionSandboxTests
         var ex = Assert.Throws<ExpressionEvaluationException>(
             () => parser.Parse("{{ true ? (true ? (true ? (true ? (true ? 1 : 0) : 0) : 0) : 0) : 0 }}", 3));
 
-        Assert.Equal(ExpressionErrorType.SyntaxError, ex.Error.Type);
+        Assert.Equal(ExpressionErrorType.SecurityViolation, ex.Error.Type);
     }
 
     [Fact]

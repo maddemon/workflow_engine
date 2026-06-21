@@ -400,7 +400,13 @@ public sealed class ExpressionParser
         {
             if (_depth >= _maxDepth)
             {
-                throw CreateSyntaxError(_currentToken.Position, $"表达式递归深度超过上限 {_maxDepth}。");
+                throw new ExpressionEvaluationException(new ExpressionError
+                {
+                    Type = ExpressionErrorType.SecurityViolation,
+                    Expression = _expressionText,
+                    Position = _currentToken.Position,
+                    Reason = $"表达式递归深度超过上限 {_maxDepth}。"
+                });
             }
 
             _depth++;
@@ -432,164 +438,335 @@ public sealed class ExpressionParser
 
         private ExpressionNode ParseOr()
         {
-            var left = ParseAnd();
-
-            while (_currentToken.Type == TokenType.Or)
+            if (_depth >= _maxDepth)
             {
-                Advance();
-                var right = ParseAnd();
-                left = new BinaryOperationNode(BinaryOperator.Or, left, right);
+                throw new ExpressionEvaluationException(new ExpressionError
+                {
+                    Type = ExpressionErrorType.SecurityViolation,
+                    Expression = _expressionText,
+                    Position = _currentToken.Position,
+                    Reason = $"表达式递归深度超过上限 {_maxDepth}。"
+                });
             }
 
-            return left;
+            _depth++;
+            try
+            {
+                var left = ParseAnd();
+
+                while (_currentToken.Type == TokenType.Or)
+                {
+                    Advance();
+                    var right = ParseAnd();
+                    left = new BinaryOperationNode(BinaryOperator.Or, left, right);
+                }
+
+                return left;
+            }
+            finally
+            {
+                _depth--;
+            }
         }
 
         private ExpressionNode ParseAnd()
         {
-            var left = ParseEquality();
-
-            while (_currentToken.Type == TokenType.And)
+            if (_depth >= _maxDepth)
             {
-                Advance();
-                var right = ParseEquality();
-                left = new BinaryOperationNode(BinaryOperator.And, left, right);
+                throw new ExpressionEvaluationException(new ExpressionError
+                {
+                    Type = ExpressionErrorType.SecurityViolation,
+                    Expression = _expressionText,
+                    Position = _currentToken.Position,
+                    Reason = $"表达式递归深度超过上限 {_maxDepth}。"
+                });
             }
 
-            return left;
+            _depth++;
+            try
+            {
+                var left = ParseEquality();
+
+                while (_currentToken.Type == TokenType.And)
+                {
+                    Advance();
+                    var right = ParseEquality();
+                    left = new BinaryOperationNode(BinaryOperator.And, left, right);
+                }
+
+                return left;
+            }
+            finally
+            {
+                _depth--;
+            }
         }
 
         private ExpressionNode ParseEquality()
         {
-            var left = ParseComparison();
-
-            while (_currentToken.Type is TokenType.Equal or TokenType.NotEqual)
+            if (_depth >= _maxDepth)
             {
-                var op = _currentToken.Type == TokenType.Equal ? BinaryOperator.Equal : BinaryOperator.NotEqual;
-                Advance();
-                var right = ParseComparison();
-                left = new BinaryOperationNode(op, left, right);
+                throw new ExpressionEvaluationException(new ExpressionError
+                {
+                    Type = ExpressionErrorType.SecurityViolation,
+                    Expression = _expressionText,
+                    Position = _currentToken.Position,
+                    Reason = $"表达式递归深度超过上限 {_maxDepth}。"
+                });
             }
 
-            return left;
+            _depth++;
+            try
+            {
+                var left = ParseComparison();
+
+                while (_currentToken.Type is TokenType.Equal or TokenType.NotEqual)
+                {
+                    var op = _currentToken.Type == TokenType.Equal ? BinaryOperator.Equal : BinaryOperator.NotEqual;
+                    Advance();
+                    var right = ParseComparison();
+                    left = new BinaryOperationNode(op, left, right);
+                }
+
+                return left;
+            }
+            finally
+            {
+                _depth--;
+            }
         }
 
         private ExpressionNode ParseComparison()
         {
-            var left = ParseAdditive();
-
-            while (_currentToken.Type is TokenType.GreaterThan or TokenType.LessThan
-                   or TokenType.GreaterThanOrEqual or TokenType.LessThanOrEqual)
+            if (_depth >= _maxDepth)
             {
-                var op = _currentToken.Type switch
+                throw new ExpressionEvaluationException(new ExpressionError
                 {
-                    TokenType.GreaterThan => BinaryOperator.GreaterThan,
-                    TokenType.LessThan => BinaryOperator.LessThan,
-                    TokenType.GreaterThanOrEqual => BinaryOperator.GreaterThanOrEqual,
-                    TokenType.LessThanOrEqual => BinaryOperator.LessThanOrEqual,
-                    _ => throw new InvalidOperationException()
-                };
-
-                Advance();
-                var right = ParseAdditive();
-                left = new BinaryOperationNode(op, left, right);
+                    Type = ExpressionErrorType.SecurityViolation,
+                    Expression = _expressionText,
+                    Position = _currentToken.Position,
+                    Reason = $"表达式递归深度超过上限 {_maxDepth}。"
+                });
             }
 
-            return left;
+            _depth++;
+            try
+            {
+                var left = ParseAdditive();
+
+                while (_currentToken.Type is TokenType.GreaterThan or TokenType.LessThan
+                       or TokenType.GreaterThanOrEqual or TokenType.LessThanOrEqual)
+                {
+                    var op = _currentToken.Type switch
+                    {
+                        TokenType.GreaterThan => BinaryOperator.GreaterThan,
+                        TokenType.LessThan => BinaryOperator.LessThan,
+                        TokenType.GreaterThanOrEqual => BinaryOperator.GreaterThanOrEqual,
+                        TokenType.LessThanOrEqual => BinaryOperator.LessThanOrEqual,
+                        _ => throw new InvalidOperationException()
+                    };
+
+                    Advance();
+                    var right = ParseAdditive();
+                    left = new BinaryOperationNode(op, left, right);
+                }
+
+                return left;
+            }
+            finally
+            {
+                _depth--;
+            }
         }
 
         private ExpressionNode ParseAdditive()
         {
-            var left = ParseMultiplicative();
-
-            while (_currentToken.Type is TokenType.Plus or TokenType.Minus)
+            if (_depth >= _maxDepth)
             {
-                var op = _currentToken.Type == TokenType.Plus ? BinaryOperator.Add : BinaryOperator.Subtract;
-                Advance();
-                var right = ParseMultiplicative();
-                left = new BinaryOperationNode(op, left, right);
+                throw new ExpressionEvaluationException(new ExpressionError
+                {
+                    Type = ExpressionErrorType.SecurityViolation,
+                    Expression = _expressionText,
+                    Position = _currentToken.Position,
+                    Reason = $"表达式递归深度超过上限 {_maxDepth}。"
+                });
             }
 
-            return left;
+            _depth++;
+            try
+            {
+                var left = ParseMultiplicative();
+
+                while (_currentToken.Type is TokenType.Plus or TokenType.Minus)
+                {
+                    var op = _currentToken.Type == TokenType.Plus ? BinaryOperator.Add : BinaryOperator.Subtract;
+                    Advance();
+                    var right = ParseMultiplicative();
+                    left = new BinaryOperationNode(op, left, right);
+                }
+
+                return left;
+            }
+            finally
+            {
+                _depth--;
+            }
         }
 
         private ExpressionNode ParseMultiplicative()
         {
-            var left = ParseUnary();
-
-            while (_currentToken.Type is TokenType.Multiply or TokenType.Divide or TokenType.Modulo)
+            if (_depth >= _maxDepth)
             {
-                var op = _currentToken.Type switch
+                throw new ExpressionEvaluationException(new ExpressionError
                 {
-                    TokenType.Multiply => BinaryOperator.Multiply,
-                    TokenType.Divide => BinaryOperator.Divide,
-                    TokenType.Modulo => BinaryOperator.Modulo,
-                    _ => throw new InvalidOperationException()
-                };
-
-                Advance();
-                var right = ParseUnary();
-                left = new BinaryOperationNode(op, left, right);
+                    Type = ExpressionErrorType.SecurityViolation,
+                    Expression = _expressionText,
+                    Position = _currentToken.Position,
+                    Reason = $"表达式递归深度超过上限 {_maxDepth}。"
+                });
             }
 
-            return left;
+            _depth++;
+            try
+            {
+                var left = ParseUnary();
+
+                while (_currentToken.Type is TokenType.Multiply or TokenType.Divide or TokenType.Modulo)
+                {
+                    var op = _currentToken.Type switch
+                    {
+                        TokenType.Multiply => BinaryOperator.Multiply,
+                        TokenType.Divide => BinaryOperator.Divide,
+                        TokenType.Modulo => BinaryOperator.Modulo,
+                        _ => throw new InvalidOperationException()
+                    };
+
+                    Advance();
+                    var right = ParseUnary();
+                    left = new BinaryOperationNode(op, left, right);
+                }
+
+                return left;
+            }
+            finally
+            {
+                _depth--;
+            }
         }
 
         private ExpressionNode ParseUnary()
         {
-            if (_currentToken.Type is TokenType.Not or TokenType.Minus or TokenType.Plus)
+            if (_depth >= _maxDepth)
             {
-                var op = _currentToken.Type switch
+                throw new ExpressionEvaluationException(new ExpressionError
                 {
-                    TokenType.Not => UnaryOperator.Not,
-                    TokenType.Minus => UnaryOperator.Negate,
-                    TokenType.Plus => UnaryOperator.Plus,
-                    _ => throw new InvalidOperationException()
-                };
-
-                var position = _currentToken.Position;
-                Advance();
-                var operand = ParseUnary();
-                return new UnaryOperationNode(op, operand);
+                    Type = ExpressionErrorType.SecurityViolation,
+                    Expression = _expressionText,
+                    Position = _currentToken.Position,
+                    Reason = $"表达式递归深度超过上限 {_maxDepth}。"
+                });
             }
 
-            return ParsePostfix();
+            _depth++;
+            try
+            {
+                if (_currentToken.Type is TokenType.Not or TokenType.Minus or TokenType.Plus)
+                {
+                    var op = _currentToken.Type switch
+                    {
+                        TokenType.Not => UnaryOperator.Not,
+                        TokenType.Minus => UnaryOperator.Negate,
+                        TokenType.Plus => UnaryOperator.Plus,
+                        _ => throw new InvalidOperationException()
+                    };
+
+                    var position = _currentToken.Position;
+                    Advance();
+                    var operand = ParseUnary();
+                    return new UnaryOperationNode(op, operand);
+                }
+
+                return ParsePostfix();
+            }
+            finally
+            {
+                _depth--;
+            }
         }
 
         private ExpressionNode ParsePostfix()
         {
-            var node = ParsePrimary();
-
-            while (_currentToken.Type is TokenType.Dot or TokenType.LeftBracket)
+            if (_depth >= _maxDepth)
             {
-                if (_currentToken.Type == TokenType.Dot)
+                throw new ExpressionEvaluationException(new ExpressionError
                 {
-                    Advance();
-                    var memberName = ExpectIdentifier("成员访问需要标识符。");
-                    node = new MemberAccessNode(node, memberName);
-                }
-                else
-                {
-                    Advance();
-                    var index = ParseConditional();
-                    Expect(TokenType.RightBracket, "索引器缺少 ']'。");
-                    node = new IndexerNode(node, index);
-                }
+                    Type = ExpressionErrorType.SecurityViolation,
+                    Expression = _expressionText,
+                    Position = _currentToken.Position,
+                    Reason = $"表达式递归深度超过上限 {_maxDepth}。"
+                });
             }
 
-            return node;
+            _depth++;
+            try
+            {
+                var node = ParsePrimary();
+
+                while (_currentToken.Type is TokenType.Dot or TokenType.LeftBracket)
+                {
+                    if (_currentToken.Type == TokenType.Dot)
+                    {
+                        Advance();
+                        var memberName = ExpectIdentifier("成员访问需要标识符。");
+                        node = new MemberAccessNode(node, memberName);
+                    }
+                    else
+                    {
+                        Advance();
+                        var index = ParseConditional();
+                        Expect(TokenType.RightBracket, "索引器缺少 ']'。");
+                        node = new IndexerNode(node, index);
+                    }
+                }
+
+                return node;
+            }
+            finally
+            {
+                _depth--;
+            }
         }
 
         private ExpressionNode ParsePrimary()
         {
-            return _currentToken.Type switch
+            if (_depth >= _maxDepth)
             {
-                TokenType.Number => AdvanceAndReturn(new LiteralNode(_currentToken.Value)),
-                TokenType.String => AdvanceAndReturn(new LiteralNode(_currentToken.Value)),
-                TokenType.Boolean => AdvanceAndReturn(new LiteralNode(_currentToken.Value)),
-                TokenType.Identifier => ParseIdentifierOrFunctionCall(),
-                TokenType.LeftParen => ParseParenthesized(),
-                _ => throw CreateSyntaxError(_currentToken.Position, $"未期望的标记 {_currentToken.Type}。")
-            };
+                throw new ExpressionEvaluationException(new ExpressionError
+                {
+                    Type = ExpressionErrorType.SecurityViolation,
+                    Expression = _expressionText,
+                    Position = _currentToken.Position,
+                    Reason = $"表达式递归深度超过上限 {_maxDepth}。"
+                });
+            }
+
+            _depth++;
+            try
+            {
+                return _currentToken.Type switch
+                {
+                    TokenType.Number => AdvanceAndReturn(new LiteralNode(_currentToken.Value)),
+                    TokenType.String => AdvanceAndReturn(new LiteralNode(_currentToken.Value)),
+                    TokenType.Boolean => AdvanceAndReturn(new LiteralNode(_currentToken.Value)),
+                    TokenType.Identifier => ParseIdentifierOrFunctionCall(),
+                    TokenType.LeftParen => ParseParenthesized(),
+                    _ => throw CreateSyntaxError(_currentToken.Position, $"未期望的标记 {_currentToken.Type}。")
+                };
+            }
+            finally
+            {
+                _depth--;
+            }
         }
 
         private ExpressionNode ParseIdentifierOrFunctionCall()
