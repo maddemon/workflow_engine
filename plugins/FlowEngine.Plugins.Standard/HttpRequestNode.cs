@@ -1,12 +1,12 @@
 using System.ComponentModel;
-using System.Net;
 using System.Text;
-using System.Text.Json;
 using System.Text.Json.Nodes;
+using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Runtime.Http;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -33,8 +33,6 @@ public enum HttpMethodOption
 /// </summary>
 public sealed class HttpRequestNode : INodeType
 {
-    private static readonly HttpClient SharedHttpClient = new();
-
     /// <inheritdoc />
     public string TypeName => "httpRequest";
 
@@ -80,14 +78,14 @@ public sealed class HttpRequestNode : INodeType
     /// <summary>
     /// API 凭据 ID。
     /// </summary>
-    [Credential("apiKey")]
+    [Credential(FlowConstants.CredentialFields.ApiKey)]
     public string? ApiCredential { get; set; }
 
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
     [
-        new PortDefinition { Name = "input", DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = "output", DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
+        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
+        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
     ];
 
     /// <inheritdoc />
@@ -98,13 +96,12 @@ public sealed class HttpRequestNode : INodeType
     {
         try
         {
-            var methodStr = Method.ToString().ToUpperInvariant();
-
             if (string.IsNullOrWhiteSpace(Url))
             {
                 return context.ErrorResult("MissingUrl", "URL 参数不能为空。");
             }
 
+            var methodStr = Method.ToString().ToUpperInvariant();
             var request = new HttpRequestMessage(new HttpMethod(methodStr), Url);
 
             if (ApiCredential is { Length: > 0 } credentialIdStr && Guid.TryParse(credentialIdStr, out var credentialId))
@@ -113,7 +110,7 @@ public sealed class HttpRequestNode : INodeType
                 {
                     var credential = await context.Credentials.GetCredentialAsync(credentialId, context.CancellationToken)
                         .ConfigureAwait(false);
-                    if (credential.Fields.TryGetValue("apiKey", out var apiKey))
+                    if (credential.Fields.TryGetValue(FlowConstants.CredentialFields.ApiKey, out var apiKey))
                     {
                         request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {apiKey}");
                     }
@@ -137,45 +134,8 @@ public sealed class HttpRequestNode : INodeType
                 request.Content = new StringContent(Body.ToJsonString(), Encoding.UTF8, "application/json");
             }
 
-            using var response = await SharedHttpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-            var responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-
-            var output = new JsonObject
-            {
-                ["statusCode"] = (int)response.StatusCode,
-                ["statusText"] = response.StatusCode.ToString(),
-                ["body"] = TryParseJson(responseBody, out var jsonNode) ? jsonNode : responseBody,
-                ["headers"] = SerializeResponseHeaders(response)
-            };
-
-            return new NodeExecutionResult
-            {
-                Success = response.StatusCode < HttpStatusCode.BadRequest,
-                Output = new DataBatch
-                {
-                    Items =
-                    [
-                        new DataItem
-                        {
-                            Data = output,
-                            Success = response.StatusCode < HttpStatusCode.BadRequest,
-                            SourceIndex = 0
-                        }
-                    ]
-                },
-                Error = response.StatusCode >= HttpStatusCode.BadRequest
-                    ? new NodeError
-                    {
-                        Code = "HttpError",
-                        Message = $"HTTP 请求失败: {response.StatusCode}",
-                        NodeDefinitionId = context.Node.Id,
-                        Details = new Dictionary<string, string>
-                        {
-                            ["statusCode"] = ((int)response.StatusCode).ToString()
-                        }
-                    }
-                    : null
-            };
+            return await HttpExecutionHelper.SendAndBuildResultAsync(request, context.Node.Id, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -189,35 +149,5 @@ public sealed class HttpRequestNode : INodeType
         {
             return context.ErrorResult("UnexpectedError", $"HTTP 请求发生未预期错误: {ex.Message}");
         }
-    }
-
-    private static bool TryParseJson(string json, out JsonNode? node)
-    {
-        try
-        {
-            node = JsonNode.Parse(json);
-            return true;
-        }
-        catch (JsonException)
-        {
-            node = null;
-            return false;
-        }
-    }
-
-    private static JsonObject SerializeResponseHeaders(HttpResponseMessage response)
-    {
-        var headers = new JsonObject();
-        foreach (var (key, values) in response.Headers)
-        {
-            headers[key] = string.Join(", ", values);
-        }
-
-        foreach (var (key, values) in response.Content.Headers)
-        {
-            headers[key] = string.Join(", ", values);
-        }
-
-        return headers;
     }
 }

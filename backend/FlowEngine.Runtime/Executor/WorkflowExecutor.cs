@@ -1,6 +1,8 @@
 using System.Collections;
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
@@ -8,49 +10,35 @@ using FlowEngine.Core.Enums;
 using FlowEngine.Core.ValueObjects;
 using FlowEngine.Runtime.WaitingArea;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Runtime.Executor;
 
-/// <summary>
-/// 工作流执行引擎主循环实现。
-/// </summary>
 public sealed class WorkflowExecutor : IEngine
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false
-    };
-
     private readonly FlowEngineDbContext _dbContext;
     private readonly INodeRegistry _nodeRegistry;
     private readonly NodeExecutionContextFactory _contextFactory;
     private readonly ErrorStrategyHandler _errorHandler;
-    private readonly IServiceScopeFactory _scopeFactory;
+    private readonly WorkflowExecutionQueue _executionQueue;
     private readonly ILogger<WorkflowExecutor> _logger;
 
-    /// <summary>
-    /// 初始化执行引擎。
-    /// </summary>
     public WorkflowExecutor(
         FlowEngineDbContext dbContext,
         INodeRegistry nodeRegistry,
         NodeExecutionContextFactory contextFactory,
         ErrorStrategyHandler errorHandler,
-        IServiceScopeFactory scopeFactory,
+        WorkflowExecutionQueue executionQueue,
         ILogger<WorkflowExecutor> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _nodeRegistry = nodeRegistry ?? throw new ArgumentNullException(nameof(nodeRegistry));
         _contextFactory = contextFactory ?? throw new ArgumentNullException(nameof(contextFactory));
         _errorHandler = errorHandler ?? throw new ArgumentNullException(nameof(errorHandler));
-        _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
+        _executionQueue = executionQueue ?? throw new ArgumentNullException(nameof(executionQueue));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
-    /// <inheritdoc />
     public async Task<ExecutionId> StartAsync(
         Guid workflowDefinitionId,
         object? triggerPayload = null,
@@ -76,112 +64,52 @@ public sealed class WorkflowExecutor : IEngine
         _dbContext.ExecutionRecords.Add(executionRecord);
         await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        _ = Task.Run(async () =>
-        {
-            using var scope = _scopeFactory.CreateScope();
-            var scopedDbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
-            var loadedExecution = await scopedDbContext.ExecutionRecords
-                .FirstOrDefaultAsync(e => e.Id == executionRecord.Id, default)
-                .ConfigureAwait(false);
-            if (loadedExecution is null) return;
-
-            try
-            {
-                await ExecuteLoopAsync(workflow, loadedExecution, triggerPayload, scopedDbContext, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                _logger.LogInformation("执行 {ExecutionId} 已取消。", executionRecord.Id);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "执行 {ExecutionId} 发生未处理异常。", executionRecord.Id);
-                loadedExecution.Status = ExecutionStatus.Failed;
-                await scopedDbContext.SaveChangesAsync(default).ConfigureAwait(false);
-            }
-        }, CancellationToken.None);
+        await _executionQueue.EnqueueAsync(
+            new WorkflowExecutionWorkItem(executionRecord.Id, workflowDefinitionId, triggerPayload),
+            cancellationToken).ConfigureAwait(false);
 
         return ExecutionId.From(executionRecord.Id);
     }
 
-    /// <inheritdoc />
-    public Task ResumeAsync(ExecutionId executionId, CancellationToken cancellationToken = default)
-    {
-        throw new NotSupportedException("MVP 阶段暂不支持恢复执行。");
-    }
-
-    private async Task ExecuteLoopAsync(
+    public async Task ExecuteLoopAsync(
         Workflow workflow,
-        ExecutionRecord execution,
+        Guid executionRecordId,
         object? triggerPayload,
         FlowEngineDbContext executionStore,
         CancellationToken cancellationToken)
     {
-        var queue = new ExecutionQueue();
-        var waitingArea = new WaitingArea.WaitingArea();
-        var stateMachine = new ExecutionStateMachine(ExecutionStatus.Pending);
-        var nodeOutputs = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase);
-        var nodeBatches = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase);
-        var nodeLlmClients = new Dictionary<Guid, ILlmClient>();
+        var execution = await executionStore.ExecutionRecords
+            .FirstOrDefaultAsync(e => e.Id == executionRecordId, cancellationToken)
+            .ConfigureAwait(false);
+        if (execution is null) return;
 
-        var nodeMap = workflow.Nodes.ToDictionary(n => n.Id);
-        var connectionsBySource = workflow.Connections
-            .ToLookup(c => (c.SourceNodeId, c.SourcePortName));
-
-        stateMachine.Start();
-        execution.Status = ExecutionStatus.Running;
+        var session = new ExecutionSession(workflow, execution, executionRecordId, executionStore);
+        session.StateMachine.Start();
+        session.Execution.Status = ExecutionStatus.Running;
         await executionStore.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await EnqueueEntryNodesAsync(
-            workflow,
-            execution,
-            queue,
-            triggerPayload,
-            cancellationToken).ConfigureAwait(false);
+        await EnqueueEntryNodesAsync(session, triggerPayload, cancellationToken).ConfigureAwait(false);
 
         const int IdleDelayMilliseconds = 500;
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            await ProcessTimeoutsAsync(
-                workflow,
-                execution,
-                nodeMap,
-                connectionsBySource,
-                waitingArea,
-                queue,
-                nodeOutputs,
-                nodeBatches,
-                executionStore,
-                cancellationToken).ConfigureAwait(false);
+            await ProcessTimeoutsAsync(session, cancellationToken).ConfigureAwait(false);
 
-            if (queue.Reader.TryRead(out var item))
+            if (session.Queue.Reader.TryRead(out var item))
             {
-                var shouldStop = await ProcessNodeAsync(
-                    item,
-                    workflow,
-                    execution,
-                    nodeMap,
-                    connectionsBySource,
-                    queue,
-                    waitingArea,
-                    nodeOutputs,
-                    nodeBatches,
-                    nodeLlmClients,
-                    executionStore,
-                    cancellationToken).ConfigureAwait(false);
+                var shouldStop = await ProcessNodeAsync(item, session, cancellationToken).ConfigureAwait(false);
 
                 if (shouldStop)
                 {
-                    stateMachine.Fail();
+                    session.StateMachine.Fail();
                     break;
                 }
 
                 continue;
             }
 
-            if (waitingArea.IsEmpty)
+            if (session.WaitingArea.IsEmpty)
             {
                 break;
             }
@@ -191,31 +119,29 @@ public sealed class WorkflowExecutor : IEngine
 
         if (cancellationToken.IsCancellationRequested)
         {
-            stateMachine.Cancel();
-            waitingArea.CleanupExecution(execution.Id);
+            session.StateMachine.Cancel();
+            session.WaitingArea.CleanupExecution(execution.Id);
         }
-        else if (stateMachine.Status == ExecutionStatus.Running)
+        else if (session.StateMachine.Status == ExecutionStatus.Running)
         {
-            stateMachine.Complete();
+            session.StateMachine.Complete();
         }
 
-        execution.Status = stateMachine.Status;
+        session.Execution.Status = session.StateMachine.Status;
         await executionStore.SaveChangesAsync(default).ConfigureAwait(false);
     }
 
     private async Task EnqueueEntryNodesAsync(
-        Workflow workflow,
-        ExecutionRecord execution,
-        ExecutionQueue queue,
+        ExecutionSession session,
         object? triggerPayload,
         CancellationToken cancellationToken)
     {
         var triggerBatch = CreateDataBatch(triggerPayload);
-        var hasInputConnections = workflow.Connections
+        var hasInputConnections = session.Workflow.Connections
             .Select(c => c.TargetNodeId)
             .ToHashSet();
 
-        foreach (var node in workflow.Nodes)
+        foreach (var node in session.Workflow.Nodes)
         {
             var nodeType = _nodeRegistry.Get(node.TypeName);
             var isExplicitEntry = node.IsEntry || nodeType.DefaultIsEntry;
@@ -233,27 +159,18 @@ public sealed class WorkflowExecutor : IEngine
                 inputs[inputPorts[0]] = triggerBatch;
             }
 
-            await queue.EnqueueAsync(
-                new NodeWorkItem(execution.Id, node.Id, inputs),
+            await session.Queue.EnqueueAsync(
+                new NodeWorkItem(session.Execution.Id, node.Id, inputs),
                 cancellationToken).ConfigureAwait(false);
         }
     }
 
     private async Task<bool> ProcessNodeAsync(
         NodeWorkItem item,
-        Workflow workflow,
-        ExecutionRecord execution,
-        Dictionary<Guid, NodeDefinition> nodeMap,
-        ILookup<(Guid SourceNodeId, string SourcePortName), Connection> connectionsBySource,
-        ExecutionQueue queue,
-        WaitingArea.WaitingArea waitingArea,
-        Dictionary<string, DataBatch> nodeOutputs,
-        Dictionary<string, DataBatch> nodeBatches,
-        Dictionary<Guid, ILlmClient> nodeLlmClients,
-        FlowEngineDbContext executionStore,
+        ExecutionSession session,
         CancellationToken cancellationToken)
     {
-        if (!nodeMap.TryGetValue(item.NodeInstanceId, out var node))
+        if (!session.NodeMap.TryGetValue(item.NodeInstanceId, out var node))
         {
             return false;
         }
@@ -270,17 +187,17 @@ public sealed class WorkflowExecutor : IEngine
         {
             var runInputs = BuildRunInputs(item.Inputs, executionMode, runIndex);
             var context = await _contextFactory.CreateAsync(
-                workflow,
-                execution,
+                session.Workflow,
+                session.Execution,
                 node,
                 nodeType,
                 runInputs,
-                nodeOutputs,
-                nodeBatches,
+                session.SuccessfulOutputs,
+                session.LatestBatches,
                 runIndex,
                 cancellationToken).ConfigureAwait(false);
 
-            var resolvedLlmClient = ResolveLlmClientForNode(node, nodeType, nodeMap, connectionsBySource, nodeLlmClients);
+            var resolvedLlmClient = ResolveLlmClientForNode(node, nodeType, session.NodeMap, session.ConnectionsBySource, session.NodeLlmClients);
             if (resolvedLlmClient is not null)
             {
                 context.LlmClient = resolvedLlmClient;
@@ -291,32 +208,28 @@ public sealed class WorkflowExecutor : IEngine
 
             if (context.LlmClient is not null)
             {
-                nodeLlmClients[node.Id] = context.LlmClient;
+                session.NodeLlmClients[node.Id] = context.LlmClient;
             }
 
-            var record = new NodeExecutionRecord
-            {
-                NodeDefinitionId = node.Id,
-                RunIndex = runIndex,
-                StartedAt = DateTime.UtcNow,
-                CompletedAt = DateTime.UtcNow,
-                Inputs = runInputs.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
-                Output = result,
-                RawParameters = context.RawParameters.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
-                ResolvedParameters = context.ResolvedParameters.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase)
-            };
+            var record = BuildNodeExecutionRecord(node.Id, runIndex, runInputs, result, context);
 
-            execution.NodeRecords = [.. execution.NodeRecords, record];
-            await executionStore.SaveChangesAsync(cancellationToken)
-                .ConfigureAwait(false);
+            session.Execution.NodeRecords = [.. session.Execution.NodeRecords, record];
+            try
+            {
+                await session.DbContext.SaveChangesAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
 
             finalResult = result;
 
             if (!result.Success && node.ErrorStrategy != ErrorStrategy.Continue)
             {
-                execution.Status = ExecutionStatus.Failed;
-                await executionStore.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                waitingArea.CleanupExecution(execution.Id);
+                session.Execution.Status = ExecutionStatus.Failed;
+                await session.DbContext.SaveChangesAsync(CancellationToken.None).ConfigureAwait(false);
+                session.WaitingArea.CleanupExecution(session.Execution.Id);
                 return true;
             }
         }
@@ -326,22 +239,13 @@ public sealed class WorkflowExecutor : IEngine
             return false;
         }
 
-        nodeBatches[node.Name] = finalResult.Output;
+        session.LatestBatches[node.Name] = finalResult.Output;
         if (finalResult.Success)
         {
-            nodeOutputs[node.Name] = finalResult.Output;
+            session.SuccessfulOutputs[node.Name] = finalResult.Output;
         }
 
-        await RouteOutputsAsync(
-            node,
-            nodeType,
-            finalResult,
-            execution.Id,
-            nodeMap,
-            connectionsBySource,
-            queue,
-            waitingArea,
-            cancellationToken).ConfigureAwait(false);
+        await RouteOutputsAsync(node, nodeType, finalResult, session, cancellationToken).ConfigureAwait(false);
 
         return false;
     }
@@ -412,7 +316,6 @@ public sealed class WorkflowExecutor : IEngine
             await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
         }
 
-        // 循环内部已处理所有返回路径，此处不会执行。
         throw new InvalidOperationException("节点重试逻辑出现不可达路径。");
     }
 
@@ -420,19 +323,15 @@ public sealed class WorkflowExecutor : IEngine
         NodeDefinition node,
         INodeType nodeType,
         NodeExecutionResult result,
-        Guid executionId,
-        Dictionary<Guid, NodeDefinition> nodeMap,
-        ILookup<(Guid SourceNodeId, string SourcePortName), Connection> connectionsBySource,
-        ExecutionQueue queue,
-        WaitingArea.WaitingArea waitingArea,
+        ExecutionSession session,
         CancellationToken cancellationToken)
     {
         var sourcePortName = ResolveSourcePortName(nodeType, result);
-        var connections = connectionsBySource[(node.Id, sourcePortName)];
+        var connections = session.ConnectionsBySource[(node.Id, sourcePortName)];
 
         foreach (var connection in connections)
         {
-            if (!nodeMap.TryGetValue(connection.TargetNodeId, out var targetNode))
+            if (!session.NodeMap.TryGetValue(connection.TargetNodeId, out var targetNode))
             {
                 continue;
             }
@@ -448,20 +347,20 @@ public sealed class WorkflowExecutor : IEngine
                     [connection.TargetPortName] = outputBatch
                 };
 
-                await queue.EnqueueAsync(
-                    new NodeWorkItem(executionId, targetNode.Id, inputs),
+                await session.Queue.EnqueueAsync(
+                    new NodeWorkItem(session.Execution.Id, targetNode.Id, inputs),
                     cancellationToken).ConfigureAwait(false);
             }
             else
             {
-                waitingArea.Receive(executionId, targetNode.Id, connection.TargetPortName, outputBatch);
+                session.WaitingArea.Receive(session.Execution.Id, targetNode.Id, connection.TargetPortName, outputBatch);
 
-                if (waitingArea.IsReady(executionId, targetNode.Id, targetInputPorts))
+                if (session.WaitingArea.IsReady(session.Execution.Id, targetNode.Id, targetInputPorts))
                 {
-                    if (waitingArea.TryTake(executionId, targetNode.Id, out var readyInputs))
+                    if (session.WaitingArea.TryTake(session.Execution.Id, targetNode.Id, out var readyInputs))
                     {
-                        await queue.EnqueueAsync(
-                            new NodeWorkItem(executionId, targetNode.Id, readyInputs),
+                        await session.Queue.EnqueueAsync(
+                            new NodeWorkItem(session.Execution.Id, targetNode.Id, readyInputs),
                             cancellationToken).ConfigureAwait(false);
                     }
                 }
@@ -470,31 +369,23 @@ public sealed class WorkflowExecutor : IEngine
     }
 
     private async Task ProcessTimeoutsAsync(
-        Workflow workflow,
-        ExecutionRecord execution,
-        Dictionary<Guid, NodeDefinition> nodeMap,
-        ILookup<(Guid SourceNodeId, string SourcePortName), Connection> connectionsBySource,
-        WaitingArea.WaitingArea waitingArea,
-        ExecutionQueue queue,
-        Dictionary<string, DataBatch> nodeOutputs,
-        Dictionary<string, DataBatch> nodeBatches,
-        FlowEngineDbContext executionStore,
+        ExecutionSession session,
         CancellationToken cancellationToken)
     {
-        foreach (var (executionId, nodeInstanceId) in waitingArea.GetTimeoutKeys().ToList())
+        foreach (var (executionId, nodeInstanceId) in session.WaitingArea.GetTimeoutKeys().ToList())
         {
-            if (executionId != execution.Id)
+            if (executionId != session.Execution.Id)
             {
                 continue;
             }
 
-            if (!nodeMap.TryGetValue(nodeInstanceId, out var node))
+            if (!session.NodeMap.TryGetValue(nodeInstanceId, out var node))
             {
-                waitingArea.CancelWaiting(executionId, nodeInstanceId);
+                session.WaitingArea.CancelWaiting(executionId, nodeInstanceId);
                 continue;
             }
 
-            waitingArea.TryTake(executionId, nodeInstanceId, out _);
+            session.WaitingArea.TryTake(executionId, nodeInstanceId, out _);
 
             var timeoutResult = _errorHandler.CreateInputTimeoutResult(node.Id);
             if (node.ErrorStrategy == ErrorStrategy.Continue)
@@ -502,41 +393,34 @@ public sealed class WorkflowExecutor : IEngine
                 timeoutResult = _errorHandler.Handle(timeoutResult, node.Id, ErrorStrategy.Continue);
             }
 
-            var record = new NodeExecutionRecord
-            {
-                NodeDefinitionId = node.Id,
-                RunIndex = 0,
-                StartedAt = DateTime.UtcNow,
-                CompletedAt = DateTime.UtcNow,
-                Inputs = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase),
-                Output = timeoutResult,
-                RawParameters = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase),
-                ResolvedParameters = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
-            };
+            var record = BuildNodeExecutionRecord(
+                node.Id,
+                runIndex: 0,
+                inputs: new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase),
+                output: timeoutResult,
+                rawParameters: new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase),
+                resolvedParameters: new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase));
 
-            execution.NodeRecords = [.. execution.NodeRecords, record];
-            await executionStore.SaveChangesAsync(cancellationToken)
-                .ConfigureAwait(false);
+            session.Execution.NodeRecords = [.. session.Execution.NodeRecords, record];
+            try
+            {
+                await session.DbContext.SaveChangesAsync(cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+            }
 
             if (node.ErrorStrategy != ErrorStrategy.Continue)
             {
-                execution.Status = ExecutionStatus.Failed;
-                await executionStore.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                waitingArea.CleanupExecution(execution.Id);
+                session.Execution.Status = ExecutionStatus.Failed;
+                await session.DbContext.SaveChangesAsync(CancellationToken.None).ConfigureAwait(false);
+                session.WaitingArea.CleanupExecution(session.Execution.Id);
                 return;
             }
 
             var nodeType = _nodeRegistry.Get(node.TypeName);
-            await RouteOutputsAsync(
-                node,
-                nodeType,
-                timeoutResult,
-                executionId,
-                nodeMap,
-                connectionsBySource,
-                queue,
-                waitingArea,
-                cancellationToken).ConfigureAwait(false);
+            await RouteOutputsAsync(node, nodeType, timeoutResult, session, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -552,7 +436,7 @@ public sealed class WorkflowExecutor : IEngine
             }
         }
 
-        return "output";
+        return FlowConstants.PortNames.Output;
     }
 
     private static IReadOnlyDictionary<string, DataBatch> BuildRunInputs(
@@ -586,15 +470,8 @@ public sealed class WorkflowExecutor : IEngine
 
     private static DataBatch CreateDataBatch(object? payload)
     {
-        if (payload is DataBatch batch)
-        {
-            return batch;
-        }
-
-        if (payload is DataItem item)
-        {
-            return new DataBatch { Items = [item] };
-        }
+        if (payload is DataBatch batch) return batch;
+        if (payload is DataItem item) return new DataBatch { Items = [item] };
 
         if (payload is null)
         {
@@ -602,12 +479,7 @@ public sealed class WorkflowExecutor : IEngine
             {
                 Items =
                 [
-                    new DataItem
-                    {
-                        Data = null,
-                        Success = true,
-                        SourceIndex = 0
-                    }
+                    new DataItem { Data = null, Success = true, SourceIndex = 0 }
                 ]
             };
         }
@@ -620,26 +492,20 @@ public sealed class WorkflowExecutor : IEngine
             {
                 items.Add(new DataItem
                 {
-                    Data = JsonSerializer.SerializeToNode(value, JsonOptions),
+                    Data = JsonSerializer.SerializeToNode(value, JsonDefaults.Options),
                     Success = true,
                     SourceIndex = index++
                 });
             }
-
             return new DataBatch { Items = items };
         }
 
-        var data = JsonSerializer.SerializeToNode(payload, JsonOptions);
+        var data = JsonSerializer.SerializeToNode(payload, JsonDefaults.Options);
         return new DataBatch
         {
             Items =
             [
-                new DataItem
-                {
-                    Data = data,
-                    Success = true,
-                    SourceIndex = 0
-                }
+                new DataItem { Data = data, Success = true, SourceIndex = 0 }
             ]
         };
     }
@@ -684,7 +550,7 @@ public sealed class WorkflowExecutor : IEngine
         INodeType nodeType,
         Dictionary<Guid, NodeDefinition> nodeMap,
         ILookup<(Guid SourceNodeId, string SourcePortName), Connection> connectionsBySource,
-        Dictionary<Guid, ILlmClient> nodeLlmClients)
+        ConcurrentDictionary<Guid, ILlmClient> nodeLlmClients)
     {
         var supplyInputPorts = nodeType.Ports
             .Where(p => p.Direction == PortDirection.Input && p.Type == PortType.LLMSupply)
@@ -713,5 +579,38 @@ public sealed class WorkflowExecutor : IEngine
         }
 
         return null;
+    }
+
+    private static NodeExecutionRecord BuildNodeExecutionRecord(
+        Guid nodeDefinitionId,
+        int runIndex,
+        IReadOnlyDictionary<string, DataBatch> inputs,
+        NodeExecutionResult output,
+        NodeExecutionContext context)
+    {
+        return BuildNodeExecutionRecord(
+            nodeDefinitionId, runIndex, inputs, output,
+            context.RawParameters, context.ResolvedParameters);
+    }
+
+    private static NodeExecutionRecord BuildNodeExecutionRecord(
+        Guid nodeDefinitionId,
+        int runIndex,
+        IReadOnlyDictionary<string, DataBatch> inputs,
+        NodeExecutionResult output,
+        IReadOnlyDictionary<string, object> rawParameters,
+        IReadOnlyDictionary<string, object> resolvedParameters)
+    {
+        return new NodeExecutionRecord
+        {
+            NodeDefinitionId = nodeDefinitionId,
+            RunIndex = runIndex,
+            StartedAt = DateTime.UtcNow,
+            CompletedAt = DateTime.UtcNow,
+            Inputs = inputs.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
+            Output = output,
+            RawParameters = rawParameters.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
+            ResolvedParameters = resolvedParameters.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase)
+        };
     }
 }

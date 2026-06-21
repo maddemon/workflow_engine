@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -49,10 +50,10 @@ public sealed class AgentNode : INodeType
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
     [
-        new PortDefinition { Name = "input", DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = "output", DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main },
-        new PortDefinition { Name = "tools", DisplayName = "Tools", Direction = PortDirection.Output, Type = PortType.AgentTool },
-        new PortDefinition { Name = "llmSupply", DisplayName = "LLM Supply", Direction = PortDirection.Input, Type = PortType.LLMSupply }
+        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
+        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main },
+        new PortDefinition { Name = FlowConstants.PortNames.Tools, DisplayName = "Tools", Direction = PortDirection.Output, Type = PortType.AgentTool },
+        new PortDefinition { Name = FlowConstants.PortNames.LlmSupply, DisplayName = "LLM Supply", Direction = PortDirection.Input, Type = PortType.LLMSupply }
     ];
 
     /// <inheritdoc />
@@ -142,7 +143,7 @@ public sealed class AgentNode : INodeType
         var currentNodeId = context.Node.Id;
 
         var toolConnections = workflow.Connections
-            .Where(c => c.SourceNodeId == currentNodeId && c.SourcePortName == "tools")
+            .Where(c => c.SourceNodeId == currentNodeId && c.SourcePortName == FlowConstants.PortNames.Tools)
             .ToList();
 
         if (toolConnections.Count == 0)
@@ -231,7 +232,7 @@ public sealed class AgentNode : INodeType
 
     private static string? SerializeInput(NodeExecutionContext context)
     {
-        if (!context.Inputs.TryGetValue("input", out var batch) || batch.Items.Count == 0)
+        if (!context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch) || batch.Items.Count == 0)
         {
             return null;
         }
@@ -306,7 +307,7 @@ public sealed class AgentNode : INodeType
                 Parameters = toolNode.Parameters,
                 Ports = toolNode.Ports
             },
-            Inputs = new Dictionary<string, DataBatch> { ["input"] = inputBatch },
+            Inputs = new Dictionary<string, DataBatch> { [FlowConstants.PortNames.Input] = inputBatch },
             RawParameters = toolNode.Parameters,
             ResolvedParameters = toolNode.Parameters,
             Credentials = parentContext.Credentials,

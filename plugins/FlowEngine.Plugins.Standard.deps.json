@@ -36,30 +36,6 @@
           }
         }
       },
-      "JmesPath.Net/1.1.0": {
-        "dependencies": {
-          "JmesPath.Net.Parser": "1.1.0",
-          "Newtonsoft.Json": "13.0.4"
-        },
-        "runtime": {
-          "lib/netstandard2.1/JmesPath.Net.dll": {
-            "assemblyVersion": "1.1.0.0",
-            "fileVersion": "1.1.0.0"
-          }
-        }
-      },
-      "JmesPath.Net.Parser/1.1.0": {
-        "runtime": {
-          "lib/netstandard2.1/JmePath.Net.Parser.dll": {
-            "assemblyVersion": "1.1.0.0",
-            "fileVersion": "1.1.0.0"
-          },
-          "lib/netstandard2.1/jmespath.net.interop.dll": {
-            "assemblyVersion": "1.0.0.0",
-            "fileVersion": "1.0.0.0"
-          }
-        }
-      },
       "Microsoft.EntityFrameworkCore/10.0.9": {
         "dependencies": {
           "Microsoft.EntityFrameworkCore.Abstractions": "10.0.9",
@@ -233,14 +209,6 @@
           }
         }
       },
-      "Newtonsoft.Json/13.0.4": {
-        "runtime": {
-          "lib/net6.0/Newtonsoft.Json.dll": {
-            "assemblyVersion": "13.0.0.0",
-            "fileVersion": "13.0.4.30916"
-          }
-        }
-      },
       "OpenAI/2.11.0": {
         "dependencies": {
           "System.ClientModel": "1.10.0"
@@ -290,10 +258,8 @@
       "FlowEngine.Runtime/1.0.0": {
         "dependencies": {
           "FlowEngine.Core": "1.0.0",
-          "JmesPath.Net": "1.1.0",
-          "Microsoft.Extensions.Caching.Memory": "10.0.9",
-          "Microsoft.Extensions.Logging.Abstractions": "10.0.9",
-          "Newtonsoft.Json": "13.0.4"
+          "Jint": "4.10.0",
+          "Microsoft.Extensions.Logging.Abstractions": "10.0.9"
         },
         "runtime": {
           "FlowEngine.Runtime.dll": {
@@ -323,20 +289,6 @@
       "sha512": "sha512-0quB/4E0FpYmKTTYMGriYOcb0LT6xmKtaZG6SFAbnypJzPJ17G6QLIFWmD4MdjLCtdh+h77GZDaC7i7v+cQaeA==",
       "path": "jint/4.10.0",
       "hashPath": "jint.4.10.0.nupkg.sha512"
-    },
-    "JmesPath.Net/1.1.0": {
-      "type": "package",
-      "serviceable": true,
-      "sha512": "sha512-sL1LeqBm+BWSKvgZN/T470IqkXcKQXmOYsRUZU18jDZeiIBmvUfIe9m3VhiII/jOK/6WmrQ+W8Pqwz3k28WX9g==",
-      "path": "jmespath.net/1.1.0",
-      "hashPath": "jmespath.net.1.1.0.nupkg.sha512"
-    },
-    "JmesPath.Net.Parser/1.1.0": {
-      "type": "package",
-      "serviceable": true,
-      "sha512": "sha512-NLTE/dPy8lMcZO6E7SL5Jw3fay8Vesll7+hkeRVSRaVNg1RRyPBV3/u6CM7QNgtnzhvyFPDyxUHUuRdh0vzCSg==",
-      "path": "jmespath.net.parser/1.1.0",
-      "hashPath": "jmespath.net.parser.1.1.0.nupkg.sha512"
     },
     "Microsoft.EntityFrameworkCore/10.0.9": {
       "type": "package",
@@ -442,13 +394,6 @@
       "sha512": "sha512-fmEbAUFsaIKirgLt/lYhuFRBwhcSJN31jjHgCdbQxJiWOum6EdLjkbgGuukSP9z/a+9LibaxII/kF+GwOXgC4g==",
       "path": "microsoft.extensions.primitives/10.0.9",
       "hashPath": "microsoft.extensions.primitives.10.0.9.nupkg.sha512"
-    },
-    "Newtonsoft.Json/13.0.4": {
-      "type": "package",
-      "serviceable": true,
-      "sha512": "sha512-pdgNNMai3zv51W5aq268sujXUyx7SNdE2bj1wZcWjAQrKMFZV260lbqYop1d2GM67JI1huLRwxo9ZqnfF/lC6A==",
-      "path": "newtonsoft.json/13.0.4",
-      "hashPath": "newtonsoft.json.13.0.4.nupkg.sha512"
     },
     "OpenAI/2.11.0": {
       "type": "package",

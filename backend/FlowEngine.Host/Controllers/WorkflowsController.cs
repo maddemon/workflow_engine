@@ -12,14 +12,16 @@ namespace FlowEngine.Host.Controllers;
 public class WorkflowsController(WorkflowService workflowService) : ControllerBase
 {
     /// <summary>
-    /// 获取所有工作流摘要列表。
+    /// 分页获取工作流摘要列表。
     /// </summary>
     [HttpGet]
-    public async Task<ActionResult<IReadOnlyCollection<WorkflowSummaryDto>>> GetAll(
-        CancellationToken cancellationToken)
+    public async Task<ActionResult<PagedResult<WorkflowSummaryDto>>> GetAll(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
     {
-        var workflows = await workflowService.GetAllAsync(cancellationToken).ConfigureAwait(false);
-        return Ok(workflows);
+        var result = await workflowService.GetAllAsync(page, pageSize, cancellationToken).ConfigureAwait(false);
+        return Ok(result);
     }
 
     /// <summary>

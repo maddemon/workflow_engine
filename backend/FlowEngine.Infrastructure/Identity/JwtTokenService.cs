@@ -19,7 +19,9 @@ public class JwtTokenService(IConfiguration configuration) : ITokenService
             ?? throw new InvalidOperationException("JWT Secret is not configured.");
         var issuer = configuration["Jwt:Issuer"] ?? "FlowEngine";
         var audience = configuration["Jwt:Audience"] ?? "FlowEngine";
-        var expirationMinutes = int.Parse(configuration["Jwt:ExpirationMinutes"] ?? "60");
+        var expirationMinutes = int.TryParse(configuration["Jwt:ExpirationMinutes"], out var parsed)
+            ? parsed
+            : 60;
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secret));
         var credentials = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);

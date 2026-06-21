@@ -56,6 +56,15 @@ public static class AuditEventTypes
     /// <summary>凭据删除。</summary>
     public const string CredentialDeleted = "Credential.Deleted";
 
+    /// <summary>触发器创建。</summary>
+    public const string TriggerCreated = "Trigger.Created";
+
+    /// <summary>触发器更新。</summary>
+    public const string TriggerUpdated = "Trigger.Updated";
+
+    /// <summary>触发器删除。</summary>
+    public const string TriggerDeleted = "Trigger.Deleted";
+
     /// <summary>Webhook 触发。</summary>
     public const string WebhookTriggered = "Webhook.Triggered";
 

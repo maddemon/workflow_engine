@@ -13,16 +13,12 @@ namespace FlowEngine.Application.Workflows;
 /// <summary>
 /// 工作流应用服务，编排工作流 CRUD 与保存校验。
 /// </summary>
-/// <remarks>
-/// 初始化工作流应用服务。
-/// </remarks>
 public sealed class WorkflowService(
     FlowEngineDbContext dbContext,
     WorkflowValidator _workflowValidator,
     IEventBus eventBus,
     AuditEventFactory auditFactory,
-    TriggerService _triggerService,
-    IScheduleManager _scheduleManager)
+    TriggerService _triggerService)
 {
     /// <summary>
     /// 创建工作流。
@@ -69,14 +65,37 @@ public sealed class WorkflowService(
     }
 
     /// <summary>
-    /// 获取所有工作流摘要列表。
+    /// 分页获取工作流摘要列表。
     /// </summary>
-    public async Task<IReadOnlyCollection<WorkflowSummaryDto>> GetAllAsync(CancellationToken cancellationToken = default)
+    /// <param name="page">页码（从 1 开始）。</param>
+    /// <param name="pageSize">每页大小。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    public async Task<PagedResult<WorkflowSummaryDto>> GetAllAsync(
+        int page = 1,
+        int pageSize = 20,
+        CancellationToken cancellationToken = default)
     {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 200);
+
+        var totalCount = await dbContext.Workflows
+            .CountAsync(cancellationToken)
+            .ConfigureAwait(false);
+
         var workflows = await dbContext.Workflows
+            .OrderBy(w => w.CreatedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        return workflows.Select(MapToSummary).ToList();
+
+        return new PagedResult<WorkflowSummaryDto>
+        {
+            Items = workflows.Select(MapToSummary).ToList(),
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize
+        };
     }
 
     /// <summary>
@@ -243,14 +262,11 @@ public sealed class WorkflowService(
         }
     }
 
-    /// <summary>
-    /// 将领域实体转换为 API 响应 DTO（从数据库加载时使用）。
-    /// </summary>
-    private static WorkflowDto MapToDto(Workflow workflow)
+    private static NodeDefinitionDto BuildNodeDto(NodeDefinition n, string id)
     {
-        var nodeDtos = workflow.Nodes.Select(n => new NodeDefinitionDto
+        return new NodeDefinitionDto
         {
-            Id = n.Id.ToString(),
+            Id = id,
             TypeName = n.TypeName,
             Name = n.Name,
             Parameters = n.Parameters,
@@ -261,17 +277,30 @@ public sealed class WorkflowService(
             RetryPolicy = n.RetryPolicy,
             ErrorStrategy = n.ErrorStrategy,
             Timeout = n.Timeout,
-        }).ToList();
+        };
+    }
 
-        var connectionDtos = workflow.Connections.Select(c => new ConnectionDto
+    private static ConnectionDto BuildConnectionDto(Connection c, string id, string sourceNodeId, string targetNodeId)
+    {
+        return new ConnectionDto
         {
-            Id = c.Id.ToString(),
-            SourceNodeId = c.SourceNodeId.ToString(),
+            Id = id,
+            SourceNodeId = sourceNodeId,
             SourcePortName = c.SourcePortName,
-            TargetNodeId = c.TargetNodeId.ToString(),
+            TargetNodeId = targetNodeId,
             TargetPortName = c.TargetPortName,
             Condition = c.Condition,
-        }).ToList();
+        };
+    }
+
+    /// <summary>
+    /// 将领域实体转换为 API 响应 DTO（从数据库加载时使用）。
+    /// </summary>
+    private static WorkflowDto MapToDto(Workflow workflow)
+    {
+        var nodeDtos = workflow.Nodes.Select(n => BuildNodeDto(n, n.Id.ToString())).ToList();
+        var connectionDtos = workflow.Connections.Select(c =>
+            BuildConnectionDto(c, c.Id.ToString(), c.SourceNodeId.ToString(), c.TargetNodeId.ToString())).ToList();
 
         return new WorkflowDto
         {
@@ -303,20 +332,7 @@ public sealed class WorkflowService(
         var nodeDtos = workflow.Nodes.Select(n =>
         {
             var originalId = reverseNodeIdMap.TryGetValue(n.Id, out var origId) ? origId : n.Id.ToString();
-            return new NodeDefinitionDto
-            {
-                Id = originalId,
-                TypeName = n.TypeName,
-                Name = n.Name,
-                Parameters = n.Parameters,
-                Ports = n.Ports,
-                PositionX = n.PositionX,
-                PositionY = n.PositionY,
-                IsEntry = n.IsEntry,
-                RetryPolicy = n.RetryPolicy,
-                ErrorStrategy = n.ErrorStrategy,
-                Timeout = n.Timeout,
-            };
+            return BuildNodeDto(n, originalId);
         }).ToList();
 
         var connectionDtos = workflow.Connections.Select(c =>
@@ -326,15 +342,7 @@ public sealed class WorkflowService(
             var origConn = originalConnectionDtos.FirstOrDefault(cd =>
                 cd.SourceNodeId == origSource && cd.TargetNodeId == origTarget);
 
-            return new ConnectionDto
-            {
-                Id = origConn?.Id ?? c.Id.ToString(),
-                SourceNodeId = origSource,
-                SourcePortName = c.SourcePortName,
-                TargetNodeId = origTarget,
-                TargetPortName = c.TargetPortName,
-                Condition = c.Condition,
-            };
+            return BuildConnectionDto(c, origConn?.Id ?? c.Id.ToString(), origSource, origTarget);
         }).ToList();
 
         return new WorkflowDto
@@ -366,43 +374,11 @@ public sealed class WorkflowService(
 
     private async Task RegisterTriggersAsync(Guid workflowDefinitionId, CancellationToken cancellationToken)
     {
-        var triggers = await _triggerService
-            .GetByWorkflowDefinitionIdAsync(workflowDefinitionId, cancellationToken)
-            .ConfigureAwait(false);
-
-        foreach (var trigger in triggers.Where(t => t.IsActive))
-        {
-            if (trigger.Type == TriggerType.Schedule)
-            {
-                var settings = trigger.Settings;
-
-                if (settings?.CronExpression is not null)
-                {
-                    await _scheduleManager.RegisterScheduleAsync(
-                        trigger.Id,
-                        workflowDefinitionId,
-                        settings.CronExpression,
-                        settings.TimeZone,
-                        settings.StartAt,
-                        settings.EndAt,
-                        cancellationToken).ConfigureAwait(false);
-                }
-            }
-        }
+        await _triggerService.RegisterWorkflowSchedulesAsync(workflowDefinitionId, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task UnregisterTriggersAsync(Guid workflowDefinitionId, CancellationToken cancellationToken)
     {
-        var triggers = await _triggerService
-            .GetByWorkflowDefinitionIdAsync(workflowDefinitionId, cancellationToken)
-            .ConfigureAwait(false);
-
-        foreach (var trigger in triggers)
-        {
-            if (trigger.Type == TriggerType.Schedule)
-            {
-                await _scheduleManager.UnregisterScheduleAsync(trigger.Id, cancellationToken).ConfigureAwait(false);
-            }
-        }
+        await _triggerService.UnregisterWorkflowSchedulesAsync(workflowDefinitionId, cancellationToken).ConfigureAwait(false);
     }
 }

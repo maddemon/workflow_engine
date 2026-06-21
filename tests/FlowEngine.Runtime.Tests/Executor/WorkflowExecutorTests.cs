@@ -7,9 +7,6 @@ using FlowEngine.Runtime.Executor;
 using FlowEngine.Runtime.Expressions;
 using FlowEngine.Runtime.Registry;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FlowEngine.Runtime.Tests.Executor;
@@ -20,6 +17,7 @@ public class WorkflowExecutorTests
     private readonly FlowEngineDbContext _dbContext;
     private readonly INodeRegistry _nodeRegistry;
     private readonly WorkflowExecutor _executor;
+    private readonly WorkflowExecutionQueue _executionQueue;
 
     public WorkflowExecutorTests()
     {
@@ -39,23 +37,46 @@ public class WorkflowExecutorTests
             },
             NullLogger<NodeRegistry>.Instance);
 
-        var memoryCache = new MemoryCache(new MemoryCacheOptions());
-        var evaluator = new ExpressionEvaluator(memoryCache);
         var resolver = new ParameterResolver(
-            evaluator,
             NullLogger<ParameterResolver>.Instance);
-        var contextFactory = new NodeExecutionContextFactory(_nodeRegistry, evaluator, resolver, new TestCredentialAccessor(), new HashSet<string>());
+        var contextFactory = new NodeExecutionContextFactory(_nodeRegistry, resolver, new TestCredentialAccessor(), new HashSet<string>());
         var errorHandler = new ErrorStrategyHandler();
 
-        var scopeFactory = new TestScopeFactory(CreateDbContext);
+        _executionQueue = new WorkflowExecutionQueue();
 
         _executor = new WorkflowExecutor(
             _dbContext,
             _nodeRegistry,
             contextFactory,
             errorHandler,
-            scopeFactory,
+            _executionQueue,
             NullLogger<WorkflowExecutor>.Instance);
+    }
+
+    private async Task DrainAndExecuteAsync(CancellationToken cancellationToken = default)
+    {
+        while (true)
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            cts.CancelAfter(TimeSpan.FromMilliseconds(100));
+            try
+            {
+                var item = await _executionQueue.DequeueAsync(cts.Token).ConfigureAwait(false);
+                using var execDbContext = CreateDbContext();
+                var workflow = await execDbContext.Workflows
+                    .FirstOrDefaultAsync(w => w.Id == item.WorkflowDefinitionId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (workflow is null) continue;
+
+                await _executor.ExecuteLoopAsync(
+                        workflow, item.ExecutionRecordId, item.TriggerPayload, execDbContext, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+        }
     }
 
     [Fact]
@@ -241,13 +262,13 @@ public class WorkflowExecutorTests
     }
 
     [Fact]
-    public async Task Cancellation_Stops_Execution()
+    public async Task Cancellation_Stops_Execution_Direct()
     {
         var nodeA = CreateNode("a", "slow", isEntry: true);
         var workflow = new Workflow
         {
             Id = Guid.NewGuid(),
-            Name = "cancel",
+            Name = "cancel_direct",
             CreatedBy = "test",
             Nodes = [nodeA],
             Connections = []
@@ -255,14 +276,36 @@ public class WorkflowExecutorTests
 
         _dbContext.Workflows.Add(workflow);
         await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var executionRecord = new ExecutionRecord
+        {
+            Id = Guid.NewGuid(),
+            WorkflowDefinitionId = workflow.Id,
+            StartedAt = DateTime.UtcNow,
+            Status = ExecutionStatus.Pending,
+            NodeRecords = []
+        };
+        _dbContext.ExecutionRecords.Add(executionRecord);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+
         using var cts = new CancellationTokenSource();
-        var executionId = await _executor.StartAsync(workflow.Id, cancellationToken: cts.Token);
         cts.CancelAfter(TimeSpan.FromMilliseconds(200));
 
-        var record = await WaitForExecutionAsync(executionId.Value, timeout: TimeSpan.FromSeconds(15), cancellationToken: TestContext.Current.CancellationToken);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        await _executor.ExecuteLoopAsync(
+            workflow, executionRecord.Id, null,
+            _dbContext, cts.Token);
+        sw.Stop();
+
+        var reloaded = await _dbContext.ExecutionRecords
+            .FirstOrDefaultAsync(e => e.Id == executionRecord.Id, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(reloaded);
         Assert.True(
-            record.Status == ExecutionStatus.Cancelled || record.Status == ExecutionStatus.Failed,
-            $"Expected cancelled or failed, but was {record.Status}.");
+            reloaded.Status is ExecutionStatus.Cancelled or ExecutionStatus.Failed,
+            $"Expected cancelled or failed, but was {reloaded.Status}.");
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(5),
+            $"Execution took {sw.Elapsed.TotalSeconds:F1}s, expected cancellation within 5s.");
     }
 
     [Fact]
@@ -350,6 +393,8 @@ public class WorkflowExecutorTests
         TimeSpan? timeout = null,
         CancellationToken cancellationToken = default)
     {
+        await DrainAndExecuteAsync(cancellationToken).ConfigureAwait(false);
+
         var maxWait = timeout ?? TimeSpan.FromSeconds(15);
         var sw = System.Diagnostics.Stopwatch.StartNew();
 
@@ -383,26 +428,5 @@ public class WorkflowExecutorTests
             .UseInMemoryDatabase(databaseName: _dbName)
             .Options;
         return new FlowEngineDbContext(options);
-    }
-
-    private class TestScopeFactory(Func<FlowEngineDbContext> factory) : IServiceScopeFactory
-    {
-        public IServiceScope CreateScope() => new TestScope(factory());
-    }
-
-    private class TestScope(FlowEngineDbContext dbContext) : IServiceScope
-    {
-        public IServiceProvider ServiceProvider { get; } = new TestServiceProvider(dbContext);
-        public void Dispose() { }
-    }
-
-    private class TestServiceProvider(FlowEngineDbContext dbContext) : IServiceProvider
-    {
-        public object? GetService(Type serviceType)
-        {
-            if (serviceType == typeof(FlowEngineDbContext))
-                return dbContext;
-            return null;
-        }
     }
 }

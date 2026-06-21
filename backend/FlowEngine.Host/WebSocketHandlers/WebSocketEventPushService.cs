@@ -11,6 +11,11 @@ namespace FlowEngine.Host.WebSocketHandlers;
 /// </summary>
 public sealed class WebSocketEventPushService : IDisposable
 {
+    private static readonly System.Text.Json.JsonSerializerOptions SendJsonOptions = new()
+    {
+        PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+    };
+
     private readonly IEventBus _eventBus;
     private readonly WebSocketConnectionManager _connectionManager;
     private readonly WebSocketReplayService _replayService;
@@ -210,10 +215,7 @@ public sealed class WebSocketEventPushService : IDisposable
 
         try
         {
-            var json = JsonSerializer.Serialize(message, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            });
+            var json = JsonSerializer.Serialize(message, SendJsonOptions);
             var bytes = System.Text.Encoding.UTF8.GetBytes(json);
             await connection.WebSocket.SendAsync(
                 new ArraySegment<byte>(bytes),

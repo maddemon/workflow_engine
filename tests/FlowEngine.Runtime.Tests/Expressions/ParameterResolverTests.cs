@@ -2,34 +2,30 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Runtime.Expressions;
-using Microsoft.Extensions.Caching.Memory;
+using FlowEngine.Runtime.Scripting;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FlowEngine.Runtime.Tests.Expressions;
 
-/// <summary>
-/// 参数解析器测试 —— 覆盖 JsonElement 类型值的表达式求值。
-/// </summary>
 public class ParameterResolverTests
 {
     private readonly ParameterResolver _resolver;
 
     public ParameterResolverTests()
     {
-        var evaluator = new ExpressionEvaluator(new MemoryCache(new MemoryCacheOptions()));
-        _resolver = new ParameterResolver(evaluator, NullLogger<ParameterResolver>.Instance);
+        _resolver = new ParameterResolver(NullLogger<ParameterResolver>.Instance);
     }
 
     [Fact]
     public void Resolve_String_Parameter_Evaluates_Expression()
     {
-        var context = CreateContext(inputData: new JsonObject { ["statusCode"] = 200 });
+        using var js = CreateJsEngine(new JsonObject { ["statusCode"] = 200 });
         var raw = new Dictionary<string, object>
         {
-            ["condition"] = "{{ input.statusCode }} == 200"
+            ["condition"] = "input.statusCode === 200"
         };
 
-        var result = _resolver.Resolve(raw, context);
+        var result = _resolver.Resolve(raw, js);
 
         Assert.Equal(true, result["condition"]);
     }
@@ -37,17 +33,15 @@ public class ParameterResolverTests
     [Fact]
     public void Resolve_JsonElement_String_Evaluates_Expression()
     {
-        var context = CreateContext(inputData: new JsonObject { ["statusCode"] = 200 });
+        using var js = CreateJsEngine(new JsonObject { ["statusCode"] = 200 });
 
-        // Simulate JSON deserialization: string values become JsonElement
-        var jsonStr = """{"condition": "{{ input.statusCode }} == 200"}""";
+        var jsonStr = """{"condition": "input.statusCode === 200"}""";
         var raw = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(jsonStr)!;
-
         var rawAsObjects = raw.ToDictionary(
             kv => kv.Key,
             kv => (object)kv.Value);
 
-        var result = _resolver.Resolve(rawAsObjects, context);
+        var result = _resolver.Resolve(rawAsObjects, js);
 
         Assert.Equal(true, result["condition"]);
     }
@@ -55,59 +49,45 @@ public class ParameterResolverTests
     [Fact]
     public void Resolve_JsonElement_NonString_Passes_Through()
     {
-        var context = CreateContext();
+        using var js = CreateJsEngine();
         var jsonStr = """{"count": 42}""";
         var raw = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(jsonStr)!;
-        var rawAsObjects = raw.ToDictionary(kv => kv.Key, kv => (object)kv.Value);
+        var rawAsObjects = raw.ToDictionary(
+            kv => kv.Key,
+            kv => (object)kv.Value);
 
-        var result = _resolver.Resolve(rawAsObjects, context);
+        var result = _resolver.Resolve(rawAsObjects, js);
 
-        Assert.Equal(42.0, Convert.ToDouble(result["count"]));
+        Assert.Equal(42, Convert.ToInt32(result["count"]));
     }
 
     [Fact]
-    public void Resolve_Empty_JsonElement_String_Returns_Empty()
+    public void Resolve_Empty_String_Returns_Empty()
     {
-        var context = CreateContext();
+        using var js = CreateJsEngine();
         var jsonStr = """{"url": ""}""";
         var raw = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(jsonStr)!;
-        var rawAsObjects = raw.ToDictionary(kv => kv.Key, kv => (object)kv.Value);
+        var rawAsObjects = raw.ToDictionary(
+            kv => kv.Key,
+            kv => (object)kv.Value);
 
-        var result = _resolver.Resolve(rawAsObjects, context);
+        var result = _resolver.Resolve(rawAsObjects, js);
 
         Assert.Equal("", result["url"]);
     }
 
-    private static ExpressionContext CreateContext(
-        JsonObject? inputData = null,
-        IReadOnlyDictionary<string, object>? parameters = null)
+    private static JsEngine CreateJsEngine(JsonObject? inputData = null)
     {
-        return new ExpressionContext
-        {
-            Inputs = new Dictionary<string, DataBatch>
-            {
-                ["input"] = new()
-                {
-                    Items =
-                    [
-                        new DataItem
-                        {
-                            Data = inputData ?? new JsonObject(),
-                            Success = true
-                        }
-                    ]
-                }
-            },
-            RawParameters = parameters ?? new Dictionary<string, object>(),
-            NodeOutputs = new Dictionary<string, DataBatch>(),
-            NodeBatches = new Dictionary<string, DataBatch>(),
-            EnvironmentWhitelist = new HashSet<string>(),
-            Metadata = new ExpressionMetadata
-            {
-                Workflow = null,
-                RunIndex = 0,
-                ExecutionId = Guid.Empty
-            }
-        };
+        var js = JsEngine.Create();
+        js.SetValue("input", inputData ?? new JsonObject());
+        js.SetValue("inputs", new Dictionary<string, DataBatch>());
+        js.SetValue("nodes", new Dictionary<string, DataBatch>());
+        js.SetValue("items", new Dictionary<string, DataBatch>());
+        js.SetValue("workflow", new Dictionary<string, object?>());
+        js.SetValue("execution", new Dictionary<string, object?>());
+        js.SetValue("runIndex", 0);
+        js.SetValue("parameter", new Dictionary<string, object>());
+        js.SetValue("env", new Dictionary<string, object?>());
+        return js;
     }
 }

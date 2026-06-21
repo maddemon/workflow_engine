@@ -15,12 +15,6 @@ namespace FlowEngine.Core.Data;
 /// </summary>
 public sealed class FlowEngineDbContext : DbContext
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false
-    };
-
     public DbSet<Workflow> Workflows => Set<Workflow>();
 
     public DbSet<ExecutionRecord> ExecutionRecords => Set<ExecutionRecord>();
@@ -44,39 +38,48 @@ public sealed class FlowEngineDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
-        modelBuilder.Entity<Credential>()
-            .Property(c => c.Data)
-            .HasConversion(
-                v => JsonSerializer.Serialize(v, JsonOptions),
-                v => JsonSerializer.Deserialize<Dictionary<string, EncryptedField>>(v, JsonOptions) ?? new());
+        // 必须在遍历 modelBuilder.Model 之前显式配置带 [JsonColumn] 的属性，
+        // 否则 EF Core 会对 Dictionary<,>/List<> 等泛型 navigation 进行关联探测并抛出
+        // "Unable to determine the relationship" 异常。下方法基于 CLR 反射调用
+        // EntityTypeBuilder.Property(...).HasConversion(...) Fluent API，避免触发模型 finalization。
+        ConfigureJsonColumns(modelBuilder);
+    }
 
-        modelBuilder.Entity<ExecutionRecord>()
-            .Property(e => e.NodeRecords)
-            .HasConversion(
-                v => JsonSerializer.Serialize(v, JsonOptions),
-                v => JsonSerializer.Deserialize<List<NodeExecutionRecord>>(v, JsonOptions) ?? new());
+    /// <summary>
+    /// 扫描实体程序集中所有标记 <see cref="JsonColumnAttribute"/> 的属性，统一配置：
+    /// <list type="bullet">
+    /// <item>列类型为 <c>jsonb</c>（PostgreSQL）或 <c>json</c>（其他 Provider）。</item>
+    /// <item>使用 <see cref="JsonValueConverter{T}"/> 将 CLR 类型与 JSON 字符串互转。</item>
+    /// </list>
+    /// 通过 Fluent API 显式配置，可阻止 EF Core 对 <see cref="Dictionary{TKey,TValue}"/>
+    /// 或 <see cref="List{T}"/> 等泛型属性进行关联探测。
+    /// </summary>
+    private void ConfigureJsonColumns(ModelBuilder modelBuilder)
+    {
+        var columnType = Database.ProviderName == "Npgsql" ? "jsonb" : "json";
+        var entityTypes = typeof(Workflow).Assembly
+            .GetTypes()
+            .Where(t => t.IsClass && !t.IsAbstract && !typeof(Attribute).IsAssignableFrom(t));
 
-        modelBuilder.Entity<Trigger>()
-            .Property(t => t.Settings)
-            .HasConversion(
-                v => JsonSerializer.Serialize(v, JsonOptions),
-                v => JsonSerializer.Deserialize<TriggerSettings>(v, JsonOptions) ?? new());
-
-        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        foreach (var clrType in entityTypes)
         {
-            foreach (var property in entityType.GetProperties())
+            var jsonProperties = clrType.GetProperties()
+                .Where(p => p.GetCustomAttribute<JsonColumnAttribute>() is not null)
+                .ToList();
+            if (jsonProperties.Count == 0)
             {
-                if (property.PropertyInfo?.GetCustomAttribute<JsonColumnAttribute>() == null)
-                    continue;
+                continue;
+            }
 
-                var providerName = Database.ProviderName;
-                var columnType = providerName switch
-                {
-                    "Npgsql" => "jsonb",
-                    _ => "json"
-                };
-                property.SetColumnType(columnType);
+            var entityBuilder = modelBuilder.Entity(clrType);
+            foreach (var property in jsonProperties)
+            {
+                var propertyBuilder = entityBuilder.Property(property.Name);
+                propertyBuilder.HasConversion(JsonValueConverter.Create(property.PropertyType));
+                propertyBuilder.HasColumnType(columnType);
             }
         }
     }
 }
+
+

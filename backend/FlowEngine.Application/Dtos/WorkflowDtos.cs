@@ -253,3 +253,34 @@ public sealed record WorkflowSummaryDto
     /// </summary>
     public bool IsActive { get; init; }
 }
+
+/// <summary>
+/// 分页结果。
+/// </summary>
+public sealed record PagedResult<T>
+{
+    /// <summary>
+    /// 当前页数据。
+    /// </summary>
+    public IReadOnlyCollection<T> Items { get; init; } = [];
+
+    /// <summary>
+    /// 总记录数。
+    /// </summary>
+    public int TotalCount { get; init; }
+
+    /// <summary>
+    /// 当前页码（从 1 开始）。
+    /// </summary>
+    public int Page { get; init; }
+
+    /// <summary>
+    /// 每页大小。
+    /// </summary>
+    public int PageSize { get; init; }
+
+    /// <summary>
+    /// 总页数。
+    /// </summary>
+    public int TotalPages => (int)Math.Ceiling((double)TotalCount / Math.Max(1, PageSize));
+}

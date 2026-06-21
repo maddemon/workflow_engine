@@ -146,27 +146,51 @@ public sealed class CredentialService(
         return result;
     }
 
+    private static string GetLikePattern(string credentialIdStr)
+    {
+        // GUID 固定长度 36 字符，出现在 JSON 列值中，误匹配概率极低。
+        return $"%{credentialIdStr}%";
+    }
+
     private async Task<List<string>> FindReferencingWorkflowsAsync(Guid credentialId, CancellationToken cancellationToken)
     {
-        var workflows = await dbContext.Workflows
+        var credentialIdStr = credentialId.ToString();
+        var pattern = GetLikePattern(credentialIdStr);
+        var provider = dbContext.Database.ProviderName;
+
+        // 使用数据库侧 LIKE 过滤候选工作流，避免全表加载到内存。
+        // 第一次内存精确匹配消除 LIKE 的潜在误匹配。
+        IQueryable<Workflow> filteredQuery = provider switch
+        {
+            "Microsoft.EntityFrameworkCore.Sqlite" =>
+                dbContext.Workflows.FromSqlInterpolated(
+                    $"SELECT * FROM \"workflows\" WHERE CAST(\"nodes\" AS TEXT) LIKE {pattern}"),
+            "Npgsql.EntityFrameworkCore.PostgreSQL" =>
+                dbContext.Workflows.FromSqlInterpolated(
+                    $"SELECT * FROM \"flow\".\"workflows\" WHERE \"nodes\"::text LIKE {pattern}"),
+            _ => dbContext.Workflows.Where(w => true)
+        };
+
+        var candidates = await filteredQuery
+            .Select(w => new { w.Id, w.Name, w.Nodes })
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        var referencing = new List<string>();
 
-        foreach (var workflow in workflows)
+        var referencing = new List<string>();
+        foreach (var candidate in candidates)
         {
-            if (WorkflowReferencesCredential(workflow, credentialId.ToString()))
+            if (WorkflowReferencesCredential(candidate.Nodes, credentialIdStr))
             {
-                referencing.Add(workflow.Name);
+                referencing.Add(candidate.Name);
             }
         }
 
         return referencing;
     }
 
-    private static bool WorkflowReferencesCredential(Workflow workflow, string credentialId)
+    private static bool WorkflowReferencesCredential(List<NodeDefinition> nodes, string credentialId)
     {
-        foreach (var node in workflow.Nodes)
+        foreach (var node in nodes)
         {
             foreach (var paramValue in node.Parameters.Values)
             {

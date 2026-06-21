@@ -26,7 +26,8 @@ public class TriggerServiceTests : IDisposable
         _eventBus = new InMemoryEventBus();
         var userContext = new FakeUserContext();
         var auditFactory = new AuditEventFactory(userContext);
-        _service = new TriggerService(_dbContext, _eventBus, auditFactory);
+        var scheduleManager = new FakeScheduleManager();
+        _service = new TriggerService(_dbContext, _eventBus, auditFactory, scheduleManager);
     }
 
     public void Dispose()
@@ -285,5 +286,14 @@ public class TriggerServiceTests : IDisposable
         {
             public void Dispose() { }
         }
+    }
+
+    private sealed class FakeScheduleManager : IScheduleManager
+    {
+        public Task StartAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task StopAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task RegisterScheduleAsync(Guid triggerId, Guid workflowDefinitionId, string cronExpression, string? timeZone, DateTime? startAt, DateTime? endAt, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task UnregisterScheduleAsync(Guid triggerId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task<DateTime?> GetNextFireTimeAsync(Guid triggerId, CancellationToken cancellationToken = default) => Task.FromResult<DateTime?>(null);
     }
 }

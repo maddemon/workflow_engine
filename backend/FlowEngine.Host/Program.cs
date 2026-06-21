@@ -11,6 +11,7 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
+using FlowEngine.Host.Executor;
 using FlowEngine.Host.Middlewares;
 using FlowEngine.Host.Scheduling;
 using FlowEngine.Host.Webhooks;
@@ -23,6 +24,7 @@ using FlowEngine.Runtime.Credentials;
 using FlowEngine.Runtime.Expressions;
 using FlowEngine.Runtime.Executor;
 using FlowEngine.Runtime.Registry;
+using FlowEngine.Runtime.Scripting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -80,8 +82,8 @@ builder.Services.AddDbContext<FlowEngineDbContext>(options =>
 
 builder.Services.AddSingleton<InternalErrorSink>();
 builder.Services.AddSingleton<IEventBus, InMemoryEventBus>();
-builder.Services.AddSingleton<ExpressionEvaluator>();
 builder.Services.AddScoped<ParameterResolver>();
+builder.Services.AddScoped<CredentialAccessor>();
 
 builder.Services.AddSingleton<AuditLogFileSink>(sp =>
 {
@@ -142,7 +144,9 @@ builder.Services.AddScoped<WorkflowService>();
 builder.Services.AddScoped<TriggerService>();
 builder.Services.AddScoped<WebhookHandler>();
 builder.Services.AddScoped<ErrorStrategyHandler>();
+builder.Services.AddSingleton<WorkflowExecutionQueue>();
 builder.Services.AddScoped<IEngine, WorkflowExecutor>();
+builder.Services.AddHostedService<WorkflowExecutionWorker>();
 
 // ── Scheduling & Execution ────────────────────────────────────────
 
@@ -156,11 +160,11 @@ builder.Services.AddScoped<NodeExecutionContextFactory>(provider =>
     var whitelist = builder.Configuration.GetSection("Expression:EnvironmentWhitelist").Get<string[]>() ?? [];
     return new NodeExecutionContextFactory(
         provider.GetRequiredService<INodeRegistry>(),
-        provider.GetRequiredService<ExpressionEvaluator>(),
         provider.GetRequiredService<ParameterResolver>(),
         provider.GetRequiredService<ICredentialAccessor>(),
         new HashSet<string>(whitelist, StringComparer.OrdinalIgnoreCase),
-        provider.GetService<ILogger<ParameterHydrator>>());
+        hydratorLogger: provider.GetService<ILogger<ParameterHydrator>>(),
+        jsLogger: provider.GetService<ILogger<JsEngine>>());
 });
 
 // ── WebSocket ─────────────────────────────────────────────────────

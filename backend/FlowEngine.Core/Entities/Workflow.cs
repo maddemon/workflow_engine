@@ -70,5 +70,8 @@ public class Workflow : Entity
     /// <summary>
     /// 样式设置，如布局方向等。
     /// </summary>
+    [Column("style_settings")]
+    [Comment("样式设置")]
+    [JsonColumn]
     public WorkflowStyleSettings? StyleSettings { get; set; }
 }

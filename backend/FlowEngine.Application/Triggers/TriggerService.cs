@@ -13,10 +13,11 @@ namespace FlowEngine.Application.Triggers;
 /// <summary>
 /// 触发器应用服务。
 /// </summary>
-/// <remarks>
-/// 初始化触发器应用服务。
-/// </remarks>
-public sealed class TriggerService(FlowEngineDbContext dbContext, IEventBus eventBus, AuditEventFactory auditFactory)
+public sealed class TriggerService(
+    FlowEngineDbContext dbContext,
+    IEventBus eventBus,
+    AuditEventFactory auditFactory,
+    IScheduleManager scheduleManager)
 {
     /// <summary>
     /// 创建触发器。
@@ -60,7 +61,7 @@ public sealed class TriggerService(FlowEngineDbContext dbContext, IEventBus even
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
-            "Trigger.Created",
+            AuditEventTypes.TriggerCreated,
             "Trigger",
             trigger.Id,
             new Dictionary<string, object>
@@ -159,6 +160,8 @@ public sealed class TriggerService(FlowEngineDbContext dbContext, IEventBus even
     public async Task DeleteByWorkflowDefinitionIdAsync(
         Guid workflowDefinitionId, CancellationToken cancellationToken = default)
     {
+        await UnregisterWorkflowSchedulesAsync(workflowDefinitionId, cancellationToken).ConfigureAwait(false);
+
         var triggers = await dbContext.Triggers
             .Where(t => t.WorkflowDefinitionId == workflowDefinitionId)
             .ToListAsync(cancellationToken)
@@ -172,6 +175,56 @@ public sealed class TriggerService(FlowEngineDbContext dbContext, IEventBus even
         dbContext.WebhookRoutes.RemoveRange(routes);
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 注册工作流关联的所有调度触发器。
+    /// </summary>
+    public async Task RegisterWorkflowSchedulesAsync(Guid workflowDefinitionId, CancellationToken cancellationToken = default)
+    {
+        var triggers = await dbContext.Triggers
+            .Where(t => t.WorkflowDefinitionId == workflowDefinitionId && t.IsActive)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var trigger in triggers)
+        {
+            if (trigger.Type == TriggerType.Schedule)
+            {
+                var settings = trigger.Settings;
+
+                if (settings?.CronExpression is not null)
+                {
+                    await scheduleManager.RegisterScheduleAsync(
+                        trigger.Id,
+                        workflowDefinitionId,
+                        settings.CronExpression,
+                        settings.TimeZone,
+                        settings.StartAt,
+                        settings.EndAt,
+                        cancellationToken).ConfigureAwait(false);
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 注销工作流关联的所有调度触发器。
+    /// </summary>
+    public async Task UnregisterWorkflowSchedulesAsync(Guid workflowDefinitionId, CancellationToken cancellationToken = default)
+    {
+        var triggers = await dbContext.Triggers
+            .Where(t => t.WorkflowDefinitionId == workflowDefinitionId)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var trigger in triggers)
+        {
+            if (trigger.Type == TriggerType.Schedule)
+            {
+                await scheduleManager.UnregisterScheduleAsync(trigger.Id, cancellationToken).ConfigureAwait(false);
+            }
+        }
     }
 
     /// <summary>

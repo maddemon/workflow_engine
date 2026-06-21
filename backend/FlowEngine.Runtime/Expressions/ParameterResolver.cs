@@ -1,23 +1,21 @@
+using FlowEngine.Runtime.Scripting;
 using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Runtime.Expressions;
 
 /// <summary>
-/// 节点参数解析器，负责将原始参数中的表达式求值为最终值。
+/// 节点参数解析器，对字符串参数执行 JavaScript 表达式求值。
+/// 非表达式字符串保持原样返回。
 /// </summary>
 public sealed class ParameterResolver
 {
-    private readonly ExpressionEvaluator _evaluator;
     private readonly ILogger<ParameterResolver> _logger;
 
     /// <summary>
     /// 初始化 <see cref="ParameterResolver"/>。
     /// </summary>
-    /// <param name="evaluator">表达式求值器。</param>
-    /// <param name="logger">日志记录器。</param>
-    public ParameterResolver(ExpressionEvaluator evaluator, ILogger<ParameterResolver> logger)
+    public ParameterResolver(ILogger<ParameterResolver> logger)
     {
-        _evaluator = evaluator ?? throw new ArgumentNullException(nameof(evaluator));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
 
@@ -25,14 +23,14 @@ public sealed class ParameterResolver
     /// 解析参数字典，对字符串值中的表达式进行求值。
     /// </summary>
     /// <param name="rawParameters">原始参数字典。</param>
-    /// <param name="context">表达式求值上下文。</param>
+    /// <param name="jsEngine">JsEngine 实例（已设置上下文变量）。</param>
     /// <returns>解析后的参数字典。</returns>
     public Dictionary<string, object> Resolve(
         IReadOnlyDictionary<string, object> rawParameters,
-        ExpressionContext context)
+        JsEngine jsEngine)
     {
         ArgumentNullException.ThrowIfNull(rawParameters);
-        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(jsEngine);
 
         var resolved = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
 
@@ -40,15 +38,11 @@ public sealed class ParameterResolver
         {
             try
             {
-                resolved[key] = ResolveValue(value!, context);
+                resolved[key] = ResolveValue(value!, jsEngine);
             }
-            catch (ExpressionEvaluationException ex)
+            catch (Exception ex)
             {
-                _logger.LogWarning(
-                    ex,
-                    "参数 {ParameterName} 的表达式求值失败：{Reason}",
-                    key,
-                    ex.Error.Reason);
+                _logger.LogWarning(ex, "参数 {ParameterName} 的表达式求值失败", key);
                 throw;
             }
         }
@@ -56,19 +50,20 @@ public sealed class ParameterResolver
         return resolved;
     }
 
-    private object ResolveValue(object value, ExpressionContext context)
+    private object ResolveValue(object value, JsEngine jsEngine)
     {
-        if (value is string template)
+        if (value is string str)
         {
-            return _evaluator.Evaluate(template, context) ?? string.Empty;
+            return IsExpression(str)
+                ? JsEngine.ToClrValue(jsEngine.Evaluate(str)) ?? string.Empty
+                : str;
         }
 
-        // JsonElement from JSON deserialization — convert to appropriate .NET type
         if (value is System.Text.Json.JsonElement element)
         {
             return element.ValueKind switch
             {
-                System.Text.Json.JsonValueKind.String => _evaluator.Evaluate(element.GetString() ?? string.Empty, context) ?? string.Empty,
+                System.Text.Json.JsonValueKind.String => ResolveValue(element.GetString() ?? string.Empty, jsEngine),
                 System.Text.Json.JsonValueKind.Number => element.TryGetInt32(out var i) ? i : element.GetDouble(),
                 System.Text.Json.JsonValueKind.True => true,
                 System.Text.Json.JsonValueKind.False => false,
@@ -77,19 +72,63 @@ public sealed class ParameterResolver
             };
         }
 
-        if (value is IEnumerable<KeyValuePair<string, object>> dictionary && value is not string)
+        if (value is IEnumerable<KeyValuePair<string, object>> dict && value is not string)
         {
-            return dictionary.ToDictionary(
+            return dict.ToDictionary(
                 x => x.Key,
-                x => ResolveValue(x.Value!, context),
+                x => ResolveValue(x.Value!, jsEngine),
                 StringComparer.OrdinalIgnoreCase);
         }
 
         if (value is IEnumerable<object> list && value is not string)
         {
-            return list.Select(item => ResolveValue(item!, context)).ToList();
+            return list.Select(item => ResolveValue(item!, jsEngine)).ToList();
         }
 
         return value!;
+    }
+
+    private static bool IsExpression(string str)
+    {
+        if (string.IsNullOrWhiteSpace(str)) return false;
+
+        var trimmed = str.AsSpan().TrimStart();
+        if (trimmed.Length == 0) return false;
+
+        if (trimmed is "true" or "false" or "null") return true;
+
+        if (int.TryParse(trimmed, out _) || long.TryParse(trimmed, out _) || double.TryParse(trimmed, out _))
+            return true;
+
+        var firstWord = GetFirstWord(trimmed);
+        if (s_knownIdentifiers.Contains(firstWord)) return true;
+
+        foreach (var ch in trimmed)
+        {
+            if (ch is '=' or '+' or '-' or '*' or '/' or '%' or '>' or '<' or '!' or '?' or ':' or '(' or ')' or '[' or ']' or '&' or '|')
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static readonly HashSet<string> s_knownIdentifiers = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "input", "inputs", "nodes", "items", "parameter",
+        "workflow", "execution", "env", "runIndex", "run_index",
+        "this", "true", "false", "null", "undefined",
+        "console", "fetch"
+    };
+
+    private static string GetFirstWord(ReadOnlySpan<char> text)
+    {
+        var i = 0;
+        while (i < text.Length && (char.IsLetterOrDigit(text[i]) || text[i] == '_'))
+        {
+            i++;
+        }
+        return text[..i].ToString();
     }
 }

@@ -1,5 +1,6 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
+using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
@@ -48,7 +49,7 @@ public sealed class LlmSupplyNode : INodeType
     /// <summary>
     /// API 凭据 ID，用于注入 API Key。
     /// </summary>
-    [Credential("apiKey")]
+    [Credential(FlowConstants.CredentialFields.ApiKey)]
     [Description("Credential ID for API Key injection.")]
     public string? CredentialId { get; set; }
 
@@ -61,7 +62,7 @@ public sealed class LlmSupplyNode : INodeType
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
     [
-        new PortDefinition { Name = "llmSupply", DisplayName = "LLM Supply", Direction = PortDirection.Output, Type = PortType.LLMSupply }
+        new PortDefinition { Name = FlowConstants.PortNames.LlmSupply, DisplayName = "LLM Supply", Direction = PortDirection.Output, Type = PortType.LLMSupply }
     ];
 
     /// <inheritdoc />
@@ -143,15 +144,16 @@ public sealed class LlmSupplyNode : INodeType
             var credential = await context.Credentials.GetCredentialAsync(credentialId, cancellationToken)
                 .ConfigureAwait(false);
 
-            if (credential.Fields.TryGetValue("apiKey", out var apiKey))
+            if (credential.Fields.TryGetValue(FlowConstants.CredentialFields.ApiKey, out var apiKey))
             {
                 return apiKey;
             }
 
             return null;
         }
-        catch
+        catch (Exception ex)
         {
+            context.Logger?.LogError(ex, "Failed to resolve API key from credential {CredentialId}.", CredentialId);
             return null;
         }
     }

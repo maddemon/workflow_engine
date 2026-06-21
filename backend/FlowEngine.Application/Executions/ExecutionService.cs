@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Workflows;
+using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Enums;
@@ -13,12 +14,6 @@ namespace FlowEngine.Application.Executions;
 /// </summary>
 public sealed class ExecutionService
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false
-    };
-
     private readonly IEngine _engine;
     private readonly FlowEngineDbContext _dbContext;
     private readonly WorkflowService _workflowService;
@@ -116,7 +111,7 @@ public sealed class ExecutionService
             StartedAt = node.StartedAt ?? default,
             CompletedAt = node.CompletedAt,
             Inputs = SerializeInputs(node.Inputs),
-            Output = node.Output is null ? null : JsonSerializer.SerializeToNode(node.Output, JsonOptions),
+            Output = node.Output is null ? null : JsonSerializer.SerializeToNode(node.Output, JsonDefaults.Options),
             RawParameters = SerializeToDictionary(node.RawParameters),
             ResolvedParameters = SerializeToDictionary(node.ResolvedParameters)
         };
@@ -144,7 +139,7 @@ public sealed class ExecutionService
         var result = new Dictionary<string, object>(inputs.Count);
         foreach (var (key, value) in inputs)
         {
-            result[key] = JsonSerializer.SerializeToNode(value, JsonOptions) ?? string.Empty;
+            result[key] = JsonSerializer.SerializeToNode(value, JsonDefaults.Options) ?? string.Empty;
         }
 
         return result;
@@ -163,7 +158,7 @@ public sealed class ExecutionService
         {
             result[key.ToString()!] = value is string or int or long or double or float or decimal or bool or DateTime
                 ? value
-                : JsonSerializer.SerializeToNode(value, JsonOptions) ?? string.Empty;
+                : JsonSerializer.SerializeToNode(value, JsonDefaults.Options) ?? string.Empty;
         }
 
         return result;

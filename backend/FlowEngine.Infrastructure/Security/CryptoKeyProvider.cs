@@ -5,28 +5,32 @@ namespace FlowEngine.Infrastructure.Security;
 /// <summary>
 /// 加密密钥提供者。
 /// 优先从环境变量读取（生产环境），否则从本地文件读取或自动生成。
+/// 密钥首次调用 <see cref="GetKey"/> 时延迟加载/生成，构造函数无 I/O 副作用。
 /// </summary>
 public sealed class CryptoKeyProvider : ICryptoKeyProvider
 {
-    private readonly byte[] _key;
+    private readonly Lazy<byte[]> _key;
+    private readonly string _keyFilePath;
 
     /// <summary>
-    /// 初始化密钥提供者。
+    /// 初始化密钥提供者。不含 I/O 操作。
     /// </summary>
     /// <param name="keyFilePath">密钥文件路径，默认为 data/crypto.key。</param>
     public CryptoKeyProvider(string? keyFilePath = null)
     {
-        // 1. 优先从环境变量读取（生产环境）
+        _keyFilePath = keyFilePath ?? Path.Combine("data", "crypto.key");
+        _key = new Lazy<byte[]>(LoadKey, LazyThreadSafetyMode.ExecutionAndPublication);
+    }
+
+    private byte[] LoadKey()
+    {
         var envKey = Environment.GetEnvironmentVariable("FLOWENGINE_CRYPTO_KEY");
         if (!string.IsNullOrWhiteSpace(envKey))
         {
-            _key = ParseHexKey(envKey, "环境变量 FLOWENGINE_CRYPTO_KEY");
-            return;
+            return ParseHexKey(envKey, "环境变量 FLOWENGINE_CRYPTO_KEY");
         }
 
-        // 2. 从本地文件读取或自动生成
-        var filePath = keyFilePath ?? Path.Combine("data", "crypto.key");
-        _key = LoadOrGenerateKey(filePath);
+        return LoadOrGenerateKey(_keyFilePath);
     }
 
     private static byte[] ParseHexKey(string hexKey, string source)
@@ -50,21 +54,18 @@ public sealed class CryptoKeyProvider : ICryptoKeyProvider
 
     private static byte[] LoadOrGenerateKey(string filePath)
     {
-        // 确保目录存在
         var directory = Path.GetDirectoryName(filePath);
         if (!string.IsNullOrEmpty(directory) && !Directory.Exists(directory))
         {
             Directory.CreateDirectory(directory);
         }
 
-        // 如果文件存在，读取密钥
         if (File.Exists(filePath))
         {
             var hexKey = File.ReadAllText(filePath).Trim();
             return ParseHexKey(hexKey, $"密钥文件 {filePath}");
         }
 
-        // 否则生成新密钥并保存
         var newKey = new byte[32];
         using var rng = System.Security.Cryptography.RandomNumberGenerator.Create();
         rng.GetBytes(newKey);
@@ -76,8 +77,8 @@ public sealed class CryptoKeyProvider : ICryptoKeyProvider
     }
 
     /// <summary>
-    /// 获取加密密钥。
+    /// 获取加密密钥。首次调用时延迟加载/生成密钥。
     /// </summary>
-    /// <returns>32 字节密钥。</returns>
-    public byte[] GetKey() => _key.ToArray();
+    /// <returns>32 字节密钥的防御性副本。</returns>
+    public byte[] GetKey() => _key.Value.ToArray();
 }

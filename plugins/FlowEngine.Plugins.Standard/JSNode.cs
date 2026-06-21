@@ -5,6 +5,7 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Runtime.Scripting;
 using Jint;
 
 namespace FlowEngine.Plugins.Standard;
@@ -69,28 +70,20 @@ public sealed class JSNode : INodeType
             }
 
             var inputData = context.InputData;
+            using var js = JsEngine.Create(options =>
+            {
+                options.TimeoutInterval(TimeSpan.FromMilliseconds(DefaultTimeoutMs));
+                options.CancellationToken(cancellationToken);
+            });
 
-            var engine = new Engine(options => options
-                .TimeoutInterval(TimeSpan.FromMilliseconds(DefaultTimeoutMs))
-                .LimitMemory(4_000_000)
-                .CancellationToken(cancellationToken)
-                .MaxStatements(1000));
-
-            engine.SetValue("input", inputData);
-
-            var wrappedCode = "(function() { " + Code + " })()";
-
-            var result = engine.Evaluate(wrappedCode);
-
-            var outputData = ConvertToDataItem(result);
+            js.SetValue("input", inputData);
+            var result = js.Run(Code);
+            var outputItem = JsEngine.ToDataItem(result);
 
             return Task.FromResult(new NodeExecutionResult
             {
                 Success = true,
-                Output = new DataBatch
-                {
-                    Items = [outputData]
-                }
+                Output = new DataBatch { Items = [outputItem] }
             });
         }
         catch (OperationCanceledException)
@@ -108,85 +101,6 @@ public sealed class JSNode : INodeType
         catch (Exception ex)
         {
             return Task.FromResult(context.ErrorResult("UnexpectedError", $"代码执行发生未预期错误: {ex.Message}"));
-        }
-    }
-
-    private static DataItem ConvertToDataItem(Jint.Native.JsValue result)
-    {
-        if (result.IsUndefined() || result.IsNull())
-        {
-            return new DataItem { Data = null, Success = true, SourceIndex = 0 };
-        }
-
-        if (result.IsNumber())
-        {
-            return new DataItem
-            {
-                Data = JsonValue.Create(result.AsNumber()),
-                Success = true,
-                SourceIndex = 0
-            };
-        }
-
-        if (result.IsString())
-        {
-            return new DataItem
-            {
-                Data = JsonValue.Create(result.AsString()),
-                Success = true,
-                SourceIndex = 0
-            };
-        }
-
-        if (result.IsBoolean())
-        {
-            return new DataItem
-            {
-                Data = JsonValue.Create(result.AsBoolean()),
-                Success = true,
-                SourceIndex = 0
-            };
-        }
-
-        // Handle JS objects and arrays by converting to .NET object then serializing
-        if (result.IsObject() || result.IsArray())
-        {
-            try
-            {
-                var dotNetValue = result.ToObject();
-                var json = JsonSerializer.SerializeToNode(dotNetValue);
-                return new DataItem
-                {
-                    Data = json,
-                    Success = true,
-                    SourceIndex = 0
-                };
-            }
-            catch
-            {
-                // Fall through to string conversion
-            }
-        }
-
-        var str = result.ToString();
-        try
-        {
-            var json = JsonNode.Parse(str);
-            return new DataItem
-            {
-                Data = json,
-                Success = true,
-                SourceIndex = 0
-            };
-        }
-        catch
-        {
-            return new DataItem
-            {
-                Data = JsonValue.Create(str),
-                Success = true,
-                SourceIndex = 0
-            };
         }
     }
 }

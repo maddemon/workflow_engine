@@ -8,73 +8,41 @@ namespace FlowEngine.Host.WebSocketHandlers;
 /// </summary>
 public sealed class WebSocketConnectionManager
 {
-    private readonly ConcurrentDictionary<Guid, HashSet<WebSocketConnection>> _subscriptions = new();
-    private readonly ConcurrentDictionary<WebSocketConnection, HashSet<Guid>> _connectionSubscriptions = new();
+    private readonly ConcurrentDictionary<Guid, ConcurrentDictionary<WebSocketConnection, byte>> _subscriptions = new();
+    private readonly ConcurrentDictionary<WebSocketConnection, ConcurrentDictionary<Guid, byte>> _connectionSubscriptions = new();
 
     /// <summary>
     /// 订阅指定执行 ID 的 WebSocket 连接。
     /// </summary>
-    /// <param name="executionId">执行 ID。</param>
-    /// <param name="connection">WebSocket 连接。</param>
     public void Subscribe(Guid executionId, WebSocketConnection connection)
     {
-        _subscriptions.AddOrUpdate(
-            executionId,
-            _ =>
-            {
-                var set = new HashSet<WebSocketConnection> { connection };
-                return set;
-            },
-            (_, set) =>
-            {
-                lock (set)
-                {
-                    set.Add(connection);
-                }
-                return set;
-            });
+        var set = _subscriptions.GetOrAdd(executionId, _ => new ConcurrentDictionary<WebSocketConnection, byte>());
+        set.TryAdd(connection, 0);
 
-        _connectionSubscriptions.AddOrUpdate(
-            connection,
-            _ => new HashSet<Guid> { executionId },
-            (_, set) =>
-            {
-                lock (set)
-                {
-                    set.Add(executionId);
-                }
-                return set;
-            });
+        var execIds = _connectionSubscriptions.GetOrAdd(connection, _ => new ConcurrentDictionary<Guid, byte>());
+        execIds.TryAdd(executionId, 0);
     }
 
     /// <summary>
     /// 取消订阅指定执行 ID 的 WebSocket 连接。
     /// </summary>
-    /// <param name="executionId">执行 ID。</param>
-    /// <param name="connection">WebSocket 连接。</param>
     public void Unsubscribe(Guid executionId, WebSocketConnection connection)
     {
         if (_subscriptions.TryGetValue(executionId, out var set))
         {
-            lock (set)
+            set.TryRemove(connection, out _);
+            if (set.IsEmpty)
             {
-                set.Remove(connection);
-                if (set.Count == 0)
-                {
-                    _subscriptions.TryRemove(executionId, out _);
-                }
+                _subscriptions.TryRemove(executionId, out _);
             }
         }
 
         if (_connectionSubscriptions.TryGetValue(connection, out var execIds))
         {
-            lock (execIds)
+            execIds.TryRemove(executionId, out _);
+            if (execIds.IsEmpty)
             {
-                execIds.Remove(executionId);
-                if (execIds.Count == 0)
-                {
-                    _connectionSubscriptions.TryRemove(connection, out _);
-                }
+                _connectionSubscriptions.TryRemove(connection, out _);
             }
         }
     }
@@ -82,16 +50,11 @@ public sealed class WebSocketConnectionManager
     /// <summary>
     /// 获取指定执行 ID 的所有活跃连接。
     /// </summary>
-    /// <param name="executionId">执行 ID。</param>
-    /// <returns>连接集合的快照。</returns>
     public IReadOnlyCollection<WebSocketConnection> GetConnections(Guid executionId)
     {
         if (_subscriptions.TryGetValue(executionId, out var set))
         {
-            lock (set)
-            {
-                return set.ToList().AsReadOnly();
-            }
+            return set.Keys.ToList().AsReadOnly();
         }
 
         return Array.Empty<WebSocketConnection>();
@@ -100,16 +63,11 @@ public sealed class WebSocketConnectionManager
     /// <summary>
     /// 获取连接订阅的所有执行 ID。
     /// </summary>
-    /// <param name="connection">WebSocket 连接。</param>
-    /// <returns>执行 ID 集合的快照。</returns>
     public IReadOnlyCollection<Guid> GetSubscriptions(WebSocketConnection connection)
     {
         if (_connectionSubscriptions.TryGetValue(connection, out var set))
         {
-            lock (set)
-            {
-                return set.ToList().AsReadOnly();
-            }
+            return set.Keys.ToList().AsReadOnly();
         }
 
         return Array.Empty<Guid>();
@@ -118,25 +76,18 @@ public sealed class WebSocketConnectionManager
     /// <summary>
     /// 清理连接的所有订阅关系（连接关闭时调用）。
     /// </summary>
-    /// <param name="connection">WebSocket 连接。</param>
     public void RemoveConnection(WebSocketConnection connection)
     {
         if (_connectionSubscriptions.TryRemove(connection, out var execIds))
         {
-            lock (execIds)
+            foreach (var executionId in execIds.Keys)
             {
-                foreach (var executionId in execIds)
+                if (_subscriptions.TryGetValue(executionId, out var set))
                 {
-                    if (_subscriptions.TryGetValue(executionId, out var set))
+                    set.TryRemove(connection, out _);
+                    if (set.IsEmpty)
                     {
-                        lock (set)
-                        {
-                            set.Remove(connection);
-                            if (set.Count == 0)
-                            {
-                                _subscriptions.TryRemove(executionId, out _);
-                            }
-                        }
+                        _subscriptions.TryRemove(executionId, out _);
                     }
                 }
             }
@@ -189,17 +140,21 @@ public sealed class WebSocketConnection : IDisposable
     {
         if (WebSocket.State is WebSocketState.Open or WebSocketState.CloseReceived)
         {
-            try
+            _ = Task.Run(async () =>
             {
-                Task.Run(() => WebSocket.CloseAsync(
-                    WebSocketCloseStatus.NormalClosure,
-                    "Connection closed",
-                    CancellationToken.None)).Wait(TimeSpan.FromSeconds(5));
-            }
-            catch
-            {
-                // Best-effort close; socket will be disposed regardless.
-            }
+                try
+                {
+                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+                    await WebSocket.CloseAsync(
+                        WebSocketCloseStatus.NormalClosure,
+                        "Connection closed",
+                        cts.Token).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Best-effort close; socket will be disposed regardless.
+                }
+            });
         }
 
         WebSocket.Dispose();
