@@ -189,10 +189,17 @@ public sealed class WebSocketConnection : IDisposable
     {
         if (WebSocket.State is WebSocketState.Open or WebSocketState.CloseReceived)
         {
-            WebSocket.CloseAsync(
-                WebSocketCloseStatus.NormalClosure,
-                "Connection closed",
-                CancellationToken.None).ConfigureAwait(false).GetAwaiter().GetResult();
+            try
+            {
+                Task.Run(() => WebSocket.CloseAsync(
+                    WebSocketCloseStatus.NormalClosure,
+                    "Connection closed",
+                    CancellationToken.None)).Wait(TimeSpan.FromSeconds(5));
+            }
+            catch
+            {
+                // Best-effort close; socket will be disposed regardless.
+            }
         }
 
         WebSocket.Dispose();

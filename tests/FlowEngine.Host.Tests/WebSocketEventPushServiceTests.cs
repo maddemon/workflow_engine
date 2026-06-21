@@ -14,11 +14,15 @@ public class WebSocketEventPushServiceTests : IDisposable
 {
     private readonly Mock<IEventBus> _eventBusMock = new();
     private readonly WebSocketConnectionManager _connectionManager = new();
+    private readonly Mock<ILogger<WebSocketReplayService>> _replayLoggerMock = new();
+    private readonly WebSocketReplayService _replayService;
     private readonly Mock<ILogger<WebSocketEventPushService>> _loggerMock = new();
     private readonly WebSocketEventPushService _service;
 
     public WebSocketEventPushServiceTests()
     {
+        _replayService = new WebSocketReplayService(_replayLoggerMock.Object);
+
         _eventBusMock.Setup(e => e.Subscribe(It.IsAny<Func<WorkflowStartedEvent, CancellationToken, Task>>()))
             .Returns(Mock.Of<IDisposable>());
         _eventBusMock.Setup(e => e.Subscribe(It.IsAny<Func<NodeExecutedEvent, CancellationToken, Task>>()))
@@ -35,6 +39,7 @@ public class WebSocketEventPushServiceTests : IDisposable
         _service = new WebSocketEventPushService(
             _eventBusMock.Object,
             _connectionManager,
+            _replayService,
             _loggerMock.Object);
     }
 
@@ -65,6 +70,7 @@ public class WebSocketEventPushServiceTests : IDisposable
         var service = new WebSocketEventPushService(
             _eventBusMock.Object,
             _connectionManager,
+            _replayService,
             _loggerMock.Object);
 
         service.Dispose();

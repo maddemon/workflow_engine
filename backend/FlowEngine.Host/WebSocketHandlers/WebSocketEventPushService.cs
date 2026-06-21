@@ -7,25 +7,26 @@ namespace FlowEngine.Host.WebSocketHandlers;
 
 /// <summary>
 /// 执行进度事件推送服务，订阅 EventBus 中的执行事件并转发到 WebSocket 连接。
+/// 同时负责将事件存储到 WebSocketReplayService 用于断线重连补偿。
 /// </summary>
 public sealed class WebSocketEventPushService : IDisposable
 {
     private readonly IEventBus _eventBus;
     private readonly WebSocketConnectionManager _connectionManager;
+    private readonly WebSocketReplayService _replayService;
     private readonly ILogger<WebSocketEventPushService> _logger;
     private long _sequenceCounter;
     private readonly List<IDisposable> _subscriptions = new();
 
-    /// <summary>
-    /// 初始化事件推送服务。
-    /// </summary>
     public WebSocketEventPushService(
         IEventBus eventBus,
         WebSocketConnectionManager connectionManager,
+        WebSocketReplayService replayService,
         ILogger<WebSocketEventPushService> logger)
     {
         _eventBus = eventBus;
         _connectionManager = connectionManager;
+        _replayService = replayService;
         _logger = logger;
         SubscribeToEvents();
     }
@@ -42,46 +43,42 @@ public sealed class WebSocketEventPushService : IDisposable
 
     private async Task OnWorkflowStartedAsync(WorkflowStartedEvent evt, CancellationToken cancellationToken)
     {
-        var sequence = Interlocked.Increment(ref _sequenceCounter);
         var message = new WebSocketPushMessage
         {
             Type = "execution_started",
             ExecutionId = evt.ExecutionId,
             Timestamp = evt.OccurredAt,
-            Sequence = sequence,
+            Sequence = Interlocked.Increment(ref _sequenceCounter),
             Payload = new
             {
                 workflowDefinitionId = evt.WorkflowDefinitionId,
                 eventType = evt.EventType,
             },
         };
-        await BroadcastAsync(evt.ExecutionId, message, cancellationToken).ConfigureAwait(false);
+        await BroadcastAndRecordAsync(evt.ExecutionId, message, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task OnNodeExecutedAsync(NodeExecutedEvent evt, CancellationToken cancellationToken)
     {
-        var sequence = Interlocked.Increment(ref _sequenceCounter);
-        var payload = BuildNodeExecutedPayload(evt);
         var message = new WebSocketPushMessage
         {
             Type = "node_executed",
             ExecutionId = evt.ExecutionId,
             Timestamp = evt.OccurredAt,
-            Sequence = sequence,
-            Payload = payload,
+            Sequence = Interlocked.Increment(ref _sequenceCounter),
+            Payload = BuildNodeExecutedPayload(evt),
         };
-        await BroadcastAsync(evt.ExecutionId, message, cancellationToken).ConfigureAwait(false);
+        await BroadcastAndRecordAsync(evt.ExecutionId, message, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task OnNodeErrorAsync(NodeErrorEvent evt, CancellationToken cancellationToken)
     {
-        var sequence = Interlocked.Increment(ref _sequenceCounter);
         var message = new WebSocketPushMessage
         {
             Type = "node_error",
             ExecutionId = evt.ExecutionId,
             Timestamp = evt.OccurredAt,
-            Sequence = sequence,
+            Sequence = Interlocked.Increment(ref _sequenceCounter),
             Payload = new
             {
                 nodeDefinitionId = evt.NodeDefinitionId,
@@ -94,18 +91,17 @@ public sealed class WebSocketEventPushService : IDisposable
                 eventType = evt.EventType,
             },
         };
-        await BroadcastAsync(evt.ExecutionId, message, cancellationToken).ConfigureAwait(false);
+        await BroadcastAndRecordAsync(evt.ExecutionId, message, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task OnWorkflowCompletedAsync(WorkflowCompletedEvent evt, CancellationToken cancellationToken)
     {
-        var sequence = Interlocked.Increment(ref _sequenceCounter);
         var message = new WebSocketPushMessage
         {
             Type = "execution_completed",
             ExecutionId = evt.ExecutionId,
             Timestamp = evt.OccurredAt,
-            Sequence = sequence,
+            Sequence = Interlocked.Increment(ref _sequenceCounter),
             Payload = new
             {
                 workflowDefinitionId = evt.WorkflowDefinitionId,
@@ -113,18 +109,17 @@ public sealed class WebSocketEventPushService : IDisposable
                 eventType = evt.EventType,
             },
         };
-        await BroadcastAsync(evt.ExecutionId, message, cancellationToken).ConfigureAwait(false);
+        await BroadcastAndRecordAsync(evt.ExecutionId, message, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task OnWorkflowFailedAsync(WorkflowFailedEvent evt, CancellationToken cancellationToken)
     {
-        var sequence = Interlocked.Increment(ref _sequenceCounter);
         var message = new WebSocketPushMessage
         {
             Type = "execution_failed",
             ExecutionId = evt.ExecutionId,
             Timestamp = evt.OccurredAt,
-            Sequence = sequence,
+            Sequence = Interlocked.Increment(ref _sequenceCounter),
             Payload = new
             {
                 workflowDefinitionId = evt.WorkflowDefinitionId,
@@ -136,25 +131,24 @@ public sealed class WebSocketEventPushService : IDisposable
                 eventType = evt.EventType,
             },
         };
-        await BroadcastAsync(evt.ExecutionId, message, cancellationToken).ConfigureAwait(false);
+        await BroadcastAndRecordAsync(evt.ExecutionId, message, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task OnWorkflowCancelledAsync(WorkflowCancelledEvent evt, CancellationToken cancellationToken)
     {
-        var sequence = Interlocked.Increment(ref _sequenceCounter);
         var message = new WebSocketPushMessage
         {
             Type = "execution_cancelled",
             ExecutionId = evt.ExecutionId,
             Timestamp = evt.OccurredAt,
-            Sequence = sequence,
+            Sequence = Interlocked.Increment(ref _sequenceCounter),
             Payload = new
             {
                 workflowDefinitionId = evt.WorkflowDefinitionId,
                 eventType = evt.EventType,
             },
         };
-        await BroadcastAsync(evt.ExecutionId, message, cancellationToken).ConfigureAwait(false);
+        await BroadcastAndRecordAsync(evt.ExecutionId, message, cancellationToken).ConfigureAwait(false);
     }
 
     private static object BuildNodeExecutedPayload(NodeExecutedEvent evt)
@@ -176,6 +170,15 @@ public sealed class WebSocketEventPushService : IDisposable
             result = outputSummary,
             eventType = evt.EventType,
         };
+    }
+
+    private async Task BroadcastAndRecordAsync(
+        Guid executionId,
+        WebSocketPushMessage message,
+        CancellationToken cancellationToken)
+    {
+        _replayService.RecordEvent(executionId, message);
+        await BroadcastAsync(executionId, message, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task BroadcastAsync(Guid executionId, WebSocketPushMessage message, CancellationToken cancellationToken)
