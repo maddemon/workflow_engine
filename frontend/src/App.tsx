@@ -4,6 +4,7 @@ import { LayoutProvider } from './components/Layout/LayoutContext.tsx';
 import { MainLayout } from './components/Layout/MainLayout.tsx';
 import { WorkflowListPage } from './components/WorkflowList/WorkflowListPage.tsx';
 import { WorkflowEditorPage } from './pages/WorkflowEditorPage.tsx';
+import { ExecutionHistoryPage } from './pages/ExecutionHistoryPage.tsx';
 import './App.css';
 
 function App() {
@@ -26,6 +27,10 @@ function App() {
             <Route
               path="/workflow/:id"
               element={<WorkflowEditorPage onLayoutChange={handleLayoutChange} />}
+            />
+            <Route
+              path="/workflow/:id/history"
+              element={<ExecutionHistoryPage />}
             />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

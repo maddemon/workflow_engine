@@ -1,5 +1,5 @@
-import { Stack, Text, Group, ActionIcon, Divider, Box, Loader } from '@mantine/core';
-import { X, AlertCircle } from 'lucide-react';
+import { Stack, Text, Group, ActionIcon, Divider, Box, Loader, Badge } from '@mantine/core';
+import { X, AlertCircle, Check, Clock, Loader as LoaderIcon } from 'lucide-react';
 import type { ExecutionDto } from '../../types/workflow.ts';
 import { NodeOutputList } from './NodeOutputList.tsx';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
@@ -11,9 +11,31 @@ interface ExecutionPanelProps {
   nodeNames?: Record<string, string>;
 }
 
+const statusConfig: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
+  Pending: { color: 'gray', icon: <Clock size={14} />, label: 'Pending' },
+  Running: { color: 'blue', icon: <LoaderIcon size={14} speed={2} />, label: 'Running' },
+  Completed: { color: 'green', icon: <Check size={14} strokeWidth={3} />, label: 'Completed' },
+  Failed: { color: 'red', icon: <X size={14} strokeWidth={3} />, label: 'Failed' },
+  Cancelled: { color: 'gray', icon: <X size={14} />, label: 'Cancelled' },
+};
+
+function formatDuration(startedAt: string | null, completedAt: string | null): string | null {
+  if (!startedAt) return null;
+  const start = new Date(startedAt).getTime();
+  const end = completedAt ? new Date(completedAt).getTime() : Date.now();
+  const ms = end - start;
+  if (ms < 0) return null;
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  const minutes = Math.floor(ms / 60000);
+  const seconds = Math.floor((ms % 60000) / 1000);
+  return `${minutes}m ${seconds}s`;
+}
+
 export function ExecutionPanel({ execution, onClose, error, nodeNames }: ExecutionPanelProps) {
   const nodeExecutionRecords = useWorkflowStore((s) => s.nodeExecutionRecords);
   const records = Object.values(nodeExecutionRecords);
+
   if (!execution) {
     return error ? (
       <Stack gap="sm" p="sm">
@@ -42,6 +64,8 @@ export function ExecutionPanel({ execution, onClose, error, nodeNames }: Executi
   }
 
   const isRunning = execution.status === 'Pending' || execution.status === 'Running';
+  const statusInfo = statusConfig[execution.status] ?? statusConfig.Pending;
+  const duration = formatDuration(execution.startedAt, execution.completedAt);
 
   return (
     <Stack gap="sm" p="sm">
@@ -54,6 +78,23 @@ export function ExecutionPanel({ execution, onClose, error, nodeNames }: Executi
           </ActionIcon>
         </Group>
       </Group>
+
+      <Group gap="xs" wrap="nowrap">
+        <Badge
+          color={statusInfo.color}
+          variant="light"
+          size="sm"
+          leftSection={statusInfo.icon}
+        >
+          {statusInfo.label}
+        </Badge>
+        {duration && (
+          <Text size="xs" c="dimmed">
+            {duration}
+          </Text>
+        )}
+      </Group>
+
       <Divider />
 
       {error && (

@@ -1,7 +1,7 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
-import { notifications } from '@mantine/notifications';
-import { executeWorkflow, getExecution } from '../services/api.ts';
+import { useState, useCallback, useEffect } from 'react';
+import { executeWorkflow } from '../services/api.ts';
 import { useWorkflowStore } from '../stores/workflowStore.ts';
+import { useWebSocketExecution } from './useWebSocketExecution.ts';
 import type { ExecutionDto, NodeExecutionRecordDto } from '../types/workflow.ts';
 
 type ExecutionHookStatus = 'idle' | 'loading' | 'running' | 'completed' | 'failed';
@@ -24,54 +24,12 @@ export function useExecution() {
   const [executionMeta, setExecutionMeta] = useState<ExecutionDto | null>(null);
   const [status, setStatus] = useState<ExecutionHookStatus>('idle');
   const [error, setError] = useState<string | null>(null);
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
-
-  const stopPolling = useCallback(() => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
-    }
-  }, []);
+  const { subscribe, unsubscribe, connect, disconnect } = useWebSocketExecution();
 
   useEffect(() => {
-    return () => {
-      if (pollingRef.current) {
-        clearInterval(pollingRef.current);
-        pollingRef.current = null;
-      }
-    };
-  }, []);
-
-  const pollExecution = useCallback(
-    (executionId: string) => {
-      stopPolling();
-      pollingRef.current = setInterval(async () => {
-        try {
-          const updated = await getExecution(executionId);
-          setExecutionMeta((prev) => prev ? { ...prev, status: updated.status, startedAt: updated.startedAt, completedAt: updated.completedAt } : prev);
-          if (updated.nodeRecords.length > 0) {
-            useWorkflowStore.getState().upsertNodeExecutionRecords(updated.nodeRecords);
-            applyNodeStatuses(updated.nodeRecords);
-          }
-          if (updated.status === 'Completed') {
-            setStatus('completed');
-            stopPolling();
-            useWorkflowStore.getState().setIsExecuting(false);
-          } else if (updated.status === 'Failed' || updated.status === 'Cancelled') {
-            setStatus('failed');
-            stopPolling();
-            useWorkflowStore.getState().setIsExecuting(false);
-          }
-        } catch {
-          setStatus('failed');
-          stopPolling();
-          useWorkflowStore.getState().setIsExecuting(false);
-          notifications.show({ title: 'Polling Error', message: 'Failed to fetch execution status.', color: 'red' });
-        }
-      }, 1000);
-    },
-    [stopPolling],
-  );
+    connect();
+    return () => disconnect();
+  }, [connect, disconnect]);
 
   const execute = useCallback(
     async (workflowId: string) => {
@@ -89,6 +47,9 @@ export function useExecution() {
           store.upsertNodeExecutionRecords(result.nodeRecords);
           applyNodeStatuses(result.nodeRecords);
         }
+
+        subscribe(result.id);
+
         if (result.status === 'Completed') {
           setStatus('completed');
           store.setIsExecuting(false);
@@ -97,7 +58,6 @@ export function useExecution() {
           store.setIsExecuting(false);
         } else {
           setStatus('running');
-          pollExecution(result.id);
         }
       } catch (err) {
         setStatus('failed');
@@ -106,18 +66,20 @@ export function useExecution() {
         setError(message);
       }
     },
-    [pollExecution],
+    [subscribe],
   );
 
   const clearExecution = useCallback(() => {
-    stopPolling();
+    if (executionMeta) {
+      unsubscribe(executionMeta.id);
+    }
     setExecutionMeta(null);
     setStatus('idle');
     setError(null);
     useWorkflowStore.getState().setIsExecuting(false);
     useWorkflowStore.getState().clearExecutionStatuses();
     useWorkflowStore.getState().clearNodeExecutionRecords();
-  }, [stopPolling]);
+  }, [executionMeta, unsubscribe]);
 
   return { execution: executionMeta, status, error, execute, clearExecution };
 }

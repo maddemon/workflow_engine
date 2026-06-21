@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Stack, Text, Box, Collapse, UnstyledButton, Group } from '@mantine/core';
-import { Check, X, Clock, Loader, AlertCircle, ChevronRight, ChevronDown } from 'lucide-react';
+import { Check, X, Clock, Loader, AlertCircle, ChevronRight, ChevronDown, FileText } from 'lucide-react';
 import { CodeViewer } from './CodeViewer.tsx';
 import type { NodeExecutionRecordDto, ExecutionStatus } from '../../types/workflow.ts';
 
@@ -9,12 +9,12 @@ interface NodeOutputListProps {
   nodeNames?: Record<string, string>;
 }
 
-const statusConfig: Record<ExecutionStatus, { icon: React.ReactNode; shade: string }> = {
-  Pending: { icon: <Clock size={13} />, shade: 'gray' },
-  Running: { icon: <Loader size={13} speed={2} />, shade: 'blue' },
-  Completed: { icon: <Check size={13} strokeWidth={3} />, shade: 'green' },
-  Failed: { icon: <X size={13} strokeWidth={3} />, shade: 'red' },
-  Cancelled: { icon: <X size={13} />, shade: 'gray' },
+const statusConfig: Record<ExecutionStatus, { icon: React.ReactNode; shade: string; label: string }> = {
+  Pending: { icon: <Clock size={13} />, shade: 'gray', label: 'Pending' },
+  Running: { icon: <Loader size={13} speed={2} />, shade: 'blue', label: 'Running' },
+  Completed: { icon: <Check size={13} strokeWidth={3} />, shade: 'green', label: 'Completed' },
+  Failed: { icon: <X size={13} strokeWidth={3} />, shade: 'red', label: 'Failed' },
+  Cancelled: { icon: <X size={13} />, shade: 'gray', label: 'Cancelled' },
 };
 
 function extractError(output: unknown): { code?: string; message?: string } | null {
@@ -55,6 +55,29 @@ function formatDuration(startedAt: string | null, completedAt: string | null): s
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
+function formatOutputSummary(output: unknown): string {
+  if (output === null || output === undefined) return 'No output';
+  if (typeof output === 'string') return output.length > 100 ? `${output.slice(0, 100)}...` : output;
+  if (typeof output === 'number' || typeof output === 'boolean') return String(output);
+
+  const str = JSON.stringify(output, null, 2);
+  if (str.length > 200) {
+    try {
+      const parsed = JSON.parse(str);
+      if (Array.isArray(parsed)) {
+        return `Array(${parsed.length} items)`;
+      }
+      if (typeof parsed === 'object' && parsed !== null) {
+        const keys = Object.keys(parsed);
+        return `Object{${keys.slice(0, 3).join(', ')}${keys.length > 3 ? ', ...' : ''}}`;
+      }
+    } catch {
+      return `${str.slice(0, 200)}...`;
+    }
+  }
+  return str;
+}
+
 function StepItem({
   record,
   isLast,
@@ -71,6 +94,9 @@ function StepItem({
   const config = statusConfig[record.status] ?? statusConfig.Pending;
   const nodeError = record.status === 'Failed' ? extractError(record.output) : null;
   const duration = formatDuration(record.startedAt, record.completedAt);
+  const outputSummary = record.output !== undefined && record.output !== null
+    ? formatOutputSummary(record.output)
+    : null;
 
   const statusBg =
     record.status === 'Completed' ? 'var(--exec-success-bg)'
@@ -143,7 +169,7 @@ function StepItem({
           </Group>
         </UnstyledButton>
 
-        {nodeError && !isExpanded && (
+        {!isExpanded && nodeError && (
           <Box
             mt={4}
             mx={4}
@@ -168,6 +194,36 @@ function StepItem({
                 }}
               >
                 {nodeError.message}
+              </Text>
+            </Group>
+          </Box>
+        )}
+
+        {!isExpanded && !nodeError && outputSummary && (
+          <Box
+            mt={4}
+            mx={4}
+            p="xs"
+            style={{
+              background: 'var(--exec-pending-bg)',
+              border: '1px solid var(--exec-connector)',
+              borderRadius: 4,
+            }}
+          >
+            <Group gap={4} wrap="nowrap" align="flex-start">
+              <FileText size={12} color="var(--mantine-color-dimmed)" style={{ flexShrink: 0, marginTop: 1 }} />
+              <Text
+                size="xs"
+                c="dimmed"
+                style={{
+                  lineHeight: 1.4,
+                  display: '-webkit-box',
+                  WebkitLineClamp: 2,
+                  WebkitBoxOrient: 'vertical',
+                  overflow: 'hidden',
+                }}
+              >
+                {outputSummary}
               </Text>
             </Group>
           </Box>
