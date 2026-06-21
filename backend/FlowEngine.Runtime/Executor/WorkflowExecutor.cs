@@ -285,9 +285,9 @@ public sealed class WorkflowExecutor : IEngine
             var result = await ExecuteNodeWithRetryAsync(node, nodeType, context, cancellationToken)
                 .ConfigureAwait(false);
 
-            if (result.LlmClient is not null)
+            if (context.LlmClient is not null)
             {
-                nodeLlmClients[node.Id] = result.LlmClient;
+                nodeLlmClients[node.Id] = context.LlmClient;
             }
 
             var record = new NodeExecutionRecord

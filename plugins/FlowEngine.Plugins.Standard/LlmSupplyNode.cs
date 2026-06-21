@@ -67,11 +67,6 @@ public sealed class LlmSupplyNode : INodeType
     /// <inheritdoc />
     public bool DefaultIsEntry => true;
 
-    /// <summary>
-    /// 上一次创建的 LLM 客户端实例，供引擎传递给消费节点。
-    /// </summary>
-    internal ILlmClient? CreatedClient { get; private set; }
-
     /// <inheritdoc />
     public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
@@ -92,9 +87,10 @@ public sealed class LlmSupplyNode : INodeType
             endpoint = uri;
         }
 
+        ILlmClient llmClient;
         try
         {
-            CreatedClient = new OpenAiLlmClient(
+            llmClient = new OpenAiLlmClient(
                 apiKey: apiKey,
                 model: Model,
                 temperature: Temperature,
@@ -106,10 +102,11 @@ public sealed class LlmSupplyNode : INodeType
             return context.ErrorResult("LlmClientCreationFailed", $"Failed to create LLM client: {ex.Message}");
         }
 
+        context.LlmClient = llmClient;
+
         return new NodeExecutionResult
         {
             Success = true,
-            LlmClient = CreatedClient,
             Output = new DataBatch
             {
                 Items =

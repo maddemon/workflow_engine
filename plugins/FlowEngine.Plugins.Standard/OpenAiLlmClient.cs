@@ -11,6 +11,8 @@ namespace FlowEngine.Plugins.Standard;
 /// </summary>
 public sealed class OpenAiLlmClient : ILlmClient
 {
+    private const int DefaultTimeoutSeconds = 60;
+
     private readonly OpenAIClient _client;
     private readonly string _model;
     private readonly float _temperature;
@@ -77,11 +79,18 @@ public sealed class OpenAiLlmClient : ILlmClient
 
         try
         {
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(DefaultTimeoutSeconds));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
             var chatClient = _client.GetChatClient(_model);
-            var response = await chatClient.CompleteChatAsync(chatMessages, chatOptions, cancellationToken)
+            var response = await chatClient.CompleteChatAsync(chatMessages, chatOptions, linkedCts.Token)
                 .ConfigureAwait(false);
 
             return ConvertResponse(response);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException($"OpenAI API call timed out after {DefaultTimeoutSeconds} seconds.");
         }
         catch (Exception ex)
         {

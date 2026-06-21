@@ -151,8 +151,8 @@ public class LlmSupplyNodeTests
         var result = await node.ExecuteAsync(context);
 
         Assert.True(result.Success);
-        Assert.NotNull(result.LlmClient);
-        Assert.IsType<OpenAiLlmClient>(result.LlmClient);
+        Assert.NotNull(context.LlmClient);
+        Assert.IsType<OpenAiLlmClient>(context.LlmClient);
     }
 
     [Fact]
@@ -169,7 +169,7 @@ public class LlmSupplyNodeTests
         var result = await node.ExecuteAsync(context);
 
         Assert.True(result.Success);
-        Assert.NotNull(result.LlmClient);
+        Assert.NotNull(context.LlmClient);
     }
 
     [Fact]
@@ -186,11 +186,11 @@ public class LlmSupplyNodeTests
         var result = await node.ExecuteAsync(context);
 
         Assert.True(result.Success);
-        Assert.NotNull(result.LlmClient);
+        Assert.NotNull(context.LlmClient);
     }
 
     [Fact]
-    public async Task ExecuteAsync_Sets_LlmClient_On_Result()
+    public async Task ExecuteAsync_Sets_LlmClient_On_Context()
     {
         var node = new LlmSupplyNode
         {
@@ -202,8 +202,8 @@ public class LlmSupplyNodeTests
         var result = await node.ExecuteAsync(context);
 
         Assert.True(result.Success);
-        Assert.NotNull(result.LlmClient);
-        Assert.IsType<OpenAiLlmClient>(result.LlmClient);
+        Assert.NotNull(context.LlmClient);
+        Assert.IsType<OpenAiLlmClient>(context.LlmClient);
     }
 
     [Fact]
@@ -239,7 +239,7 @@ public class LlmSupplyNodeTests
         var result = await node.ExecuteAsync(context);
 
         Assert.True(result.Success);
-        Assert.NotNull(result.LlmClient);
+        Assert.NotNull(context.LlmClient);
     }
 
     private NodeExecutionContext CreateContext(
