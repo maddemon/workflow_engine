@@ -39,7 +39,7 @@ public class AgentNodeTests
         Assert.Equal(4, node.Ports.Count);
         Assert.Contains(node.Ports, p => p.Name == "input" && p.Type == PortType.Main && p.Direction == PortDirection.Input);
         Assert.Contains(node.Ports, p => p.Name == "output" && p.Type == PortType.Main && p.Direction == PortDirection.Output);
-        Assert.Contains(node.Ports, p => p.Name == "tools" && p.Type == PortType.AgentTool && p.Direction == PortDirection.Output);
+        Assert.Contains(node.Ports, p => p.Name == "tools" && p.Type == PortType.AgentTool && p.Direction == PortDirection.Input);
         Assert.Contains(node.Ports, p => p.Name == "llmSupply" && p.Type == PortType.LLMSupply && p.Direction == PortDirection.Input);
     }
 
@@ -95,10 +95,10 @@ public class AgentNodeTests
                 new Connection
                 {
                     Id = Guid.NewGuid(),
-                    SourceNodeId = agentNode.Id,
-                    SourcePortName = "tools",
-                    TargetNodeId = toolNode.Id,
-                    TargetPortName = "input"
+                    SourceNodeId = toolNode.Id,
+                    SourcePortName = "output",
+                    TargetNodeId = agentNode.Id,
+                    TargetPortName = "tools"
                 }
             ]
         };
@@ -168,10 +168,10 @@ public class AgentNodeTests
                 new Connection
                 {
                     Id = Guid.NewGuid(),
-                    SourceNodeId = agentNode.Id,
-                    SourcePortName = "tools",
-                    TargetNodeId = toolNode.Id,
-                    TargetPortName = "input"
+                    SourceNodeId = toolNode.Id,
+                    SourcePortName = "output",
+                    TargetNodeId = agentNode.Id,
+                    TargetPortName = "tools"
                 }
             ]
         };
@@ -415,10 +415,10 @@ public class AgentNodeTests
                 new Connection
                 {
                     Id = Guid.NewGuid(),
-                    SourceNodeId = agentNode.Id,
-                    SourcePortName = "tools",
-                    TargetNodeId = toolNode.Id,
-                    TargetPortName = "input"
+                    SourceNodeId = toolNode.Id,
+                    SourcePortName = "output",
+                    TargetNodeId = agentNode.Id,
+                    TargetPortName = "tools"
                 }
             ]
         };
@@ -518,10 +518,10 @@ public class AgentNodeTests
                 new Connection
                 {
                     Id = Guid.NewGuid(),
-                    SourceNodeId = agentNode.Id,
-                    SourcePortName = "tools",
-                    TargetNodeId = toolNode.Id,
-                    TargetPortName = "input"
+                    SourceNodeId = toolNode.Id,
+                    SourcePortName = "output",
+                    TargetNodeId = agentNode.Id,
+                    TargetPortName = "tools"
                 }
             ]
         };

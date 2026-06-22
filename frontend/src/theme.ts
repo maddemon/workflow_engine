@@ -5,6 +5,10 @@ const nodeCategoryVarMap: Record<string, string> = {
   Core: 'var(--node-category-core)',
   Utility: 'var(--node-category-utility)',
   Entry: 'var(--node-category-entry)',
+  AI: 'var(--node-category-ai)',
+  Agent: 'var(--node-category-agent)',
+  LLM: 'var(--node-category-llm)',
+  Tool: 'var(--node-category-tool)',
 };
 
 export function getNodeCategoryColor(category: string): string {

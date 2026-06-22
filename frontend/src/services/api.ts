@@ -9,12 +9,40 @@ import type {
   CredentialDto,
   CreateCredentialDto,
   UpdateCredentialDto,
+  TriggerDto,
+  CreateTriggerDto,
+  UpdateTriggerDto,
+  RegisterRequest,
+  RegisterResult,
+  LoginRequest,
+  LoginResult,
+  UserDto,
 } from '../types/workflow.ts';
 
 const api = axios.create({
   baseURL: '/api/v1',
   headers: { 'Content-Type': 'application/json' },
 });
+
+api.interceptors.request.use((config) => {
+  const token = localStorage.getItem('auth_token');
+  if (token && config.headers) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('auth_user');
+      window.location.href = '/login';
+    }
+    return Promise.reject(error);
+  },
+);
 
 export async function getNodeTypes(category?: string): Promise<NodeTypeDescriptor[]> {
   const params = category ? { category } : {};
@@ -23,8 +51,8 @@ export async function getNodeTypes(category?: string): Promise<NodeTypeDescripto
 }
 
 export async function getWorkflows(): Promise<WorkflowSummary[]> {
-  const res = await api.get<WorkflowSummary[]>('/workflows');
-  return res.data;
+  const res = await api.get<{ items: WorkflowSummary[]; totalCount: number }>('/workflows');
+  return res.data.items;
 }
 
 export async function getWorkflow(id: string): Promise<Workflow> {
@@ -83,4 +111,46 @@ export async function updateCredential(id: string, data: UpdateCredentialDto): P
 
 export async function deleteCredential(id: string): Promise<void> {
   await api.delete(`/credentials/${id}`);
+}
+
+// --- Triggers ---
+
+export async function getTriggers(workflowId: string): Promise<TriggerDto[]> {
+  const res = await api.get<TriggerDto[]>('/triggers', { params: { workflowDefinitionId: workflowId } });
+  return res.data;
+}
+
+export async function createTrigger(workflowId: string, data: CreateTriggerDto): Promise<TriggerDto> {
+  const res = await api.post<TriggerDto>('/triggers', { ...data, workflowDefinitionId: workflowId });
+  return res.data;
+}
+
+export async function updateTrigger(_workflowId: string, triggerId: string, data: UpdateTriggerDto): Promise<TriggerDto> {
+  const res = await api.put<TriggerDto>(`/triggers/${triggerId}`, data);
+  return res.data;
+}
+
+export async function deleteTrigger(_workflowId: string, triggerId: string): Promise<void> {
+  await api.delete(`/triggers/${triggerId}`);
+}
+
+// --- Auth ---
+
+export async function register(data: RegisterRequest): Promise<RegisterResult> {
+  const res = await api.post<RegisterResult>('/auth/register', data);
+  return res.data;
+}
+
+export async function login(data: LoginRequest): Promise<LoginResult> {
+  const res = await api.post<LoginResult>('/auth/login', data);
+  return res.data;
+}
+
+export async function logout(): Promise<void> {
+  await api.post('/auth/logout');
+}
+
+export async function getCurrentUser(): Promise<UserDto> {
+  const res = await api.get<UserDto>('/auth/me');
+  return res.data;
 }

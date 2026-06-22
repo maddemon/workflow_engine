@@ -13,14 +13,15 @@ import {
   useComputedColorScheme,
   useMantineColorScheme,
 } from "@mantine/core"
-import { BarChart3, Bell, Home, Key, Moon, Settings, Sun, User, Workflow } from "lucide-react"
+import { BarChart3, Bell, Home, Key, LogOut, Moon, Settings, Sun, User, Workflow } from "lucide-react"
 import { useState } from "react"
-import { Link, useLocation } from "react-router-dom"
+import { Link, useLocation, useNavigate } from "react-router-dom"
 import { CredentialListModal } from "../CredentialPanel/CredentialListModal.tsx"
+import { useAuth } from "../../hooks/AuthContext.tsx"
 
 const navItems = [
   { label: "Workflows", icon: Home, path: "/" },
-  { label: "Executions", icon: BarChart3, path: "/executions" },
+  { label: "Executions", icon: BarChart3, path: "/workflow/:id/history" },
   { label: "Settings", icon: Settings, path: "/settings" },
 ]
 
@@ -29,6 +30,13 @@ export function HeaderToolbar() {
   const colorScheme = useComputedColorScheme("light")
   const { toggleColorScheme } = useMantineColorScheme()
   const location = useLocation()
+  const navigate = useNavigate()
+  const { user, logout } = useAuth()
+
+  const handleLogout = async () => {
+    await logout()
+    navigate("/login")
+  }
 
   return (
     <>
@@ -96,15 +104,18 @@ export function HeaderToolbar() {
             <Menu.Target>
               <ActionIcon variant="subtle" color="gray" size="lg" radius="sm" aria-label="Menu">
                 <Avatar size={24} radius="sm" color="brand-blue" variant="filled">
-                  <User size={14} />
+                  {user?.displayName?.[0]?.toUpperCase() ?? <User size={14} />}
                 </Avatar>
               </ActionIcon>
             </Menu.Target>
             <Menu.Dropdown>
-              <Menu.Item>Profile</Menu.Item>
-              <Menu.Item>Settings</Menu.Item>
+              <Text size="xs" px="sm" py={4} c="dimmed" ta="center">
+                {user?.email ?? "Not signed in"}
+              </Text>
               <Menu.Divider />
-              <Menu.Item color="red">Logout</Menu.Item>
+              <Menu.Item leftSection={<LogOut size={14} />} color="red" onClick={handleLogout}>
+                Logout
+              </Menu.Item>
             </Menu.Dropdown>
           </Menu>
         </Group>

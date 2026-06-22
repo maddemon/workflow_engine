@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
@@ -20,7 +21,7 @@ public sealed class SubWorkflowToolNode : INodeType
     public string DisplayName => "Sub-Workflow Tool";
 
     /// <inheritdoc />
-    public string Category => "Tool";
+    public string Category => "AI";
 
     /// <inheritdoc />
     public string Icon => "layers";
@@ -45,7 +46,8 @@ public sealed class SubWorkflowToolNode : INodeType
     public IReadOnlyList<PortDefinition> Ports { get; } =
     [
         new PortDefinition { Name = "input", DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = "output", DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
+        new PortDefinition { Name = "output", DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main },
+        new PortDefinition { Name = FlowConstants.PortNames.Tools, DisplayName = "Tool Output", Direction = PortDirection.Output, Type = PortType.AgentTool }
     ];
 
     /// <inheritdoc />

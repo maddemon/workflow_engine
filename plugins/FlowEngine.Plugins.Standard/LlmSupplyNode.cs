@@ -23,7 +23,7 @@ public sealed class LlmSupplyNode : INodeType
     public string Category => "AI";
 
     /// <inheritdoc />
-    public string Icon => "cpu";
+    public string Icon => "brain";
 
     /// <inheritdoc />
     public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;

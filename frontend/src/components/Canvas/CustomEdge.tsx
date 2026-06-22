@@ -14,11 +14,20 @@ import { useWorkflowStore } from '../../stores/workflowStore.ts';
 const HANDLE_SIZE = 20;
 const EDGE_PADDING = 130;
 const EDGE_BORDER_RADIUS = 16;
+const AI_PORT_TYPES = new Set(['AgentTool', 'LLMSupply', 'Memory']);
+
+function isAiPortHandle(nodeData: WorkflowNode['data'] | undefined, handleId: string | null | undefined): boolean {
+  if (!nodeData || !handleId) return false;
+  const ports = computeDynamicPorts(nodeData);
+  return ports.some((p) => AI_PORT_TYPES.has(p.type) && handleId === `port-${p.name}`);
+}
 
 function CustomEdgeComponent({
   id,
   source,
+  target,
   sourceHandleId,
+  targetHandleId,
   sourceX,
   sourceY,
   targetX,
@@ -30,12 +39,16 @@ function CustomEdgeComponent({
   const [hovered, setHovered] = useState(false);
   const { getNode } = useReactFlow();
   const sourceNode = getNode(source);
+  const targetNode = getNode(target);
   const sourceData = sourceNode?.data as WorkflowNode['data'] | undefined;
+  const targetData = targetNode?.data as WorkflowNode['data'] | undefined;
   const styleSettings = useWorkflowStore((s) => s.styleSettings);
   const isHorizontal = styleSettings.layoutDirection === 'horizontal';
 
+  const isAiEdge = isAiPortHandle(sourceData, sourceHandleId) || isAiPortHandle(targetData, targetHandleId);
+
   let label: string | null = null;
-  if (sourceData && sourceHandleId) {
+  if (!isAiEdge && sourceData && sourceHandleId) {
     const ports = computeDynamicPorts(sourceData);
     const outputPorts = ports.filter((p) => p.direction === 'Output');
     if (outputPorts.length > 1) {
@@ -52,7 +65,7 @@ function CustomEdgeComponent({
   let labelX: number;
   let labelY: number;
 
-  if (isBackward) {
+  if (isBackward && !isAiEdge) {
     if (isHorizontal) {
       const midX = (sourceX + targetX) / 2;
       const midY = sourceY + EDGE_PADDING;
@@ -141,23 +154,26 @@ function CustomEdgeComponent({
           style={{
             strokeWidth,
             stroke: strokeColor,
+            strokeDasharray: isAiEdge ? '6 4' : undefined,
           }}
-          markerEnd={index === edgePaths.length - 1 ? `url(#edge-arrow-${id})` : undefined}
+          markerEnd={!isAiEdge && index === edgePaths.length - 1 ? `url(#edge-arrow-${id})` : undefined}
         />
       ))}
-      <defs>
-        <marker
-          id={`edge-arrow-${id}`}
-          viewBox="0 0 10 10"
-          refX="9"
-          refY="5"
-          markerWidth="5"
-          markerHeight="5"
-          orient="auto-start-reverse"
-        >
-          <path d="M 0 0 L 10 5 L 0 10 z" fill={strokeColor} />
-        </marker>
-      </defs>
+      {!isAiEdge && (
+        <defs>
+          <marker
+            id={`edge-arrow-${id}`}
+            viewBox="0 0 10 10"
+            refX="9"
+            refY="5"
+            markerWidth="5"
+            markerHeight="5"
+            orient="auto-start-reverse"
+          >
+            <path d="M 0 0 L 10 5 L 0 10 z" fill={strokeColor} />
+          </marker>
+        </defs>
+      )}
       {label && (
         <EdgeLabelRenderer>
           <div

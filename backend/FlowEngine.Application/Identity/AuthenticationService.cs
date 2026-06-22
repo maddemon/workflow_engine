@@ -134,6 +134,16 @@ public partial class AuthenticationService(
             Success = true,
             Token = token,
             UserId = user.Id,
+            User = new UserDto
+            {
+                Id = user.Id,
+                Email = user.Email,
+                UserName = user.UserName,
+                DisplayName = user.DisplayName,
+                IsActive = user.IsActive,
+                CreatedAt = user.CreatedAt,
+                UpdatedAt = user.UpdatedAt,
+            },
         };
     }
 

@@ -1,4 +1,3 @@
-using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core.Entities;
@@ -10,35 +9,28 @@ namespace FlowEngine.Runtime.Scripting;
 
 /// <summary>
 /// Jint JavaScript 引擎封装。
-/// 提供表达式求值（参数、条件）和脚本执行（JSNode/CodeSnippet），
-/// 内置 console/fetch polyfill 和安全沙箱。
+/// 提供安全的表达式求值（参数、条件）和脚本执行（JSNode/CodeSnippet），
+/// 内置 console polyfill 和安全白名单函数，禁止网络/文件系统/进程/反射访问。
 /// </summary>
 public sealed class JsEngine : IDisposable
 {
     private readonly Engine _engine;
-    private readonly HttpClient _httpClient;
     private readonly ILogger? _logger;
     private bool _disposed;
 
-    private JsEngine(Engine engine, HttpClient httpClient, ILogger? logger)
+    private JsEngine(Engine engine, ILogger? logger)
     {
         _engine = engine;
-        _httpClient = httpClient;
         _logger = logger;
     }
 
     /// <summary>
-    /// 创建 JsEngine 实例。每个实例有独立的沙箱和 HttpClient。
+    /// 创建 JsEngine 实例。每个实例有独立的沙箱。
     /// </summary>
     /// <param name="configure">可选的 Engine 选项配置回调。</param>
     /// <param name="logger">可选的日志记录器。</param>
     public static JsEngine Create(Action<Options>? configure = null, ILogger? logger = null)
     {
-        var httpClient = new HttpClient
-        {
-            Timeout = TimeSpan.FromSeconds(10)
-        };
-
         var engine = new Engine(options =>
         {
             options.Strict = true;
@@ -53,9 +45,10 @@ public sealed class JsEngine : IDisposable
         });
 
         InjectConsole(engine, logger);
-        InjectFetch(engine, httpClient, logger);
+        InjectNow(engine);
+        InjectJmespath(engine);
 
-        return new JsEngine(engine, httpClient, logger);
+        return new JsEngine(engine, logger);
     }
 
     /// <summary>
@@ -182,92 +175,128 @@ public sealed class JsEngine : IDisposable
         if (!_disposed)
         {
             _disposed = true;
-            _httpClient.Dispose();
             _engine.Dispose();
         }
     }
+
+    /// <summary>
+    /// ES 日期 -> yyyy-MM-dd HH:mm:ss 格式。
+    /// </summary>
+    private static string FormatDateTime(DateTime dt) => dt.ToString("yyyy-MM-dd HH:mm:ss");
+
+    /// <summary>
+    /// ES 日期 -> ISO 8601 格式。
+    /// </summary>
+    private static string FormatIsoDateTime(DateTime dt) => dt.ToString("o");
 
     private static void InjectConsole(Engine engine, ILogger? logger)
     {
         engine.SetValue("console", new
         {
-            log = new Action<object?[]?>(args =>
+            log = new Action<object?>(msg =>
             {
-                var msg = args is { Length: > 0 } ? string.Join(" ", args) : "";
-                logger?.LogInformation("[JS] {Msg}", msg);
+                logger?.LogInformation("[JS] {Msg}", msg?.ToString() ?? "");
             }),
-            info = new Action<object?[]?>(args =>
+            info = new Action<object?>(msg =>
             {
-                var msg = args is { Length: > 0 } ? string.Join(" ", args) : "";
-                logger?.LogInformation("[JS] {Msg}", msg);
+                logger?.LogInformation("[JS] {Msg}", msg?.ToString() ?? "");
             }),
-            warn = new Action<object?[]?>(args =>
+            warn = new Action<object?>(msg =>
             {
-                var msg = args is { Length: > 0 } ? string.Join(" ", args) : "";
-                logger?.LogWarning("[JS] {Msg}", msg);
+                logger?.LogWarning("[JS] {Msg}", msg?.ToString() ?? "");
             }),
-            error = new Action<object?[]?>(args =>
+            error = new Action<object?>(msg =>
             {
-                var msg = args is { Length: > 0 } ? string.Join(" ", args) : "";
-                logger?.LogError("[JS] {Msg}", msg);
+                logger?.LogError("[JS] {Msg}", msg?.ToString() ?? "");
             }),
         });
     }
 
-    private static void InjectFetch(Engine engine, HttpClient httpClient, ILogger? logger)
+    private static void InjectNow(Engine engine)
     {
-        engine.SetValue("fetch", new Func<string, object?[]?, Task<object?>>(async (url, options) =>
+        engine.SetValue("now", new Func<string?>(() => FormatDateTime(DateTime.UtcNow)));
+        engine.SetValue("nowIso", new Func<string>(() => FormatIsoDateTime(DateTime.UtcNow)));
+    }
+
+    private static void InjectJmespath(Engine engine)
+    {
+        engine.SetValue("jmespath", new Func<JsonNode?, string, object?>((data, query) =>
         {
+            if (data is null) return null;
+
+            // 简单路径查询: "foo.bar[0].baz"
+            // 完整 JMESPath 需引入第三方库，当前实现基础路径导航
+            // 统一返回 JSON 字符串，避免标量与对象返回类型不一致
             try
             {
-                using var request = new HttpRequestMessage(HttpMethod.Get, url);
+                var result = NavigateJsonPath(data, query.AsSpan());
+                return result?.ToJsonString();
+            }
+            catch
+            {
+                return null;
+            }
+        }));
+    }
 
-                if (options is { Length: > 0 } && options[0] is not null)
+    private static JsonNode? NavigateJsonPath(JsonNode node, ReadOnlySpan<char> path)
+    {
+        if (path.Length == 0) return node;
+
+        var current = node;
+        var remaining = path;
+
+        while (remaining.Length > 0)
+        {
+            remaining = remaining.TrimStart('.');
+
+            if (remaining.Length == 0) break;
+
+            // 数组索引: [0]
+            if (remaining[0] == '[')
+            {
+                var end = remaining.IndexOf(']');
+                if (end < 0) return null;
+
+                if (current is JsonArray arr)
                 {
-                    if (options[0] is JsonObject opts)
+                    var indexStr = remaining[1..end].ToString();
+                    if (int.TryParse(indexStr, out var idx) && idx >= 0 && idx < arr.Count)
                     {
-                        var method = opts["method"]?.GetValue<string>() ?? "GET";
-                        request.Method = new HttpMethod(method);
-
-                        if (opts.TryGetPropertyValue("headers", out var headersNode) && headersNode is JsonObject headers)
-                        {
-                            foreach (var (key, value) in headers)
-                            {
-                                request.Headers.TryAddWithoutValidation(key, value?.GetValue<string>());
-                            }
-                        }
-
-                        if (opts.TryGetPropertyValue("body", out var bodyNode) && bodyNode is not null)
-                        {
-                            request.Content = new StringContent(bodyNode.ToJsonString(), Encoding.UTF8, "application/json");
-                        }
+                        current = arr[idx];
                     }
                     else
                     {
-                        var bodyText = options[0]?.ToString();
-                        if (bodyText is not null)
-                        {
-                            request.Content = new StringContent(bodyText, Encoding.UTF8, "application/json");
-                        }
+                        return null;
                     }
                 }
-
-                var response = await httpClient.SendAsync(request).ConfigureAwait(false);
-                var text = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
-
-                if (string.IsNullOrWhiteSpace(text))
+                else
                 {
                     return null;
                 }
 
-                try { return JsonSerializer.Deserialize<JsonElement>(text); }
-                catch { return text; }
+                remaining = remaining[(end + 1)..];
+                continue;
             }
-            catch (Exception ex)
+
+            // 属性名
+            var dotOrBracket = remaining.IndexOfAny('.', '[');
+            var key = dotOrBracket < 0
+                ? remaining.ToString()
+                : remaining[..dotOrBracket].ToString();
+
+            if (current is JsonObject obj && obj.TryGetPropertyValue(key, out var child))
             {
-                logger?.LogError(ex, "[JS fetch] 请求失败: {Url}", url);
-                throw;
+                current = child;
             }
-        }));
+            else
+            {
+                return null;
+            }
+
+            remaining = dotOrBracket < 0 ? [] : remaining[dotOrBracket..];
+        }
+
+        return current;
     }
 }

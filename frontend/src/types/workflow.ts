@@ -8,7 +8,7 @@ export interface WorkflowStyleSettings {
 }
 
 export const DEFAULT_STYLE_SETTINGS: WorkflowStyleSettings = {
-  layoutDirection: 'vertical',
+  layoutDirection: 'horizontal',
 };
 
 export interface DisplayRule {
@@ -201,4 +201,86 @@ export interface UpdateCredentialDto {
   name: string;
   type: string;
   data: Record<string, unknown>;
+}
+
+// --- Triggers ---
+
+export interface TriggerSettingsDto {
+  cronExpression?: string | null;
+  timeZone?: string | null;
+  startAt?: string | null;
+  endAt?: string | null;
+  webhookPath?: string | null;
+  secret?: string | null;
+  allowedIps?: string[] | null;
+  allowedOrigins?: string[] | null;
+  isSync?: boolean;
+  maxWaitSeconds?: number;
+}
+
+export interface TriggerDto {
+  id: string;
+  workflowDefinitionId: string;
+  workflowVersion: number;
+  type: 'Schedule' | 'Webhook';
+  name: string;
+  isActive: boolean;
+  settings?: TriggerSettingsDto | null;
+  lastTriggeredAt?: string | null;
+  nextTriggerAt?: string | null;
+  updatedAt?: string | null;
+}
+
+export interface CreateTriggerDto {
+  workflowDefinitionId: string;
+  workflowVersion: number;
+  type: 'Schedule' | 'Webhook';
+  name: string;
+  isActive?: boolean;
+  settings?: TriggerSettingsDto | null;
+}
+
+export interface UpdateTriggerDto {
+  name: string;
+  isActive: boolean;
+  settings?: TriggerSettingsDto | null;
+}
+
+// --- Auth ---
+
+export interface RegisterRequest {
+  email: string;
+  password: string;
+  userName: string;
+  displayName?: string;
+}
+
+export interface RegisterResult {
+  success: boolean;
+  userId?: string;
+  email?: string;
+  errorMessage?: string;
+  errors?: Record<string, string[]>;
+}
+
+export interface LoginRequest {
+  email: string;
+  password: string;
+}
+
+export interface LoginResult {
+  success: boolean;
+  token?: string;
+  user?: UserDto;
+  errorMessage?: string;
+}
+
+export interface UserDto {
+  id: string;
+  email: string;
+  userName: string;
+  displayName: string;
+  isActive: boolean;
+  createdAt: string;
+  updatedAt: string;
 }

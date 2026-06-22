@@ -66,14 +66,14 @@ public class HttpToolNodeTests
     {
         Assert.Equal("httpTool", _node.TypeName);
         Assert.Equal("HTTP Tool", _node.DisplayName);
-        Assert.Equal("Tool", _node.Category);
+        Assert.Equal("AI", _node.Category);
         Assert.False(_node.DefaultIsEntry);
     }
 
     [Fact]
     public void ToolNode_HasInputAndOutputPorts()
     {
-        Assert.Equal(2, _node.Ports.Count);
+        Assert.Equal(3, _node.Ports.Count);
         Assert.Contains(_node.Ports, p => p.Name == "input" && p.Direction == PortDirection.Input);
         Assert.Contains(_node.Ports, p => p.Name == "output" && p.Direction == PortDirection.Output);
     }

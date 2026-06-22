@@ -43,7 +43,7 @@ public sealed class AuditLogFileSink : IDisposable
 
         _flushTimer = new Timer(_ => Flush(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
 
-        eventBus.Subscribe<IDomainEvent>((e, _) =>
+        eventBus.Subscribe<AuditEvent>((e, _) =>
         {
             OnEvent(e);
             return Task.CompletedTask;
@@ -51,17 +51,17 @@ public sealed class AuditLogFileSink : IDisposable
     }
 
     /// <summary>
-    /// 处理事件：写入 NDJSON 行，关键事件同步刷盘。
+    /// 处理审计事件：写入 NDJSON 行，关键事件同步刷盘。
     /// </summary>
-    /// <param name="event">领域事件。</param>
-    public void OnEvent(IDomainEvent @event)
+    /// <param name="auditEvent">审计事件。</param>
+    public void OnEvent(AuditEvent auditEvent)
     {
         if (_disposed)
         {
             return;
         }
 
-        var line = SerializeEvent(@event);
+        var line = SerializeEvent(auditEvent);
         if (line is null)
         {
             return;
@@ -72,7 +72,7 @@ public sealed class AuditLogFileSink : IDisposable
             EnsureWriter();
             _writer?.WriteLine(line);
 
-            if (IsCriticalEvent(@event))
+            if (IsCriticalEvent(auditEvent))
             {
                 _writer?.Flush();
             }
@@ -135,30 +135,20 @@ public sealed class AuditLogFileSink : IDisposable
         }
     }
 
-    private static string? SerializeEvent(IDomainEvent @event)
+    private static string? SerializeEvent(AuditEvent audit)
     {
         try
         {
-            if (@event is AuditEvent audit)
-            {
-                return JsonSerializer.Serialize(new
-                {
-                    id = audit.EventId,
-                    eventType = audit.EventType,
-                    timestamp = audit.OccurredAt,
-                    actor = audit.Actor,
-                    resourceType = audit.ResourceType,
-                    resourceId = audit.ResourceId,
-                    payload = audit.Payload,
-                    metadata = audit.Metadata,
-                }, JsonOptions);
-            }
-
             return JsonSerializer.Serialize(new
             {
-                id = @event.EventId,
-                eventType = @event.GetType().Name,
-                timestamp = @event.OccurredAt,
+                id = audit.EventId,
+                eventType = audit.EventType,
+                timestamp = audit.OccurredAt,
+                actor = audit.Actor,
+                resourceType = audit.ResourceType,
+                resourceId = audit.ResourceId,
+                payload = audit.Payload,
+                metadata = audit.Metadata,
             }, JsonOptions);
         }
         catch
@@ -167,13 +157,9 @@ public sealed class AuditLogFileSink : IDisposable
         }
     }
 
-    private static bool IsCriticalEvent(IDomainEvent @event)
+    private static bool IsCriticalEvent(AuditEvent audit)
     {
-        if (@event is AuditEvent audit && !string.IsNullOrEmpty(audit.EventType))
-        {
-            return AuditEventTypes.CriticalEvents.Contains(audit.EventType);
-        }
-
-        return false;
+        return !string.IsNullOrEmpty(audit.EventType)
+            && AuditEventTypes.CriticalEvents.Contains(audit.EventType);
     }
 }

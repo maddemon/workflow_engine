@@ -95,6 +95,11 @@ public sealed record LoginResult
     public Guid? UserId { get; init; }
 
     /// <summary>
+    /// 用户信息（成功时非空）。
+    /// </summary>
+    public UserDto? User { get; init; }
+
+    /// <summary>
     /// 错误信息（失败时非空）。
     /// </summary>
     public string? ErrorMessage { get; init; }

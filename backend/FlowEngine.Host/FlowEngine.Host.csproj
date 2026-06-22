@@ -11,6 +11,10 @@
     <ProjectReference Include="..\FlowEngine.Migrations\FlowEngine.Migrations.csproj" />
   </ItemGroup>
 
+  <Target Name="BuildPlugins" BeforeTargets="BeforeBuild">
+    <MSBuild Projects="..\..\plugins\FlowEngine.Plugins.Standard\FlowEngine.Plugins.Standard.csproj" Targets="Build" />
+  </Target>
+
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>

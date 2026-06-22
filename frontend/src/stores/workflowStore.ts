@@ -31,11 +31,14 @@ const MAX_HISTORY = 50;
 
 interface WorkflowState {
   nodes: WorkflowNode[];
+  /** position-only cache: updated during drag without touching `nodes` */
+  nodePositions: Record<string, { x: number; y: number }>;
   edges: WorkflowEdge[];
   selectedNodeId: string | null;
   nodeTypes: NodeTypeDescriptor[];
   workflowId: string | null;
   workflowName: string;
+  workflowVersion: number;
   isActive: boolean;
   styleSettings: WorkflowStyleSettings;
   isDirty: boolean;
@@ -115,6 +118,18 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
   const undoStack: HistorySnapshot[] = [];
   const redoStack: HistorySnapshot[] = [];
 
+  function flushPositions() {
+    const { nodePositions, nodes } = get();
+    if (Object.keys(nodePositions).length === 0) return;
+    set({
+      nodes: nodes.map((n) => {
+        const pos = nodePositions[n.id];
+        return pos ? { ...n, position: pos } : n;
+      }),
+      nodePositions: {},
+    });
+  }
+
   function snapshot(): HistorySnapshot {
     return {
       nodes: JSON.parse(JSON.stringify(get().nodes)) as WorkflowNode[],
@@ -123,6 +138,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
   }
 
   function pushHistoryInternal() {
+    flushPositions();
     undoStack.push(snapshot());
     if (undoStack.length > MAX_HISTORY) {
       undoStack.shift();
@@ -139,11 +155,13 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
 
   return {
     nodes: [],
+    nodePositions: {},
     edges: [],
     selectedNodeId: null,
     nodeTypes: [],
     workflowId: null,
     workflowName: '',
+    workflowVersion: 1,
     isActive: false,
         styleSettings: { ...DEFAULT_STYLE_SETTINGS },
 	    isDirty: false,
@@ -158,7 +176,18 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     setEdges: (edges) => set({ edges, isDirty: true }),
 
     onNodesChange: (changes) => {
-      set({ nodes: applyNodeChanges<WorkflowNode>(changes, get().nodes), isDirty: true });
+      const hasNonPositionChange = changes.some((c) => c.type !== 'position' || c.dragging === false);
+      if (hasNonPositionChange) {
+        set({ nodes: applyNodeChanges<WorkflowNode>(changes, get().nodes), nodePositions: {}, isDirty: true });
+      } else {
+        const posUpdates: Record<string, { x: number; y: number }> = {};
+        for (const c of changes) {
+          if (c.type === 'position' && c.position) {
+            posUpdates[c.id] = c.position;
+          }
+        }
+        set({ nodePositions: { ...get().nodePositions, ...posUpdates } });
+      }
     },
 
     onEdgesChange: (changes) => {
@@ -262,10 +291,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         set({
           workflowId: workflow.id,
           workflowName: workflow.name,
+          workflowVersion: workflow.version,
           isActive: workflow.isActive,
           styleSettings: workflow.styleSettings ? { ...DEFAULT_STYLE_SETTINGS, ...workflow.styleSettings } : { ...DEFAULT_STYLE_SETTINGS },
           nodes,
           edges,
+          nodePositions: {},
           selectedNodeId: null,
           isDirty: false,
           validationErrors: {},
@@ -279,6 +310,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     },
 
     saveWorkflow: async () => {
+      flushPositions();
       if (!get().validateAllNodes()) return false;
 
       const { workflowId, workflowName, isActive, styleSettings, nodes, edges } = get();
@@ -322,6 +354,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         isActive: false,
     styleSettings: { ...DEFAULT_STYLE_SETTINGS },
         nodes: [],
+        nodePositions: {},
         edges: [],
         selectedNodeId: null,
         isDirty: false,
@@ -394,6 +427,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       redoStack.push(snapshot());
       set({
         nodes: snap.nodes,
+        nodePositions: {},
         edges: snap.edges,
         isDirty: true,
         canUndo: undoStack.length > 0,
@@ -408,6 +442,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       undoStack.push(snapshot());
       set({
         nodes: snap.nodes,
+        nodePositions: {},
         edges: snap.edges,
         isDirty: true,
         canUndo: true,

@@ -386,3 +386,6 @@ backend/FlowEngine.Host/storage/
 skills-lock.json
 backend/FlowEngine.Host/App_Data/crypto.key
 backend/FlowEngine.Host/App_Data/flowengine.db
+backend/FlowEngine.Host/App_Data/flowengine.db-shm
+backend/FlowEngine.Host/App_Data/flowengine.db-wal
+.agents/plans/

@@ -1,4 +1,4 @@
-import { useCallback, useMemo } from 'react';
+import { memo, useCallback, useMemo } from 'react';
 import { Group, ActionIcon, Tooltip, Divider, Button } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { Undo2, Redo2, ZoomIn, ZoomOut, Maximize, Save, Play } from 'lucide-react';
@@ -10,7 +10,7 @@ interface ICanvasToolbarProps {
   onExecute: (workflowId: string) => void;
 }
 
-export function CanvasToolbar({ onExecute }: ICanvasToolbarProps) {
+export const CanvasToolbar = memo(function CanvasToolbar({ onExecute }: ICanvasToolbarProps) {
   const { fitView, zoomIn, zoomOut } = useReactFlow();
   const canUndo = useWorkflowStore((s) => s.canUndo);
   const canRedo = useWorkflowStore((s) => s.canRedo);
@@ -19,20 +19,21 @@ export function CanvasToolbar({ onExecute }: ICanvasToolbarProps) {
   const saving = useWorkflowStore((s) => s.saving);
   const saveWorkflow = useWorkflowStore((s) => s.saveWorkflow);
   const workflowId = useWorkflowStore((s) => s.workflowId);
-  const nodes = useWorkflowStore((s) => s.nodes);
+  const nodeCount = useWorkflowStore((s) => s.nodes.length);
   const isExecuting = useWorkflowStore((s) => s.isExecuting);
 
-  const canExecute = workflowId && nodes.length > 0 && !isExecuting;
+  const canExecute = workflowId && nodeCount > 0 && !isExecuting;
 
   const allValid = useMemo(() => {
-    if (nodes.length === 0) return false;
+    if (nodeCount === 0) return false;
+    const { nodes } = useWorkflowStore.getState();
     for (const node of nodes) {
       const { descriptor, parameters } = node.data;
       const errors = validateParameters(parameters, descriptor.parameters);
       if (Object.keys(errors).length > 0) return false;
     }
     return true;
-  }, [nodes]);
+  }, [nodeCount]);
 
   const handleExecute = useCallback(() => {
     if (!workflowId) return;
@@ -111,4 +112,4 @@ export function CanvasToolbar({ onExecute }: ICanvasToolbarProps) {
       </Group>
     </div>
   );
-}
+})

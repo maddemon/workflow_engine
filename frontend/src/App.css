@@ -53,6 +53,65 @@
 
 /* ===== Custom Node ===== */
 
+/* Config (circular) nodes - LLM, Tool, Memory */
+.custom-node-wrapper.node-config {
+  width: 80px !important;
+  height: 80px !important;
+}
+.custom-node-wrapper.node-config .custom-node {
+  border-radius: 50%;
+}
+
+/* Configurable nodes - Agent (rectangular with icon on left) */
+.custom-node-wrapper.node-configurable .custom-node {
+  flex-direction: row;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 0 12px;
+}
+.node-icon-left {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+}
+.node-body-inline {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  flex: 1;
+  text-align: left;
+}
+.node-body-inline .node-name {
+  font-size: 11px;
+}
+.node-body-inline .node-subtitle {
+  font-size: 9px;
+  margin-top: 0;
+}
+
+/* AI port handle (diamond shape) */
+.port-handle.port-ai {
+  width: 10px !important;
+  height: 10px !important;
+  transform: translate(-50%, -50%) rotate(45deg) !important;
+  border-radius: 2px !important;
+  background: var(--port-ai, #7c3aed) !important;
+}
+/* Bottom/Top edges: only translate horizontally */
+.port-handle.port-ai.port-bottom,
+.port-handle.port-ai.port-top {
+  transform: translateX(-50%) rotate(45deg) !important;
+}
+/* Left/Right edges: only translate vertically */
+.port-handle.port-ai.port-left,
+.port-handle.port-ai.port-right {
+  transform: translateY(-50%) rotate(45deg) !important;
+}
+.custom-node-wrapper:hover .port-handle.port-ai {
+  opacity: 0.9 !important;
+}
+
 .custom-node-wrapper {
   position: relative;
   overflow: visible;
@@ -96,6 +155,19 @@
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3) !important;
 }
 
+/* Circular nodes (config: LLM Supply; tool: CodeSnippetTool, HttpTool, etc.) */
+.node-circular .custom-node {
+  border-radius: 50%;
+}
+
+.node-circular .node-body-abs {
+  text-align: center;
+  width: 100%;
+  left: 0;
+  max-width: 120px;
+  margin: 0 auto;
+}
+
 .node-icon-box {
   display: flex;
   align-items: center;
@@ -119,17 +191,17 @@
 }
 
 .node-name {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-width: 120px;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
   letter-spacing: -0.01em;
+  line-height: 1.2;
 }
 
 .node-subtitle {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
   margin-top: 1px;
+  line-height: 1.2;
 }
 
 .node-badge {

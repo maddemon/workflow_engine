@@ -1,7 +1,7 @@
 import { notifications } from "@mantine/notifications"
 import { Background, BackgroundVariant, MiniMap, ReactFlow, useReactFlow, type Connection } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
-import { useCallback, useEffect, useRef } from "react"
+import { useCallback, useEffect, useMemo, useRef } from "react"
 import { useWorkflowStore } from "../../stores/workflowStore.ts"
 import { CanvasToolbar } from "./CanvasToolbar.tsx"
 import { CustomEdge } from "./CustomEdge.tsx"
@@ -22,7 +22,8 @@ interface IWorkflowCanvasProps {
 export function WorkflowCanvas({ onExecute }: IWorkflowCanvasProps) {
   const reactFlowWrapper = useRef<HTMLDivElement>(null)
   const { screenToFlowPosition } = useReactFlow()
-  const nodes = useWorkflowStore((s) => s.nodes)
+  const nodesData = useWorkflowStore((s) => s.nodes)
+  const nodePositions = useWorkflowStore((s) => s.nodePositions)
   const edges = useWorkflowStore((s) => s.edges)
   const onNodesChange = useWorkflowStore((s) => s.onNodesChange)
   const onEdgesChange = useWorkflowStore((s) => s.onEdgesChange)
@@ -30,6 +31,17 @@ export function WorkflowCanvas({ onExecute }: IWorkflowCanvasProps) {
   const addNode = useWorkflowStore((s) => s.addNode)
   const setSelectedNode = useWorkflowStore((s) => s.setSelectedNode)
   const isExecuting = useWorkflowStore((s) => s.isExecuting)
+
+  const hasPositionOverrides = Object.keys(nodePositions).length > 0
+  const nodes = useMemo(
+    () => hasPositionOverrides
+      ? nodesData.map((n) => {
+          const pos = nodePositions[n.id]
+          return pos ? { ...n, position: pos } : n
+        })
+      : nodesData,
+    [nodesData, nodePositions, hasPositionOverrides],
+  )
 
   const edgesRef = useRef(edges)
   useEffect(() => {
@@ -41,7 +53,6 @@ export function WorkflowCanvas({ onExecute }: IWorkflowCanvasProps) {
       const { source, sourceHandle, target } = params
       let { targetHandle } = params
 
-      // 禁止自连接
       if (source === target) {
         notifications.show({
           title: "Connection rejected",
@@ -54,7 +65,6 @@ export function WorkflowCanvas({ onExecute }: IWorkflowCanvasProps) {
       const sourceNode = nodes.find((n) => n.id === source)
       const targetNode = nodes.find((n) => n.id === target)
 
-      // 鼠标松在节点区域（非 input handle 上）时，自动连到第一个 input 端口
       if (targetNode && !targetHandle) {
         const firstInput = targetNode.data.descriptor.ports.find((p) => p.direction === "Input")
         if (firstInput) {
@@ -62,7 +72,6 @@ export function WorkflowCanvas({ onExecute }: IWorkflowCanvasProps) {
         }
       }
 
-      // 校验端口类型：source 必须是 output，target 必须是 input
       if (sourceNode && sourceHandle) {
         const port = sourceNode.data.descriptor.ports.find((p) => `port-${p.name}` === sourceHandle)
         if (port && port.direction !== "Output") {
@@ -86,7 +95,41 @@ export function WorkflowCanvas({ onExecute }: IWorkflowCanvasProps) {
         }
       }
 
-      // 禁止重复连接
+      const sourcePort = sourceNode?.data.descriptor.ports.find((p) => `port-${p.name}` === sourceHandle)
+      const targetPort = targetNode?.data.descriptor.ports.find((p) => `port-${p.name}` === targetHandle)
+
+      if (sourcePort && targetPort) {
+        const compatible =
+          sourcePort.type === targetPort.type ||
+          (sourcePort.type === "AgentTool" && targetPort.type === "Main")
+        if (!compatible) {
+          notifications.show({
+            title: "Connection rejected",
+            message: `Port type '${sourcePort.type}' cannot connect to '${targetPort.type}'.`,
+            color: "red",
+          })
+          return
+        }
+      }
+
+      if (targetPort && targetHandle) {
+        const maxConnections: Record<string, number> = { LLMSupply: 1, Memory: 1 }
+        const max = maxConnections[targetPort.type]
+        if (max !== undefined) {
+          const existingCount = edgesRef.current.filter(
+            (e) => e.target === target && e.targetHandle === targetHandle,
+          ).length
+          if (existingCount >= max) {
+            notifications.show({
+              title: "Connection rejected",
+              message: `Port '${targetPort.displayName}' accepts at most ${max} connection${max > 1 ? "s" : ""}.`,
+              color: "red",
+            })
+            return
+          }
+        }
+      }
+
       const isDuplicate = edgesRef.current.some(
         (e) =>
           e.source === source &&

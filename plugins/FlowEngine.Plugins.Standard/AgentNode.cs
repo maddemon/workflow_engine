@@ -24,7 +24,7 @@ public sealed class AgentNode : INodeType
     public string Category => "AI";
 
     /// <inheritdoc />
-    public string Icon => "brain";
+    public string Icon => "bot";
 
     /// <inheritdoc />
     public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
@@ -52,7 +52,7 @@ public sealed class AgentNode : INodeType
     [
         new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
         new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Tools, DisplayName = "Tools", Direction = PortDirection.Output, Type = PortType.AgentTool },
+        new PortDefinition { Name = FlowConstants.PortNames.Tools, DisplayName = "Tool", Direction = PortDirection.Input, Type = PortType.AgentTool },
         new PortDefinition { Name = FlowConstants.PortNames.LlmSupply, DisplayName = "LLM Supply", Direction = PortDirection.Input, Type = PortType.LLMSupply }
     ];
 
@@ -143,7 +143,7 @@ public sealed class AgentNode : INodeType
         var currentNodeId = context.Node.Id;
 
         var toolConnections = workflow.Connections
-            .Where(c => c.SourceNodeId == currentNodeId && c.SourcePortName == FlowConstants.PortNames.Tools)
+            .Where(c => c.TargetNodeId == currentNodeId && c.TargetPortName == FlowConstants.PortNames.Tools)
             .ToList();
 
         if (toolConnections.Count == 0)
@@ -154,7 +154,7 @@ public sealed class AgentNode : INodeType
         var tools = new List<ToolDefinition>();
         foreach (var connection in toolConnections)
         {
-            var toolNode = workflow.Nodes.FirstOrDefault(n => n.Id == connection.TargetNodeId);
+            var toolNode = workflow.Nodes.FirstOrDefault(n => n.Id == connection.SourceNodeId);
             if (toolNode is null)
             {
                 continue;

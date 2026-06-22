@@ -1,6 +1,8 @@
+using FlowEngine.Application.Identity;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Identity;
 using FlowEngine.Host.Middlewares;
 using FlowEngine.Host.Webhooks;
 using FlowEngine.Host.WebSocketHandlers;
@@ -25,6 +27,9 @@ public static class ApplicationBuilderExtensions
         await app.Services.ApplyFlowEngineMigrationsAsync(
             dbProvider,
             app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("FlowEngine.Migrations"));
+
+        // ── Seed Default Admin ─────────────────────────────────────
+        await SeedDefaultAdminAsync(app);
 
         // ── Startup Initialization ──────────────────────────────────
         await UseInitialization(app);
@@ -122,5 +127,29 @@ public static class ApplicationBuilderExtensions
                 settings.StartAt,
                 settings.EndAt);
         }
+    }
+
+    private static async Task SeedDefaultAdminAsync(WebApplication app)
+    {
+        using var scope = app.Services.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
+        var passwordHasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
+
+        if (await dbContext.Set<User>().AnyAsync())
+        {
+            return;
+        }
+
+        var admin = new User
+        {
+            Email = "admin@flowengine.local",
+            UserName = "admin",
+            DisplayName = "Administrator",
+            PasswordHash = passwordHasher.HashPassword("admin123"),
+            IsActive = true,
+        };
+
+        dbContext.Set<User>().Add(admin);
+        await dbContext.SaveChangesAsync();
     }
 }

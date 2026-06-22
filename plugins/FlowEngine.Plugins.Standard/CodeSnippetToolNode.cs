@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
@@ -15,14 +16,15 @@ public sealed class CodeSnippetToolNode : INodeType
 
     public string TypeName => "codeSnippetTool";
     public string DisplayName => "Code Snippet Tool";
-    public string Category => "Tool";
+    public string Category => "AI";
     public string Icon => "code";
     public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
 
     public IReadOnlyList<PortDefinition> Ports { get; } =
     [
         new PortDefinition { Name = "input", DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = "output", DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
+        new PortDefinition { Name = "output", DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main },
+        new PortDefinition { Name = FlowConstants.PortNames.Tools, DisplayName = "Tool Output", Direction = PortDirection.Output, Type = PortType.AgentTool }
     ];
 
     public bool DefaultIsEntry => false;

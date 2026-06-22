@@ -97,7 +97,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<WebhookHandler>();
         services.AddScoped<ErrorStrategyHandler>();
         services.AddSingleton<WorkflowExecutionQueue>();
-        services.AddScoped<IEngine, WorkflowExecutor>();
+        services.AddScoped<WorkflowExecutor>();
+        services.AddScoped<IEngine>(sp => sp.GetRequiredService<WorkflowExecutor>());
         services.AddHostedService<WorkflowExecutionWorker>();
 
         // ── Scheduling & Execution ──────────────────────────────────

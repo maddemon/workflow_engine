@@ -12,6 +12,10 @@ import {
   Play,
   Layers,
   Box,
+  Bot,
+  Brain,
+  Wrench,
+  Webhook,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -29,6 +33,11 @@ const iconMap: Record<string, LucideIcon> = {
   play: Play,
   layers: Layers,
   box: Box,
+  bot: Bot,
+  brain: Brain,
+  wrench: Wrench,
+  webhook: Webhook,
+  shuffle: GitBranch,
 };
 
 interface NodeIconProps {

@@ -46,9 +46,10 @@ public sealed class InternalErrorSink
 public sealed class InMemoryEventBus : IEventBus, IDisposable
 {
     private readonly Channel<IDomainEvent> _channel =
-        Channel.CreateUnbounded<IDomainEvent>(new UnboundedChannelOptions
+        Channel.CreateBounded<IDomainEvent>(new BoundedChannelOptions(10000)
         {
             SingleReader = true,
+            FullMode = BoundedChannelFullMode.DropWrite,
         });
 
     private readonly Dictionary<Type, List<Func<IDomainEvent, CancellationToken, Task>>> _handlers = new();
@@ -73,7 +74,10 @@ public sealed class InMemoryEventBus : IEventBus, IDisposable
     public Task PublishAsync<TEvent>(TEvent eventInstance, CancellationToken cancellationToken = default)
         where TEvent : IDomainEvent
     {
-        _channel.Writer.TryWrite(eventInstance);
+        if (!_channel.Writer.TryWrite(eventInstance))
+        {
+            _logger?.LogWarning("Event bus channel full, dropping event {EventType}", typeof(TEvent).Name);
+        }
         return Task.CompletedTask;
     }
 

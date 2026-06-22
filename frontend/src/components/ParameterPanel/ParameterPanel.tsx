@@ -1,9 +1,11 @@
 import { useCallback, useState } from 'react';
-import { Stack, TextInput, Text, Badge, Group, ScrollArea, Switch, Select, Collapse, UnstyledButton } from '@mantine/core';
+import { Stack, TextInput, Text, Badge, Group, ScrollArea, Switch, Select, Collapse, UnstyledButton, Divider } from '@mantine/core';
 import { ChevronRight, ChevronDown } from 'lucide-react';
+import { useShallow } from 'zustand/shallow';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
 import { useDisplayRule } from '../../hooks/useDisplayRule.ts';
 import { FieldResolver } from './FieldResolver.tsx';
+import { TriggerConfig } from './TriggerConfig.tsx';
 import { InfoTooltip } from './fields/InfoTooltip.tsx';
 import type { ParameterDefinition } from '../../types/workflow.ts';
 
@@ -27,7 +29,14 @@ function groupParameters(
 
 export function ParameterPanel() {
   const selectedNodeId = useWorkflowStore((s) => s.selectedNodeId);
-  const nodes = useWorkflowStore((s) => s.nodes);
+  const selectedNode = useWorkflowStore(
+    useShallow((s) => {
+      if (!s.selectedNodeId) return null;
+      const node = s.nodes.find((n) => n.id === s.selectedNodeId);
+      if (!node) return null;
+      return { id: node.id, data: node.data };
+    }),
+  );
   const isExecuting = useWorkflowStore((s) => s.isExecuting);
   const updateNodeParameters = useWorkflowStore((s) => s.updateNodeParameters);
   const updateNodeName = useWorkflowStore((s) => s.updateNodeName);
@@ -38,12 +47,12 @@ export function ParameterPanel() {
   const styleSettings = useWorkflowStore((s) => s.styleSettings);
   const setStyleSettings = useWorkflowStore((s) => s.setStyleSettings);
   const edgeCount = useWorkflowStore((s) => s.edges.length);
+  const nodeCount = useWorkflowStore((s) => s.nodes.length);
   const workflowName = useWorkflowStore((s) => s.workflowName);
   const setWorkflowName = useWorkflowStore((s) => s.setWorkflowName);
   const isDirty = useWorkflowStore((s) => s.isDirty);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
-  const selectedNode = nodes.find((n) => n.id === selectedNodeId);
   const { isVisible } = useDisplayRule(selectedNode?.data.parameters ?? {});
 
   const layoutDirection = styleSettings.layoutDirection;
@@ -54,12 +63,10 @@ export function ParameterPanel() {
 
   const handleParameterChange = useCallback(
     (name: string, value: unknown) => {
-      if (!selectedNodeId) return;
-      const node = nodes.find((n) => n.id === selectedNodeId);
-      if (!node) return;
-      updateNodeParameters(selectedNodeId, { ...node.data.parameters, [name]: value });
+      if (!selectedNodeId || !selectedNode) return;
+      updateNodeParameters(selectedNodeId, { ...selectedNode.data.parameters, [name]: value });
     },
-    [selectedNodeId, nodes, updateNodeParameters],
+    [selectedNodeId, selectedNode, updateNodeParameters],
   );
 
   if (!selectedNode) {
@@ -105,10 +112,12 @@ export function ParameterPanel() {
               { label: 'Horizontal (left to right)', value: 'horizontal' },
             ]}
           />
+          <Divider />
+          <TriggerConfig workflowId={useWorkflowStore.getState().workflowId ?? ''} isExecuting={isExecuting} />
         </Stack>
         <Group justify="space-between">
           <Text size="xs" c="dimmed">Nodes</Text>
-          <Badge variant="light" size="xs">{nodes.length}</Badge>
+          <Badge variant="light" size="xs">{nodeCount}</Badge>
         </Group>
         <Group justify="space-between">
           <Text size="xs" c="dimmed">Connections</Text>

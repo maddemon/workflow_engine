@@ -22,7 +22,7 @@ public sealed class HttpToolNode : INodeType
     public string DisplayName => "HTTP Tool";
 
     /// <inheritdoc />
-    public string Category => "Tool";
+    public string Category => "AI";
 
     /// <inheritdoc />
     public string Icon => "globe";
@@ -34,7 +34,8 @@ public sealed class HttpToolNode : INodeType
     public IReadOnlyList<PortDefinition> Ports { get; } =
     [
         new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
+        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main },
+        new PortDefinition { Name = FlowConstants.PortNames.Tools, DisplayName = "Tool Output", Direction = PortDirection.Output, Type = PortType.AgentTool }
     ];
 
     /// <inheritdoc />

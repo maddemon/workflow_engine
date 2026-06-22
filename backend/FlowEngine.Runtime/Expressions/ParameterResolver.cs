@@ -119,7 +119,7 @@ public sealed class ParameterResolver
         "input", "inputs", "nodes", "items", "parameter",
         "workflow", "execution", "env", "runIndex", "run_index",
         "this", "true", "false", "null", "undefined",
-        "console", "fetch"
+        "now", "nowIso", "jmespath"
     };
 
     private static string GetFirstWord(ReadOnlySpan<char> text)

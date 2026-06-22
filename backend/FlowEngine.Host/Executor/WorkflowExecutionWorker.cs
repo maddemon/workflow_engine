@@ -31,7 +31,7 @@ public sealed class WorkflowExecutionWorker : BackgroundService
     {
         using var scope = _scopeFactory.CreateScope();
         var queue = scope.ServiceProvider.GetRequiredService<WorkflowExecutionQueue>();
-        var executor = scope.ServiceProvider.GetRequiredService<FlowEngine.Runtime.Executor.WorkflowExecutor>();
+        var executor = scope.ServiceProvider.GetRequiredService<WorkflowExecutor>();
 
         while (!stoppingToken.IsCancellationRequested)
         {
