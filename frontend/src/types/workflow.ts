@@ -34,6 +34,7 @@ export type PresentationHint =
   | 'ResourceSelect'
   | 'FileUpload'
   | 'Expression'
+  | 'Script'
   | 'Array'
   | 'DateTime';
 
@@ -65,6 +66,8 @@ export interface ParameterDefinition {
   options: Option[];
   /** 渲染提示，指导前端使用何种组件渲染。 */
   hint?: PresentationHint | null;
+  /** Hint 组件的扩展属性（如 Script 的 language 配置）。 */
+  hintProperties?: Record<string, unknown> | null;
   /** 字段描述，展示在参数下方。 */
   description?: string | null;
   /** 资源类型，用于 Resource 类型指定资源来源。 */

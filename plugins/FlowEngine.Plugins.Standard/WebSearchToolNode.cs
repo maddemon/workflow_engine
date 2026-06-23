@@ -33,7 +33,6 @@ public enum SearchEngineType
 /// <summary>
 /// Web 搜索工具节点，作为 Agent 的工具被调用。
 /// 支持多种搜索引擎配置。
-/// 参考 n8n 的 ToolSerpApi 设计。
 /// </summary>
 public sealed class WebSearchToolNode : INodeType
 {
@@ -55,12 +54,14 @@ public sealed class WebSearchToolNode : INodeType
     /// <summary>
     /// 搜索引擎类型。
     /// </summary>
+    [DisplayName("Search Engine")]
     [Description("Search engine to use.")]
     public SearchEngineType SearchEngine { get; set; } = SearchEngineType.Google;
 
     /// <summary>
     /// API Key 凭据 ID。
     /// </summary>
+    [DisplayName("API Key")]
     [Credential(FlowConstants.CredentialFields.ApiKey)]
     [Description("Credential ID for search engine API key.")]
     public string? ApiKeyCredentialId { get; set; }
@@ -68,12 +69,14 @@ public sealed class WebSearchToolNode : INodeType
     /// <summary>
     /// 搜索语言。
     /// </summary>
+    [DisplayName("Language")]
     [Description("Search language (e.g. 'en', 'zh-CN').")]
     public string Language { get; set; } = "en";
 
     /// <summary>
     /// 最大结果数。
     /// </summary>
+    [DisplayName("Max Results")]
     [Description("Maximum number of results to return.")]
     public int MaxResults { get; set; } = 5;
 

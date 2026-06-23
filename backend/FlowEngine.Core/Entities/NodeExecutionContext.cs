@@ -138,73 +138,6 @@ public class NodeExecutionContext
     }
 
     /// <summary>
-    /// 从输入端口获取数据并转换为字符串字典。
-    /// 合并 Input 数据和 ResolvedParameters。
-    /// </summary>
-    public Dictionary<string, string> GetInputDataAsDictionary()
-    {
-        var data = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-
-        // 从 Input 端口获取数据
-        if (Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch) && batch.Items.Count > 0)
-        {
-            var inputObj = batch.Items[0].Data as JsonObject;
-            if (inputObj is not null)
-            {
-                foreach (var prop in inputObj)
-                {
-                    data[prop.Key] = prop.Value?.ToString() ?? string.Empty;
-                }
-            }
-        }
-
-        // 合并 ResolvedParameters
-        foreach (var kvp in ResolvedParameters)
-        {
-            if (kvp.Value is string strValue)
-            {
-                data[kvp.Key] = strValue;
-            }
-            else if (kvp.Value is not null)
-            {
-                data[kvp.Key] = kvp.Value.ToString() ?? string.Empty;
-            }
-        }
-
-        return data;
-    }
-
-    /// <summary>
-    /// 从输入 JsonObject 中获取指定字段的值。
-    /// 尝试多个常见字段名。
-    /// </summary>
-    public string? GetFieldValueFromInput(params string[] fieldNames)
-    {
-        var payload = GetInputPayload();
-        if (payload is null)
-        {
-            return null;
-        }
-
-        if (payload is JsonObject obj)
-        {
-            foreach (var fieldName in fieldNames)
-            {
-                if (obj.TryGetPropertyValue(fieldName, out var val))
-                {
-                    return val?.ToString();
-                }
-            }
-        }
-        else if (payload is JsonValue val)
-        {
-            return val.ToString();
-        }
-
-        return null;
-    }
-
-    /// <summary>
     /// 解析凭据并返回 API Key。
     /// </summary>
     public async Task<string?> ResolveApiKeyAsync(string? credentialId, CancellationToken cancellationToken = default)
@@ -259,24 +192,5 @@ public class NodeExecutionContext
                 ]
             }
         };
-    }
-
-    /// <summary>
-    /// 解析模板中的 {placeholder} 占位符。
-    /// </summary>
-    public static string ResolvePlaceholders(string template, Dictionary<string, string> data)
-    {
-        if (string.IsNullOrEmpty(template) || data.Count == 0)
-        {
-            return template;
-        }
-
-        var result = template;
-        foreach (var (key, value) in data)
-        {
-            result = result.Replace($"{{{key}}}", value, StringComparison.OrdinalIgnoreCase);
-        }
-
-        return result;
     }
 }

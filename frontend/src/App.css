@@ -1,3 +1,30 @@
+/* ===== 自定义滚动条 ===== */
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--mantine-color-gray-4);
+  border-radius: 3px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--mantine-color-gray-5);
+}
+
+[data-mantine-color-scheme="dark"] *::-webkit-scrollbar-thumb {
+  background: var(--mantine-color-dark-4);
+}
+
+[data-mantine-color-scheme="dark"] *::-webkit-scrollbar-thumb:hover {
+  background: var(--mantine-color-dark-3);
+}
+
 /* ===== ReactFlow 容器 ===== */
 .workflow-canvas {
   position: absolute;
@@ -128,7 +155,9 @@
   background: var(--node-bg);
   border: 1.5px solid var(--node-bc, var(--mantine-color-gray-3));
   border-radius: 10px;
-  transition: box-shadow 0.2s, border-color 0.2s;
+  transition:
+    box-shadow 0.2s,
+    border-color 0.2s;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -154,7 +183,7 @@
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3) !important;
 }
 
-/* Circular nodes (config: LLM Supply; tool: CodeSnippetTool, HttpTool, etc.) */
+/* Circular nodes (config: LLM ; tool: CodeSnippetTool, HttpTool, etc.) */
 .node-circular .custom-node {
   border-radius: 50%;
 }
@@ -239,7 +268,7 @@
 }
 
 .custom-node-wrapper.status-running .custom-node::after {
-  content: '';
+  content: "";
   position: absolute;
   inset: -3px;
   border-radius: 12px;
@@ -256,11 +285,13 @@
 }
 
 @keyframes spin-border {
-  to { --gradient-angle: 360deg; }
+  to {
+    --gradient-angle: 360deg;
+  }
 }
 
 @property --gradient-angle {
-  syntax: '<angle>';
+  syntax: "<angle>";
   initial-value: 0deg;
   inherits: false;
 }
@@ -269,10 +300,18 @@
   border-color: var(--status-waiting);
 }
 
-.node-status-icon.status-success { color: var(--status-success); }
-.node-status-icon.status-error { color: var(--status-error); }
-.node-status-icon.status-running { color: var(--status-running); }
-.node-status-icon.status-waiting { color: var(--status-waiting); }
+.node-status-icon.status-success {
+  color: var(--status-success);
+}
+.node-status-icon.status-error {
+  color: var(--status-error);
+}
+.node-status-icon.status-running {
+  color: var(--status-running);
+}
+.node-status-icon.status-waiting {
+  color: var(--status-waiting);
+}
 
 /* ===== Port Handle ===== */
 
@@ -280,7 +319,9 @@
   width: 12px !important;
   height: 12px !important;
   opacity: 0 !important;
-  transition: opacity 0.15s, background 0.15s !important;
+  transition:
+    opacity 0.15s,
+    background 0.15s !important;
   z-index: 10 !important;
   cursor: crosshair !important;
   border: 2px solid var(--bg-canvas) !important;
@@ -294,8 +335,12 @@
 .custom-node-wrapper:hover .port-handle {
   opacity: 0.85 !important;
 }
-.custom-node-wrapper:hover .port-input { background: var(--port-hover-input) !important; }
-.custom-node-wrapper:hover .port-output { background: var(--port-hover-output) !important; }
+.custom-node-wrapper:hover .port-input {
+  background: var(--port-hover-input) !important;
+}
+.custom-node-wrapper:hover .port-output {
+  background: var(--port-hover-output) !important;
+}
 
 /* ===== Custom Edge ===== */
 
@@ -306,7 +351,9 @@
 .edge-visible-path {
   fill: none;
   pointer-events: none;
-  transition: stroke 0.15s, stroke-width 0.15s;
+  transition:
+    stroke 0.15s,
+    stroke-width 0.15s;
 }
 
 .edge-label {
@@ -332,7 +379,9 @@
   padding: 5px 8px;
   border-radius: 4px;
   cursor: grab;
-  transition: background 0.12s, border-color 0.12s;
+  transition:
+    background 0.12s,
+    border-color 0.12s;
   border: 1px solid transparent;
 }
 
@@ -355,7 +404,10 @@
 /* ===== Workflow Card ===== */
 
 .workflow-card {
-  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
+  transition:
+    border-color 0.15s,
+    box-shadow 0.15s,
+    transform 0.15s;
 }
 
 .workflow-card:hover {
@@ -395,7 +447,9 @@
   cursor: pointer;
   border-radius: 4px;
   padding: 4px 8px;
-  transition: background 0.12s, color 0.12s;
+  transition:
+    background 0.12s,
+    color 0.12s;
   color: var(--mantine-color-dimmed);
   font: inherit;
 }

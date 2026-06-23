@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
@@ -9,7 +8,7 @@ namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
 /// Switch 分支节点，根据表达式值路由到不同的输出端口。
-/// 支持 Rules 模式（按值匹配）和 Expression 模式（按表达式值）。
+/// 每个 Case 对应一个输出端口，不匹配时路由到 default 端口。
 /// </summary>
 public sealed class SwitchNode : INodeType
 {
@@ -26,91 +25,36 @@ public sealed class SwitchNode : INodeType
     public string Icon => "git-branch";
 
     /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
+    public ExecutionMode ExecutionMode => ExecutionMode.OncePerItem;
 
     /// <summary>
-    /// 路由模式。
+    /// 要匹配的值，支持 JS 表达式（如 <c>input.category</c> 或 <c>"admin"</c>）。
     /// </summary>
-    [Description("How to route items.")]
-    public SwitchMode Mode { get; set; } = SwitchMode.Rules;
-
-    /// <summary>
-    /// 表达式（Expression 模式下使用）。
-    /// </summary>
-    [Description("Expression to evaluate for routing (e.g. {{ $json.category }}).")]
+    [DisplayName("Value")]
+    [Description("Value to match against cases. Use JS expression to access input data (e.g. input.category).")]
+    [Hint(PresentationHint.Script)]
     public string Expression { get; set; } = string.Empty;
 
     /// <summary>
-    /// 输出数量（Expression 模式下使用）。
+    /// Case 列表，每个 Case 路由到一个独立的输出端口。
     /// </summary>
-    [Description("Number of outputs for expression mode.")]
-    public int NumberOutputs { get; set; } = 2;
-
-    /// <summary>
-    /// 规则列表（Rules 模式下使用）。
-    /// </summary>
-    [Description("Rules for routing items. Each rule creates an output.")]
-    public List<SwitchRule> Rules { get; set; } = [];
-
-    /// <summary>
-    /// 是否包含兜底输出。
-    /// </summary>
-    [Description("Whether to include a fallback output for unmatched items.")]
-    public bool IncludeFallback { get; set; } = true;
-
-    /// <summary>
-    /// 兜底输出名称。
-    /// </summary>
-    [Description("Display name for the fallback output.")]
-    public string FallbackName { get; set; } = "Fallback";
+    [Hint(PresentationHint.Array, "itemType", typeof(SwitchCase))]
+    [Description("Case list. Each case routes to a separate output port.")]
+    public List<SwitchCase> Cases { get; set; } = [];
 
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports =>
     [
         new PortDefinition { Name = "input", DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        .. GetOutputPorts()
+        .. Cases.Select(c => new PortDefinition
+        {
+            Name = c.Name,
+            DisplayName = c.Label,
+            Direction = PortDirection.Output,
+            Type = PortType.Main
+        }),
+        new PortDefinition { Name = "default", DisplayName = "Default", Direction = PortDirection.Output, Type = PortType.Main }
     ];
-
-    private IEnumerable<PortDefinition> GetOutputPorts()
-    {
-        if (Mode == SwitchMode.Expression)
-        {
-            for (var i = 0; i < NumberOutputs; i++)
-            {
-                yield return new PortDefinition
-                {
-                    Name = $"output_{i}",
-                    DisplayName = i.ToString(),
-                    Direction = PortDirection.Output,
-                    Type = PortType.Main
-                };
-            }
-        }
-        else
-        {
-            foreach (var rule in Rules)
-            {
-                yield return new PortDefinition
-                {
-                    Name = rule.Name,
-                    DisplayName = rule.Label,
-                    Direction = PortDirection.Output,
-                    Type = PortType.Main
-                };
-            }
-        }
-
-        if (IncludeFallback)
-        {
-            yield return new PortDefinition
-            {
-                Name = "fallback",
-                DisplayName = FallbackName,
-                Direction = PortDirection.Output,
-                Type = PortType.Main
-            };
-        }
-    }
 
     /// <inheritdoc />
     public bool DefaultIsEntry => false;
@@ -118,97 +62,24 @@ public sealed class SwitchNode : INodeType
     /// <inheritdoc />
     public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
-        var inputBatch = context.Inputs.Values.FirstOrDefault() ?? new DataBatch();
+            var match = Cases.FindIndex(c =>
+                string.Equals(c.Value, Expression, StringComparison.OrdinalIgnoreCase));
 
-        var branchIndex = Mode == SwitchMode.Expression
-            ? EvaluateExpression(context)
-            : EvaluateRules(context);
+        var inputBatch = context.Inputs.Values.FirstOrDefault() ?? new DataBatch();
 
         return Task.FromResult(new NodeExecutionResult
         {
             Success = true,
             Output = inputBatch,
-            BranchIndex = branchIndex
+            BranchIndex = match >= 0 ? match : Cases.Count
         });
     }
-
-    private int EvaluateExpression(NodeExecutionContext context)
-    {
-        var value = ResolveExpression(Expression, context);
-        if (int.TryParse(value, out var index) && index >= 0 && index < NumberOutputs)
-        {
-            return index;
-        }
-
-        // Try to find matching output by value
-        for (var i = 0; i < NumberOutputs; i++)
-        {
-            if (string.Equals(i.ToString(), value, StringComparison.OrdinalIgnoreCase))
-            {
-                return i;
-            }
-        }
-
-        return IncludeFallback ? NumberOutputs : 0;
-    }
-
-    private int EvaluateRules(NodeExecutionContext context)
-    {
-        var value = ResolveExpression(Expression, context);
-
-        for (var i = 0; i < Rules.Count; i++)
-        {
-            var rule = Rules[i];
-            if (string.Equals(rule.Value, value, StringComparison.OrdinalIgnoreCase))
-            {
-                return i;
-            }
-        }
-
-        return IncludeFallback ? Rules.Count : 0;
-    }
-
-    private string? ResolveExpression(string expression, NodeExecutionContext context)
-    {
-        if (string.IsNullOrEmpty(expression))
-        {
-            return null;
-        }
-
-        // Use Jint to evaluate JS expression
-        try
-        {
-            var inputData = context.InputData;
-            using var js = FlowEngine.Runtime.Scripting.JsEngine.Create();
-
-            js.SetValue("input", inputData);
-            var result = js.Evaluate(expression);
-            return result?.ToString();
-        }
-        catch
-        {
-            // If Jint fails, return the raw value
-            return expression;
-        }
-    }
 }
 
 /// <summary>
-/// Switch 节点的路由模式。
+/// Switch 节点的 Case 定义。
 /// </summary>
-public enum SwitchMode
-{
-    /// <summary>按规则匹配</summary>
-    Rules,
-
-    /// <summary>按表达式值</summary>
-    Expression
-}
-
-/// <summary>
-/// Switch 节点的规则定义。
-/// </summary>
-public sealed class SwitchRule
+public sealed class SwitchCase
 {
     /// <summary>
     /// 端口名称（唯一标识）。

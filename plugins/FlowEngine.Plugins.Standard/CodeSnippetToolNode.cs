@@ -14,7 +14,6 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// 代码执行工具节点，作为 Agent 的工具被调用。
 /// 用户预定义代码，LLM 只提供输入参数。
-/// 参考 n8n 的 ToolCode 设计。
 /// </summary>
 public sealed class CodeSnippetToolNode : INodeType
 {

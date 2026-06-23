@@ -7,6 +7,7 @@ using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Runtime.Http;
+using FlowEngine.Runtime.Scripting;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -51,7 +52,6 @@ public enum HttpRequestAuthMode
 
 /// <summary>
 /// HTTP 请求节点，支持静态配置和占位符。
-/// 参考 n8n 的 HTTP Request 节点设计。
 /// </summary>
 public sealed class HttpRequestNode : INodeType
 {
@@ -77,9 +77,11 @@ public sealed class HttpRequestNode : INodeType
     public HttpMethodOption Method { get; set; } = HttpMethodOption.Get;
 
     /// <summary>
-    /// 目标 URL，支持占位符 {placeholder}。
+    /// 目标 URL，支持 JS 表达式（如 <c>"https://api.example.com/" + input.path</c>）。
     /// </summary>
-    [Description("Target URL. Use {placeholder} for dynamic values from input.")]
+    [DisplayName("URL")]
+    [Description("Target URL. Use JS expression to build URL dynamically (e.g. 'https://api.com/' + input.path).")]
+    [Hint(PresentationHint.Expression)]
     public string Url { get; set; } = string.Empty;
 
     /// <summary>
@@ -96,38 +98,39 @@ public sealed class HttpRequestNode : INodeType
     public string? CredentialId { get; set; }
 
     /// <summary>
-    /// 是否发送请求头。
+    /// 是否发送自定义请求头。
     /// </summary>
+    [DisplayName("Send Headers")]
     [Description("Whether to send custom headers.")]
     public bool SendHeaders { get; set; } = false;
 
     /// <summary>
-    /// 请求头键值对。
+    /// 请求头，JS 表达式，返回对象。
     /// </summary>
-    [Description("Request headers as key-value pairs.")]
-    [Hint(PresentationHint.KeyValueEditor)]
+    [DisplayName("Headers")]
+    [Description("Headers expression. Must return an object. Example: { 'Authorization': 'Bearer ' + input.token }")]
+    [Hint(PresentationHint.Script, "language", ScriptLanguage.JavaScript, "returnType", "object")]
     [DisplayCondition(nameof(SendHeaders), true)]
-    public Dictionary<string, string>? Headers { get; set; }
+    public string? HeadersExpression { get; set; }
 
     /// <summary>
-    /// 是否发送请求体。
+    /// 是否发送请求体（仅 POST/PUT/PATCH 时显示）。
     /// </summary>
+    [DisplayName("Send Body")]
     [Description("Whether to send a request body.")]
+    [DisplayCondition(nameof(Method), HttpMethodOption.Post)]
+    [DisplayCondition(nameof(Method), HttpMethodOption.Put)]
+    [DisplayCondition(nameof(Method), HttpMethodOption.Patch)]
     public bool SendBody { get; set; } = false;
 
     /// <summary>
-    /// 请求体 JSON。
+    /// 请求体，JS 表达式，返回对象。
     /// </summary>
-    [Description("Request body as JSON string.")]
-    [Hint(PresentationHint.TextArea)]
+    [DisplayName("Body")]
+    [Description("Body expression. Must return an object. Example: { name: input.name, count: input.count }")]
+    [Hint(PresentationHint.Script, "language", ScriptLanguage.JavaScript, "returnType", "object")]
     [DisplayCondition(nameof(SendBody), true)]
-    public string? Body { get; set; }
-
-    /// <summary>
-    /// 占位符定义列表。
-    /// </summary>
-    [Description("Define placeholders for dynamic values (name → description).")]
-    public List<HttpPlaceholder>? Placeholders { get; set; }
+    public string? BodyExpression { get; set; }
 
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
@@ -149,9 +152,9 @@ public sealed class HttpRequestNode : INodeType
                 return context.ErrorResult("MissingUrl", "URL is required.");
             }
 
-            var inputData = context.GetInputDataAsDictionary();
+            var inputData = context.InputData;
 
-            var resolvedUrl = NodeExecutionContext.ResolvePlaceholders(Url, inputData);
+            var resolvedUrl = ScriptEngine.EvaluateAsString(Url, inputData);
             if (string.IsNullOrWhiteSpace(resolvedUrl))
             {
                 return context.ErrorResult("MissingUrl", "URL resolution failed.");
@@ -181,20 +184,23 @@ public sealed class HttpRequestNode : INodeType
                 }
             }
 
-            if (SendHeaders && Headers is { Count: > 0 })
+            if (SendHeaders && !string.IsNullOrEmpty(HeadersExpression))
             {
-                foreach (var (key, value) in Headers)
+                var headers = ScriptEngine.EvaluateAsDictionary(HeadersExpression, inputData);
+                if (headers is not null)
                 {
-                    var resolvedValue = NodeExecutionContext.ResolvePlaceholders(value, inputData);
-                    request.Headers.TryAddWithoutValidation(key, resolvedValue);
+                    foreach (var (key, value) in headers)
+                    {
+                        request.Headers.TryAddWithoutValidation(key, value);
+                    }
                 }
             }
 
-            if (SendBody && !string.IsNullOrEmpty(Body) &&
+            if (SendBody && !string.IsNullOrEmpty(BodyExpression) &&
                 Method is HttpMethodOption.Post or HttpMethodOption.Put or HttpMethodOption.Patch)
             {
-                var resolvedBody = NodeExecutionContext.ResolvePlaceholders(Body, inputData);
-                request.Content = new StringContent(resolvedBody, Encoding.UTF8, new System.Net.Http.Headers.MediaTypeHeaderValue("application/json"));
+                var bodyJson = ScriptEngine.EvaluateAsString(BodyExpression, inputData) ?? string.Empty;
+                request.Content = new StringContent(bodyJson, Encoding.UTF8, new System.Net.Http.Headers.MediaTypeHeaderValue("application/json"));
             }
 
             return await HttpExecutionHelper.SendAndBuildResultAsync(request, context.Node.Id, cancellationToken)
@@ -213,7 +219,6 @@ public sealed class HttpRequestNode : INodeType
             return context.ErrorResult("UnexpectedError", $"Unexpected HTTP error: {ex.Message}");
         }
     }
-
 }
 
 // HttpPlaceholder is defined in HttpToolNode.cs

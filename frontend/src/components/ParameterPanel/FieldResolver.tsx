@@ -53,6 +53,7 @@ export function FieldResolver({ definition, value, onChange, error }: FieldResol
     case 'FileUpload':
       return <FileField definition={definition} value={value} onChange={onChange} error={error} />;
     case 'Expression':
+    case 'Script':
       return <ExpressionField definition={definition} value={value} onChange={onChange} error={error} />;
     case 'KeyValueEditor':
       return <KeyValueField definition={definition} value={value} onChange={onChange} error={error} />;

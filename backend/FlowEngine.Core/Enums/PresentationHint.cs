@@ -87,6 +87,12 @@ public enum PresentationHint
     Expression,
 
     /// <summary>
+    /// 脚本编辑器，支持 JS 表达式。
+    /// </summary>
+    [Description("脚本")]
+    Script,
+
+    /// <summary>
     /// 可增删行的列表。
     /// </summary>
     [Description("列表")]

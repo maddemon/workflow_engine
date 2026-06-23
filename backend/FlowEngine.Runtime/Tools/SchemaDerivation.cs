@@ -138,7 +138,7 @@ public static partial class SchemaDerivation
         ParameterType.Array => "array",
         ParameterType.Code => "string",
         ParameterType.Credential => "string",
-        ParameterType.Expression => "string",
+        ParameterType.Script => "string",
         _ => "string"
     };
 

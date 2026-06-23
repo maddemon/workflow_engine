@@ -1,5 +1,4 @@
 using System.ComponentModel;
-using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
@@ -9,7 +8,7 @@ namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
 /// 条件分支节点，根据条件表达式路由到 true 或 false 分支。
-/// 支持多个条件组合（AND/OR）。
+/// 条件值由执行引擎的 ParameterResolver 预先求值后传入 ResolvedParameters。
 /// </summary>
 public sealed class IfNode : INodeType
 {
@@ -29,22 +28,14 @@ public sealed class IfNode : INodeType
     public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
 
     /// <summary>
-    /// 条件组合方式。
+    /// 条件表达式，求值结果应为 true 或 false。
+    /// 支持比较运算符：==, !=, >, <, >=, <=
+    /// 示例：<c>input.status == "active"</c> 或 <c>input.count > 10</c>
     /// </summary>
-    [Description("How to combine multiple conditions.")]
-    public IfCombinator Combinator { get; set; } = IfCombinator.And;
-
-    /// <summary>
-    /// 条件列表。
-    /// </summary>
-    [Description("Conditions to evaluate. All conditions must match for true output (with AND).")]
-    public List<IfCondition> Conditions { get; set; } = [];
-
-    /// <summary>
-    /// 忽略大小写。
-    /// </summary>
-    [Description("Whether to ignore case when comparing strings.")]
-    public bool IgnoreCase { get; set; } = true;
+    [DisplayName("Condition")]
+    [Description("Condition that evaluates to true or false. Supports ==, !=, >, <, >=, <= operators (e.g. input.status == 'active').")]
+    [Hint("language", ScriptLanguage.JavaScript)]
+    public string Condition { get; set; } = string.Empty;
 
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
@@ -62,12 +53,12 @@ public sealed class IfNode : INodeType
     {
         try
         {
-            if (Conditions.Count == 0)
+            if (string.IsNullOrWhiteSpace(Condition))
             {
-                return Task.FromResult(context.ErrorResult("MissingConditions", "At least one condition is required."));
+                return Task.FromResult(context.ErrorResult("MissingCondition", "Condition 参数不能为空。"));
             }
 
-            var conditionResult = EvaluateConditions(context);
+            var conditionResult = ToBoolean(Condition);
 
             var inputBatch = context.Inputs.TryGetValue("input", out var batch)
                 ? batch
@@ -82,127 +73,75 @@ public sealed class IfNode : INodeType
         }
         catch (Exception ex)
         {
-            return Task.FromResult(context.ErrorResult("ConditionError", $"Condition evaluation failed: {ex.Message}"));
+            return Task.FromResult(context.ErrorResult("ConditionError", $"条件求值失败: {ex.Message}"));
         }
     }
 
-    private bool EvaluateConditions(NodeExecutionContext context)
+    private static bool ToBoolean(string value)
     {
-        var results = Conditions.Select(c => EvaluateCondition(c, context)).ToList();
+        var trimmed = value.Trim();
 
-        return Combinator == IfCombinator.And
-            ? results.All(r => r)
-            : results.Any(r => r);
+        var operators = new[] { ">=", "<=", "==", "!=", ">", "<" };
+        foreach (var op in operators)
+        {
+            var idx = trimmed.IndexOf(op, StringComparison.Ordinal);
+            if (idx > 0 && idx < trimmed.Length - op.Length)
+            {
+                var leftExpr = trimmed[..idx].Trim();
+                var rightExpr = trimmed[(idx + op.Length)..].Trim();
+                return Compare(leftExpr, rightExpr, op);
+            }
+        }
+
+        if (bool.TryParse(trimmed, out var b)) return b;
+        if (trimmed.Equals("true", StringComparison.OrdinalIgnoreCase)) return true;
+        if (trimmed.Equals("false", StringComparison.OrdinalIgnoreCase)) return false;
+
+        if (double.TryParse(trimmed, out var n)) return n != 0;
+
+        return !string.IsNullOrEmpty(trimmed);
     }
 
-    private bool EvaluateCondition(IfCondition condition, NodeExecutionContext context)
+    private static bool Compare(string left, string right, string op)
     {
-        var leftValue = ResolveValue(condition.LeftValue, context);
-        var rightValue = condition.RightValue;
+        left = Unquote(left);
+        right = Unquote(right);
 
-        return condition.Operation switch
+        if (double.TryParse(left, out var leftNum) && double.TryParse(right, out var rightNum))
         {
-            IfOperation.Equals => CompareValues(leftValue, rightValue) == 0,
-            IfOperation.NotEquals => CompareValues(leftValue, rightValue) != 0,
-            IfOperation.GreaterThan => CompareValues(leftValue, rightValue) > 0,
-            IfOperation.GreaterThanOrEquals => CompareValues(leftValue, rightValue) >= 0,
-            IfOperation.LessThan => CompareValues(leftValue, rightValue) < 0,
-            IfOperation.LessThanOrEquals => CompareValues(leftValue, rightValue) <= 0,
-            IfOperation.Contains => leftValue?.Contains(rightValue ?? string.Empty, IgnoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ?? false,
-            IfOperation.StartsWith => leftValue?.StartsWith(rightValue ?? string.Empty, IgnoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ?? false,
-            IfOperation.EndsWith => leftValue?.EndsWith(rightValue ?? string.Empty, IgnoreCase ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal) ?? false,
-            IfOperation.IsEmpty => string.IsNullOrEmpty(leftValue),
-            IfOperation.IsNotEmpty => !string.IsNullOrEmpty(leftValue),
+            return op switch
+            {
+                ">=" => leftNum >= rightNum,
+                "<=" => leftNum <= rightNum,
+                "==" => leftNum == rightNum,
+                "!=" => leftNum != rightNum,
+                ">" => leftNum > rightNum,
+                "<" => leftNum < rightNum,
+                _ => false
+            };
+        }
+
+        return op switch
+        {
+            "==" => string.Equals(left, right, StringComparison.Ordinal),
+            "!=" => !string.Equals(left, right, StringComparison.Ordinal),
+            ">=" => string.Compare(left, right, StringComparison.Ordinal) >= 0,
+            "<=" => string.Compare(left, right, StringComparison.Ordinal) <= 0,
+            ">" => string.Compare(left, right, StringComparison.Ordinal) > 0,
+            "<" => string.Compare(left, right, StringComparison.Ordinal) < 0,
             _ => false
         };
     }
 
-    private string? ResolveValue(string? value, NodeExecutionContext context)
+    private static string Unquote(string value)
     {
-        if (string.IsNullOrEmpty(value))
+        var trimmed = value.Trim();
+        if ((trimmed.StartsWith('\'') && trimmed.EndsWith('\'')) ||
+            (trimmed.StartsWith('"') && trimmed.EndsWith('"')))
         {
-            return null;
+            return trimmed[1..^1];
         }
 
-        // Use Jint to evaluate JS expression
-        try
-        {
-            var inputData = context.InputData;
-            using var js = FlowEngine.Runtime.Scripting.JsEngine.Create();
-
-            js.SetValue("input", inputData);
-            var result = js.Evaluate(value);
-            return result?.ToString();
-        }
-        catch
-        {
-            // If Jint fails, return the raw value
-            return value;
-        }
+        return trimmed;
     }
-
-    private int CompareValues(string? left, string? right)
-    {
-        if (left is null && right is null) return 0;
-        if (left is null) return -1;
-        if (right is null) return 1;
-
-        // Try numeric comparison
-        if (double.TryParse(left, out var leftNum) && double.TryParse(right, out var rightNum))
-        {
-            return leftNum.CompareTo(rightNum);
-        }
-
-        return IgnoreCase
-            ? string.Compare(left, right, StringComparison.OrdinalIgnoreCase)
-            : string.Compare(left, right, StringComparison.Ordinal);
-    }
-}
-
-/// <summary>
-/// If 节点的条件定义。
-/// </summary>
-public sealed class IfCondition
-{
-    /// <summary>
-    /// 左值（字段路径或表达式）。
-    /// </summary>
-    public string LeftValue { get; set; } = string.Empty;
-
-    /// <summary>
-    /// 比较操作。
-    /// </summary>
-    public IfOperation Operation { get; set; } = IfOperation.Equals;
-
-    /// <summary>
-    /// 右值。
-    /// </summary>
-    public string RightValue { get; set; } = string.Empty;
-}
-
-/// <summary>
-/// If 操作类型。
-/// </summary>
-public enum IfOperation
-{
-    Equals,
-    NotEquals,
-    GreaterThan,
-    GreaterThanOrEquals,
-    LessThan,
-    LessThanOrEquals,
-    Contains,
-    StartsWith,
-    EndsWith,
-    IsEmpty,
-    IsNotEmpty
-}
-
-/// <summary>
-/// 条件组合方式。
-/// </summary>
-public enum IfCombinator
-{
-    And,
-    Or
 }

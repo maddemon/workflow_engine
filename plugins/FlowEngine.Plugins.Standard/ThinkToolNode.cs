@@ -9,7 +9,6 @@ namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
 /// 思考工具节点，作为 Agent 的工具记录推理过程。
-/// 参考 n8n 的 ToolThink 设计。
 /// </summary>
 public sealed class ThinkToolNode : INodeType
 {

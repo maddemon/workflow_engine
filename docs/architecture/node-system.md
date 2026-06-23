@@ -83,7 +83,7 @@ public enum ExecutionMode
 - **主输出端口**默认名称为 `output`。
 - 普通节点至少包含 `input`（输入）和 `output`（输出）两个主数据端口。
 - 触发器节点没有输入端口，只有输出端口。
-- 供应节点（如 LLM 供应节点）使用 `PortType.LLMSupply` 类型端口，方向为 `Output`，不返回数据项，而是向父节点提供模型运行时对象。
+- 供应节点（如 LLM 供应节点）使用 `PortType.LLM` 类型端口，方向为 `Output`，不返回数据项，而是向父节点提供模型运行时对象。
 
 ### 2.2 执行结果
 
@@ -188,43 +188,43 @@ new ParameterDefinition
 
 ### 4.3 参数定义字段说明
 
-| 字段 | 说明 |
-|------|------|
-| `Name` | 参数唯一标识，节点内唯一。 |
-| `DisplayName` | 前端显示名称。 |
-| `Type` | 参数类型，见前端渲染映射表。 |
-| `DefaultValue` | 默认值。 |
-| `Required` | 是否必填。 |
-| `ValidationRules` | 校验规则列表，如非空、正则、范围等。 |
-| `DisplayRule` | 条件显示规则。 |
-| `CredentialType` | 当 `Type == Credential` 时，限制可选择的凭据类型，如 `apiKey`、`oauth`。 |
-| `Options` | 当 `Type == Options` 时的可选项列表。 |
+| 字段              | 说明                                                                     |
+| ----------------- | ------------------------------------------------------------------------ |
+| `Name`            | 参数唯一标识，节点内唯一。                                               |
+| `DisplayName`     | 前端显示名称。                                                           |
+| `Type`            | 参数类型，见前端渲染映射表。                                             |
+| `DefaultValue`    | 默认值。                                                                 |
+| `Required`        | 是否必填。                                                               |
+| `ValidationRules` | 校验规则列表，如非空、正则、范围等。                                     |
+| `DisplayRule`     | 条件显示规则。                                                           |
+| `CredentialType`  | 当 `Type == Credential` 时，限制可选择的凭据类型，如 `apiKey`、`oauth`。 |
+| `Options`         | 当 `Type == Options` 时的可选项列表。                                    |
 
 完整字段定义见 [terminology.md#核心数据模型](terminology.md#核心数据模型)。
 
 ### 4.4 前端渲染映射
 
-| 参数类型 | 前端渲染组件 |
-|----------|--------------|
-| `String` | 文本输入框 |
-| `Number` | 数字输入框 |
-| `Boolean` | 开关 |
-| `Options` | 下拉选择 |
-| `Json` | JSON 编辑器 |
-| `Code` | 代码编辑器 |
-| `Credential` | 凭据选择器 |
-| `Resource` | 资源选择器 |
+| 参数类型     | 前端渲染组件 |
+| ------------ | ------------ |
+| `String`     | 文本输入框   |
+| `Number`     | 数字输入框   |
+| `Boolean`    | 开关         |
+| `Options`    | 下拉选择     |
+| `Json`       | JSON 编辑器  |
+| `Code`       | 代码编辑器   |
+| `Credential` | 凭据选择器   |
+| `Resource`   | 资源选择器   |
 
 ## 5. 节点分类
 
-| 分类 | 说明 | 示例 |
-|------|------|------|
-| `Core` | 核心控制流节点 | `If`、`Loop`、`Merge` |
-| `Data` | 数据读写节点 | `Postgres`、`MySQL`、`Redis` |
-| `HTTP` | 网络请求节点 | `HTTP Request`、`Webhook` |
-| `AI` | AI 相关节点 | `Agent`、`LLM`、`Prompt` |
-| `Trigger` | 触发器节点 | `Schedule Trigger`、`Webhook Trigger` |
-| `Utility` | 工具节点 | `Code`、`Set`、`Filter` |
+| 分类      | 说明           | 示例                                  |
+| --------- | -------------- | ------------------------------------- |
+| `Core`    | 核心控制流节点 | `If`、`Loop`、`Merge`                 |
+| `Data`    | 数据读写节点   | `Postgres`、`MySQL`、`Redis`          |
+| `HTTP`    | 网络请求节点   | `HTTP Request`、`Webhook`             |
+| `AI`      | AI 相关节点    | `Agent`、`LLM`、`Prompt`              |
+| `Trigger` | 触发器节点     | `Schedule Trigger`、`Webhook Trigger` |
+| `Utility` | 工具节点       | `Code`、`Set`、`Filter`               |
 
 ## 6. 冷启动加载流程
 

@@ -68,8 +68,8 @@ public enum ParameterType
     File,
 
     /// <summary>
-    /// 表达式。
+    /// 脚本表达式，支持 JS 代码。
     /// </summary>
-    [Description("表达式")]
-    Expression
+    [Description("脚本")]
+    Script
 }

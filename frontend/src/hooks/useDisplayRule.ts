@@ -66,22 +66,16 @@ function evaluateCondition(condition: string, values: Record<string, unknown>): 
 }
 
 /**
- * 解析 {{ parameter.xxx }} 格式的变量引用。
+ * 解析 {{ $parameter.xxx }} 或 {{ parameter.xxx }} 格式的变量引用。
  */
 function resolveValue(expr: string, values: Record<string, unknown>): unknown {
   const trimmed = expr.trim();
 
-  // 匹配 {{ parameter.xxx }} 或 {{ parameter.xxx.yyy }}
-  const templateMatch = trimmed.match(/^\{\{\s*(\w+(?:\.\w+)*)\s*\}\}$/);
+  // 匹配 {{ $parameter.xxx }} 或 {{ parameter.xxx }} 格式
+  const templateMatch = trimmed.match(/^\{\{\s*\$?(parameter)\.(\w+(?:\.\w+)*)\s*\}\}$/);
   if (templateMatch) {
-    const path = templateMatch[1].split('.');
-    // 第一个部分是命名空间（如 parameter），第二个部分是实际参数名
-    if (path.length >= 2 && path[0] === 'parameter') {
-      return values[path[1]];
-    }
-    if (path.length >= 2) {
-      return values[path[1]];
-    }
+    // 第二个捕获组是实际参数名
+    return values[templateMatch[2]];
   }
 
   return values[trimmed];

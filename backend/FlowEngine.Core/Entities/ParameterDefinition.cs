@@ -58,6 +58,11 @@ public class ParameterDefinition
     public PresentationHint? Hint { get; set; }
 
     /// <summary>
+    /// Hint 组件的扩展属性（如 Script 的 language 配置）。
+    /// </summary>
+    public IReadOnlyDictionary<string, object>? HintProperties { get; set; }
+
+    /// <summary>
     /// 字段描述，展示在参数下方帮助用户理解用途。
     /// </summary>
     public string? Description { get; set; }

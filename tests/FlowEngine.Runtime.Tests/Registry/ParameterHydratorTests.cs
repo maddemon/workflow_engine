@@ -23,21 +23,21 @@ public class ParameterHydratorTests
 
         await _hydrator.HydrateAsync(node, resolved);
 
-        Assert.Null(node.Body);
+        Assert.Null(node.BodyExpression);
     }
 
     [Fact]
-    public async Task Hydrate_Valid_JsonElement_Sets_JsonObject_Property()
+    public async Task Hydrate_Valid_JsonElement_Sets_String_Property()
     {
         var node = new HttpRequestNode();
-        var jsonStr = """{"body": {"key": "value"}}""";
+        var jsonStr = """{"bodyExpression": "{'key': 'value'}"}""";
         var raw = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(jsonStr)!;
         var resolved = raw.ToDictionary(kv => kv.Key, kv => (object)kv.Value);
 
         await _hydrator.HydrateAsync(node, resolved);
 
-        Assert.NotNull(node.Body);
-        Assert.Equal("value", node.Body!["key"]?.ToString());
+        Assert.NotNull(node.BodyExpression);
+        Assert.Equal("{'key': 'value'}", node.BodyExpression);
     }
 
     [Fact]

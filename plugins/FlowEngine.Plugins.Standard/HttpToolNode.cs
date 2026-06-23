@@ -7,13 +7,13 @@ using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Runtime.Http;
+using FlowEngine.Runtime.Scripting;
 
 namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
 /// HTTP 工具节点，作为 Agent 的工具被调用。
 /// 支持静态配置（method、URL、authentication）和占位符机制。
-/// 参考 n8n 的 ToolHttpRequest 设计。
 /// </summary>
 public sealed class HttpToolNode : INodeType
 {
@@ -39,9 +39,11 @@ public sealed class HttpToolNode : INodeType
     public HttpMethodOption Method { get; set; } = HttpMethodOption.Get;
 
     /// <summary>
-    /// URL 模板，支持 {placeholder} 语法。
+    /// 目标 URL，JS 表达式，返回字符串。
     /// </summary>
-    [Description("Target URL. Use {placeholder} for dynamic values that LLM will fill.")]
+    [DisplayName("URL")]
+    [Description("URL expression. Must return a string. Example: 'https://api.com/' + input.path")]
+    [Hint("language", ScriptLanguage.JavaScript, "returnType", "string")]
     public string Url { get; set; } = string.Empty;
 
     /// <summary>
@@ -60,36 +62,37 @@ public sealed class HttpToolNode : INodeType
     /// <summary>
     /// 是否发送自定义请求头。
     /// </summary>
+    [DisplayName("Send Headers")]
     [Description("Whether to send custom headers.")]
     public bool SendHeaders { get; set; } = false;
 
     /// <summary>
-    /// 静态请求头。
+    /// 请求头，JS 表达式，返回对象。
     /// </summary>
-    [Description("Static headers to send with the request.")]
-    [Hint(PresentationHint.KeyValueEditor)]
+    [DisplayName("Headers")]
+    [Description("Headers expression. Must return an object. Example: { 'Authorization': 'Bearer ' + input.token }")]
+    [Hint(PresentationHint.CodeEditor, "language", ScriptLanguage.JavaScript, "returnType", "object")]
     [DisplayCondition(nameof(SendHeaders), true)]
-    public Dictionary<string, string>? Headers { get; set; }
+    public string? HeadersExpression { get; set; }
 
     /// <summary>
-    /// 是否发送请求体。
+    /// 是否发送请求体（仅 POST/PUT/PATCH 时显示）。
     /// </summary>
+    [DisplayName("Send Body")]
     [Description("Whether to send a request body.")]
+    [DisplayCondition(nameof(Method), HttpMethodOption.Post)]
+    [DisplayCondition(nameof(Method), HttpMethodOption.Put)]
+    [DisplayCondition(nameof(Method), HttpMethodOption.Patch)]
     public bool SendBody { get; set; } = false;
 
     /// <summary>
-    /// Body 模板，支持 {placeholder}。
+    /// 请求体，JS 表达式，返回对象。
     /// </summary>
-    [Description("Request body template. Use {placeholder} for dynamic values.")]
-    [Hint(PresentationHint.TextArea)]
+    [DisplayName("Body")]
+    [Description("Body expression. Must return an object. Example: { name: input.name, count: input.count }")]
+    [Hint(PresentationHint.CodeEditor, "language", ScriptLanguage.JavaScript, "returnType", "object")]
     [DisplayCondition(nameof(SendBody), true)]
-    public string? Body { get; set; }
-
-    /// <summary>
-    /// 占位符定义列表。
-    /// </summary>
-    [Description("Define placeholders that LLM will fill. Name is the placeholder key, description helps LLM understand what to provide.")]
-    public List<HttpPlaceholder>? Placeholders { get; set; }
+    public string? BodyExpression { get; set; }
 
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
@@ -107,9 +110,10 @@ public sealed class HttpToolNode : INodeType
     {
         try
         {
-            var inputData = context.GetInputDataAsDictionary();
+            var inputData = context.InputData;
 
-            var resolvedUrl = NodeExecutionContext.ResolvePlaceholders(Url, inputData);
+            // Evaluate URL expression
+            var resolvedUrl = ScriptEngine.EvaluateAsString(Url, inputData);
             if (string.IsNullOrWhiteSpace(resolvedUrl))
             {
                 return context.ErrorResult("MissingUrl", "URL is required.");
@@ -118,6 +122,7 @@ public sealed class HttpToolNode : INodeType
             var methodStr = Method.ToString().ToUpperInvariant();
             var request = new HttpRequestMessage(new HttpMethod(methodStr), resolvedUrl);
 
+            // Add authentication
             if (Authentication != HttpRequestAuthMode.None && !string.IsNullOrEmpty(CredentialId))
             {
                 var credentialValue = await context.ResolveApiKeyAsync(CredentialId, cancellationToken).ConfigureAwait(false);
@@ -139,20 +144,25 @@ public sealed class HttpToolNode : INodeType
                 }
             }
 
-            if (SendHeaders && Headers is { Count: > 0 })
+            // Add headers
+            if (SendHeaders && !string.IsNullOrEmpty(HeadersExpression))
             {
-                foreach (var (key, value) in Headers)
+                var headers = ScriptEngine.EvaluateAsDictionary(HeadersExpression, inputData);
+                if (headers is not null)
                 {
-                    var resolvedValue = NodeExecutionContext.ResolvePlaceholders(value, inputData);
-                    request.Headers.TryAddWithoutValidation(key, resolvedValue);
+                    foreach (var (key, value) in headers)
+                    {
+                        request.Headers.TryAddWithoutValidation(key, value);
+                    }
                 }
             }
 
-            if (SendBody && !string.IsNullOrEmpty(Body) &&
+            // Add body
+            if (SendBody && !string.IsNullOrEmpty(BodyExpression) &&
                 Method is HttpMethodOption.Post or HttpMethodOption.Put or HttpMethodOption.Patch)
             {
-                var resolvedBody = NodeExecutionContext.ResolvePlaceholders(Body, inputData);
-                request.Content = new StringContent(resolvedBody, Encoding.UTF8, new System.Net.Http.Headers.MediaTypeHeaderValue("application/json"));
+                var bodyJson = ScriptEngine.EvaluateAsString(BodyExpression, inputData) ?? string.Empty;
+                request.Content = new StringContent(bodyJson, Encoding.UTF8, new System.Net.Http.Headers.MediaTypeHeaderValue("application/json"));
             }
 
             return await HttpExecutionHelper.SendAndBuildResultAsync(request, context.Node.Id, cancellationToken)
@@ -171,7 +181,6 @@ public sealed class HttpToolNode : INodeType
             return context.ErrorResult("UnexpectedError", $"Unexpected HTTP error: {ex.Message}");
         }
     }
-
 }
 
 /// <summary>

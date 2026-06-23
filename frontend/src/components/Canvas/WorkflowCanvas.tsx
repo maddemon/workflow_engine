@@ -34,12 +34,13 @@ export function WorkflowCanvas({ onExecute }: IWorkflowCanvasProps) {
 
   const hasPositionOverrides = Object.keys(nodePositions).length > 0
   const nodes = useMemo(
-    () => hasPositionOverrides
-      ? nodesData.map((n) => {
-          const pos = nodePositions[n.id]
-          return pos ? { ...n, position: pos } : n
-        })
-      : nodesData,
+    () =>
+      hasPositionOverrides
+        ? nodesData.map((n) => {
+            const pos = nodePositions[n.id]
+            return pos ? { ...n, position: pos } : n
+          })
+        : nodesData,
     [nodesData, nodePositions, hasPositionOverrides],
   )
 
@@ -100,8 +101,7 @@ export function WorkflowCanvas({ onExecute }: IWorkflowCanvasProps) {
 
       if (sourcePort && targetPort) {
         const compatible =
-          sourcePort.type === targetPort.type ||
-          (sourcePort.type === "AgentTool" && targetPort.type === "Main")
+          sourcePort.type === targetPort.type || (sourcePort.type === "AgentTool" && targetPort.type === "Main")
         if (!compatible) {
           notifications.show({
             title: "Connection rejected",
@@ -113,7 +113,7 @@ export function WorkflowCanvas({ onExecute }: IWorkflowCanvasProps) {
       }
 
       if (targetPort && targetHandle) {
-        const maxConnections: Record<string, number> = { LLMSupply: 1, Memory: 1 }
+        const maxConnections: Record<string, number> = { LLM: 1, Memory: 1 }
         const max = maxConnections[targetPort.type]
         if (max !== undefined) {
           const existingCount = edgesRef.current.filter(

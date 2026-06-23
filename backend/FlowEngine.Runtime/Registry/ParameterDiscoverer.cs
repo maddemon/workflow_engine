@@ -65,6 +65,20 @@ public sealed class ParameterDiscoverer
                 inferredHint = PresentationHint.CredentialSelect;
             }
 
+            // 转换 HintProperties，将 Type 对象转为字符串避免序列化问题
+            IReadOnlyDictionary<string, object>? hintProperties = null;
+            if (hintAttr?.Properties is { Count: > 0 })
+            {
+                var converted = new Dictionary<string, object>();
+                foreach (var kvp in hintAttr.Properties)
+                {
+                    converted[kvp.Key] = kvp.Value is Type type
+                        ? type.AssemblyQualifiedName ?? type.Name
+                        : kvp.Value;
+                }
+                hintProperties = converted;
+            }
+
             var definition = new ParameterDefinition
             {
                 Name = camelName,
@@ -72,7 +86,8 @@ public sealed class ParameterDiscoverer
                 Type = parameterType,
                 Required = IsRequired(property.PropertyType),
                 DefaultValue = instance is not null ? ReadPropertyDefault(instance, property) : null,
-                Hint = hintAttr?.Hint ?? inferredHint,
+                Hint = hintAttr?.Component ?? inferredHint,
+                HintProperties = hintProperties,
                 Description = property.GetCustomAttribute<DescriptionAttribute>()?.Description,
                 CredentialType = credentialAttr?.CredentialType
             };
@@ -109,10 +124,21 @@ public sealed class ParameterDiscoverer
                 definition.DisplayRule = BuildDisplayRule(conditionAttrs);
             }
 
-            var itemAttr = property.GetCustomAttribute<ItemAttribute>();
-            if (itemAttr is not null)
+            // 处理数组子项定义（从 HintProperties 的 itemType 获取）
+            if (hintAttr?.Properties is not null &&
+                hintAttr.Properties.TryGetValue("itemType", out var itemTypeObj))
             {
-                definition.ItemDefinition = BuildItemDefinition(itemAttr.ItemType);
+                Type? itemType = itemTypeObj switch
+                {
+                    Type t => t,
+                    string typeName => Type.GetType(typeName),
+                    _ => null
+                };
+
+                if (itemType is not null)
+                {
+                    definition.ItemDefinition = BuildItemDefinition(itemType);
+                }
             }
 
             parameters.Add(definition);
@@ -217,7 +243,7 @@ public sealed class ParameterDiscoverer
 
         if (effectiveType == typeof(string))
         {
-            return hintAttr?.Hint switch
+            return hintAttr?.Component switch
             {
                 PresentationHint.CodeEditor => (ParameterType.Code, PresentationHint.CodeEditor),
                 _ => (ParameterType.String, null)
@@ -318,7 +344,13 @@ public sealed class ParameterDiscoverer
         {
             var camelProp = ToCamelCase(condition.PropertyName);
             dependencies.Add(camelProp);
-            fragments.Add($"{{{{ $parameter.{camelProp} }}}} == '{condition.Value}'");
+
+            // Boolean 值转为小写字符串
+            var valueStr = condition.Value is bool b
+                ? b.ToString().ToLowerInvariant()
+                : condition.Value?.ToString() ?? string.Empty;
+
+            fragments.Add($"{{{{ $parameter.{camelProp} }}}} == '{valueStr}'");
         }
 
         return new DisplayRule
@@ -349,7 +381,7 @@ public sealed class ParameterDiscoverer
                 Name = ToCamelCase(prop.Name),
                 DisplayName = displayName,
                 Type = paramType,
-                Hint = hintAttr?.Hint ?? inferredHint,
+                Hint = hintAttr?.Component ?? inferredHint,
                 Description = prop.GetCustomAttribute<DescriptionAttribute>()?.Description,
                 Required = IsRequired(prop.PropertyType)
             });

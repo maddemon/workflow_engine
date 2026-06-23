@@ -12,7 +12,6 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// 工作流工具节点，作为 Agent 的工具调用子工作流。
 /// 支持从数据库引用已有工作流或内嵌 JSON 定义。
-/// 参考 n8n 的 ToolWorkflow 设计。
 /// </summary>
 public sealed class SubWorkflowToolNode : INodeType
 {

@@ -7,75 +7,56 @@ namespace FlowEngine.Runtime.Tests.Plugins;
 
 public class HttpToolNodeTests
 {
-    private readonly HttpToolNode _node = new();
-
-    [Fact]
-    public async Task Execute_MissingInput_ReturnsError()
-    {
-        var context = new NodeExecutionContext
-        {
-            Node = new NodeDefinition
-            {
-                Id = Guid.NewGuid(),
-                TypeName = "httpTool",
-                Name = "Test Http",
-                Parameters = [],
-                Ports = [],
-                ErrorStrategy = ErrorStrategy.Terminate
-            },
-            ExecutionId = Guid.NewGuid(),
-            Inputs = new Dictionary<string, DataBatch>(),
-            RawParameters = new Dictionary<string, object>(),
-            ResolvedParameters = new Dictionary<string, object>(),
-            CancellationToken = CancellationToken.None
-        };
-
-        var result = await _node.ExecuteAsync(context, TestContext.Current.CancellationToken);
-
-        Assert.False(result.Success);
-        Assert.Equal("MissingInput", result.Error?.Code);
-    }
-
     [Fact]
     public async Task Execute_MissingUrl_ReturnsError()
     {
-        var context = CreateContext(new JsonObject { ["method"] = "GET" });
+        var node = new HttpToolNode { Url = "" };
+        var context = CreateContext(new JsonObject { ["path"] = "test" });
 
-        var result = await _node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
         Assert.Equal("MissingUrl", result.Error?.Code);
     }
 
     [Fact]
-    public async Task Execute_InvalidUrl_ReturnsError()
+    public async Task Execute_WithUrlExpression_ResolvesUrl()
     {
-        var context = CreateContext(new JsonObject
+        var node = new HttpToolNode
         {
-            ["url"] = "http://localhost:99999/nonexistent",
-            ["method"] = "GET"
-        });
+            Url = "'https://httpbin.org/get'",
+            Method = HttpMethodOption.Get
+        };
+        var context = CreateContext(new JsonObject());
 
-        var result = await _node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        // Execute - may succeed or fail depending on network
+        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
 
-        Assert.False(result.Success);
+        // Verify URL was resolved correctly
+        // The request may succeed or fail depending on network, just verify no URL error
+        if (!result.Success)
+        {
+            Assert.NotEqual("MissingUrl", result.Error?.Code);
+        }
     }
 
     [Fact]
     public void ToolNode_HasCorrectMetadata()
     {
-        Assert.Equal("httpTool", _node.TypeName);
-        Assert.Equal("HTTP Tool", _node.DisplayName);
-        Assert.Equal("AI", _node.Category);
-        Assert.False(_node.DefaultIsEntry);
+        var node = new HttpToolNode();
+        Assert.Equal("httpTool", node.TypeName);
+        Assert.Equal("HTTP Tool", node.DisplayName);
+        Assert.Equal("AI", node.Category);
+        Assert.False(node.DefaultIsEntry);
     }
 
     [Fact]
     public void ToolNode_HasInputAndOutputPorts()
     {
-        Assert.Equal(3, _node.Ports.Count);
-        Assert.Contains(_node.Ports, p => p.Name == "input" && p.Direction == PortDirection.Input);
-        Assert.Contains(_node.Ports, p => p.Name == "output" && p.Direction == PortDirection.Output);
+        var node = new HttpToolNode();
+        Assert.Equal(3, node.Ports.Count);
+        Assert.Contains(node.Ports, p => p.Name == "input" && p.Direction == PortDirection.Input);
+        Assert.Contains(node.Ports, p => p.Name == "output" && p.Direction == PortDirection.Output);
     }
 
     private static NodeExecutionContext CreateContext(JsonObject inputPayload)

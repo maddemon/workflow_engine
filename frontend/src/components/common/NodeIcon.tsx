@@ -16,6 +16,16 @@ import {
   Brain,
   Wrench,
   Webhook,
+  Search,
+  Terminal,
+  Calculator,
+  ArrowUpDown,
+  Filter,
+  Hash,
+  Pause,
+  Repeat,
+  Merge,
+  Pencil,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -38,6 +48,17 @@ const iconMap: Record<string, LucideIcon> = {
   wrench: Wrench,
   webhook: Webhook,
   shuffle: GitBranch,
+  search: Search,
+  terminal: Terminal,
+  calculator: Calculator,
+  sort: ArrowUpDown,
+  filter: Filter,
+  'filter-1': Filter,
+  hash: Hash,
+  pause: Pause,
+  repeat: Repeat,
+  merge: Merge,
+  edit: Pencil,
 };
 
 interface NodeIconProps {

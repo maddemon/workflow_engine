@@ -6,7 +6,7 @@
 
 覆盖范围：
 
-- LLM 供应节点（`PortType.LLMSupply`，Output 方向）。
+- LLM 供应节点（`PortType.LLM`，Output 方向）。
 - OpenAI 适配（API Key 凭据、模型配置、温度）。
 - 供应端口连接消费节点（Agent / LLM Transform）。
 - 模型实例传递给父节点。
@@ -17,8 +17,8 @@
 
 ## 2. 交付物清单
 
-- LLM 供应节点实现（`INodeType`，`TypeName = "LLMSupply"` 或 `OpenAI`）。
-- LLM 供应端口定义（`PortType.LLMSupply`，`PortDirection.Output`）。
+- LLM 供应节点实现（`INodeType`，`TypeName = "LLM"` 或 `OpenAI`）。
+- LLM 供应端口定义（`PortType.LLM`，`PortDirection.Output`）。
 - OpenAI 适配器：调用 OpenAI API（Chat Completions），支持模型配置、温度、API Key 凭据注入。
 - 模型实例抽象：供应节点输出模型实例（非数据），消费节点通过供应端口获取。
 - 凭据注入：API Key 通过 `ICredentialAccessor` 注入（plan-mvp-08）。
@@ -32,7 +32,7 @@
 - **目标**：定义 LLM 供应节点类型与供应端口，使其可被节点注册中心识别。
 - **核心任务**：
   - 实现 LLM 供应节点（`INodeType`），声明 `TypeName`、端口定义。
-  - 定义 LLM 供应端口（`PortType.LLMSupply`，`PortDirection.Output`）。
+  - 定义 LLM 供应端口（`PortType.LLM`，`PortDirection.Output`）。
   - 节点参数：模型名称、温度、max_tokens、凭据选择器。
   - 注册到节点注册中心，前端节点面板可见。
   - 供应节点不返回普通数据，只返回模型实例（供应模式）。
@@ -89,12 +89,12 @@ flowchart LR
 
 ## 5. 风险与待定项
 
-| 风险/待定项 | 影响 | 应对/说明 |
-|-------------|------|-----------|
-| OpenAI API 不可达 | 供应失败 | 错误友好提示；GA 阶段补 Fallback 模型 |
-| API Key 泄露 | 安全风险 | 通过 `ICredentialAccessor` 注入，不落日志 |
-| 模型实例传递机制设计 | 与现有执行引擎集成 | 供应端口走特殊数据流，不作为普通 DataItem |
-| 多消费节点复用同一供应节点 | 实例管理 | 当前每次执行创建实例；GA 阶段可引入连接池 |
+| 风险/待定项                | 影响               | 应对/说明                                 |
+| -------------------------- | ------------------ | ----------------------------------------- |
+| OpenAI API 不可达          | 供应失败           | 错误友好提示；GA 阶段补 Fallback 模型     |
+| API Key 泄露               | 安全风险           | 通过 `ICredentialAccessor` 注入，不落日志 |
+| 模型实例传递机制设计       | 与现有执行引擎集成 | 供应端口走特殊数据流，不作为普通 DataItem |
+| 多消费节点复用同一供应节点 | 实例管理           | 当前每次执行创建实例；GA 阶段可引入连接池 |
 
 ## 6. 验收总标准
 
@@ -105,6 +105,6 @@ flowchart LR
 
 ## 变更记录
 
-| 日期 | 修改人 | 修改内容 | 关联任务 |
-|------|--------|----------|----------|
-| 2026-06-18 | Agent | 创建 LLM 供应节点开发计划 | Alpha 计划编写 |
+| 日期       | 修改人 | 修改内容                  | 关联任务       |
+| ---------- | ------ | ------------------------- | -------------- |
+| 2026-06-18 | Agent  | 创建 LLM 供应节点开发计划 | Alpha 计划编写 |

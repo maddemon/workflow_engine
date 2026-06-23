@@ -9,7 +9,6 @@ namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
 /// 计算器工具节点，作为 Agent 的工具执行数学计算。
-/// 参考 n8n 的 ToolCalculator 设计。
 /// </summary>
 public sealed class CalculatorToolNode : INodeType
 {

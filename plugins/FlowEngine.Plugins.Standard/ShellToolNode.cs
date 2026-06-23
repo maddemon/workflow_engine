@@ -6,6 +6,7 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Runtime.Scripting;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -27,7 +28,6 @@ public enum ShellType
 /// <summary>
 /// Shell 工具节点，作为 Agent 的工具执行 shell 命令。
 /// 支持 bash/powershell/cmd。
-/// 参考 n8n 的 ExecuteCommand 节点设计。
 /// </summary>
 public sealed class ShellToolNode : INodeType
 {
@@ -47,10 +47,11 @@ public sealed class ShellToolNode : INodeType
     public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
 
     /// <summary>
-    /// 命令模板，支持 {placeholder} 语法。
+    /// 要执行的命令，支持 JS 表达式（如 <c>'ls -la ' + input.path</c>）。
     /// </summary>
-    [Description("Command template to execute. Use {placeholder} for dynamic values from LLM.")]
-    [Hint(PresentationHint.CodeEditor)]
+    [DisplayName("Command")]
+    [Description("Command to execute. Use JS expression to build command dynamically (e.g. 'echo ' + input.message).")]
+    [Hint(PresentationHint.Expression)]
     public string Command { get; set; } = string.Empty;
 
     /// <summary>
@@ -98,8 +99,8 @@ public sealed class ShellToolNode : INodeType
                 return context.ErrorResult("MissingCommand", "Command is required.");
             }
 
-            var inputData = context.GetInputDataAsDictionary();
-            var resolvedCommand = NodeExecutionContext.ResolvePlaceholders(Command, inputData);
+            var inputData = context.InputData;
+            var resolvedCommand = ScriptEngine.EvaluateAsString(Command, inputData) ?? Command;
 
             var result = await ExecuteCommandAsync(resolvedCommand, cancellationToken).ConfigureAwait(false);
 

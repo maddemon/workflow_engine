@@ -221,7 +221,7 @@ public class LlmNodeTests
         var supplyDescriptor = descriptors.FirstOrDefault(d => d.TypeName == "llm");
 
         Assert.NotNull(supplyDescriptor);
-        Assert.Equal("LLM ", supplyDescriptor.DisplayName);
+        Assert.Equal("LLM", supplyDescriptor.DisplayName);
         Assert.Equal("AI", supplyDescriptor.Category);
     }
 
