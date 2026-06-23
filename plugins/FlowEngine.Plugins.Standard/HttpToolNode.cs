@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Runtime.Http;
@@ -10,8 +11,9 @@ using FlowEngine.Runtime.Http;
 namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
-/// HTTP 工具节点，发送 HTTP 请求，作为 tool 被 Agent 调用。
-/// LLM 通过 input 端口传入 method、url、headers、body 参数。
+/// HTTP 工具节点，作为 Agent 的工具被调用。
+/// 支持静态配置（method、URL、authentication）和占位符机制。
+/// 参考 n8n 的 ToolHttpRequest 设计。
 /// </summary>
 public sealed class HttpToolNode : INodeType
 {
@@ -30,6 +32,65 @@ public sealed class HttpToolNode : INodeType
     /// <inheritdoc />
     public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
 
+    /// <summary>
+    /// HTTP 方法。
+    /// </summary>
+    [Description("HTTP request method.")]
+    public HttpMethodOption Method { get; set; } = HttpMethodOption.Get;
+
+    /// <summary>
+    /// URL 模板，支持 {placeholder} 语法。
+    /// </summary>
+    [Description("Target URL. Use {placeholder} for dynamic values that LLM will fill.")]
+    public string Url { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 认证方式。
+    /// </summary>
+    [Description("Authentication method.")]
+    public HttpRequestAuthMode Authentication { get; set; } = HttpRequestAuthMode.None;
+
+    /// <summary>
+    /// 凭据 ID。
+    /// </summary>
+    [Credential(FlowConstants.CredentialFields.ApiKey)]
+    [Description("Credential ID for authentication.")]
+    public string? CredentialId { get; set; }
+
+    /// <summary>
+    /// 是否发送自定义请求头。
+    /// </summary>
+    [Description("Whether to send custom headers.")]
+    public bool SendHeaders { get; set; } = false;
+
+    /// <summary>
+    /// 静态请求头。
+    /// </summary>
+    [Description("Static headers to send with the request.")]
+    [Hint(PresentationHint.KeyValueEditor)]
+    [DisplayCondition(nameof(SendHeaders), true)]
+    public Dictionary<string, string>? Headers { get; set; }
+
+    /// <summary>
+    /// 是否发送请求体。
+    /// </summary>
+    [Description("Whether to send a request body.")]
+    public bool SendBody { get; set; } = false;
+
+    /// <summary>
+    /// Body 模板，支持 {placeholder}。
+    /// </summary>
+    [Description("Request body template. Use {placeholder} for dynamic values.")]
+    [Hint(PresentationHint.TextArea)]
+    [DisplayCondition(nameof(SendBody), true)]
+    public string? Body { get; set; }
+
+    /// <summary>
+    /// 占位符定义列表。
+    /// </summary>
+    [Description("Define placeholders that LLM will fill. Name is the placeholder key, description helps LLM understand what to provide.")]
+    public List<HttpPlaceholder>? Placeholders { get; set; }
+
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
     [
@@ -46,37 +107,52 @@ public sealed class HttpToolNode : INodeType
     {
         try
         {
-            var inputPayload = GetInputPayload(context);
-            if (inputPayload is not JsonObject inputObj)
+            var inputData = context.GetInputDataAsDictionary();
+
+            var resolvedUrl = NodeExecutionContext.ResolvePlaceholders(Url, inputData);
+            if (string.IsNullOrWhiteSpace(resolvedUrl))
             {
-                return context.ErrorResult("MissingInput", "Input JSON object is required with at least 'url' field.");
+                return context.ErrorResult("MissingUrl", "URL is required.");
             }
 
-            var url = inputObj["url"]?.GetValue<string>();
-            if (string.IsNullOrWhiteSpace(url))
-            {
-                return context.ErrorResult("MissingUrl", "The 'url' field is required in the input.");
-            }
+            var methodStr = Method.ToString().ToUpperInvariant();
+            var request = new HttpRequestMessage(new HttpMethod(methodStr), resolvedUrl);
 
-            var method = inputObj["method"]?.GetValue<string>()?.ToUpperInvariant() ?? "GET";
-            var request = new HttpRequestMessage(new HttpMethod(method), url);
-
-            var headers = ParseHeaders(inputObj["headers"]);
-            if (headers is not null)
+            if (Authentication != HttpRequestAuthMode.None && !string.IsNullOrEmpty(CredentialId))
             {
-                foreach (var (key, value) in headers)
+                var credentialValue = await context.ResolveApiKeyAsync(CredentialId, cancellationToken).ConfigureAwait(false);
+                if (credentialValue is not null)
                 {
-                    request.Headers.TryAddWithoutValidation(key, value);
+                    switch (Authentication)
+                    {
+                        case HttpRequestAuthMode.BearerToken:
+                            request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {credentialValue}");
+                            break;
+                        case HttpRequestAuthMode.ApiKey:
+                            request.Headers.TryAddWithoutValidation("X-API-Key", credentialValue);
+                            break;
+                        case HttpRequestAuthMode.BasicAuth:
+                            var base64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(credentialValue));
+                            request.Headers.TryAddWithoutValidation("Authorization", $"Basic {base64}");
+                            break;
+                    }
                 }
             }
 
-            var body = inputObj["body"];
-            if ((method == "POST" || method == "PUT" || method == "PATCH") && body is not null)
+            if (SendHeaders && Headers is { Count: > 0 })
             {
-                var bodyStr = body is JsonValue bodyVal && bodyVal.TryGetValue<string>(out var bodyText)
-                    ? bodyText
-                    : body.ToJsonString();
-                request.Content = new StringContent(bodyStr, Encoding.UTF8, "application/json");
+                foreach (var (key, value) in Headers)
+                {
+                    var resolvedValue = NodeExecutionContext.ResolvePlaceholders(value, inputData);
+                    request.Headers.TryAddWithoutValidation(key, resolvedValue);
+                }
+            }
+
+            if (SendBody && !string.IsNullOrEmpty(Body) &&
+                Method is HttpMethodOption.Post or HttpMethodOption.Put or HttpMethodOption.Patch)
+            {
+                var resolvedBody = NodeExecutionContext.ResolvePlaceholders(Body, inputData);
+                request.Content = new StringContent(resolvedBody, Encoding.UTF8, new System.Net.Http.Headers.MediaTypeHeaderValue("application/json"));
             }
 
             return await HttpExecutionHelper.SendAndBuildResultAsync(request, context.Node.Id, cancellationToken)
@@ -96,32 +172,25 @@ public sealed class HttpToolNode : INodeType
         }
     }
 
-    private static JsonNode? GetInputPayload(NodeExecutionContext context)
-    {
-        if (!context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch) || batch.Items.Count == 0)
-        {
-            return null;
-        }
+}
 
-        return batch.Items[0].Data;
-    }
+/// <summary>
+/// HTTP 占位符定义。
+/// </summary>
+public sealed class HttpPlaceholder
+{
+    /// <summary>
+    /// 占位符名称（对应 URL/Body 中的 {name}）。
+    /// </summary>
+    public string Name { get; set; } = string.Empty;
 
-    private static Dictionary<string, string>? ParseHeaders(JsonNode? headersNode)
-    {
-        if (headersNode is not JsonObject headersObj)
-        {
-            return null;
-        }
+    /// <summary>
+    /// 占位符描述（帮助 LLM 理解需要什么值）。
+    /// </summary>
+    public string Description { get; set; } = string.Empty;
 
-        var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var prop in headersObj)
-        {
-            if (prop.Value is JsonValue val && val.TryGetValue<string>(out var strVal))
-            {
-                headers[prop.Key] = strVal;
-            }
-        }
-
-        return headers.Count > 0 ? headers : null;
-    }
+    /// <summary>
+    /// 是否必填。
+    /// </summary>
+    public bool Required { get; set; } = true;
 }

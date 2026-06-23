@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
@@ -10,16 +11,44 @@ using Jint;
 
 namespace FlowEngine.Plugins.Standard;
 
+/// <summary>
+/// 代码执行工具节点，作为 Agent 的工具被调用。
+/// 用户预定义代码，LLM 只提供输入参数。
+/// 参考 n8n 的 ToolCode 设计。
+/// </summary>
 public sealed class CodeSnippetToolNode : INodeType
 {
     private const int DefaultTimeoutMs = 5000;
 
-    public string TypeName => "codeSnippetTool";
-    public string DisplayName => "Code Snippet Tool";
+    /// <inheritdoc />
+    public string TypeName => "codeTool";
+
+    /// <inheritdoc />
+    public string DisplayName => "Code Tool";
+
+    /// <inheritdoc />
     public string Category => "AI";
+
+    /// <inheritdoc />
     public string Icon => "code";
+
+    /// <inheritdoc />
     public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
 
+    /// <summary>
+    /// 预定义代码。
+    /// </summary>
+    [Description("JavaScript code to execute. Access LLM input via the 'input' variable.")]
+    [Hint(PresentationHint.CodeEditor)]
+    public string Code { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 工具描述（帮助 LLM 理解何时调用此工具）。
+    /// </summary>
+    [Description("Tool description that helps LLM understand when to use this tool.")]
+    public string ToolDescription { get; set; } = string.Empty;
+
+    /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
     [
         new PortDefinition { Name = "input", DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
@@ -27,48 +56,32 @@ public sealed class CodeSnippetToolNode : INodeType
         new PortDefinition { Name = FlowConstants.PortNames.Tools, DisplayName = "Tool Output", Direction = PortDirection.Output, Type = PortType.AgentTool }
     ];
 
+    /// <inheritdoc />
     public bool DefaultIsEntry => false;
 
+    /// <inheritdoc />
     public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
         try
         {
+            if (string.IsNullOrWhiteSpace(Code))
+            {
+                return Task.FromResult(context.ErrorResult("MissingCode", "Code is required. Please define the code to execute."));
+            }
+
+            // Get input from LLM
             var inputPayload = GetInputPayload(context);
-            if (inputPayload is null)
+            var inputData = GetInputData(inputPayload);
+
+            using var js = JsEngine.Create();
+
+            // Provide input to JS code
+            if (inputData is not null)
             {
-                return Task.FromResult(context.ErrorResult("MissingInput", "Input data is required. Pass code and optional input via the input port."));
+                js.SetValue("input", inputData);
             }
 
-            string? code = null;
-            JsonNode? codeInput = null;
-
-            if (inputPayload is JsonObject inputObj)
-            {
-                code = inputObj["code"]?.GetValue<string>();
-                codeInput = inputObj["input"];
-            }
-            else if (inputPayload is JsonValue inputVal)
-            {
-                code = inputVal.GetValue<string>();
-            }
-
-            if (string.IsNullOrWhiteSpace(code))
-            {
-                return Task.FromResult(context.ErrorResult("MissingCode", "The 'code' field is required in the input."));
-            }
-
-            using var js = JsEngine.Create(options =>
-            {
-                options.TimeoutInterval(TimeSpan.FromMilliseconds(DefaultTimeoutMs));
-                options.CancellationToken(cancellationToken);
-            });
-
-            if (codeInput is not null)
-            {
-                js.SetValue("input", codeInput);
-            }
-
-            var result = js.Run(code);
+            var result = js.Run(Code);
             var outputItem = JsEngine.ToDataItem(result);
 
             return Task.FromResult(new NodeExecutionResult
@@ -103,5 +116,17 @@ public sealed class CodeSnippetToolNode : INodeType
         }
 
         return batch.Items[0].Data;
+    }
+
+    private static object? GetInputData(JsonNode? payload)
+    {
+        if (payload is null)
+        {
+            return null;
+        }
+
+        // Convert JsonNode to object for Jint
+        var json = payload.ToJsonString();
+        return JsonSerializer.Deserialize<object>(json);
     }
 }

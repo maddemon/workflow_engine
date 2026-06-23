@@ -1,5 +1,6 @@
-using FlowEngine.Core.Abstractions;
 using System.Text.Json;
+using System.Text.Json.Nodes;
+using FlowEngine.Core.Abstractions;
 
 namespace FlowEngine.Core.Entities;
 
@@ -68,7 +69,9 @@ public class NodeExecutionContext
     /// </summary>
     public INodeRegistry? NodeRegistry { get; set; }
 
-
+    /// <summary>
+    /// 获取参数值，优先从 ResolvedParameters 获取，其次从 RawParameters 获取。
+    /// </summary>
     public T? GetParameter<T>(string name) where T : class
     {
         if (ResolvedParameters.TryGetValue(name, out var value) && value is T typed)
@@ -84,6 +87,9 @@ public class NodeExecutionContext
         return null;
     }
 
+    /// <summary>
+    /// 创建错误结果。
+    /// </summary>
     public NodeExecutionResult ErrorResult(string code, string message)
     {
         return new NodeExecutionResult
@@ -98,6 +104,9 @@ public class NodeExecutionContext
         };
     }
 
+    /// <summary>
+    /// 获取输入数据（供 Jint 使用）。
+    /// </summary>
     public object? InputData
     {
         get
@@ -110,9 +119,164 @@ public class NodeExecutionContext
             var firstItem = batch.Items[0];
             if (firstItem.Data is null) return null;
 
-            // 将 JsonNode 序列化为 JSON 字符串后反序列化为 .NET 原生类型，供 Jint 使用
             var json = firstItem.Data.ToJsonString();
             return JsonSerializer.Deserialize<object>(json);
         }
+    }
+
+    /// <summary>
+    /// 从输入端口获取 JsonNode 数据。
+    /// </summary>
+    public JsonNode? GetInputPayload()
+    {
+        if (Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch) && batch.Items.Count > 0)
+        {
+            return batch.Items[0].Data;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 从输入端口获取数据并转换为字符串字典。
+    /// 合并 Input 数据和 ResolvedParameters。
+    /// </summary>
+    public Dictionary<string, string> GetInputDataAsDictionary()
+    {
+        var data = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+
+        // 从 Input 端口获取数据
+        if (Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch) && batch.Items.Count > 0)
+        {
+            var inputObj = batch.Items[0].Data as JsonObject;
+            if (inputObj is not null)
+            {
+                foreach (var prop in inputObj)
+                {
+                    data[prop.Key] = prop.Value?.ToString() ?? string.Empty;
+                }
+            }
+        }
+
+        // 合并 ResolvedParameters
+        foreach (var kvp in ResolvedParameters)
+        {
+            if (kvp.Value is string strValue)
+            {
+                data[kvp.Key] = strValue;
+            }
+            else if (kvp.Value is not null)
+            {
+                data[kvp.Key] = kvp.Value.ToString() ?? string.Empty;
+            }
+        }
+
+        return data;
+    }
+
+    /// <summary>
+    /// 从输入 JsonObject 中获取指定字段的值。
+    /// 尝试多个常见字段名。
+    /// </summary>
+    public string? GetFieldValueFromInput(params string[] fieldNames)
+    {
+        var payload = GetInputPayload();
+        if (payload is null)
+        {
+            return null;
+        }
+
+        if (payload is JsonObject obj)
+        {
+            foreach (var fieldName in fieldNames)
+            {
+                if (obj.TryGetPropertyValue(fieldName, out var val))
+                {
+                    return val?.ToString();
+                }
+            }
+        }
+        else if (payload is JsonValue val)
+        {
+            return val.ToString();
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 解析凭据并返回 API Key。
+    /// </summary>
+    public async Task<string?> ResolveApiKeyAsync(string? credentialId, CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrEmpty(credentialId))
+        {
+            return null;
+        }
+
+        if (!Guid.TryParse(credentialId, out var id))
+        {
+            return null;
+        }
+
+        try
+        {
+            var credential = await Credentials.GetCredentialAsync(id, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (credential.Fields.TryGetValue(FlowConstants.CredentialFields.ApiKey, out var apiKey))
+            {
+                return apiKey;
+            }
+
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Logger?.LogError(ex, "Failed to resolve credential {CredentialId}.", credentialId);
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 创建单个数据项的结果。
+    /// </summary>
+    public NodeExecutionResult CreateSingleResult(JsonNode? data, bool success = true)
+    {
+        return new NodeExecutionResult
+        {
+            Success = success,
+            Output = new DataBatch
+            {
+                Items =
+                [
+                    new DataItem
+                    {
+                        Data = data,
+                        Success = success,
+                        SourceIndex = 0
+                    }
+                ]
+            }
+        };
+    }
+
+    /// <summary>
+    /// 解析模板中的 {placeholder} 占位符。
+    /// </summary>
+    public static string ResolvePlaceholders(string template, Dictionary<string, string> data)
+    {
+        if (string.IsNullOrEmpty(template) || data.Count == 0)
+        {
+            return template;
+        }
+
+        var result = template;
+        foreach (var (key, value) in data)
+        {
+            result = result.Replace($"{{{key}}}", value, StringComparison.OrdinalIgnoreCase);
+        }
+
+        return result;
     }
 }

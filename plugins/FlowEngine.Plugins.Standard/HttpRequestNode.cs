@@ -25,11 +25,33 @@ public enum HttpMethodOption
     Put,
 
     /// <summary>DELETE</summary>
-    Delete
+    Delete,
+
+    /// <summary>PATCH</summary>
+    Patch
 }
 
 /// <summary>
-/// HTTP 请求节点，支持 GET/POST/PUT/DELETE 方法与凭据注入。
+/// HTTP 认证方式。
+/// </summary>
+public enum HttpRequestAuthMode
+{
+    /// <summary>无认证</summary>
+    None,
+
+    /// <summary>Bearer Token</summary>
+    BearerToken,
+
+    /// <summary>API Key</summary>
+    ApiKey,
+
+    /// <summary>Basic Auth</summary>
+    BasicAuth
+}
+
+/// <summary>
+/// HTTP 请求节点，支持静态配置和占位符。
+/// 参考 n8n 的 HTTP Request 节点设计。
 /// </summary>
 public sealed class HttpRequestNode : INodeType
 {
@@ -40,7 +62,7 @@ public sealed class HttpRequestNode : INodeType
     public string DisplayName => "HTTP Request";
 
     /// <inheritdoc />
-    public string Category => "HTTP";
+    public string Category => "Core";
 
     /// <inheritdoc />
     public string Icon => "globe";
@@ -55,31 +77,57 @@ public sealed class HttpRequestNode : INodeType
     public HttpMethodOption Method { get; set; } = HttpMethodOption.Get;
 
     /// <summary>
-    /// 目标 URL，支持表达式。
+    /// 目标 URL，支持占位符 {placeholder}。
     /// </summary>
-    [Description("Target URL. You can use expressions like {{ $input.url }}.")]
+    [Description("Target URL. Use {placeholder} for dynamic values from input.")]
     public string Url { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 认证方式。
+    /// </summary>
+    [Description("Authentication method.")]
+    public HttpRequestAuthMode Authentication { get; set; } = HttpRequestAuthMode.None;
+
+    /// <summary>
+    /// 凭据 ID（用于 Bearer Token 或 API Key）。
+    /// </summary>
+    [Credential(FlowConstants.CredentialFields.ApiKey)]
+    [Description("Credential ID for authentication.")]
+    public string? CredentialId { get; set; }
+
+    /// <summary>
+    /// 是否发送请求头。
+    /// </summary>
+    [Description("Whether to send custom headers.")]
+    public bool SendHeaders { get; set; } = false;
 
     /// <summary>
     /// 请求头键值对。
     /// </summary>
     [Description("Request headers as key-value pairs.")]
     [Hint(PresentationHint.KeyValueEditor)]
+    [DisplayCondition(nameof(SendHeaders), true)]
     public Dictionary<string, string>? Headers { get; set; }
 
     /// <summary>
-    /// 请求体 JSON，仅 POST/PUT 时使用。
+    /// 是否发送请求体。
     /// </summary>
-    [Description("Request body as JSON. Only used for POST/PUT.")]
-    [DisplayCondition(nameof(Method), HttpMethodOption.Post)]
-    [DisplayCondition(nameof(Method), HttpMethodOption.Put)]
-    public JsonObject? Body { get; set; }
+    [Description("Whether to send a request body.")]
+    public bool SendBody { get; set; } = false;
 
     /// <summary>
-    /// API 凭据 ID。
+    /// 请求体 JSON。
     /// </summary>
-    [Credential(FlowConstants.CredentialFields.ApiKey)]
-    public string? ApiCredential { get; set; }
+    [Description("Request body as JSON string.")]
+    [Hint(PresentationHint.TextArea)]
+    [DisplayCondition(nameof(SendBody), true)]
+    public string? Body { get; set; }
+
+    /// <summary>
+    /// 占位符定义列表。
+    /// </summary>
+    [Description("Define placeholders for dynamic values (name → description).")]
+    public List<HttpPlaceholder>? Placeholders { get; set; }
 
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
@@ -98,40 +146,55 @@ public sealed class HttpRequestNode : INodeType
         {
             if (string.IsNullOrWhiteSpace(Url))
             {
-                return context.ErrorResult("MissingUrl", "URL 参数不能为空。");
+                return context.ErrorResult("MissingUrl", "URL is required.");
+            }
+
+            var inputData = context.GetInputDataAsDictionary();
+
+            var resolvedUrl = NodeExecutionContext.ResolvePlaceholders(Url, inputData);
+            if (string.IsNullOrWhiteSpace(resolvedUrl))
+            {
+                return context.ErrorResult("MissingUrl", "URL resolution failed.");
             }
 
             var methodStr = Method.ToString().ToUpperInvariant();
-            var request = new HttpRequestMessage(new HttpMethod(methodStr), Url);
+            var request = new HttpRequestMessage(new HttpMethod(methodStr), resolvedUrl);
 
-            if (ApiCredential is { Length: > 0 } credentialIdStr && Guid.TryParse(credentialIdStr, out var credentialId))
+            if (Authentication != HttpRequestAuthMode.None && !string.IsNullOrEmpty(CredentialId))
             {
-                try
+                var credentialValue = await context.ResolveApiKeyAsync(CredentialId, cancellationToken).ConfigureAwait(false);
+                if (credentialValue is not null)
                 {
-                    var credential = await context.Credentials.GetCredentialAsync(credentialId, context.CancellationToken)
-                        .ConfigureAwait(false);
-                    if (credential.Fields.TryGetValue(FlowConstants.CredentialFields.ApiKey, out var apiKey))
+                    switch (Authentication)
                     {
-                        request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {apiKey}");
+                        case HttpRequestAuthMode.BearerToken:
+                            request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {credentialValue}");
+                            break;
+                        case HttpRequestAuthMode.ApiKey:
+                            request.Headers.TryAddWithoutValidation("X-API-Key", credentialValue);
+                            break;
+                        case HttpRequestAuthMode.BasicAuth:
+                            var base64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(credentialValue));
+                            request.Headers.TryAddWithoutValidation("Authorization", $"Basic {base64}");
+                            break;
                     }
-                }
-                catch (Exception ex)
-                {
-                    return context.ErrorResult("CredentialError", $"凭据获取失败: {ex.Message}");
                 }
             }
 
-            if (Headers is { Count: > 0 })
+            if (SendHeaders && Headers is { Count: > 0 })
             {
                 foreach (var (key, value) in Headers)
                 {
-                    request.Headers.TryAddWithoutValidation(key, value);
+                    var resolvedValue = NodeExecutionContext.ResolvePlaceholders(value, inputData);
+                    request.Headers.TryAddWithoutValidation(key, resolvedValue);
                 }
             }
 
-            if (Method is HttpMethodOption.Post or HttpMethodOption.Put && Body is not null)
+            if (SendBody && !string.IsNullOrEmpty(Body) &&
+                Method is HttpMethodOption.Post or HttpMethodOption.Put or HttpMethodOption.Patch)
             {
-                request.Content = new StringContent(Body.ToJsonString(), Encoding.UTF8, "application/json");
+                var resolvedBody = NodeExecutionContext.ResolvePlaceholders(Body, inputData);
+                request.Content = new StringContent(resolvedBody, Encoding.UTF8, new System.Net.Http.Headers.MediaTypeHeaderValue("application/json"));
             }
 
             return await HttpExecutionHelper.SendAndBuildResultAsync(request, context.Node.Id, cancellationToken)
@@ -139,15 +202,18 @@ public sealed class HttpRequestNode : INodeType
         }
         catch (OperationCanceledException)
         {
-            return context.ErrorResult("Cancelled", "HTTP 请求被取消。");
+            return context.ErrorResult("Cancelled", "HTTP request was cancelled.");
         }
         catch (HttpRequestException ex)
         {
-            return context.ErrorResult("HttpRequestFailed", $"HTTP 请求异常: {ex.Message}");
+            return context.ErrorResult("HttpRequestFailed", $"HTTP request failed: {ex.Message}");
         }
         catch (Exception ex)
         {
-            return context.ErrorResult("UnexpectedError", $"HTTP 请求发生未预期错误: {ex.Message}");
+            return context.ErrorResult("UnexpectedError", $"Unexpected HTTP error: {ex.Message}");
         }
     }
+
 }
+
+// HttpPlaceholder is defined in HttpToolNode.cs

@@ -389,3 +389,5 @@ backend/FlowEngine.Host/App_Data/flowengine.db
 backend/FlowEngine.Host/App_Data/flowengine.db-shm
 backend/FlowEngine.Host/App_Data/flowengine.db-wal
 .agents/plans/
+docs/research/n8n-ai-tool-nodes.md
+docs/research/n8n-basic-nodes.md
