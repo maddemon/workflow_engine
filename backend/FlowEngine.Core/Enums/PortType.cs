@@ -23,7 +23,7 @@ public enum PortType
     /// LLM 供应端口。
     /// </summary>
     [Description("LLM 供应端口")]
-    LLMSupply,
+    LLM,
 
     /// <summary>
     /// 记忆端口。

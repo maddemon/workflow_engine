@@ -40,7 +40,7 @@ public class AgentNodeTests
         Assert.Contains(node.Ports, p => p.Name == "input" && p.Type == PortType.Main && p.Direction == PortDirection.Input);
         Assert.Contains(node.Ports, p => p.Name == "output" && p.Type == PortType.Main && p.Direction == PortDirection.Output);
         Assert.Contains(node.Ports, p => p.Name == "tools" && p.Type == PortType.AgentTool && p.Direction == PortDirection.Input);
-        Assert.Contains(node.Ports, p => p.Name == "llmSupply" && p.Type == PortType.LLMSupply && p.Direction == PortDirection.Input);
+        Assert.Contains(node.Ports, p => p.Name == "llmSupply" && p.Type == PortType.LLM && p.Direction == PortDirection.Input);
     }
 
     [Fact]

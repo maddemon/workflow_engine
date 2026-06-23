@@ -11,13 +11,13 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// LLM 供应节点，集中管理模型配置并通过供应端口向消费节点提供 LLM 客户端实例。
 /// </summary>
-public sealed class LlmSupplyNode : INodeType
+public sealed class LlmNode : INodeType
 {
     /// <inheritdoc />
-    public string TypeName => "llmSupply";
+    public string TypeName => "llm";
 
     /// <inheritdoc />
-    public string DisplayName => "LLM Supply";
+    public string DisplayName => "LLM";
 
     /// <inheritdoc />
     public string Category => "AI";
@@ -62,7 +62,7 @@ public sealed class LlmSupplyNode : INodeType
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
     [
-        new PortDefinition { Name = FlowConstants.PortNames.LlmSupply, DisplayName = "LLM Supply", Direction = PortDirection.Output, Type = PortType.LLMSupply }
+        new PortDefinition { Name = FlowConstants.PortNames.Llm, DisplayName = "LLM", Direction = PortDirection.Output, Type = PortType.LLM }
     ];
 
     /// <inheritdoc />

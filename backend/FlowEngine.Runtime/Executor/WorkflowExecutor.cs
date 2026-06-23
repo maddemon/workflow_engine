@@ -553,7 +553,7 @@ public sealed class WorkflowExecutor : IEngine
         ConcurrentDictionary<Guid, ILlmClient> nodeLlmClients)
     {
         var supplyInputPorts = nodeType.Ports
-            .Where(p => p.Direction == PortDirection.Input && p.Type == PortType.LLMSupply)
+            .Where(p => p.Direction == PortDirection.Input && p.Type == PortType.LLM)
             .ToList();
 
         if (supplyInputPorts.Count == 0)

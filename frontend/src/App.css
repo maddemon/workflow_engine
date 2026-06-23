@@ -90,23 +90,22 @@
   margin-top: 0;
 }
 
-/* AI port handle (diamond shape) */
+/* All diamond handles */
 .port-handle.port-ai {
   width: 10px !important;
   height: 10px !important;
-  transform: translate(-50%, -50%) rotate(45deg) !important;
   border-radius: 2px !important;
   background: var(--port-ai, #7c3aed) !important;
 }
-/* Bottom/Top edges: only translate horizontally */
-.port-handle.port-ai.port-bottom,
-.port-handle.port-ai.port-top {
-  transform: translateX(-50%) rotate(45deg) !important;
+/* Top/Left: move diamond center to border */
+.port-handle.port-ai.port-top,
+.port-handle.port-ai.port-left {
+  transform: translate(-50%, -50%) rotate(45deg) !important;
 }
-/* Left/Right edges: only translate vertically */
-.port-handle.port-ai.port-left,
+/* Bottom/Right: move diamond center to border (opposite direction) */
+.port-handle.port-ai.port-bottom,
 .port-handle.port-ai.port-right {
-  transform: translateY(-50%) rotate(45deg) !important;
+  transform: translate(-50%, 50%) rotate(45deg) !important;
 }
 .custom-node-wrapper:hover .port-handle.port-ai {
   opacity: 0.9 !important;
@@ -161,11 +160,7 @@
 }
 
 .node-circular .node-body-abs {
-  text-align: center;
-  width: 100%;
-  left: 0;
-  max-width: 120px;
-  margin: 0 auto;
+  max-width: 112px;
 }
 
 .node-icon-box {
@@ -187,11 +182,15 @@
   left: 50%;
   transform: translateX(-50%);
   text-align: center;
-  white-space: nowrap;
+  white-space: normal;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  width: max-content;
 }
 
 .node-name {
-  max-width: 120px;
   word-wrap: break-word;
   overflow-wrap: break-word;
   letter-spacing: -0.01em;

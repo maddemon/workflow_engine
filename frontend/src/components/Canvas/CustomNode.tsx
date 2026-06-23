@@ -230,9 +230,21 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
             </div>
           </>
         ) : (
-          <div className="node-icon-box">
-            <NodeIcon icon={data.descriptor.icon} size={circular ? 24 : 26} color={categoryColor} />
-          </div>
+          <>
+            <div className="node-icon-box">
+              <NodeIcon icon={data.descriptor.icon} size={circular ? 24 : 26} color={categoryColor} />
+            </div>
+            {!circular && (
+              <div className="node-body-abs" style={{ top: nodeHeight + 6, maxWidth: nodeWidth * 2 }}>
+                <Text size="xs" fw={600} className="node-name">
+                  {data.name}
+                </Text>
+                {subtitle && (
+                  <Text size="xs" c="dimmed" className="node-subtitle">{subtitle}</Text>
+                )}
+              </div>
+            )}
+          </>
         )}
 
         {badgeColor && (

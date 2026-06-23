@@ -53,7 +53,7 @@ public sealed class AgentNode : INodeType
         new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
         new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main },
         new PortDefinition { Name = FlowConstants.PortNames.Tools, DisplayName = "Tool", Direction = PortDirection.Input, Type = PortType.AgentTool },
-        new PortDefinition { Name = FlowConstants.PortNames.LlmSupply, DisplayName = "LLM Supply", Direction = PortDirection.Input, Type = PortType.LLMSupply }
+        new PortDefinition { Name = FlowConstants.PortNames.Llm, DisplayName = "LLM", Direction = PortDirection.Input, Type = PortType.LLM }
     ];
 
     /// <inheritdoc />

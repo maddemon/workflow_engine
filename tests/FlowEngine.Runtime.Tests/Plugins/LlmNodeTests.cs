@@ -9,59 +9,59 @@ using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FlowEngine.Runtime.Tests.Plugins;
 
-public class LlmSupplyNodeTests
+public class LlmNodeTests
 {
     private readonly INodeRegistry _nodeRegistry;
 
-    public LlmSupplyNodeTests()
+    public LlmNodeTests()
     {
         _nodeRegistry = new NodeRegistry(
             new INodeType[]
             {
                 new PassThroughNode(),
                 new AgentNode(),
-                new LlmSupplyNode()
+                new LlmNode()
             },
             NullLogger<NodeRegistry>.Instance);
     }
 
     [Fact]
-    public void LlmSupplyNode_Has_Correct_TypeName()
+    public void LlmNode_Has_Correct_TypeName()
     {
-        var node = new LlmSupplyNode();
-        Assert.Equal("llmSupply", node.TypeName);
+        var node = new LlmNode();
+        Assert.Equal("llm", node.TypeName);
     }
 
     [Fact]
-    public void LlmSupplyNode_Has_Correct_DisplayName()
+    public void LlmNode_Has_Correct_DisplayName()
     {
-        var node = new LlmSupplyNode();
-        Assert.Equal("LLM Supply", node.DisplayName);
+        var node = new LlmNode();
+        Assert.Equal("LLM", node.DisplayName);
     }
 
     [Fact]
-    public void LlmSupplyNode_Has_Correct_Category()
+    public void LlmNode_Has_Correct_Category()
     {
-        var node = new LlmSupplyNode();
+        var node = new LlmNode();
         Assert.Equal("AI", node.Category);
     }
 
     [Fact]
-    public void LlmSupplyNode_Has_Correct_Ports()
+    public void LlmNode_Has_Correct_Ports()
     {
-        var node = new LlmSupplyNode();
+        var node = new LlmNode();
 
         Assert.Single(node.Ports);
         Assert.Contains(node.Ports, p =>
-            p.Name == "llmSupply"
-            && p.Type == PortType.LLMSupply
+            p.Name == "llm"
+            && p.Type == PortType.LLM
             && p.Direction == PortDirection.Output);
     }
 
     [Fact]
-    public void LlmSupplyNode_Default_Parameters()
+    public void LlmNode_Default_Parameters()
     {
-        var node = new LlmSupplyNode();
+        var node = new LlmNode();
         Assert.Equal("gpt-4", node.Model);
         Assert.Equal(0.7f, node.Temperature);
         Assert.Null(node.MaxTokens);
@@ -70,16 +70,16 @@ public class LlmSupplyNodeTests
     }
 
     [Fact]
-    public void LlmSupplyNode_Is_Entry_Node()
+    public void LlmNode_Is_Entry_Node()
     {
-        var node = new LlmSupplyNode();
+        var node = new LlmNode();
         Assert.True(node.DefaultIsEntry);
     }
 
     [Fact]
     public async Task ExecuteAsync_Returns_Error_When_Model_Empty()
     {
-        var node = new LlmSupplyNode { Model = "" };
+        var node = new LlmNode { Model = "" };
         var context = CreateContext();
 
         var result = await node.ExecuteAsync(context);
@@ -91,7 +91,7 @@ public class LlmSupplyNodeTests
     [Fact]
     public async Task ExecuteAsync_Returns_Error_When_No_Credential()
     {
-        var node = new LlmSupplyNode
+        var node = new LlmNode
         {
             Model = "gpt-4",
             CredentialId = null
@@ -107,7 +107,7 @@ public class LlmSupplyNodeTests
     [Fact]
     public async Task ExecuteAsync_Returns_Error_When_Credential_Not_Found()
     {
-        var node = new LlmSupplyNode
+        var node = new LlmNode
         {
             Model = "gpt-4",
             CredentialId = Guid.NewGuid().ToString()
@@ -123,7 +123,7 @@ public class LlmSupplyNodeTests
     [Fact]
     public async Task ExecuteAsync_Returns_Error_When_Credential_Has_No_ApiKey()
     {
-        var node = new LlmSupplyNode
+        var node = new LlmNode
         {
             Model = "gpt-4",
             CredentialId = Guid.NewGuid().ToString()
@@ -139,7 +139,7 @@ public class LlmSupplyNodeTests
     [Fact]
     public async Task ExecuteAsync_Creates_Client_With_Valid_Credential()
     {
-        var node = new LlmSupplyNode
+        var node = new LlmNode
         {
             Model = "gpt-4",
             Temperature = 0.5f,
@@ -158,7 +158,7 @@ public class LlmSupplyNodeTests
     [Fact]
     public async Task ExecuteAsync_Creates_Client_With_Endpoint()
     {
-        var node = new LlmSupplyNode
+        var node = new LlmNode
         {
             Model = "gpt-4",
             CredentialId = Guid.NewGuid().ToString(),
@@ -175,7 +175,7 @@ public class LlmSupplyNodeTests
     [Fact]
     public async Task ExecuteAsync_Creates_Client_With_Invalid_Endpoint()
     {
-        var node = new LlmSupplyNode
+        var node = new LlmNode
         {
             Model = "gpt-4",
             CredentialId = Guid.NewGuid().ToString(),
@@ -192,7 +192,7 @@ public class LlmSupplyNodeTests
     [Fact]
     public async Task ExecuteAsync_Sets_LlmClient_On_Context()
     {
-        var node = new LlmSupplyNode
+        var node = new LlmNode
         {
             Model = "gpt-3.5-turbo",
             CredentialId = Guid.NewGuid().ToString()
@@ -207,28 +207,28 @@ public class LlmSupplyNodeTests
     }
 
     [Fact]
-    public void LlmSupplyNode_Registered_In_Registry()
+    public void LlmNode_Registered_In_Registry()
     {
-        Assert.True(_nodeRegistry.TryGet("llmSupply", out var nodeType));
+        Assert.True(_nodeRegistry.TryGet("llm", out var nodeType));
         Assert.NotNull(nodeType);
-        Assert.IsType<LlmSupplyNode>(nodeType);
+        Assert.IsType<LlmNode>(nodeType);
     }
 
     [Fact]
-    public void LlmSupplyNode_Descriptor_Appears_In_Descriptors()
+    public void LlmNode_Descriptor_Appears_In_Descriptors()
     {
         var descriptors = _nodeRegistry.GetDescriptors();
-        var supplyDescriptor = descriptors.FirstOrDefault(d => d.TypeName == "llmSupply");
+        var supplyDescriptor = descriptors.FirstOrDefault(d => d.TypeName == "llm");
 
         Assert.NotNull(supplyDescriptor);
-        Assert.Equal("LLM Supply", supplyDescriptor.DisplayName);
+        Assert.Equal("LLM ", supplyDescriptor.DisplayName);
         Assert.Equal("AI", supplyDescriptor.Category);
     }
 
     [Fact]
-    public async Task LlmSupplyNode_Temperature_Is_Clamped_In_Client()
+    public async Task LlmNode_Temperature_Is_Clamped_In_Client()
     {
-        var node = new LlmSupplyNode
+        var node = new LlmNode
         {
             Model = "gpt-4",
             Temperature = -1f,
@@ -261,8 +261,8 @@ public class LlmSupplyNodeTests
             Node = new NodeDefinition
             {
                 Id = Guid.NewGuid(),
-                TypeName = "llmSupply",
-                Name = "llmSupply1",
+                TypeName = "llm",
+                Name = "llm1",
                 Parameters = []
             },
             Inputs = new Dictionary<string, DataBatch>(),

@@ -13,7 +13,7 @@ public static class FlowConstants
         public const string Input = "input";
         public const string Output = "output";
         public const string Tools = "tools";
-        public const string LlmSupply = "llmSupply";
+        public const string Llm = "llm";
     }
 
     /// <summary>
