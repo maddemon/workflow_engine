@@ -1,6 +1,7 @@
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Events;
 using FlowEngine.Host.WebSocketHandlers;
+using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Microsoft.Extensions.Logging;
 using System.Net.WebSockets;
@@ -21,7 +22,7 @@ public class WebSocketEventPushServiceTests : IDisposable
 
     public WebSocketEventPushServiceTests()
     {
-        _replayService = new WebSocketReplayService(_replayLoggerMock.Object);
+        _replayService = new WebSocketReplayService(_replayLoggerMock.Object, Mock.Of<IServiceScopeFactory>());
 
         _eventBusMock.Setup(e => e.Subscribe(It.IsAny<Func<WorkflowStartedEvent, CancellationToken, Task>>()))
             .Returns(Mock.Of<IDisposable>());

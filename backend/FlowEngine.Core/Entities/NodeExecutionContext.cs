@@ -70,6 +70,16 @@ public class NodeExecutionContext
     public INodeRegistry? NodeRegistry { get; set; }
 
     /// <summary>
+    /// 节点执行上下文工厂，供 Agent 等节点执行子节点。
+    /// </summary>
+    public INodeExecutionContextFactory? ContextFactory { get; set; }
+
+    /// <summary>
+    /// 工作流加载器，供子工作流工具节点从数据库加载工作流。
+    /// </summary>
+    public IWorkflowLoader? WorkflowLoader { get; set; }
+
+    /// <summary>
     /// 获取参数值，优先从 ResolvedParameters 获取，其次从 RawParameters 获取。
     /// </summary>
     public T? GetParameter<T>(string name) where T : class

@@ -32,6 +32,9 @@ public static class AuditEventTypes
     /// <summary>执行取消。</summary>
     public const string ExecutionCancelled = "Execution.Cancelled";
 
+    /// <summary>执行删除。</summary>
+    public const string ExecutionDeleted = "Execution.Deleted";
+
     /// <summary>节点执行完成。</summary>
     public const string NodeExecuted = "Node.Executed";
 
@@ -76,5 +79,6 @@ public static class AuditEventTypes
         CredentialAccessed,
         CredentialDeleted,
         ExecutionCancelled,
+        ExecutionDeleted,
     };
 }

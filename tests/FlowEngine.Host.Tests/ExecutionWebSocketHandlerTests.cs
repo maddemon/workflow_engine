@@ -2,6 +2,7 @@ using FlowEngine.Application.Identity;
 using FlowEngine.Host.WebSocketHandlers;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Http.Features;
+using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Microsoft.Extensions.Logging;
 using System.Net.WebSockets;
@@ -14,7 +15,9 @@ namespace FlowEngine.Host.Tests;
 public class ExecutionWebSocketHandlerTests
 {
     private readonly WebSocketConnectionManager _connectionManager = new();
-    private readonly WebSocketReplayService _replayService = new(Mock.Of<ILogger<WebSocketReplayService>>());
+    private readonly WebSocketReplayService _replayService = new(
+        Mock.Of<ILogger<WebSocketReplayService>>(),
+        Mock.Of<IServiceScopeFactory>());
     private readonly Mock<ILogger<ExecutionWebSocketHandler>> _loggerMock = new();
 
     [Fact]

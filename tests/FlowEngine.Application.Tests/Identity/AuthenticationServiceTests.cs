@@ -6,6 +6,7 @@ using FlowEngine.Core.Events;
 using FlowEngine.Infrastructure.Identity;
 using FlowEngine.Core.Data;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace FlowEngine.Application.Tests.Identity;
 
@@ -20,6 +21,7 @@ public class AuthenticationServiceTests : IDisposable
     private readonly PasswordValidator _passwordValidator;
     private readonly StubTokenService _tokenService;
     private readonly AuthenticationService _authService;
+    private readonly MemoryCache _memoryCache;
 
     /// <summary>
     /// 初始化测试，创建 SQLite 内存数据库。
@@ -40,7 +42,8 @@ public class AuthenticationServiceTests : IDisposable
         _tokenService = new StubTokenService();
         var eventBus = new StubEventBus();
         var auditFactory = new AuditEventFactory(new StubUserContext());
-        _authService = new AuthenticationService(_userStore, _passwordHasher, _passwordValidator, _tokenService, eventBus, auditFactory);
+        _memoryCache = new MemoryCache(new MemoryCacheOptions());
+        _authService = new AuthenticationService(_userStore, _passwordHasher, _passwordValidator, _tokenService, eventBus, auditFactory, _memoryCache);
     }
 
     /// <inheritdoc />
@@ -48,6 +51,7 @@ public class AuthenticationServiceTests : IDisposable
     {
         _dbContext.Database.CloseConnection();
         _dbContext.Dispose();
+        _memoryCache.Dispose();
     }
 
     [Fact]
@@ -205,6 +209,83 @@ public class AuthenticationServiceTests : IDisposable
 
         Assert.False(loginResult.Success);
         Assert.Equal("邮箱和密码不能为空", loginResult.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task LoginAsync_ExcessiveFailedAttempts_LocksAccount()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await _authService.RegisterAsync(new RegisterRequest
+        {
+            Email = "lockout@example.com",
+            UserName = "lockoutuser",
+            Password = "StrongP@ss1",
+        }, ct);
+
+        for (var i = 0; i < 5; i++)
+        {
+            await _authService.LoginAsync(new LoginRequest
+            {
+                Email = "lockout@example.com",
+                Password = "WrongP@ss2",
+            }, ct);
+        }
+
+        var lockedResult = await _authService.LoginAsync(new LoginRequest
+        {
+            Email = "lockout@example.com",
+            Password = "StrongP@ss1",
+        }, ct);
+
+        Assert.False(lockedResult.Success);
+        Assert.Contains("登录尝试过多", lockedResult.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task LoginAsync_SuccessAfterFailedAttempts_ClearsAttempts()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        await _authService.RegisterAsync(new RegisterRequest
+        {
+            Email = "clearattempts@example.com",
+            UserName = "clearattemptsuser",
+            Password = "StrongP@ss1",
+        }, ct);
+
+        for (var i = 0; i < 4; i++)
+        {
+            await _authService.LoginAsync(new LoginRequest
+            {
+                Email = "clearattempts@example.com",
+                Password = "WrongP@ss2",
+            }, ct);
+        }
+
+        var successResult = await _authService.LoginAsync(new LoginRequest
+        {
+            Email = "clearattempts@example.com",
+            Password = "StrongP@ss1",
+        }, ct);
+
+        Assert.True(successResult.Success);
+
+        for (var i = 0; i < 5; i++)
+        {
+            await _authService.LoginAsync(new LoginRequest
+            {
+                Email = "clearattempts@example.com",
+                Password = "WrongP@ss2",
+            }, ct);
+        }
+
+        var lockedResult = await _authService.LoginAsync(new LoginRequest
+        {
+            Email = "clearattempts@example.com",
+            Password = "StrongP@ss1",
+        }, ct);
+
+        Assert.False(lockedResult.Success);
+        Assert.Contains("登录尝试过多", lockedResult.ErrorMessage);
     }
 
     [Fact]

@@ -1,8 +1,14 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { TextInput, PasswordInput, Button, Paper, Text, Stack, Title, Anchor, Center, Box } from '@mantine/core';
+import { TextInput, PasswordInput, Button, Paper, Text, Stack, Title, Anchor, Center, Box, List, ThemeIcon } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
+import { Check, X } from 'lucide-react';
 import { useAuth } from '../hooks/AuthContext.tsx';
+
+interface PasswordRequirement {
+  label: string;
+  met: boolean;
+}
 
 export function RegisterPage() {
   const [email, setEmail] = useState('');
@@ -14,6 +20,16 @@ export function RegisterPage() {
   const { register } = useAuth();
   const navigate = useNavigate();
 
+  const requirements: PasswordRequirement[] = [
+    { label: 'At least 8 characters', met: password.length >= 8 },
+    { label: 'At least one uppercase letter', met: /[A-Z]/.test(password) },
+    { label: 'At least one lowercase letter', met: /[a-z]/.test(password) },
+    { label: 'At least one digit', met: /[0-9]/.test(password) },
+    { label: 'At least one special character', met: /[^a-zA-Z0-9]/.test(password) },
+  ];
+
+  const allRequirementsMet = requirements.every((r) => r.met);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
@@ -23,8 +39,8 @@ export function RegisterPage() {
       return;
     }
 
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters');
+    if (!allRequirementsMet) {
+      setError('Password does not meet all strength requirements');
       return;
     }
 
@@ -82,6 +98,23 @@ export function RegisterPage() {
               onChange={(e) => setPassword(e.target.value)}
               required
             />
+            <Box>
+              <Text size="xs" fw={500} mb="xs">Password requirements</Text>
+              <List spacing="xs" size="xs" center={false}>
+                {requirements.map((req) => (
+                  <List.Item
+                    key={req.label}
+                    icon={
+                      <ThemeIcon color={req.met ? 'green' : 'red'} size={16} radius="xl">
+                        {req.met ? <Check size={12} /> : <X size={12} />}
+                      </ThemeIcon>
+                    }
+                  >
+                    <Text c={req.met ? 'green' : 'red'}>{req.label}</Text>
+                  </List.Item>
+                ))}
+              </List>
+            </Box>
             <PasswordInput
               label="Confirm Password"
               placeholder="Repeat password"

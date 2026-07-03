@@ -38,23 +38,9 @@ public sealed class TriggerService(
         };
 
 
-        if (dto.Type == TriggerType.Webhook && triggerSettings.WebhookPath is not null)
+        if (dto.Type == TriggerType.Webhook)
         {
-            var route = new WebhookRoute
-            {
-                Path = triggerSettings.WebhookPath,
-                Method = "POST",
-                WorkflowDefinitionId = dto.WorkflowDefinitionId,
-                TriggerId = trigger.Id,
-                IsStatic = false,
-                Secret = triggerSettings.Secret,
-                AllowedIps = triggerSettings.AllowedIps,
-                AllowedOrigins = triggerSettings.AllowedOrigins,
-                IsSync = triggerSettings.IsSync,
-                MaxWaitSeconds = triggerSettings.MaxWaitSeconds,
-            };
-
-            dbContext.WebhookRoutes.Add(route);
+            await ApplyWebhookRouteAsync(trigger, triggerSettings, cancellationToken).ConfigureAwait(false);
         }
 
         dbContext.Triggers.Add(trigger);
@@ -120,7 +106,24 @@ public sealed class TriggerService(
         trigger.Settings = dto.Settings is not null ? ConvertToTriggerSettings(dto.Settings) : new TriggerSettings();
         trigger.UpdatedAt = DateTime.UtcNow;
 
+        if (trigger.Type == TriggerType.Webhook)
+        {
+            await UpdateWebhookRouteAsync(trigger, trigger.Settings, cancellationToken).ConfigureAwait(false);
+        }
+
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+            AuditEventTypes.TriggerUpdated,
+            "Trigger",
+            trigger.Id,
+            new Dictionary<string, object>
+            {
+                ["triggerType"] = trigger.Type.ToString(),
+                ["workflowDefinitionId"] = trigger.WorkflowDefinitionId,
+                ["isActive"] = trigger.IsActive,
+            }),
+            cancellationToken).ConfigureAwait(false);
 
         return MapToDto(trigger);
     }
@@ -150,6 +153,17 @@ public sealed class TriggerService(
             dbContext.WebhookRoutes.RemoveRange(routes);
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
+
+        await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+            AuditEventTypes.TriggerDeleted,
+            "Trigger",
+            trigger.Id,
+            new Dictionary<string, object>
+            {
+                ["triggerType"] = trigger.Type.ToString(),
+                ["workflowDefinitionId"] = trigger.WorkflowDefinitionId,
+            }),
+            cancellationToken).ConfigureAwait(false);
 
         return true;
     }
@@ -294,6 +308,106 @@ public sealed class TriggerService(
             IsSync = dto.IsSync,
             MaxWaitSeconds = dto.MaxWaitSeconds,
         };
+    }
+
+    private async Task ApplyWebhookRouteAsync(
+        Trigger trigger,
+        TriggerSettings settings,
+        CancellationToken cancellationToken)
+    {
+        if (trigger.Type != TriggerType.Webhook)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(settings.WebhookPath))
+        {
+            return;
+        }
+
+        await ValidateWebhookPathAsync(settings.WebhookPath, excludeTriggerId: null, cancellationToken)
+            .ConfigureAwait(false);
+
+        var route = new WebhookRoute
+        {
+            Path = settings.WebhookPath,
+            Method = "POST",
+            WorkflowDefinitionId = trigger.WorkflowDefinitionId,
+            TriggerId = trigger.Id,
+            IsStatic = false,
+            Secret = settings.Secret,
+            AllowedIps = settings.AllowedIps,
+            AllowedOrigins = settings.AllowedOrigins,
+            IsSync = settings.IsSync,
+            MaxWaitSeconds = settings.MaxWaitSeconds,
+        };
+
+        dbContext.WebhookRoutes.Add(route);
+    }
+
+    private async Task UpdateWebhookRouteAsync(
+        Trigger trigger,
+        TriggerSettings settings,
+        CancellationToken cancellationToken)
+    {
+        if (trigger.Type != TriggerType.Webhook)
+        {
+            return;
+        }
+
+        var existingRoutes = await dbContext.WebhookRoutes
+            .Where(r => r.TriggerId == trigger.Id)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        if (string.IsNullOrWhiteSpace(settings.WebhookPath))
+        {
+            dbContext.WebhookRoutes.RemoveRange(existingRoutes);
+            return;
+        }
+
+        await ValidateWebhookPathAsync(settings.WebhookPath, trigger.Id, cancellationToken)
+            .ConfigureAwait(false);
+
+        var route = existingRoutes.FirstOrDefault();
+        if (route is null)
+        {
+            route = new WebhookRoute
+            {
+                Method = "POST",
+                WorkflowDefinitionId = trigger.WorkflowDefinitionId,
+                TriggerId = trigger.Id,
+                IsStatic = false,
+            };
+            dbContext.WebhookRoutes.Add(route);
+        }
+
+        route.Path = settings.WebhookPath;
+        route.Secret = settings.Secret;
+        route.AllowedIps = settings.AllowedIps;
+        route.AllowedOrigins = settings.AllowedOrigins;
+        route.IsSync = settings.IsSync;
+        route.MaxWaitSeconds = settings.MaxWaitSeconds;
+    }
+
+    private async Task ValidateWebhookPathAsync(
+        string path,
+        Guid? excludeTriggerId,
+        CancellationToken cancellationToken)
+    {
+        var query = dbContext.WebhookRoutes
+            .Where(r => r.Path == path);
+
+        if (excludeTriggerId.HasValue)
+        {
+            query = query.Where(r => r.TriggerId != excludeTriggerId.Value);
+        }
+
+        var exists = await query.AnyAsync(cancellationToken).ConfigureAwait(false);
+        if (exists)
+        {
+            throw new InvalidOperationException($"Webhook path '{path}' is already in use.");
+        }
     }
 
     private static TriggerSettingsDto ConvertToTriggerSettingsDto(TriggerSettings settings)

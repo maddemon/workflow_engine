@@ -7,6 +7,8 @@ using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Runtime.Scripting;
 
+using PreparedScript = Jint.Prepared<Acornima.Ast.Script>;
+
 /// <summary>
 /// Jint JavaScript 引擎封装。
 /// 提供安全的表达式求值（参数、条件）和脚本执行（JSNode/CodeSnippet），
@@ -47,6 +49,7 @@ public sealed class JsEngine : IDisposable
         InjectConsole(engine, logger);
         InjectNow(engine);
         InjectJmespath(engine);
+        InjectWhitelistFunctions(engine);
 
         return new JsEngine(engine, logger);
     }
@@ -119,6 +122,23 @@ public sealed class JsEngine : IDisposable
         }
 
         return JsonNode.Parse(value.ToString());
+    }
+
+    /// <summary>
+    /// 预编译表达式，返回可缓存的 AST。
+    /// </summary>
+    public static PreparedScript PrepareExpression(string expression)
+    {
+        return Engine.PrepareScript($"return ({expression})", expression, strict: true);
+    }
+
+    /// <summary>
+    /// 执行已预编译的表达式 AST。
+    /// </summary>
+    public JsValue EvaluatePrepared(PreparedScript prepared)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        return _engine.Evaluate(in prepared);
     }
 
     /// <summary>
@@ -237,6 +257,25 @@ public sealed class JsEngine : IDisposable
                 return null;
             }
         }));
+    }
+
+    private static void InjectWhitelistFunctions(Engine engine)
+    {
+        engine.SetValue("length", new Func<object?, int?>(value =>
+        {
+            return value switch
+            {
+                string s => s.Length,
+                JsonNode node when node is JsonArray arr => arr.Count,
+                JsonNode node when node is JsonObject obj => obj.Count,
+                JsonElement element when element.ValueKind == JsonValueKind.Array => element.GetArrayLength(),
+                JsonElement element when element.ValueKind == JsonValueKind.Object => element.EnumerateObject().Count(),
+                IEnumerable<object> enumerable => enumerable.Count(),
+                _ => null
+            };
+        }));
+
+        engine.SetValue("trim", new Func<string?, string?>(value => value?.Trim()));
     }
 
     private static JsonNode? NavigateJsonPath(JsonNode node, ReadOnlySpan<char> path)

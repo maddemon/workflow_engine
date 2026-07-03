@@ -132,10 +132,22 @@ public sealed class WorkflowService(
         if (previousIsActive && !existing.IsActive)
         {
             await UnregisterTriggersAsync(existing.Id, cancellationToken).ConfigureAwait(false);
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.WorkflowDeactivated,
+                "Workflow",
+                existing.Id,
+                new Dictionary<string, object> { ["name"] = existing.Name }),
+                cancellationToken).ConfigureAwait(false);
         }
         else if (!previousIsActive && existing.IsActive)
         {
             await RegisterTriggersAsync(existing.Id, cancellationToken).ConfigureAwait(false);
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.WorkflowActivated,
+                "Workflow",
+                existing.Id,
+                new Dictionary<string, object> { ["name"] = existing.Name }),
+                cancellationToken).ConfigureAwait(false);
         }
 
         await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
@@ -215,6 +227,7 @@ public sealed class WorkflowService(
         {
             var node = new NodeDefinition
             {
+                Id = Guid.NewGuid(),
                 TypeName = dto.TypeName,
                 Name = dto.Name,
                 Parameters = dto.Parameters,

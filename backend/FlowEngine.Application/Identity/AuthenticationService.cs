@@ -4,6 +4,7 @@ using FlowEngine.Application.Dtos;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.Identity;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace FlowEngine.Application.Identity;
 
@@ -16,8 +17,13 @@ public partial class AuthenticationService(
     IPasswordValidator passwordValidator,
     ITokenService tokenService,
     IEventBus eventBus,
-    AuditEventFactory auditFactory)
+    AuditEventFactory auditFactory,
+    IMemoryCache? memoryCache = null)
 {
+    private const int MaxFailedAttempts = 5;
+    private static readonly TimeSpan AttemptWindow = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
+
     /// <summary>
     /// 用户注册。
     /// </summary>
@@ -98,9 +104,19 @@ public partial class AuthenticationService(
             };
         }
 
+        if (IsLockedOut(request.Email))
+        {
+            return new LoginResult
+            {
+                Success = false,
+                ErrorMessage = $"登录尝试过多，请 {LockoutDuration.TotalMinutes} 分钟后再试",
+            };
+        }
+
         var user = await userStore.GetByEmailAsync(request.Email, ct).ConfigureAwait(false);
         if (user is null || !user.IsActive)
         {
+            RecordFailedAttempt(request.Email);
             return new LoginResult
             {
                 Success = false,
@@ -110,12 +126,15 @@ public partial class AuthenticationService(
 
         if (!passwordHasher.VerifyPassword(user.PasswordHash, request.Password))
         {
+            RecordFailedAttempt(request.Email);
             return new LoginResult
             {
                 Success = false,
                 ErrorMessage = "邮箱或密码错误",
             };
         }
+
+        ClearFailedAttempts(request.Email);
 
         var roles = await userStore.GetRolesAsync(user.Id, ct).ConfigureAwait(false);
         var roleNames = roles.Select(r => r.Role).ToList();
@@ -147,6 +166,72 @@ public partial class AuthenticationService(
         };
     }
 
+    private string GetAttemptCacheKey(string email) => $"login-attempts:{email.ToLowerInvariant()}";
+
+    private bool IsLockedOut(string email)
+    {
+        if (memoryCache is null)
+        {
+            return false;
+        }
+
+        var key = GetAttemptCacheKey(email);
+        if (!memoryCache.TryGetValue(key, out LoginAttemptState? state) || state is null)
+        {
+            return false;
+        }
+
+        if (state.LockoutUntil.HasValue && state.LockoutUntil.Value > DateTime.UtcNow)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private void RecordFailedAttempt(string email)
+    {
+        if (memoryCache is null)
+        {
+            return;
+        }
+
+        var key = GetAttemptCacheKey(email);
+        var state = memoryCache.TryGetValue(key, out LoginAttemptState? existing) && existing is not null
+            ? existing
+            : new LoginAttemptState();
+
+        var now = DateTime.UtcNow;
+        if (state.FirstAttempt.HasValue && now - state.FirstAttempt.Value > AttemptWindow)
+        {
+            state = new LoginAttemptState { FirstAttempt = now, FailedAttempts = 1 };
+        }
+        else
+        {
+            state.FirstAttempt ??= now;
+            state.FailedAttempts++;
+        }
+
+        if (state.FailedAttempts >= MaxFailedAttempts)
+        {
+            state.LockoutUntil = now + LockoutDuration;
+        }
+
+        memoryCache.Set(key, state, LockoutDuration);
+    }
+
+    private void ClearFailedAttempts(string email)
+    {
+        memoryCache?.Remove(GetAttemptCacheKey(email));
+    }
+
     [GeneratedRegex(@"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
     private static partial Regex EmailRegex();
+
+    private sealed class LoginAttemptState
+    {
+        public int FailedAttempts { get; set; }
+        public DateTime? FirstAttempt { get; set; }
+        public DateTime? LockoutUntil { get; set; }
+    }
 }

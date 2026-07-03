@@ -1,4 +1,5 @@
 using FlowEngine.Host.WebSocketHandlers;
+using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Microsoft.Extensions.Logging;
 
@@ -14,7 +15,7 @@ public class WebSocketReplayServiceTests : IDisposable
 
     public WebSocketReplayServiceTests()
     {
-        _service = new WebSocketReplayService(_loggerMock.Object);
+        _service = new WebSocketReplayService(_loggerMock.Object, Mock.Of<IServiceScopeFactory>());
     }
 
     [Fact]

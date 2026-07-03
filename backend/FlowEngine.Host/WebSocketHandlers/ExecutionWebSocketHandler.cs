@@ -203,6 +203,12 @@ public sealed class ExecutionWebSocketHandler
         var missingEvents = _replayService.GetMissingEvents(executionId, lastSequence);
         if (missingEvents.Count == 0)
         {
+            missingEvents = await _replayService.GetPersistedEventsAsync(executionId, lastSequence, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        if (missingEvents.Count == 0)
+        {
             return;
         }
 

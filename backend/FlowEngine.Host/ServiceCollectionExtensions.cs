@@ -84,6 +84,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IUserStore, UserStore>();
         services.AddScoped<IUserContext, HttpContextUserContext>();
         services.AddScoped<AuthenticationService>();
+        services.AddSingleton<ITokenBlacklist, TokenBlacklistService>();
         services.AddScoped<AuditEventFactory>();
 
         // ── Business ────────────────────────────────────────────────
@@ -107,6 +108,7 @@ public static class ServiceCollectionExtensions
         services.AddQuartzHostedService(options => options.WaitForJobsToComplete = true);
 
         services.AddScoped<ExecutionService>();
+        services.AddScoped<IWorkflowLoader, WorkflowLoader>();
         services.AddScoped<NodeExecutionContextFactory>(provider =>
         {
             var whitelist = configuration.GetSection("Expression:EnvironmentWhitelist").Get<string[]>() ?? [];
@@ -116,7 +118,8 @@ public static class ServiceCollectionExtensions
                 provider.GetRequiredService<ICredentialAccessor>(),
                 new HashSet<string>(whitelist, StringComparer.OrdinalIgnoreCase),
                 hydratorLogger: provider.GetService<ILogger<ParameterHydrator>>(),
-                jsLogger: provider.GetService<ILogger<JsEngine>>());
+                jsLogger: provider.GetService<ILogger<JsEngine>>(),
+                workflowLoader: provider.GetService<IWorkflowLoader>());
         });
 
         // ── WebSocket ───────────────────────────────────────────────
@@ -191,6 +194,19 @@ public static class ServiceCollectionExtensions
                     ValidIssuer = configuration["Jwt:Issuer"] ?? "FlowEngine",
                     ValidAudience = configuration["Jwt:Audience"] ?? "FlowEngine",
                     IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret)),
+                };
+
+                options.Events = new JwtBearerEvents
+                {
+                    OnTokenValidated = async context =>
+                    {
+                        var blacklist = context.HttpContext.RequestServices.GetRequiredService<ITokenBlacklist>();
+                        var jti = context.SecurityToken.Id;
+                        if (!string.IsNullOrEmpty(jti) && await blacklist.IsBlacklistedAsync(jti, CancellationToken.None).ConfigureAwait(false))
+                        {
+                            context.Fail("Token has been revoked.");
+                        }
+                    },
                 };
             });
         services.AddAuthorization();

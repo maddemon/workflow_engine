@@ -130,7 +130,7 @@ export function useWebSocketExecution() {
 
       case 'ping':
         if (wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({ type: 'ping' }));
+          wsRef.current.send(JSON.stringify({ type: 'pong' }));
         }
         break;
     }

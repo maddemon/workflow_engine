@@ -1,3 +1,4 @@
+using System.IdentityModel.Tokens.Jwt;
 using FlowEngine.Application.Audit;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
@@ -6,6 +7,7 @@ using FlowEngine.Core.Events;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Host.Controllers;
 
@@ -19,7 +21,9 @@ public class AuthController(
     IUserContext userContext,
     IUserStore userStore,
     IEventBus eventBus,
-    AuditEventFactory auditFactory) : ControllerBase
+    AuditEventFactory auditFactory,
+    ITokenBlacklist tokenBlacklist,
+    ILogger<AuthController> logger) : ControllerBase
 {
     /// <summary>
     /// 用户注册。
@@ -67,8 +71,7 @@ public class AuthController(
     /// 用户登出。
     /// </summary>
     /// <remarks>
-    /// 当前使用无状态 JWT，登出由客户端丢弃 Token 实现。
-    /// 后续可引入 Token 黑名单使已签发 Token 提前失效。
+    /// 将当前请求的 JWT 加入内存黑名单，使该 Token 在有效期内提前失效。
     /// </remarks>
     [Authorize]
     [HttpPost("logout")]
@@ -83,7 +86,22 @@ public class AuthController(
                 cancellationToken).ConfigureAwait(false);
         }
 
-        // TODO: Token 黑名单 (Beta 阶段引入 Refresh Token 后实现)
+        var authHeader = Request.Headers.Authorization.FirstOrDefault();
+        if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+        {
+            var token = authHeader["Bearer ".Length..];
+            try
+            {
+                var handler = new JwtSecurityTokenHandler();
+                var jwt = handler.ReadJwtToken(token);
+                await tokenBlacklist.AddAsync(jwt.Id, jwt.ValidTo, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to invalidate token during logout");
+            }
+        }
+
         return Ok();
     }
 

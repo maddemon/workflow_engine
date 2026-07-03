@@ -92,9 +92,21 @@ public sealed class SubWorkflowToolNode : INodeType
                 return context.ErrorResult("MissingWorkflowId", "WorkflowId is required when Source is Database.");
             }
 
-            // Load workflow from database via context
-            // For now, return an error as database loading needs to be implemented
-            return context.ErrorResult("NotImplemented", "Database workflow loading is not yet implemented. Use Inline mode.");
+            if (!Guid.TryParse(WorkflowId, out var workflowId))
+            {
+                return context.ErrorResult("InvalidWorkflowId", $"WorkflowId '{WorkflowId}' is not a valid GUID.");
+            }
+
+            if (context.WorkflowLoader is null)
+            {
+                return context.ErrorResult("WorkflowLoaderNotAvailable", "Workflow loader is not available in the current execution context.");
+            }
+
+            workflow = await context.WorkflowLoader.LoadAsync(workflowId, cancellationToken).ConfigureAwait(false);
+            if (workflow is null)
+            {
+                return context.ErrorResult("WorkflowNotFound", $"Workflow '{WorkflowId}' not found in database.");
+            }
         }
         else // Inline
         {

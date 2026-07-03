@@ -1,8 +1,11 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core.Entities;
+using FlowEngine.Core.Expressions;
 using FlowEngine.Runtime.Expressions;
+using FlowEngine.Runtime.Expressions.Exceptions;
 using FlowEngine.Runtime.Scripting;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FlowEngine.Runtime.Tests.Expressions;
@@ -74,6 +77,43 @@ public class ParameterResolverTests
         var result = _resolver.Resolve(rawAsObjects, js);
 
         Assert.Equal("", result["url"]);
+    }
+
+    [Fact]
+    public void Resolve_ForbiddenIdentifier_ThrowsSecurityViolationException()
+    {
+        using var js = CreateJsEngine();
+        var raw = new Dictionary<string, object> { ["expr"] = "eval('1+1')" };
+
+        Assert.Throws<SecurityViolationException>(() => _resolver.Resolve(raw, js));
+    }
+
+    [Fact]
+    public void Resolve_InvalidSyntax_ThrowsSyntaxErrorException()
+    {
+        using var js = CreateJsEngine();
+        var raw = new Dictionary<string, object> { ["expr"] = "input.status ===" };
+
+        Assert.Throws<SyntaxErrorException>(() => _resolver.Resolve(raw, js));
+    }
+
+
+
+    [Fact]
+    public void Resolve_WithCacheKey_CachesPreparedScript()
+    {
+        var cache = new MemoryCache(new MemoryCacheOptions());
+        var resolver = new ParameterResolver(NullLogger<ParameterResolver>.Instance, cache);
+        using var js = CreateJsEngine(new JsonObject { ["value"] = 2 });
+        var raw = new Dictionary<string, object> { ["expr"] = "input.value * 2" };
+        var cacheKey = new ExpressionCacheKey(string.Empty, "schema-a", "schema-b");
+
+        var first = resolver.Resolve(raw, js, cacheKey);
+        var second = resolver.Resolve(raw, js, cacheKey);
+
+        Assert.Equal(4, Convert.ToInt32(first["expr"]));
+        Assert.Equal(4, Convert.ToInt32(second["expr"]));
+        Assert.True(cache.TryGetValue(cacheKey with { Expression = "input.value * 2" }, out _));
     }
 
     private static JsEngine CreateJsEngine(JsonObject? inputData = null)

@@ -135,7 +135,7 @@ public sealed class WebhookHandler
                     await Task.Delay(100, context.RequestAborted).ConfigureAwait(false);
                 }
 
-                context.Response.StatusCode = StatusCodes.Status200OK;
+                context.Response.StatusCode = StatusCodes.Status202Accepted;
                 await context.Response.WriteAsJsonAsync(
                     new { executionId = executionId.Value, status = "Timeout" },
                     context.RequestAborted).ConfigureAwait(false);

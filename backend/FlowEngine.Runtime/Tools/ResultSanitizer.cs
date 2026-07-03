@@ -44,8 +44,9 @@ public static partial class ResultSanitizer
         var sanitized = result;
         sanitized = FilterInjectionPatterns(sanitized);
         sanitized = SanitizeCredentials(sanitized);
+        var truncated = !string.IsNullOrEmpty(sanitized) && sanitized.Length > maxLength;
         sanitized = Truncate(sanitized, maxLength);
-        return WrapStructured(toolName, sanitized);
+        return WrapStructured(toolName, sanitized, truncated);
     }
 
     /// <summary>
@@ -86,13 +87,13 @@ public static partial class ResultSanitizer
     /// <summary>
     /// 结构化包装：用 JSON 包裹工具结果，标注来源与类型。
     /// </summary>
-    public static string WrapStructured(string toolName, string result)
+    public static string WrapStructured(string toolName, string result, bool truncated = false)
     {
         var wrapper = new JsonObject
         {
             ["tool"] = toolName,
             ["result"] = result,
-            ["truncated"] = result.Length > DefaultMaxResultLength
+            ["truncated"] = truncated
         };
 
         return wrapper.ToJsonString(JsonOptions);

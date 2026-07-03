@@ -1,7 +1,11 @@
+using System.Security.Cryptography;
+using System.Text.Json;
+using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Expressions;
 using FlowEngine.Runtime.Expressions;
 using FlowEngine.Runtime.Registry;
 using FlowEngine.Runtime.Scripting;
@@ -19,7 +23,8 @@ public sealed class NodeExecutionContextFactory(
     IReadOnlySet<string> environmentWhitelist,
     ILogger<ParameterHydrator>? hydratorLogger = null,
     ILogger<JsEngine>? jsLogger = null,
-    ILlmClient? llmClient = null)
+    ILlmClient? llmClient = null,
+    IWorkflowLoader? workflowLoader = null) : Core.Abstractions.INodeExecutionContextFactory
 {
     private readonly ParameterHydrator ParameterHydrator = new(credentialAccessor, hydratorLogger);
 
@@ -37,6 +42,7 @@ public sealed class NodeExecutionContextFactory(
         var nodeDefinition = node;
         var descriptor = registry.GetDescriptor(node.TypeName);
         var rawParameters = MergeParameters(nodeDefinition, descriptor);
+        var cacheKey = BuildCacheKey(descriptor);
 
         using var js = JsEngine.Create(logger: jsLogger);
         js.SetValue("input", GetCurrentInput(inputs, runIndex));
@@ -61,7 +67,7 @@ public sealed class NodeExecutionContextFactory(
         js.SetValue("env", new EnvironmentAccessor(environmentWhitelist));
         js.SetValue("now", DateTime.UtcNow);
 
-        var resolvedParameters = parameterResolver.Resolve(rawParameters, js);
+        var resolvedParameters = parameterResolver.Resolve(rawParameters, js, cacheKey);
 
         await ParameterHydrator.HydrateAsync(nodeInstance, resolvedParameters).ConfigureAwait(false);
 
@@ -78,8 +84,51 @@ public sealed class NodeExecutionContextFactory(
             Logger = NullExecutionLogger.Instance,
             CancellationToken = cancellationToken,
             LlmClient = llmClient,
-            NodeRegistry = registry
+            NodeRegistry = registry,
+            ContextFactory = this,
+            WorkflowLoader = workflowLoader,
         };
+    }
+
+    private static ExpressionCacheKey? BuildCacheKey(NodeTypeDescriptor descriptor)
+    {
+        var inputPort = descriptor.Ports.FirstOrDefault(p =>
+            p.Name == FlowConstants.PortNames.Input
+            && p.Direction == PortDirection.Input
+            && p.Type == PortType.Main);
+
+        var inputSchemaHash = ComputeHash(inputPort?.ExpectedSchema);
+        var parameterSchemaHash = ComputeHash(descriptor.Parameters);
+
+        if (string.IsNullOrEmpty(inputSchemaHash) && string.IsNullOrEmpty(parameterSchemaHash))
+        {
+            return null;
+        }
+
+        return new ExpressionCacheKey(string.Empty, inputSchemaHash, parameterSchemaHash);
+    }
+
+    private static string ComputeHash(object? value)
+    {
+        if (value is null)
+        {
+            return string.Empty;
+        }
+
+        var json = JsonSerializer.Serialize(value, JsonDefaults.Options);
+        if (string.IsNullOrEmpty(json) || json == "{}")
+        {
+            return string.Empty;
+        }
+
+        var bytes = System.Text.Encoding.UTF8.GetBytes(json);
+#if NET8_0_OR_GREATER
+        var hash = SHA256.HashData(bytes);
+#else
+        using var sha = SHA256.Create();
+        var hash = sha.ComputeHash(bytes);
+#endif
+        return Convert.ToHexString(hash);
     }
 
     private static object? GetCurrentInput(IReadOnlyDictionary<string, DataBatch> inputs, int runIndex)

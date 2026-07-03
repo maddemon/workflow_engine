@@ -252,9 +252,6 @@ public sealed class AgentNode : INodeType
         NodeExecutionContext parentContext,
         CancellationToken cancellationToken)
     {
-        // TODO: This method manually constructs NodeExecutionContext, bypassing NodeExecutionContextFactory.
-        // Basic parameter resolution works via direct copy. Full factory integration (expression evaluation,
-        // credential hydration, parameter resolution) should be added in a later phase.
         var tool = tools.FirstOrDefault(t => t.Name == toolCall.Name);
         if (tool is null)
         {
@@ -295,30 +292,61 @@ public sealed class AgentNode : INodeType
             ]
         };
 
-        var toolContext = new NodeExecutionContext
-        {
-            Workflow = parentContext.Workflow,
-            ExecutionId = parentContext.ExecutionId,
-            Node = new NodeDefinition
-            {
-                Id = toolNode.Id,
-                TypeName = toolNode.TypeName,
-                Name = toolNode.Name,
-                Parameters = toolNode.Parameters,
-                Ports = toolNode.Ports
-            },
-            Inputs = new Dictionary<string, DataBatch> { [FlowConstants.PortNames.Input] = inputBatch },
-            RawParameters = toolNode.Parameters,
-            ResolvedParameters = toolNode.Parameters,
-            Credentials = parentContext.Credentials,
-            Logger = parentContext.Logger,
-            CancellationToken = cancellationToken
-        };
-
         var startedAt = DateTime.UtcNow;
+        NodeExecutionContext toolContext;
+        INodeType? toolNodeInstance;
+
+        toolNodeInstance = CreateNodeInstance(nodeType);
+
+        if (parentContext.ContextFactory is not null && toolNodeInstance is not null)
+        {
+            var execution = new ExecutionRecord
+            {
+                Id = parentContext.ExecutionId,
+                WorkflowDefinitionId = parentContext.Workflow.Id,
+                StartedAt = startedAt,
+                Status = ExecutionStatus.Running,
+            };
+
+            toolContext = await parentContext.ContextFactory.CreateAsync(
+                parentContext.Workflow,
+                execution,
+                toolNode,
+                toolNodeInstance,
+                new Dictionary<string, DataBatch> { [FlowConstants.PortNames.Input] = inputBatch },
+                new Dictionary<string, DataBatch>(),
+                new Dictionary<string, DataBatch>(),
+                0,
+                cancellationToken).ConfigureAwait(false);
+        }
+        else
+        {
+            // Fallback for contexts created outside the factory or when instance creation fails.
+            toolNodeInstance ??= nodeType;
+            toolContext = new NodeExecutionContext
+            {
+                Workflow = parentContext.Workflow,
+                ExecutionId = parentContext.ExecutionId,
+                Node = new NodeDefinition
+                {
+                    Id = toolNode.Id,
+                    TypeName = toolNode.TypeName,
+                    Name = toolNode.Name,
+                    Parameters = toolNode.Parameters,
+                    Ports = toolNode.Ports
+                },
+                Inputs = new Dictionary<string, DataBatch> { [FlowConstants.PortNames.Input] = inputBatch },
+                RawParameters = toolNode.Parameters,
+                ResolvedParameters = toolNode.Parameters,
+                Credentials = parentContext.Credentials,
+                Logger = parentContext.Logger,
+                CancellationToken = cancellationToken
+            };
+        }
+
         try
         {
-            var result = await nodeType.ExecuteAsync(toolContext, cancellationToken).ConfigureAwait(false);
+            var result = await toolNodeInstance.ExecuteAsync(toolContext, cancellationToken).ConfigureAwait(false);
 
             var record = new NodeExecutionRecord
             {
@@ -351,6 +379,19 @@ public sealed class AgentNode : INodeType
         catch (Exception ex)
         {
             return ResultSanitizer.Sanitize(toolCall.Name, $"Tool execution error: {ex.Message}");
+        }
+    }
+
+    private static INodeType? CreateNodeInstance(INodeType nodeType)
+    {
+        try
+        {
+            var instance = Activator.CreateInstance(nodeType.GetType());
+            return instance as INodeType;
+        }
+        catch
+        {
+            return null;
         }
     }
 
