@@ -29,6 +29,14 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
     return map
   }, [nodes])
 
+  const nodeTypeNames = useMemo(() => {
+    const map: Record<string, string> = {}
+    for (const node of nodes) {
+      map[node.id] = node.data.typeName
+    }
+    return map
+  }, [nodes])
+
   useEffect(() => {
     if (id && id !== "new") {
       loadWorkflow(id)
@@ -41,10 +49,10 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
 
   const aside = useMemo(() => {
     if (execution || error) {
-      return <ExecutionPanel execution={execution} onClose={clearExecution} error={error} nodeNames={nodeNames} />
+      return <ExecutionPanel execution={execution} onClose={clearExecution} error={error} nodeNames={nodeNames} nodeTypeNames={nodeTypeNames} />
     }
     return <ParameterPanel />
-  }, [execution, clearExecution, error, nodeNames])
+  }, [execution, clearExecution, error, nodeNames, nodeTypeNames])
 
   const asideKey = execution ? `${execution.id}-${execution.status}-${execution.completedAt ?? ''}` : (error ? "error" : "default")
   const prevKeyRef = useRef<string>(asideKey)

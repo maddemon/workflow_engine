@@ -11,8 +11,8 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace FlowEngine.Migrations.Migrations.Sqlite
 {
     [DbContext(typeof(FlowEngineDbContext))]
-    [Migration("20260621132715_AddJsonColumns")]
-    partial class AddJsonColumns
+    [Migration("20260704005030_InitSqlite")]
+    partial class InitSqlite
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
@@ -32,7 +32,9 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
 
                     b.Property<string>("Data")
                         .IsRequired()
-                        .HasColumnType("json");
+                        .HasColumnType("json")
+                        .HasColumnName("data")
+                        .HasComment("加密字段数据映射");
 
                     b.Property<bool>("Deleted")
                         .HasColumnType("INTEGER")
@@ -40,15 +42,29 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
 
                     b.Property<string>("KeyVersion")
                         .IsRequired()
-                        .HasColumnType("TEXT");
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("key_version")
+                        .HasComment("密钥版本");
 
                     b.Property<string>("Name")
                         .IsRequired()
-                        .HasColumnType("TEXT");
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("name")
+                        .HasComment("凭据名称");
+
+                    b.Property<Guid?>("ProjectId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("project_id")
+                        .HasComment("项目 ID");
 
                     b.Property<string>("Type")
                         .IsRequired()
-                        .HasColumnType("TEXT");
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("type")
+                        .HasComment("凭据类型");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("TEXT")
@@ -56,7 +72,10 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
 
                     b.HasKey("Id");
 
-                    b.ToTable("Credentials");
+                    b.ToTable("credentials", "flow", t =>
+                        {
+                            t.HasComment("凭据定义");
+                        });
                 });
 
             modelBuilder.Entity("FlowEngine.Core.Entities.ExecutionRecord", b =>
@@ -89,6 +108,11 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                         .HasColumnName("parent_execution_id")
                         .HasComment("父执行 ID");
 
+                    b.Property<Guid?>("ProjectId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("project_id")
+                        .HasComment("项目 ID");
+
                     b.Property<DateTime>("StartedAt")
                         .HasColumnType("TEXT")
                         .HasColumnName("started_at")
@@ -113,6 +137,157 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                     b.ToTable("execution_records", "flow", t =>
                         {
                             t.HasComment("执行记录");
+                        });
+                });
+
+            modelBuilder.Entity("FlowEngine.Core.Entities.Project", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasMaxLength(36)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT")
+                        .HasComment("创建时间");
+
+                    b.Property<Guid>("CreatedBy")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("created_by")
+                        .HasComment("创建人");
+
+                    b.Property<bool>("Deleted")
+                        .HasColumnType("INTEGER")
+                        .HasComment("是否删除");
+
+                    b.Property<string>("Description")
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("description")
+                        .HasComment("项目描述");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("name")
+                        .HasComment("项目名称");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT")
+                        .HasComment("最后更新时间");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("projects", "flow", t =>
+                        {
+                            t.HasComment("项目");
+                        });
+                });
+
+            modelBuilder.Entity("FlowEngine.Core.Entities.ProjectMember", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasMaxLength(36)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT")
+                        .HasComment("创建时间");
+
+                    b.Property<bool>("Deleted")
+                        .HasColumnType("INTEGER")
+                        .HasComment("是否删除");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("project_id")
+                        .HasComment("项目 ID");
+
+                    b.Property<string>("Role")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("role")
+                        .HasComment("成员角色");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT")
+                        .HasComment("最后更新时间");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("user_id")
+                        .HasComment("用户 ID");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProjectId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("project_members", "flow", t =>
+                        {
+                            t.HasComment("项目成员");
+                        });
+                });
+
+            modelBuilder.Entity("FlowEngine.Core.Entities.StoredFile", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .HasMaxLength(36)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ContentType")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("content_type")
+                        .HasComment("MIME 类型");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT")
+                        .HasComment("创建时间");
+
+                    b.Property<bool>("Deleted")
+                        .HasColumnType("INTEGER")
+                        .HasComment("是否删除");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("file_name")
+                        .HasComment("文件名");
+
+                    b.Property<Guid>("ProjectId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("project_id")
+                        .HasComment("所属项目");
+
+                    b.Property<long>("Size")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("size")
+                        .HasComment("文件大小");
+
+                    b.Property<string>("StoragePath")
+                        .IsRequired()
+                        .HasMaxLength(1024)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("storage_path")
+                        .HasComment("存储路径");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("TEXT")
+                        .HasComment("最后更新时间");
+
+                    b.Property<Guid>("UploadedBy")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("uploaded_by")
+                        .HasComment("上传者");
+
+                    b.HasKey("Id");
+
+                    b.ToTable("stored_files", "flow", t =>
+                        {
+                            t.HasComment("存储文件");
                         });
                 });
 
@@ -151,6 +326,11 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                         .HasColumnType("TEXT")
                         .HasColumnName("next_trigger_at")
                         .HasComment("下次触发时间");
+
+                    b.Property<Guid?>("ProjectId")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("project_id")
+                        .HasComment("项目 ID");
 
                     b.Property<string>("Settings")
                         .IsRequired()

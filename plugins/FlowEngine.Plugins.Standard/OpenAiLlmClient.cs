@@ -1,4 +1,5 @@
 using System.ClientModel;
+using System.Threading.Channels;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using OpenAI;
@@ -96,6 +97,132 @@ public sealed class OpenAiLlmClient : ILlmClient
         {
             throw new InvalidOperationException($"OpenAI API call failed: {ex.Message}", ex);
         }
+    }
+
+    /// <inheritdoc />
+    public IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(
+        IReadOnlyList<LlmMessage> messages,
+        IReadOnlyList<ToolDefinition> tools,
+        CancellationToken cancellationToken = default)
+    {
+        var channel = Channel.CreateUnbounded<LlmStreamChunk>();
+        _ = ProduceStreamAsync(channel.Writer, messages, tools, cancellationToken);
+        return channel.Reader.ReadAllAsync(cancellationToken);
+    }
+
+    private async Task ProduceStreamAsync(
+        ChannelWriter<LlmStreamChunk> writer,
+        IReadOnlyList<LlmMessage> messages,
+        IReadOnlyList<ToolDefinition> tools,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var chatMessages = ConvertMessages(messages);
+
+            var chatOptions = new ChatCompletionOptions
+            {
+                Temperature = _temperature,
+            };
+
+            if (_maxTokens.HasValue)
+            {
+                chatOptions.MaxOutputTokenCount = _maxTokens.Value;
+            }
+
+            foreach (var tool in ConvertTools(tools))
+            {
+                chatOptions.Tools.Add(tool);
+            }
+
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(DefaultTimeoutSeconds));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
+
+            var chatClient = _client.GetChatClient(_model);
+            var updates = chatClient.CompleteChatStreamingAsync(chatMessages, chatOptions, linkedCts.Token);
+
+            var toolCallAccumulator = new Dictionary<int, (string Id, string Name, string Arguments)>(4);
+            IReadOnlyList<LlmToolCall>? finalToolCalls = null;
+
+            await foreach (var update in updates.ConfigureAwait(false))
+            {
+                if (update.ContentUpdate is { Count: > 0 })
+                {
+                    foreach (var part in update.ContentUpdate)
+                    {
+                        var text = part.Text;
+                        if (string.IsNullOrEmpty(text))
+                        {
+                            continue;
+                        }
+
+                        await writer.WriteAsync(new LlmStreamChunk { Delta = text }, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+                }
+
+                if (update.ToolCallUpdates is { Count: > 0 })
+                {
+                    foreach (var toolCallUpdate in update.ToolCallUpdates)
+                    {
+                        var index = toolCallUpdate.Index;
+                        if (!toolCallAccumulator.TryGetValue(index, out var existing))
+                        {
+                            existing = (string.Empty, string.Empty, string.Empty);
+                        }
+
+                        if (!string.IsNullOrEmpty(toolCallUpdate.ToolCallId))
+                        {
+                            existing.Id = toolCallUpdate.ToolCallId;
+                        }
+
+                        if (!string.IsNullOrEmpty(toolCallUpdate.FunctionName))
+                        {
+                            existing.Name = toolCallUpdate.FunctionName;
+                        }
+
+                        if (toolCallUpdate.FunctionArgumentsUpdate is { } argsUpdate)
+                        {
+                            existing.Arguments += argsUpdate.ToString();
+                        }
+
+                        toolCallAccumulator[index] = existing;
+                    }
+                }
+
+                if (update.FinishReason is not null && toolCallAccumulator.Count > 0)
+                {
+                    finalToolCalls = toolCallAccumulator
+                        .OrderBy(kv => kv.Key)
+                        .Select(kv => new LlmToolCall
+                        {
+                            Id = kv.Value.Id,
+                            Name = kv.Value.Name,
+                            Arguments = string.IsNullOrEmpty(kv.Value.Arguments) ? "{}" : kv.Value.Arguments
+                        })
+                        .ToList();
+                }
+            }
+
+            await writer.WriteAsync(new LlmStreamChunk
+            {
+                Delta = null,
+                ToolCalls = finalToolCalls,
+                IsFinal = true,
+            }, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            writer.TryComplete(new TimeoutException($"OpenAI API call timed out after {DefaultTimeoutSeconds} seconds."));
+            return;
+        }
+        catch (Exception ex)
+        {
+            writer.TryComplete(new InvalidOperationException($"OpenAI API call failed: {ex.Message}", ex));
+            return;
+        }
+
+        writer.TryComplete();
     }
 
     private static IReadOnlyList<ChatMessage> ConvertMessages(IReadOnlyList<LlmMessage> messages)

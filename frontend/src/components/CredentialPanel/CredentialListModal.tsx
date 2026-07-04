@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Modal, Stack, Text, Table, ActionIcon, Button, Group, TextInput, Select, Badge, Divider, Loader, Center } from '@mantine/core';
-import { Plus, Trash2, Edit } from 'lucide-react';
+import { Modal, Stack, Text, Table, ActionIcon, Button, Group, TextInput, Select, Badge, Divider, Loader, Center, Alert } from '@mantine/core';
+import { Plus, Trash2, Edit, AlertCircle } from 'lucide-react';
 import { getCredentials, createCredential, deleteCredential, updateCredential } from '../../services/api.ts';
 import type { CredentialDto } from '../../types/workflow.ts';
 
@@ -12,6 +12,7 @@ interface CredentialListModalProps {
 export function CredentialListModal({ opened, onClose }: CredentialListModalProps) {
   const [credentials, setCredentials] = useState<CredentialDto[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formName, setFormName] = useState('');
@@ -20,11 +21,12 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
 
   const loadCredentials = useCallback(async () => {
     setLoading(true);
+    setError(null);
     try {
       const list = await getCredentials();
       setCredentials(list);
-    } catch {
-      // ignore
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to load credentials');
     } finally {
       setLoading(false);
     }
@@ -46,7 +48,7 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
       }
     }
     try {
-      await createCredential({ name: formName, type: formType, data: fields });
+      await createCredential({ name: formName, type: formType, fields });
       setShowForm(false);
       setFormName('');
       setFormType('apiKey');
@@ -71,7 +73,8 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
     setEditingId(cred.id);
     setFormName(cred.name);
     setFormType(cred.type);
-    setFormFields([{ key: '', value: '' }]);
+    const existing = Object.entries(cred.fields ?? {}).map(([key, value]) => ({ key, value }));
+    setFormFields(existing.length > 0 ? existing : [{ key: '', value: '' }]);
     setShowForm(true);
   };
 
@@ -84,7 +87,7 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
       }
     }
     try {
-      await updateCredential(editingId, { name: formName, type: formType, data: fields });
+      await updateCredential(editingId, { name: formName, fields });
       setShowForm(false);
       setEditingId(null);
       setFormName('');
@@ -170,6 +173,10 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
         </Stack>
       ) : loading ? (
         <Center py="md"><Loader size="sm" /></Center>
+      ) : error ? (
+        <Alert icon={<AlertCircle size={16} />} title="Error" color="red">
+          {error}
+        </Alert>
       ) : (
         <Stack gap="sm">
           <Button

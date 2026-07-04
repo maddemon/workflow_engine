@@ -1,5 +1,7 @@
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Triggers;
+using FlowEngine.Core.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FlowEngine.Host.Controllers;
@@ -8,27 +10,38 @@ namespace FlowEngine.Host.Controllers;
 /// 触发器 CRUD API。
 /// </summary>
 [ApiController]
+[Authorize]
 [Route("api/v1/triggers")]
 public class TriggersController(TriggerService triggerService) : ControllerBase
 {
     /// <summary>
-    /// 按工作流定义 ID 获取触发器列表。
+    /// 获取触发器列表。不传 workflowDefinitionId 时返回当前用户可见的所有触发器。
     /// </summary>
     [HttpGet]
-    public async Task<ActionResult<IReadOnlyCollection<TriggerDto>>> GetByWorkflowDefinitionId(
-        [FromQuery] Guid workflowDefinitionId,
+    [AuthorizePermission(Scope.Trigger, Operation.Read)]
+    public async Task<ActionResult<IReadOnlyCollection<TriggerDto>>> GetTriggers(
+        [FromQuery] Guid? workflowDefinitionId,
         CancellationToken cancellationToken)
     {
-        var triggers = await triggerService
-            .GetByWorkflowDefinitionIdAsync(workflowDefinitionId, cancellationToken)
+        if (workflowDefinitionId is { } wfId)
+        {
+            var byWorkflow = await triggerService
+                .GetByWorkflowDefinitionIdAsync(wfId, cancellationToken)
+                .ConfigureAwait(false);
+            return Ok(byWorkflow);
+        }
+
+        var all = await triggerService
+            .GetAllForUserAsync(cancellationToken)
             .ConfigureAwait(false);
-        return Ok(triggers);
+        return Ok(all);
     }
 
     /// <summary>
     /// 按 ID 获取触发器。
     /// </summary>
     [HttpGet("{id:guid}")]
+    [AuthorizePermission(Scope.Trigger, Operation.Read)]
     public async Task<ActionResult<TriggerDto>> GetById(Guid id, CancellationToken cancellationToken)
     {
         var trigger = await triggerService.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
@@ -44,6 +57,7 @@ public class TriggersController(TriggerService triggerService) : ControllerBase
     /// 创建触发器。
     /// </summary>
     [HttpPost]
+    [AuthorizePermission(Scope.Trigger, Operation.Write)]
     public async Task<ActionResult<TriggerDto>> Create(
         [FromBody] CreateTriggerDto dto,
         CancellationToken cancellationToken)
@@ -56,6 +70,7 @@ public class TriggersController(TriggerService triggerService) : ControllerBase
     /// 更新触发器。
     /// </summary>
     [HttpPut("{id:guid}")]
+    [AuthorizePermission(Scope.Trigger, Operation.Write)]
     public async Task<ActionResult<TriggerDto>> Update(
         Guid id,
         [FromBody] UpdateTriggerDto dto,
@@ -74,6 +89,7 @@ public class TriggersController(TriggerService triggerService) : ControllerBase
     /// 删除触发器。
     /// </summary>
     [HttpDelete("{id:guid}")]
+    [AuthorizePermission(Scope.Trigger, Operation.Delete)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         var deleted = await triggerService.DeleteAsync(id, cancellationToken).ConfigureAwait(false);

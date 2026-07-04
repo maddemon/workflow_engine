@@ -252,6 +252,36 @@ public sealed record WorkflowSummaryDto
     /// 是否激活。
     /// </summary>
     public bool IsActive { get; init; }
+
+    /// <summary>
+    /// 项目 ID（null 表示全局工作流）。
+    /// </summary>
+    public Guid? ProjectId { get; init; }
+
+    /// <summary>
+    /// 创建时间。
+    /// </summary>
+    public DateTime CreatedAt { get; init; }
+
+    /// <summary>
+    /// 最后更新时间。
+    /// </summary>
+    public DateTime? UpdatedAt { get; init; }
+
+    /// <summary>
+    /// 最后一次执行完成时间（null 表示从未执行）。
+    /// </summary>
+    public DateTime? LastExecutionAt { get; init; }
+
+    /// <summary>
+    /// 触发器数量。
+    /// </summary>
+    public int TriggerCount { get; init; }
+
+    /// <summary>
+    /// 下次触发时间（取该工作流所有触发器中最小的 NextTriggerAt）。
+    /// </summary>
+    public DateTime? NextTriggerAt { get; init; }
 }
 
 /// <summary>

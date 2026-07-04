@@ -21,6 +21,13 @@ public class ExecutionRecord : Entity
     public Guid WorkflowDefinitionId { get; set; }
 
     /// <summary>
+    /// 项目 ID（冗余字段，便于直接按项目隔离查询，GAP-11）。
+    /// </summary>
+    [Column("project_id")]
+    [Comment("项目 ID")]
+    public Guid? ProjectId { get; set; }
+
+    /// <summary>
     /// 父执行 ID。
     /// </summary>
     [Column("parent_execution_id")]

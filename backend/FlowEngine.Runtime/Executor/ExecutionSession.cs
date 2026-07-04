@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
@@ -27,6 +28,7 @@ public sealed class ExecutionSession
     public ConcurrentDictionary<string, DataBatch> SuccessfulOutputs { get; } = new(StringComparer.OrdinalIgnoreCase);
     public ConcurrentDictionary<string, DataBatch> LatestBatches { get; } = new(StringComparer.OrdinalIgnoreCase);
     public ConcurrentDictionary<Guid, ILlmClient> NodeLlmClients { get; } = new();
+    public ConcurrentDictionary<string, JsonNode?> Memory { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     public FlowEngineDbContext DbContext { get; }
 

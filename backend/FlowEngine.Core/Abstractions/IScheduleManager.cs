@@ -36,4 +36,18 @@ public interface IScheduleManager
     /// 停止调度器。
     /// </summary>
     Task StopAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 注册轮询触发器。
+    /// </summary>
+    Task RegisterPollTriggerAsync(
+        Guid triggerId,
+        Guid workflowDefinitionId,
+        int intervalSeconds,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 注销轮询触发器。
+    /// </summary>
+    Task UnregisterPollTriggerAsync(Guid triggerId, CancellationToken cancellationToken = default);
 }

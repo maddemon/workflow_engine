@@ -165,6 +165,41 @@ public sealed class TriggerSettingsDto
     /// 同步响应最大等待时间（秒）（Webhook 类型）。
     /// </summary>
     public int MaxWaitSeconds { get; set; } = 30;
+
+    /// <summary>
+    /// 轮询间隔秒数（Poll 类型）。
+    /// </summary>
+    public int IntervalSeconds { get; set; } = 60;
+
+    /// <summary>
+    /// 轮询超时秒数（Poll 类型）。
+    /// </summary>
+    public int TimeoutSeconds { get; set; } = 30;
+
+    /// <summary>
+    /// 轮询节点类型 ID（Poll 类型）。
+    /// </summary>
+    public string? PollNodeId { get; set; }
+
+    /// <summary>
+    /// 去重策略（Poll 类型）：None/Id/Timestamp/HashSet。
+    /// </summary>
+    public string DedupStrategy { get; set; } = "None";
+
+    /// <summary>
+    /// 如果上一次轮询仍在运行则跳过（Poll 类型）。
+    /// </summary>
+    public bool SkipIfRunning { get; set; } = true;
+
+    /// <summary>
+    /// 上一次轮询 ID（Poll 类型）。
+    /// </summary>
+    public string? LastPollId { get; set; }
+
+    /// <summary>
+    /// 上一次轮询时间（Poll 类型）。
+    /// </summary>
+    public DateTime? LastPollTime { get; set; }
 }
 
 /// <summary>

@@ -10,20 +10,20 @@ namespace FlowEngine.Runtime.Http;
 /// </summary>
 public static class HttpExecutionHelper
 {
-    private static readonly HttpClient SharedClient = new();
-
     /// <summary>
     /// 发送已构建好的 HTTP 请求，并将响应解析为 <see cref="NodeExecutionResult"/>。
     /// </summary>
+    /// <param name="client">HTTP 客户端实例（由连接池提供）。</param>
     /// <param name="request">已填充完毕的 HTTP 请求消息。</param>
     /// <param name="nodeDefinitionId">节点定义 ID，用于构建错误对象。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     public static async Task<NodeExecutionResult> SendAndBuildResultAsync(
+        HttpClient client,
         HttpRequestMessage request,
         Guid nodeDefinitionId,
         CancellationToken cancellationToken)
     {
-        using var response = await SharedClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        using var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
         var responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
 
         var isSuccess = response.StatusCode < HttpStatusCode.BadRequest;

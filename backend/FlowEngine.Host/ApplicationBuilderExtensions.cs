@@ -94,10 +94,19 @@ public static class ApplicationBuilderExtensions
 
     private static void UseMiddlewares(WebApplication app)
     {
+        // 全局异常处理放在管道最外层，确保能捕获后续所有中间件与端点抛出的异常（GAP-26）
+        app.UseMiddleware<GlobalExceptionHandlerMiddleware>();
+        // 显式启用路由匹配，确保后续中间件可读取路由值（GAP-12）
+        app.UseRouting();
+        app.UseMiddleware<SecurityHeadersMiddleware>();
+        app.UseMiddleware<RateLimitMiddleware>();
         app.UseCors();
+        // 在认证之前注入项目上下文，使 IProjectContext.CurrentProjectId 在认证/授权阶段可用（GAP-12）
+        app.UseMiddleware<ProjectContextMiddleware>();
         app.UseAuthentication();
         app.UseMiddleware<CurrentUserMiddleware>();
         app.UseAuthorization();
+        app.UseMiddleware<RbacAuthorizationMiddleware>();
         app.UseStaticFiles();
     }
 
@@ -127,6 +136,20 @@ public static class ApplicationBuilderExtensions
                 settings.StartAt,
                 settings.EndAt);
         }
+
+        // 应用重启后恢复激活的 Poll 触发器调度（GAP-18）
+        foreach (var trigger in activeTriggers)
+        {
+            if (trigger.Type != TriggerType.Poll) continue;
+
+            var settings = trigger.Settings;
+            if (settings is null) continue;
+
+            await scheduleManager.RegisterPollTriggerAsync(
+                trigger.Id,
+                trigger.WorkflowDefinitionId,
+                settings.IntervalSeconds);
+        }
     }
 
     private static async Task SeedDefaultAdminAsync(WebApplication app)
@@ -150,6 +173,14 @@ public static class ApplicationBuilderExtensions
         };
 
         dbContext.Set<User>().Add(admin);
+        await dbContext.SaveChangesAsync();
+
+        // 为默认 admin 分配 Admin 角色，确保首次部署后可访问受保护端点（GAP-04）。
+        dbContext.Set<UserRole>().Add(new UserRole
+        {
+            UserId = admin.Id,
+            Role = FlowEngine.Core.Authorization.Role.Admin.ToString()
+        });
         await dbContext.SaveChangesAsync();
     }
 }

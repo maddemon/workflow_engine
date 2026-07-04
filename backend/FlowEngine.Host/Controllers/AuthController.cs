@@ -26,26 +26,17 @@ public class AuthController(
     ILogger<AuthController> logger) : ControllerBase
 {
     /// <summary>
-    /// 用户注册。
+    /// 用户注册（已关闭）。本系统为内部私有化部署，账号由管理员或 SSO 统一创建，不提供自助注册。
     /// </summary>
     [HttpPost("register")]
-    public async Task<ActionResult<RegisterResult>> Register(
-        [FromBody] RegisterRequest request,
-        CancellationToken cancellationToken)
+    [ApiExplorerSettings(IgnoreApi = true)]
+    public ActionResult Register([FromBody] RegisterRequest request)
     {
-        var result = await authenticationService.RegisterAsync(request, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (!result.Success)
+        return StatusCode(StatusCodes.Status403Forbidden, new
         {
-            return result.ErrorMessage switch
-            {
-                RegisterResultErrors.EmailAlreadyExists => Conflict(result),
-                _ => BadRequest(result),
-            };
-        }
-
-        return StatusCode(StatusCodes.Status201Created, result);
+            error = "Forbidden",
+            message = "自助注册已关闭，请联系管理员创建账号。"
+        });
     }
 
     /// <summary>

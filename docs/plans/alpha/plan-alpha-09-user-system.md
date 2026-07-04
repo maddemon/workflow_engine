@@ -2,18 +2,19 @@
 
 ## 1. 概述
 
-本模块建立 Flow Engine 的用户与认证基础设施，为 Beta 阶段的 RBAC 权限、GA 阶段的 SSO 单点登录以及审计日志中的 `Actor` 追踪提供基础。Alpha 阶段的用户系统聚焦本地账号体系：用户模型、注册、登录、会话管理与认证中间件。
+本模块建立 Flow Engine 的用户与认证基础设施，为 Beta 阶段的 RBAC 权限、GA 阶段的 SSO 单点登录以及审计日志中的 `Actor` 追踪提供基础。Alpha 阶段的用户系统聚焦本地账号体系：用户模型、登录、会话管理、认证中间件，以及管理员创建账号所需的密码安全能力。
 
 覆盖范围：
 
 - 用户实体与仓储（User、UserRole、Session）。
-- 注册与密码安全（ bcrypt/Argon2 / PBKDF2 哈希、强度校验）。
 - 登录与会话（JWT 或 Cookie-based，统一 `IUserContext`）。
 - 当前用户获取与认证中间件（`[Authorize]`、`IUserContext` 注入）。
 - 用户 CRUD 与密码重置（管理员视角）。
+- 密码安全（bcrypt/Argon2/PBKDF2 哈希、强度校验），用于管理员创建账号与密码重置。
 
 不覆盖范围：
 
+- 自助注册（本系统为内部私有化部署，账号由管理员或 SSO 创建，不提供自助注册）。
 - RBAC 角色与权限模型本身（Beta plan-beta-01）。
 - SSO / SAML / OIDC（GA plan-ga-06）。
 - LDAP 目录同步（Enterprise plan-enterprise-06）。
@@ -23,8 +24,9 @@
 
 - `src/FlowEngine.Core/Identity/User.cs`、`UserRole.cs` 等实体与值对象。
 - `src/FlowEngine.Infrastructure/Identity/UserStore.cs`（仓储实现）。
-- `src/FlowEngine.Application/Identity/AuthenticationService.cs`（注册/登录/密码校验）。
-- `src/FlowEngine.Host/Controllers/AuthController.cs`（注册/登录/登出/当前用户 API）。
+- `src/FlowEngine.Application/Identity/AuthenticationService.cs`（管理员创建账号/登录/密码校验）。
+- `src/FlowEngine.Host/Controllers/AuthController.cs`（登录/登出/当前用户 API；自助注册关闭）。
+- `src/FlowEngine.Host/Controllers/UsersController.cs`（管理员创建/管理用户 API，Beta 阶段细化）。
 - `src/FlowEngine.Host/Middlewares/CurrentUserMiddleware.cs`（解析会话并注入 `IUserContext`）。
 - `src/FlowEngine.Application/Identity/IUserContext.cs`（当前用户抽象）。
 - 单元测试：密码哈希、登录校验、会话解析、认证中间件。
@@ -48,22 +50,24 @@
   - 密码哈希字段不存明文。
 - 依赖：plan-mvp-01 项目骨架、plan-mvp-06 持久化。
 
-### 阶段二：注册与密码安全
+### 阶段二：账号创建与密码安全
 
-- 目标：实现安全的用户注册流程。
+- 目标：实现安全的账号创建与密码校验能力，供管理员或未来 SSO 首次登录自动建号使用。
 - 核心任务：
   - 密码哈希：使用 ASP.NET Core Identity PasswordHasher 或独立实现（推荐 PBKDF2 / bcrypt / Argon2）。
   - 密码强度策略：最小长度、复杂度要求（可配置）。
-  - 注册 API：`POST /api/v1/auth/register`。
+  - 管理员创建用户 API：`POST /api/v1/users`（Admin 专属）。
   - 邮箱唯一性校验。
-  - 注册事件 `User.Registered` 写入审计日志（依赖 plan-alpha-02）。
+  - 用户创建事件写入审计日志（依赖 plan-alpha-02）。
+  - 自助注册端点关闭或返回 403。
 - 输入：[audit-log.md](../../architecture/audit-log.md) §3 事件源。
-- 输出：注册服务与 API。
+- 输出：账号创建服务与 API、密码安全基础设施。
 - 验收标准：
-  - 注册时密码以哈希存储，不可逆。
+  - 管理员可创建用户，密码以哈希存储，不可逆。
   - 重复邮箱返回明确错误。
   - 弱密码被拒绝。
-  - 注册成功后生成审计事件。
+  - 用户创建成功后生成审计事件。
+  - 普通用户无法通过 `/api/v1/auth/register` 自助注册。
 - 依赖：阶段一、plan-alpha-02 审计日志。
 
 ### 阶段三：登录与会话
@@ -123,11 +127,12 @@ flowchart LR
 
 ## 6. 验收总标准
 
-- 用户可注册、登录、登出。
+- 管理员可创建用户账号，普通用户不可自助注册。
+- 用户可登录、登出。
 - 密码以安全哈希存储，不返回明文。
 - 受保护 API 未登录访问返回 401。
 - `IUserContext` 在业务层可正确获取当前用户。
-- 注册/登录/登出事件写入审计日志。
+- 用户创建/登录/登出事件写入审计日志。
 - 单元测试覆盖率 ≥ 60%（与 Alpha 阶段整体门槛一致）。
 
 ## 变更记录
@@ -135,3 +140,4 @@ flowchart LR
 | 日期 | 修改人 | 修改内容 | 关联任务 |
 |------|--------|----------|----------|
 | 2026-06-18 | Agent | 创建 Alpha 用户系统开发计划，补齐 RBAC/SSO 前置依赖 | 计划 review 修复 |
+| 2026-07-04 | Agent | 关闭自助注册，改为管理员创建账号 | task-align-no-saas-multitenant |

@@ -52,4 +52,9 @@ public class NodeExecutionRecord
     /// 解析后的参数映射。
     /// </summary>
     public Dictionary<string, object> ResolvedParameters { get; set; } = [];
+
+    /// <summary>
+    /// 父记录 ID，用于标识子 Agent 或工具调用的父级执行记录。
+    /// </summary>
+    public Guid? ParentRecordId { get; set; }
 }

@@ -9,7 +9,7 @@
 - **实时执行视图**：WebSocket 推送执行进度与节点输出，前端可实时观察执行过程。
 - **AI Agent 基础**：引入 Agent 节点、LLM 供应节点、工具收集与基础工具类型，验证"Agent 调用至少一个 tool 完成执行"的闭环。
 
-本阶段不覆盖轮询触发器（Beta）、RBAC/多租户（Beta）、流式输出与子 Agent 嵌套（Beta）。
+本阶段不覆盖轮询触发器（Beta）、RBAC/项目分类（Beta）、流式输出与子 Agent 嵌套（Beta）。
 
 整体验收标准与质量门槛依据 [roadmap.md §3](../../architecture/roadmap.md#3-alpha约-3-4-周) 与 [plan-000-overview.md §7](../plan-000-overview.md#7-质量门槛)。
 

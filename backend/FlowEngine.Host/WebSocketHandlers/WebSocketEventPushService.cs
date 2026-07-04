@@ -44,6 +44,7 @@ public sealed class WebSocketEventPushService : IDisposable
         _subscriptions.Add(_eventBus.Subscribe<WorkflowCompletedEvent>(OnWorkflowCompletedAsync));
         _subscriptions.Add(_eventBus.Subscribe<WorkflowFailedEvent>(OnWorkflowFailedAsync));
         _subscriptions.Add(_eventBus.Subscribe<WorkflowCancelledEvent>(OnWorkflowCancelledAsync));
+        _subscriptions.Add(_eventBus.Subscribe<LlmTokenStreamEvent>(OnLlmTokenStreamAsync));
     }
 
     private async Task OnWorkflowStartedAsync(WorkflowStartedEvent evt, CancellationToken cancellationToken)
@@ -156,6 +157,26 @@ public sealed class WebSocketEventPushService : IDisposable
         await BroadcastAndRecordAsync(evt.ExecutionId, message, cancellationToken).ConfigureAwait(false);
     }
 
+    private async Task OnLlmTokenStreamAsync(LlmTokenStreamEvent evt, CancellationToken cancellationToken)
+    {
+        var message = new WebSocketPushMessage
+        {
+            Type = "llm_token",
+            ExecutionId = evt.ExecutionId,
+            Timestamp = evt.OccurredAt,
+            Sequence = Interlocked.Increment(ref _sequenceCounter),
+            Payload = new
+            {
+                nodeDefinitionId = evt.NodeDefinitionId,
+                runIndex = evt.RunIndex,
+                delta = evt.Delta,
+                isFinal = evt.IsFinal,
+                eventType = evt.EventType,
+            },
+        };
+        await BroadcastAsync(evt.ExecutionId, message, cancellationToken).ConfigureAwait(false);
+    }
+
     private static object BuildNodeExecutedPayload(NodeExecutedEvent evt)
     {
         var result = evt.Result;
@@ -236,7 +257,7 @@ public sealed class WebSocketEventPushService : IDisposable
     {
         foreach (var subscription in _subscriptions)
         {
-            subscription.Dispose();
+            subscription?.Dispose();
         }
         _subscriptions.Clear();
     }

@@ -204,7 +204,7 @@ FlowEngine.sln
 │   └── FlowEngine.Host/              # 启动项与组合根
 │       ├── Controllers/              # REST API
 │       ├── WebSocketHandlers/        # 实时执行进度推送
-│       ├── Middlewares/              # 多租户、限流、认证
+│       ├── Middlewares/              # 项目上下文、限流、认证
 │       ├── BackgroundServices/       # 托管服务（队列、恢复扫描）
 │       └── wwwroot/                  # 前端 React 构建产物
 │       ⚠️ 职责：注册 DI，组装一切。

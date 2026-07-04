@@ -17,6 +17,18 @@ import type {
   LoginRequest,
   LoginResult,
   UserDto,
+  ProjectDto,
+  CreateProjectDto,
+  UpdateProjectDto,
+  ProjectMemberDto,
+  AddProjectMemberDto,
+  UpdateProjectMemberDto,
+  WorkflowExportResult,
+  ImportResult,
+  BatchImportResult,
+  ImportWorkflowRequest,
+  ImportBatchRequest,
+  ExportBatchRequest,
 } from '../types/workflow.ts';
 
 const api = axios.create({
@@ -152,5 +164,79 @@ export async function logout(): Promise<void> {
 
 export async function getCurrentUser(): Promise<UserDto> {
   const res = await api.get<UserDto>('/auth/me');
+  return res.data;
+}
+
+// --- Projects ---
+
+export async function getProjects(): Promise<ProjectDto[]> {
+  const res = await api.get<ProjectDto[]>('/projects');
+  return res.data;
+}
+
+export async function getProject(id: string): Promise<ProjectDto> {
+  const res = await api.get<ProjectDto>(`/projects/${id}`);
+  return res.data;
+}
+
+export async function createProject(data: CreateProjectDto): Promise<ProjectDto> {
+  const res = await api.post<ProjectDto>('/projects', data);
+  return res.data;
+}
+
+export async function updateProject(id: string, data: UpdateProjectDto): Promise<ProjectDto> {
+  const res = await api.put<ProjectDto>(`/projects/${id}`, data);
+  return res.data;
+}
+
+export async function deleteProject(id: string): Promise<void> {
+  await api.delete(`/projects/${id}`);
+}
+
+export async function getProjectMembers(id: string): Promise<ProjectMemberDto[]> {
+  const res = await api.get<ProjectMemberDto[]>(`/projects/${id}/members`);
+  return res.data;
+}
+
+export async function addProjectMember(
+  projectId: string,
+  data: AddProjectMemberDto,
+): Promise<ProjectMemberDto> {
+  const res = await api.post<ProjectMemberDto>(`/projects/${projectId}/members`, data);
+  return res.data;
+}
+
+export async function updateProjectMemberRole(
+  projectId: string,
+  memberId: string,
+  data: UpdateProjectMemberDto,
+): Promise<ProjectMemberDto> {
+  const res = await api.put<ProjectMemberDto>(`/projects/${projectId}/members/${memberId}`, data);
+  return res.data;
+}
+
+export async function removeProjectMember(projectId: string, memberId: string): Promise<void> {
+  await api.delete(`/projects/${projectId}/members/${memberId}`);
+}
+
+// --- Workflow Import/Export ---
+
+export async function exportWorkflow(id: string): Promise<WorkflowExportResult> {
+  const res = await api.get<WorkflowExportResult>(`/workflows/${id}/export`);
+  return res.data;
+}
+
+export async function exportWorkflowsBatch(ids: string[]): Promise<WorkflowExportResult[]> {
+  const res = await api.post<WorkflowExportResult[]>('/workflows/export-batch', { ids } satisfies ExportBatchRequest);
+  return res.data;
+}
+
+export async function importWorkflow(data: ImportWorkflowRequest): Promise<ImportResult> {
+  const res = await api.post<ImportResult>('/workflows/import', data);
+  return res.data;
+}
+
+export async function importWorkflowsBatch(data: ImportBatchRequest): Promise<BatchImportResult> {
+  const res = await api.post<BatchImportResult>('/workflows/import-batch', data);
   return res.data;
 }

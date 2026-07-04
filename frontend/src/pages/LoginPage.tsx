@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { TextInput, PasswordInput, Button, Paper, Text, Stack, Title, Center, Box } from '@mantine/core';
+import { useNavigate, Link } from 'react-router-dom';
+import { TextInput, PasswordInput, Button, Paper, Text, Stack, Title, Center, Box, Anchor } from '@mantine/core';
 import { useAuth } from '../hooks/AuthContext.tsx';
 
 export function LoginPage() {
@@ -62,6 +62,10 @@ export function LoginPage() {
             </Button>
             <Text size="xs" ta="center" c="dimmed">
               Default: admin@flowengine.local / admin123
+            </Text>
+            <Text size="xs" ta="center">
+              Don't have an account?{' '}
+              <Anchor component={Link} to="/register">Sign up</Anchor>
             </Text>
           </Stack>
         </form>

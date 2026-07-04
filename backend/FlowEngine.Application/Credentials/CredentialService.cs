@@ -1,5 +1,7 @@
 using FlowEngine.Application.Audit;
+using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
+using FlowEngine.Application.Identity;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Data;
@@ -20,7 +22,9 @@ public sealed class CredentialService(
     ICredentialEncryptionService _encryptionService,
     ICryptoKeyProvider _keyProvider,
     IEventBus eventBus,
-    AuditEventFactory auditFactory)
+    AuditEventFactory auditFactory,
+    IResourceAuthorizationService resourceAuthService,
+    IUserContext userContext)
 {
     private const string KeyVersion = "v1";
 
@@ -31,11 +35,17 @@ public sealed class CredentialService(
     {
         ArgumentNullException.ThrowIfNull(dto);
 
+        if (!CanWriteCredential())
+        {
+            throw new InvalidOperationException("当前用户没有创建凭据的权限。");
+        }
+
         var key = _keyProvider.GetKey();
         var encryptedData = EncryptFields(dto.Fields, key);
 
         var credential = new Credential
         {
+            ProjectId = dto.ProjectId,
             Name = dto.Name,
             Type = dto.Type,
             Data = encryptedData,
@@ -52,7 +62,7 @@ public sealed class CredentialService(
             new Dictionary<string, object> { ["name"] = credential.Name, ["type"] = credential.Type }),
             cancellationToken).ConfigureAwait(false);
 
-        return MapToDto(credential);
+        return MapToDto(credential, maskValues: false);
     }
 
     /// <summary>
@@ -63,18 +73,25 @@ public sealed class CredentialService(
         var credential = await dbContext.Credentials
             .FirstOrDefaultAsync(c => c.Id == id, cancellationToken)
             .ConfigureAwait(false);
-        return credential is null ? null : MapToDto(credential);
+        if (credential is null)
+        {
+            return null;
+        }
+
+        var shouldMask = ShouldMaskCredentialValues();
+        return MapToDto(credential, shouldMask);
     }
 
     /// <summary>
-    /// 获取所有凭据摘要列表。
+    /// 获取所有凭据摘要列表。项目（ProjectId）仅作为分类字段，不做隔离。
     /// </summary>
     public async Task<IReadOnlyCollection<CredentialDto>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         var credentials = await dbContext.Credentials
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        return credentials.Select(MapToDto).ToList();
+        var shouldMask = ShouldMaskCredentialValues();
+        return credentials.Select(c => MapToDto(c, shouldMask)).ToList();
     }
 
     /// <summary>
@@ -83,6 +100,11 @@ public sealed class CredentialService(
     public async Task<CredentialDto?> UpdateAsync(Guid id, UpdateCredentialDto dto, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dto);
+
+        if (!CanWriteCredential())
+        {
+            throw new InvalidOperationException("当前用户没有修改凭据的权限。");
+        }
 
         var credential = await dbContext.Credentials
             .FirstOrDefaultAsync(c => c.Id == id, cancellationToken)
@@ -102,7 +124,7 @@ public sealed class CredentialService(
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        return MapToDto(credential);
+        return MapToDto(credential, maskValues: false);
     }
 
     /// <summary>
@@ -110,6 +132,11 @@ public sealed class CredentialService(
     /// </summary>
     public async Task<CredentialDeleteResult> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        if (!IsSystemAdmin())
+        {
+            throw new InvalidOperationException("仅管理员可删除凭据。");
+        }
+
         var credential = await dbContext.Credentials
             .FirstOrDefaultAsync(c => c.Id == id, cancellationToken)
             .ConfigureAwait(false);
@@ -204,13 +231,60 @@ public sealed class CredentialService(
         return false;
     }
 
-    private static CredentialDto MapToDto(Credential credential)
+    private bool ShouldMaskCredentialValues()
     {
+        if (!userContext.IsAuthenticated || userContext.Roles.Count == 0)
+        {
+            return false;
+        }
+
+        return resourceAuthService.ShouldMaskCredentialValues(userContext.Roles);
+    }
+
+    private bool CanWriteCredential()
+    {
+        return userContext.Roles.Contains("Admin") || userContext.Roles.Contains("Editor");
+    }
+
+    private bool IsSystemAdmin()
+    {
+        return userContext.Roles.Contains("Admin");
+    }
+
+    private Dictionary<string, string> DecryptFields(Credential credential)
+    {
+        if (credential.Data.Count == 0)
+        {
+            return [];
+        }
+
+        var key = _keyProvider.GetKey();
+        var fields = new Dictionary<string, string>();
+        foreach (var (fieldName, encryptedField) in credential.Data)
+        {
+            fields[fieldName] = _encryptionService.DecryptString(encryptedField, key);
+        }
+        return fields;
+    }
+
+    private CredentialDto MapToDto(Credential credential, bool maskValues)
+    {
+        var fields = DecryptFields(credential);
+        if (maskValues)
+        {
+            foreach (var key in fields.Keys.ToList())
+            {
+                fields[key] = "***";
+            }
+        }
+
         return new CredentialDto
         {
             Id = credential.Id,
+            ProjectId = credential.ProjectId,
             Name = credential.Name,
             Type = credential.Type,
+            Fields = fields,
             CreatedAt = credential.CreatedAt,
             UpdatedAt = credential.UpdatedAt
         };

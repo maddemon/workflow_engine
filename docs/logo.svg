@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#C084FC"/>
+      <stop offset="50%" stop-color="#818CF8"/>
+      <stop offset="100%" stop-color="#22D3EE"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="512" height="512" rx="108" fill="#1E293B"/>
+
+  <!-- Outer rectangular frame (chip outline) -->
+  <rect x="80" y="80" width="352" height="352" rx="24" fill="none" stroke="url(#g)" stroke-width="10" opacity="0.4"/>
+
+  <!-- Corner nodes -->
+  <!-- Top-left -->
+  <circle cx="80" cy="80" r="20" fill="#C084FC"/>
+  <circle cx="80" cy="80" r="7" fill="#1E293B"/>
+
+  <!-- Top-right -->
+  <circle cx="432" cy="80" r="20" fill="#22D3EE"/>
+  <circle cx="432" cy="80" r="7" fill="#1E293B"/>
+
+  <!-- Bottom-left (diamond) -->
+  <rect x="64" y="428" width="32" height="32" rx="4" fill="#818CF8" transform="rotate(45, 80, 432)"/>
+
+  <!-- Bottom-right (diamond) -->
+  <rect x="416" y="428" width="32" height="32" rx="4" fill="#22D3EE" transform="rotate(45, 432, 432)"/>
+
+  <!-- Internal paths -->
+  <!-- Left side path -->
+  <path d="M80 100 L80 180 L160 260 L80 340 L80 412" stroke="url(#g)" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Top path -->
+  <path d="M100 80 L256 80" stroke="url(#g)" stroke-width="8" fill="none" stroke-linecap="round"/>
+
+  <!-- Right side path -->
+  <path d="M432 100 L432 200 L352 280 L432 360 L432 412" stroke="url(#g)" stroke-width="8" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- Bottom path connecting diamonds -->
+  <path d="M108 432 L404 432" stroke="url(#g)" stroke-width="8" fill="none" stroke-linecap="round"/>
+
+  <!-- Internal node -->
+  <circle cx="256" cy="256" r="18" fill="#818CF8"/>
+  <circle cx="256" cy="256" r="6" fill="#1E293B"/>
+</svg>

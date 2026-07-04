@@ -33,7 +33,8 @@ public class WorkflowExecutorTests
                 new FailingNode(),
                 new RetryableNode(),
                 new SlowNode(),
-                new OncePerItemNode()
+                new OncePerItemNode(),
+                new DelayedNode()
             },
             NullLogger<NodeRegistry>.Instance);
 
@@ -368,13 +369,43 @@ public class WorkflowExecutorTests
         Assert.Contains(record.NodeRecords, r => r.NodeDefinitionId == nodeB.Id);
     }
 
+    [Fact]
+    public async Task Timeout_Returns_Timeout_Error_When_Node_Exceeds_Timeout()
+    {
+        var nodeA = CreateNode(
+            "a",
+            "delayed",
+            isEntry: true,
+            parameters: new Dictionary<string, object> { ["delayMs"] = 500 },
+            timeout: TimeSpan.FromMilliseconds(100));
+
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "timeout",
+            CreatedBy = "test",
+            Nodes = [nodeA],
+            Connections = []
+        };
+
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var executionId = await _executor.StartAsync(workflow.Id, cancellationToken: TestContext.Current.CancellationToken);
+        var record = await WaitForExecutionAsync(executionId.Value, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExecutionStatus.Failed, record.Status);
+        Assert.Single(record.NodeRecords);
+        Assert.Equal("Timeout", record.NodeRecords[0].Output.Error?.Code);
+    }
+
     private static NodeDefinition CreateNode(
         string name,
         string typeName,
         bool isEntry = false,
         Dictionary<string, object>? parameters = null,
         ErrorStrategy errorStrategy = ErrorStrategy.Terminate,
-        RetryPolicy? retryPolicy = null)
+        RetryPolicy? retryPolicy = null,
+        TimeSpan? timeout = null)
     {
         return new NodeDefinition
         {
@@ -384,7 +415,8 @@ public class WorkflowExecutorTests
             IsEntry = isEntry,
             Parameters = parameters ?? [],
             ErrorStrategy = errorStrategy,
-            RetryPolicy = retryPolicy
+            RetryPolicy = retryPolicy,
+            Timeout = timeout
         };
     }
 

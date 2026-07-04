@@ -55,7 +55,7 @@
   - 实现 POST /api/v1/files 上传端点。
   - 实现 GET /api/v1/files/{id} 查询文件元数据。
   - 实现 GET /api/v1/files/{id}/content 下载文件内容。
-  - 上传文件受 RBAC 鉴权与 projectId 作用域隔离。
+  - 上传文件受 RBAC 鉴权，projectId 仅用于分类，不做隔离。
   - 文件大小限制与类型校验。
 - 输入：阶段一存储抽象。
 - 输出：文件上传/查询/下载 API。
@@ -90,7 +90,7 @@ flowchart LR
     MVP[MVP 持久化] --> S1[阶段一<br/>文件存储抽象与本地实现]
     S1 --> S2[阶段二<br/>上传 API]
     RBAC[plan-beta-01 RBAC] --> S2
-    Multi[plan-beta-02 多租户] --> S2
+    Project[plan-beta-02 项目分类] --> S2
     S2 --> S3[阶段三<br/>二进制 DataItem 传递]
     Exec[MVP 执行引擎] --> S3
 ```

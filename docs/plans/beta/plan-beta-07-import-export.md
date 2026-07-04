@@ -37,7 +37,7 @@
   - 实现 GET /api/v1/workflows/{id}/export 端点。
   - 导出内容包含节点类型、参数、连线关系。
   - 凭据仅导出引用 ID，不导出凭据值。
-  - 导出受 RBAC 鉴权与 projectId 作用域隔离。
+  - 导出受 RBAC 鉴权，projectId 仅用于分类，不做隔离。
 - 输入：MVP 工作流 CRUD。
 - 输出：导出 API、JSON 格式定义。
 - 验收标准：

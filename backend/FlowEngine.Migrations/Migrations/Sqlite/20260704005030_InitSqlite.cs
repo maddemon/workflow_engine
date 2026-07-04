@@ -15,22 +15,25 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                 name: "flow");
 
             migrationBuilder.CreateTable(
-                name: "Credentials",
+                name: "credentials",
+                schema: "flow",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "TEXT", maxLength: 36, nullable: false),
-                    Name = table.Column<string>(type: "TEXT", nullable: false),
-                    Type = table.Column<string>(type: "TEXT", nullable: false),
-                    Data = table.Column<string>(type: "json", nullable: false),
-                    KeyVersion = table.Column<string>(type: "TEXT", nullable: false),
+                    project_id = table.Column<Guid>(type: "TEXT", nullable: true, comment: "项目 ID"),
+                    name = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false, comment: "凭据名称"),
+                    type = table.Column<string>(type: "TEXT", maxLength: 64, nullable: false, comment: "凭据类型"),
+                    data = table.Column<string>(type: "json", nullable: false, comment: "加密字段数据映射"),
+                    key_version = table.Column<string>(type: "TEXT", maxLength: 64, nullable: false, comment: "密钥版本"),
                     CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false, comment: "创建时间"),
                     UpdatedAt = table.Column<DateTime>(type: "TEXT", nullable: true, comment: "最后更新时间"),
                     Deleted = table.Column<bool>(type: "INTEGER", nullable: false, comment: "是否删除")
                 },
                 constraints: table =>
                 {
-                    table.PrimaryKey("PK_Credentials", x => x.Id);
-                });
+                    table.PrimaryKey("PK_credentials", x => x.Id);
+                },
+                comment: "凭据定义");
 
             migrationBuilder.CreateTable(
                 name: "execution_records",
@@ -39,6 +42,7 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                 {
                     Id = table.Column<Guid>(type: "TEXT", maxLength: 36, nullable: false),
                     workflow_definition_id = table.Column<Guid>(type: "TEXT", nullable: false, comment: "工作流定义 ID"),
+                    project_id = table.Column<Guid>(type: "TEXT", nullable: true, comment: "项目 ID"),
                     parent_execution_id = table.Column<Guid>(type: "TEXT", nullable: true, comment: "父执行 ID"),
                     started_at = table.Column<DateTime>(type: "TEXT", nullable: false, comment: "开始时间"),
                     completed_at = table.Column<DateTime>(type: "TEXT", nullable: true, comment: "完成时间"),
@@ -55,11 +59,72 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                 comment: "执行记录");
 
             migrationBuilder.CreateTable(
+                name: "project_members",
+                schema: "flow",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "TEXT", maxLength: 36, nullable: false),
+                    project_id = table.Column<Guid>(type: "TEXT", nullable: false, comment: "项目 ID"),
+                    user_id = table.Column<Guid>(type: "TEXT", nullable: false, comment: "用户 ID"),
+                    role = table.Column<string>(type: "TEXT", maxLength: 64, nullable: false, comment: "成员角色"),
+                    CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false, comment: "创建时间"),
+                    UpdatedAt = table.Column<DateTime>(type: "TEXT", nullable: true, comment: "最后更新时间"),
+                    Deleted = table.Column<bool>(type: "INTEGER", nullable: false, comment: "是否删除")
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_project_members", x => x.Id);
+                },
+                comment: "项目成员");
+
+            migrationBuilder.CreateTable(
+                name: "projects",
+                schema: "flow",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "TEXT", maxLength: 36, nullable: false),
+                    name = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false, comment: "项目名称"),
+                    description = table.Column<string>(type: "TEXT", maxLength: 1024, nullable: true, comment: "项目描述"),
+                    created_by = table.Column<Guid>(type: "TEXT", nullable: false, comment: "创建人"),
+                    CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false, comment: "创建时间"),
+                    UpdatedAt = table.Column<DateTime>(type: "TEXT", nullable: true, comment: "最后更新时间"),
+                    Deleted = table.Column<bool>(type: "INTEGER", nullable: false, comment: "是否删除")
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_projects", x => x.Id);
+                },
+                comment: "项目");
+
+            migrationBuilder.CreateTable(
+                name: "stored_files",
+                schema: "flow",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "TEXT", maxLength: 36, nullable: false),
+                    file_name = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false, comment: "文件名"),
+                    content_type = table.Column<string>(type: "TEXT", maxLength: 128, nullable: true, comment: "MIME 类型"),
+                    size = table.Column<long>(type: "INTEGER", nullable: false, comment: "文件大小"),
+                    storage_path = table.Column<string>(type: "TEXT", maxLength: 1024, nullable: false, comment: "存储路径"),
+                    project_id = table.Column<Guid>(type: "TEXT", nullable: false, comment: "所属项目"),
+                    uploaded_by = table.Column<Guid>(type: "TEXT", nullable: false, comment: "上传者"),
+                    CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false, comment: "创建时间"),
+                    UpdatedAt = table.Column<DateTime>(type: "TEXT", nullable: true, comment: "最后更新时间"),
+                    Deleted = table.Column<bool>(type: "INTEGER", nullable: false, comment: "是否删除")
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_stored_files", x => x.Id);
+                },
+                comment: "存储文件");
+
+            migrationBuilder.CreateTable(
                 name: "triggers",
                 columns: table => new
                 {
                     Id = table.Column<Guid>(type: "TEXT", maxLength: 36, nullable: false),
                     workflow_definition_id = table.Column<Guid>(type: "TEXT", nullable: false, comment: "关联工作流定义 ID"),
+                    project_id = table.Column<Guid>(type: "TEXT", nullable: true, comment: "项目 ID"),
                     workflow_version = table.Column<int>(type: "INTEGER", nullable: false, comment: "工作流版本号"),
                     type = table.Column<int>(type: "INTEGER", nullable: false, comment: "触发器类型"),
                     name = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false, comment: "触发器名称"),
@@ -149,7 +214,10 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                     name = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false, comment: "工作流名称"),
                     version = table.Column<int>(type: "INTEGER", nullable: false, comment: "版本号"),
                     created_by = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false, comment: "创建人"),
+                    nodes = table.Column<string>(type: "json", nullable: false, comment: "节点实例列表"),
+                    connections = table.Column<string>(type: "json", nullable: false, comment: "连接列表"),
                     is_active = table.Column<bool>(type: "INTEGER", nullable: false, comment: "是否激活"),
+                    style_settings = table.Column<string>(type: "json", nullable: true, comment: "样式设置"),
                     CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false, comment: "创建时间"),
                     UpdatedAt = table.Column<DateTime>(type: "TEXT", nullable: true, comment: "最后更新时间"),
                     Deleted = table.Column<bool>(type: "INTEGER", nullable: false, comment: "是否删除")
@@ -159,6 +227,13 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                     table.PrimaryKey("PK_workflows", x => x.Id);
                 },
                 comment: "工作流定义");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_project_members_project_id_user_id",
+                schema: "flow",
+                table: "project_members",
+                columns: new[] { "project_id", "user_id" },
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_user_roles_UserId_Role",
@@ -177,10 +252,23 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
-                name: "Credentials");
+                name: "credentials",
+                schema: "flow");
 
             migrationBuilder.DropTable(
                 name: "execution_records",
+                schema: "flow");
+
+            migrationBuilder.DropTable(
+                name: "project_members",
+                schema: "flow");
+
+            migrationBuilder.DropTable(
+                name: "projects",
+                schema: "flow");
+
+            migrationBuilder.DropTable(
+                name: "stored_files",
                 schema: "flow");
 
             migrationBuilder.DropTable(

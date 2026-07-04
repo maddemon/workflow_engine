@@ -145,3 +145,14 @@ public sealed record UserDto
     /// </summary>
     public DateTime? UpdatedAt { get; init; }
 }
+
+/// <summary>
+/// 分配角色请求。
+/// </summary>
+public sealed record AssignRoleRequest
+{
+    /// <summary>
+    /// 角色名称（Admin/Editor/Viewer）。
+    /// </summary>
+    public string Role { get; init; } = string.Empty;
+}

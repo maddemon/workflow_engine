@@ -1,23 +1,31 @@
 using FlowEngine.Application.Audit;
 using FlowEngine.Application.Credentials;
 using FlowEngine.Application.Executions;
+using FlowEngine.Application.ExecutionCleanup;
+using FlowEngine.Application.Files;
 using FlowEngine.Application.Identity;
+using FlowEngine.Application.Projects;
+using FlowEngine.Application.RateLimiting;
 using FlowEngine.Application.Triggers;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Configuration;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Events;
 using FlowEngine.Host.Executor;
 using FlowEngine.Host.Middlewares;
 using FlowEngine.Host.Scheduling;
+using FlowEngine.Host.Services;
 using FlowEngine.Host.Webhooks;
 using FlowEngine.Host.WebSocketHandlers;
 using FlowEngine.Infrastructure.Audit;
 using FlowEngine.Infrastructure.Identity;
 using FlowEngine.Infrastructure.Security;
+using FlowEngine.Infrastructure.Storage;
 using FlowEngine.Runtime.Credentials;
 using FlowEngine.Runtime.Executor;
 using FlowEngine.Runtime.Expressions;
+using FlowEngine.Runtime.Http;
 using FlowEngine.Runtime.Registry;
 using FlowEngine.Runtime.Scripting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
@@ -51,6 +59,21 @@ public static class ServiceCollectionExtensions
             });
         services.AddMemoryCache();
 
+        // ── Rate Limiting ───────────────────────────────────────────
+        services.Configure<RateLimitOptions>(configuration.GetSection(RateLimitOptions.SectionName));
+
+        // ── File Storage ───────────────────────────────────────────
+        services.Configure<FlowEngine.Application.Files.FileStorageOptions>(
+            configuration.GetSection(FlowEngine.Application.Files.FileStorageOptions.SectionName));
+
+        // ── Execution Cleanup ──────────────────────────────────────
+        services.Configure<ExecutionCleanupOptions>(configuration.GetSection(ExecutionCleanupOptions.SectionName));
+        services.AddScoped<ExecutionCleanupService>();
+        services.AddHostedService<ExecutionCleanupHostedService>();
+
+        // ── Engine Defaults ────────────────────────────────────────
+        services.Configure<EngineDefaultsOptions>(configuration.GetSection(EngineDefaultsOptions.SectionName));
+
         // ── Database ────────────────────────────────────────────────
         AddDbContext(services, configuration);
 
@@ -77,6 +100,14 @@ public static class ServiceCollectionExtensions
         // ── Authentication & Authorization ──────────────────────────
         AddAuthentication(services, configuration);
 
+        // ── RBAC Authorization ──────────────────────────────────────
+        services.AddScoped<FlowEngine.Application.Authorization.IAuthorizationService,
+            FlowEngine.Application.Authorization.AuthorizationService>();
+        services.AddScoped<FlowEngine.Application.Authorization.IResourceAuthorizationService,
+            FlowEngine.Application.Authorization.ResourceAuthorizationService>();
+        services.AddScoped<FlowEngine.Application.Authorization.IProjectContext,
+            FlowEngine.Application.Authorization.ProjectContext>();
+
         // ── Identity ────────────────────────────────────────────────
         services.AddScoped<IPasswordHasher, PasswordHasher>();
         services.AddScoped<IPasswordValidator, PasswordValidator>();
@@ -94,13 +125,29 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ICredentialAccessor, CredentialAccessor>();
         services.AddScoped<WorkflowValidator>();
         services.AddScoped<WorkflowService>();
+        services.AddScoped<WorkflowExportService>();
+        services.AddScoped<WorkflowImportService>();
+        services.AddScoped<ProjectService>();
         services.AddScoped<TriggerService>();
         services.AddScoped<WebhookHandler>();
         services.AddScoped<ErrorStrategyHandler>();
         services.AddSingleton<WorkflowExecutionQueue>();
+
+        // ── File Storage ───────────────────────────────────────────
+        services.AddSingleton<IFileStorage>(sp =>
+        {
+            var basePath = configuration["FileStorage:BasePath"] ?? "./storage/files";
+            var logger = sp.GetService<ILogger<LocalFileStorage>>();
+            return new LocalFileStorage(basePath, logger);
+        });
+        services.AddScoped<FileService>();
         services.AddScoped<WorkflowExecutor>();
         services.AddScoped<IEngine>(sp => sp.GetRequiredService<WorkflowExecutor>());
         services.AddHostedService<WorkflowExecutionWorker>();
+
+        // ── HTTP Client Pool ─────────────────────────────────────────
+        services.AddHttpClient();
+        services.AddSingleton<IHttpClientPool, HttpClientPool>();
 
         // ── Scheduling & Execution ──────────────────────────────────
         services.AddSingleton<IScheduleManager, QuartzScheduleManager>();
@@ -108,6 +155,7 @@ public static class ServiceCollectionExtensions
         services.AddQuartzHostedService(options => options.WaitForJobsToComplete = true);
 
         services.AddScoped<ExecutionService>();
+        services.AddScoped<IExecutionIdempotencyService, ExecutionIdempotencyService>();
         services.AddScoped<IWorkflowLoader, WorkflowLoader>();
         services.AddScoped<NodeExecutionContextFactory>(provider =>
         {
@@ -119,7 +167,8 @@ public static class ServiceCollectionExtensions
                 new HashSet<string>(whitelist, StringComparer.OrdinalIgnoreCase),
                 hydratorLogger: provider.GetService<ILogger<ParameterHydrator>>(),
                 jsLogger: provider.GetService<ILogger<JsEngine>>(),
-                workflowLoader: provider.GetService<IWorkflowLoader>());
+                workflowLoader: provider.GetService<IWorkflowLoader>(),
+                httpClientPool: provider.GetService<IHttpClientPool>());
         });
 
         // ── WebSocket ───────────────────────────────────────────────

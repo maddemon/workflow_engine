@@ -7,14 +7,14 @@
 ### 1.1 覆盖范围
 
 - 角色定义：管理员、编辑、查看。
-- Scope 枚举：标识可操作的资源域。
+- Scope 枚举：标识可操作的资源域（Workflow / Credential / Execution / Trigger / User 等）。
 - 权限中间件：HTTP 请求统一鉴权。
 - 资源级权限校验：工作流、凭据、执行、触发器的访问控制。
 - 角色与权限映射：角色可执行的操作集合。
 
 ### 1.2 不覆盖范围
 
-- 多租户/项目隔离（由 [plan-beta-02-multitenant.md](plan-beta-02-multitenant.md) 承担）。
+- 项目分类筛选（由 [plan-beta-02-project-classification.md](plan-beta-02-project-classification.md) 承担）。
 - 限流与安全加固（由 [plan-beta-03-rate-limit.md](plan-beta-03-rate-limit.md) 承担）。
 - SSO / LDAP（GA 阶段）。
 - 细粒度字段级权限（不在 Beta 范围）。
@@ -22,7 +22,7 @@
 ## 2. 交付物清单
 
 - 角色定义（管理员/编辑/查看）与角色实体。
-- Scope 枚举（Workflow / Credential / Execution / Trigger / Project / User 等）。
+- Scope 枚举（Workflow / Credential / Execution / Trigger / User 等）。
 - 权限中间件（ASP.NET Core 中间件，统一鉴权）。
 - 资源级权限校验器（按资源类型校验读/写/执行/删除）。
 - 角色与权限映射表（角色 → 可执行操作集合）。
@@ -35,7 +35,7 @@
 - 目标：建立角色、Scope、权限的数据模型与枚举。
 - 核心任务：
   - 定义角色枚举（管理员/编辑/查看）。
-  - 定义 Scope 枚举，覆盖工作流、凭据、执行、触发器、项目、用户。
+  - 定义 Scope 枚举，覆盖工作流、凭据、执行、触发器、用户。
   - 定义操作枚举（Read / Write / Execute / Delete）。
   - 建立角色与权限映射表（默认权限矩阵）。
   - 持久化角色与用户关联关系。
@@ -72,6 +72,7 @@
   - 凭据：仅管理员与编辑可创建/修改，查看角色不可见凭据值。
   - 执行：查看角色可查看执行历史，编辑与管理员可触发执行。
   - 触发器：编辑与管理员可创建/修改/启停。
+  - 角色为系统级，不随项目变化。
   - 集成 RBAC 与审计日志，记录权限拒绝事件。
 - 输入：阶段二的鉴权中间件、Alpha 审计日志。
 - 输出：资源级权限校验器、审计事件。
@@ -112,3 +113,4 @@ flowchart LR
 | 日期 | 修改人 | 修改内容 | 关联任务 |
 |------|--------|----------|----------|
 | 2026-06-18 | Agent | 创建 RBAC 权限开发计划 | Beta 计划编写 |
+| 2026-07-04 | Agent | 将项目隔离职责移出 RBAC，明确角色为系统级 | task-align-no-saas-multitenant |

@@ -73,6 +73,14 @@ export function TriggerConfig({ workflowId, isExecuting }: TriggerConfigProps) {
   };
 
   const openEditForm = (trigger: TriggerDto) => {
+    if (trigger.type !== 'Schedule' && trigger.type !== 'Webhook') {
+      notifications.show({
+        title: 'Not supported',
+        message: `Editing "${trigger.type}" triggers is not supported in this editor. Only Schedule and Webhook can be edited here.`,
+        color: 'orange',
+      });
+      return;
+    }
     setEditTrigger(trigger);
     setType(trigger.type);
     setName(trigger.name);

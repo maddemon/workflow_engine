@@ -1,4 +1,5 @@
 using System.ComponentModel.DataAnnotations.Schema;
+using FlowEngine.Core.Enums;
 
 namespace FlowEngine.Core.Entities;
 
@@ -27,4 +28,14 @@ public class RetryPolicy
     /// 是否使用抖动。
     /// </summary>
     public bool UseJitter { get; set; }
+
+    /// <summary>
+    /// 退避策略。
+    /// </summary>
+    public BackoffStrategy BackoffStrategy { get; set; } = BackoffStrategy.Exponential;
+
+    /// <summary>
+    /// 可重试的错误码列表。为 null 或空时表示所有错误均可重试。
+    /// </summary>
+    public List<string>? RetryableErrorCodes { get; set; }
 }

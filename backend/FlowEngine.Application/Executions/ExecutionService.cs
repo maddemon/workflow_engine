@@ -4,6 +4,7 @@ using FlowEngine.Application.Workflows;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Data;
+using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,6 +18,7 @@ public sealed class ExecutionService
     private readonly IEngine _engine;
     private readonly FlowEngineDbContext _dbContext;
     private readonly WorkflowService _workflowService;
+    private readonly IExecutionIdempotencyService _idempotencyService;
 
     /// <summary>
     /// 初始化执行应用服务。
@@ -24,17 +26,19 @@ public sealed class ExecutionService
     public ExecutionService(
         IEngine engine,
         FlowEngineDbContext dbContext,
-        WorkflowService workflowService)
+        WorkflowService workflowService,
+        IExecutionIdempotencyService idempotencyService)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _workflowService = workflowService ?? throw new ArgumentNullException(nameof(workflowService));
+        _idempotencyService = idempotencyService;
     }
 
     /// <summary>
     /// 启动工作流执行。
     /// </summary>
-    public async Task<ExecutionDto?> ExecuteAsync(Guid workflowId, CancellationToken cancellationToken = default)
+    public async Task<ExecutionDto?> ExecuteAsync(Guid workflowId, string? idempotencyKey = null, CancellationToken cancellationToken = default)
     {
         var workflow = await _workflowService.GetAsync(workflowId, cancellationToken).ConfigureAwait(false);
         if (workflow is null)
@@ -42,7 +46,42 @@ public sealed class ExecutionService
             return null;
         }
 
+        // 幂等检查：如果提供了幂等键，检查是否已存在
+        if (!string.IsNullOrEmpty(idempotencyKey))
+        {
+            var tempExecutionId = Guid.NewGuid();
+            var existingExecutionId = await _idempotencyService.TryGetOrRegisterAsync(
+                idempotencyKey, tempExecutionId, TimeSpan.FromSeconds(3600), cancellationToken).ConfigureAwait(false);
+            if (existingExecutionId.HasValue)
+            {
+                // 返回已存在的执行记录
+                var existingRecord = await _dbContext.ExecutionRecords
+                    .FirstOrDefaultAsync(e => e.Id == existingExecutionId.Value, cancellationToken)
+                    .ConfigureAwait(false);
+                return existingRecord is not null ? MapToDto(existingRecord) : new ExecutionDto
+                {
+                    Id = existingExecutionId.Value,
+                    WorkflowDefinitionId = workflowId,
+                    Status = "Idempotent",
+                    StartedAt = DateTime.UtcNow
+                };
+            }
+        }
+
         var executionId = await _engine.StartAsync(workflowId, null, cancellationToken).ConfigureAwait(false);
+
+        // 更新幂等记录的 ExecutionId 为实际值
+        if (!string.IsNullOrEmpty(idempotencyKey))
+        {
+            var dedupRecord = await _dbContext.ExecutionDedups
+                .FirstOrDefaultAsync(e => e.IdempotencyKey == idempotencyKey, cancellationToken)
+                .ConfigureAwait(false);
+            if (dedupRecord is not null && dedupRecord.ExecutionId != executionId.Value)
+            {
+                dedupRecord.ExecutionId = executionId.Value;
+                await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            }
+        }
 
         var record = await _dbContext.ExecutionRecords
             .FirstOrDefaultAsync(e => e.Id == executionId.Value, cancellationToken)
@@ -69,7 +108,12 @@ public sealed class ExecutionService
         var record = await _dbContext.ExecutionRecords
             .FirstOrDefaultAsync(e => e.Id == executionId, cancellationToken)
             .ConfigureAwait(false);
-        return record is null ? null : MapToDto(record);
+        if (record is null)
+        {
+            return null;
+        }
+
+        return MapToDto(record);
     }
 
     /// <summary>

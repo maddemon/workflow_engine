@@ -2,11 +2,93 @@ import { useState } from 'react';
 import { Stack, Text, Box, Collapse, UnstyledButton, Group } from '@mantine/core';
 import { Check, X, Clock, Loader, AlertCircle, ChevronRight, ChevronDown, FileText } from 'lucide-react';
 import { CodeViewer } from './CodeViewer.tsx';
+import { AgentExecutionView } from '../ExecutionView/AgentExecutionView.tsx';
 import type { NodeExecutionRecordDto, ExecutionStatus } from '../../types/workflow.ts';
+import type { AgentExecutionData, AgentIteration, ToolCallRecord } from '../../types/agent-execution.ts';
 
 interface NodeOutputListProps {
   records: NodeExecutionRecordDto[];
   nodeNames?: Record<string, string>;
+  nodeTypeNames?: Record<string, string>;
+}
+
+/**
+ * Check if a node output contains agent execution data.
+ */
+function isAgentOutput(output: unknown): boolean {
+  if (!output || typeof output !== 'object') return false;
+  const obj = output as Record<string, unknown>;
+  return (
+    typeof obj.model === 'string' &&
+    typeof obj.iterations === 'object' &&
+    Array.isArray(obj.iterations)
+  );
+}
+
+/**
+ * Extract agent execution data from node output.
+ */
+function extractAgentData(output: unknown, record: NodeExecutionRecordDto): AgentExecutionData | null {
+  if (!output || typeof output !== 'object') return null;
+  const obj = output as Record<string, unknown>;
+
+  const model = typeof obj.model === 'string' ? obj.model : 'unknown';
+  const iterations = Array.isArray(obj.iterations) ? obj.iterations : [];
+  const systemPrompt = typeof obj.systemPrompt === 'string' ? obj.systemPrompt : null;
+
+  const agentIterations: AgentIteration[] = iterations.map((iter: unknown, index: number) => {
+    const iterObj = iter as Record<string, unknown>;
+    const llmChunks = Array.isArray(iterObj.llmChunks)
+      ? iterObj.llmChunks.map((chunk: unknown) => {
+          const chunkObj = chunk as Record<string, unknown>;
+          return {
+            content: typeof chunkObj.content === 'string' ? chunkObj.content : '',
+            role: (chunkObj.role as 'assistant' | 'system' | 'user') || 'assistant',
+            timestamp: typeof chunkObj.timestamp === 'string' ? chunkObj.timestamp : new Date().toISOString(),
+          };
+        })
+      : [];
+
+    const toolCalls = Array.isArray(iterObj.toolCalls)
+      ? iterObj.toolCalls.map((tc: unknown) => {
+          const tcObj = tc as Record<string, unknown>;
+          return {
+            id: typeof tcObj.id === 'string' ? tcObj.id : `tc-${Math.random()}`,
+            toolName: typeof tcObj.toolName === 'string' ? tcObj.toolName : 'unknown',
+            input: tcObj.input ?? null,
+            output: tcObj.output ?? null,
+            status: (tcObj.status as ExecutionStatus) || 'Completed',
+            duration: typeof tcObj.duration === 'number' ? tcObj.duration : null,
+            error: typeof tcObj.error === 'string' ? tcObj.error : null,
+          } as ToolCallRecord;
+        })
+      : [];
+
+    return {
+      index,
+      llmChunks,
+      toolCalls,
+      startedAt: typeof iterObj.startedAt === 'string' ? iterObj.startedAt : record.startedAt,
+      completedAt: typeof iterObj.completedAt === 'string' ? iterObj.completedAt : record.completedAt,
+    };
+  });
+
+  return {
+    agentInfo: {
+      model,
+      iterationCount: agentIterations.length,
+      status: record.status,
+      startedAt: record.startedAt,
+      completedAt: record.completedAt,
+      errorMessage: typeof obj.errorMessage === 'string' ? obj.errorMessage : null,
+      tokenUsage: typeof obj.tokenUsage === 'object' && obj.tokenUsage !== null
+        ? obj.tokenUsage as { promptTokens: number; completionTokens: number; totalTokens: number }
+        : null,
+    },
+    iterations: agentIterations,
+    subRecords: [],
+    systemPrompt,
+  };
 }
 
 const statusConfig: Record<ExecutionStatus, { icon: React.ReactNode; shade: string; label: string }> = {
@@ -84,12 +166,14 @@ function StepItem({
   isExpanded,
   onToggle,
   nodeName,
+  isAgent,
 }: {
   record: NodeExecutionRecordDto;
   isLast: boolean;
   isExpanded: boolean;
   onToggle: () => void;
   nodeName?: string;
+  isAgent?: boolean;
 }) {
   const config = statusConfig[record.status] ?? statusConfig.Pending;
   const nodeError = record.status === 'Failed' ? extractError(record.output) : null;
@@ -97,6 +181,8 @@ function StepItem({
   const outputSummary = record.output !== undefined && record.output !== null
     ? formatOutputSummary(record.output)
     : null;
+
+  const agentData = isAgent ? extractAgentData(record.output, record) : null;
 
   const statusBg =
     record.status === 'Completed' ? 'var(--exec-success-bg)'
@@ -231,19 +317,25 @@ function StepItem({
 
         <Collapse expanded={isExpanded}>
           <Stack gap={6} mt={4}>
-            {record.output !== undefined && record.output !== null && (
-              <CodeViewer
-                label="Output"
-                code={typeof record.output === 'string' ? record.output : JSON.stringify(record.output, null, 2)}
-                maxHeight={150}
-              />
-            )}
-            {record.resolvedParameters && (
-              <CodeViewer
-                label="Parameters"
-                code={JSON.stringify(record.resolvedParameters, null, 2)}
-                maxHeight={100}
-              />
+            {agentData ? (
+              <AgentExecutionView data={agentData} />
+            ) : (
+              <>
+                {record.output !== undefined && record.output !== null && (
+                  <CodeViewer
+                    label="Output"
+                    code={typeof record.output === 'string' ? record.output : JSON.stringify(record.output, null, 2)}
+                    maxHeight={150}
+                  />
+                )}
+                {record.resolvedParameters && (
+                  <CodeViewer
+                    label="Parameters"
+                    code={JSON.stringify(record.resolvedParameters, null, 2)}
+                    maxHeight={100}
+                  />
+                )}
+              </>
             )}
           </Stack>
         </Collapse>
@@ -252,7 +344,7 @@ function StepItem({
   );
 }
 
-export function NodeOutputList({ records, nodeNames }: NodeOutputListProps) {
+export function NodeOutputList({ records, nodeNames, nodeTypeNames }: NodeOutputListProps) {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const toggle = (id: string) => {
@@ -269,16 +361,21 @@ export function NodeOutputList({ records, nodeNames }: NodeOutputListProps) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column' }}>
-      {records.map((record, index) => (
-        <StepItem
-          key={record.id}
-          record={record}
-          isLast={index === records.length - 1}
-          isExpanded={!!expanded[record.id]}
-          onToggle={() => toggle(record.id)}
-          nodeName={nodeNames?.[record.nodeDefinitionId]}
-        />
-      ))}
+      {records.map((record, index) => {
+        const typeName = nodeTypeNames?.[record.nodeDefinitionId];
+        const isAgent = typeName === 'agent' || isAgentOutput(record.output);
+        return (
+          <StepItem
+            key={record.id}
+            record={record}
+            isLast={index === records.length - 1}
+            isExpanded={!!expanded[record.id]}
+            onToggle={() => toggle(record.id)}
+            nodeName={nodeNames?.[record.nodeDefinitionId]}
+            isAgent={isAgent}
+          />
+        );
+      })}
     </div>
   );
 }

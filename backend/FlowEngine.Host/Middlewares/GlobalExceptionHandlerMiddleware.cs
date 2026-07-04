@@ -1,0 +1,79 @@
+using System.Diagnostics;
+using System.Text.Json;
+
+namespace FlowEngine.Host.Middlewares;
+
+/// <summary>
+/// 全局异常处理中间件，捕获未处理异常并返回统一的错误响应格式。
+/// </summary>
+public class GlobalExceptionHandlerMiddleware(
+    RequestDelegate next,
+    ILogger<GlobalExceptionHandlerMiddleware> logger)
+{
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
+    /// <summary>
+    /// 处理请求，捕获未处理异常并转换为统一错误响应。
+    /// </summary>
+    public async Task InvokeAsync(HttpContext context)
+    {
+        try
+        {
+            await next(context);
+        }
+        catch (Exception ex)
+        {
+            await HandleExceptionAsync(context, ex);
+        }
+    }
+
+    private async Task HandleExceptionAsync(HttpContext context, Exception exception)
+    {
+        var (status, title) = MapException(exception);
+        var traceId = Activity.Current?.Id ?? context.TraceIdentifier;
+
+        // 5xx 异常记录完整堆栈以便排查，4xx 业务异常仅记录消息。
+        if (status >= StatusCodes.Status500InternalServerError)
+        {
+            logger.LogError(exception, "未处理异常，traceId={TraceId}", traceId);
+        }
+        else
+        {
+            logger.LogWarning(exception, "业务异常 {Status}: {Message}", status, exception.Message);
+        }
+
+        // 5xx 异常隐藏内部细节，仅返回通用提示，避免泄露敏感信息。
+        var detail = status >= StatusCodes.Status500InternalServerError
+            ? "服务器内部错误，请联系管理员或稍后重试。"
+            : exception.Message;
+
+        context.Response.StatusCode = status;
+        context.Response.ContentType = "application/json; charset=utf-8";
+
+        var payload = new
+        {
+            type = "error",
+            title,
+            status,
+            detail,
+            traceId,
+        };
+
+        await context.Response.WriteAsync(JsonSerializer.Serialize(payload, JsonOptions));
+    }
+
+    private static (int status, string title) MapException(Exception exception)
+    {
+        return exception switch
+        {
+            ArgumentException => (StatusCodes.Status400BadRequest, "Bad Request"),
+            KeyNotFoundException => (StatusCodes.Status404NotFound, "Not Found"),
+            UnauthorizedAccessException => (StatusCodes.Status403Forbidden, "Forbidden"),
+            InvalidOperationException => (StatusCodes.Status400BadRequest, "Bad Request"),
+            _ => (StatusCodes.Status500InternalServerError, "Internal Server Error"),
+        };
+    }
+}

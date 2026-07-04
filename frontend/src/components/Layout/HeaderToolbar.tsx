@@ -55,8 +55,8 @@ export function HeaderToolbar() {
           {navItems.map((item) => {
             const active =
               item.path === "/"
-                ? location.pathname === "/" || location.pathname.startsWith("/workflow")
-                : location.pathname.startsWith(item.path)
+                ? location.pathname === "/" || location.pathname.startsWith("/workflow/")
+                : location.pathname === item.path || location.pathname.startsWith(item.path + "/")
             return (
               <Anchor
                 key={item.path}

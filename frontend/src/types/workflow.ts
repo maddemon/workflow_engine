@@ -141,15 +141,24 @@ export interface WorkflowSummary {
   id: string;
   name: string;
   version: number;
-  createdBy: string;
-  createdAt: string;
-  updatedAt: string;
   isActive: boolean;
+  /** 项目 ID（null 表示全局工作流）。 */
+  projectId: string | null;
+  createdAt: string;
+  updatedAt: string | null;
+  /** 最近一次执行完成时间。 */
+  lastExecutionAt: string | null;
+  /** 关联触发器数量。 */
+  triggerCount: number;
+  /** 下次触发时间（最近的一个）。 */
+  nextTriggerAt: string | null;
 }
 
 export interface CreateWorkflowDto {
   name: string;
   createdBy: string;
+  /** 项目 ID，省略或 null 表示全局工作流。 */
+  projectId?: string | null;
   nodes: NodeDefinition[];
   connections: Connection[];
 }
@@ -188,8 +197,11 @@ export interface ExecutionDto {
 
 export interface CredentialDto {
   id: string;
+  projectId: string | null;
   name: string;
   type: string;
+  /** 凭据明文字段（已解密），查看者角色下将被脱敏为 *** */
+  fields: Record<string, string>;
   createdAt: string;
   updatedAt: string;
 }
@@ -197,35 +209,46 @@ export interface CredentialDto {
 export interface CreateCredentialDto {
   name: string;
   type: string;
-  data: Record<string, unknown>;
+  fields: Record<string, string>;
 }
 
 export interface UpdateCredentialDto {
   name: string;
-  type: string;
-  data: Record<string, unknown>;
+  fields: Record<string, string>;
 }
 
 // --- Triggers ---
 
 export interface TriggerSettingsDto {
+  // Schedule 类型
   cronExpression?: string | null;
   timeZone?: string | null;
   startAt?: string | null;
   endAt?: string | null;
+  // Webhook 类型
   webhookPath?: string | null;
   secret?: string | null;
   allowedIps?: string[] | null;
   allowedOrigins?: string[] | null;
   isSync?: boolean;
   maxWaitSeconds?: number;
+  // Poll 类型
+  intervalSeconds?: number;
+  timeoutSeconds?: number;
+  pollNodeId?: string | null;
+  dedupStrategy?: string;
+  skipIfRunning?: boolean;
+  lastPollId?: string | null;
+  lastPollTime?: string | null;
 }
+
+export type TriggerType = 'Schedule' | 'Webhook' | 'Poll';
 
 export interface TriggerDto {
   id: string;
   workflowDefinitionId: string;
   workflowVersion: number;
-  type: 'Schedule' | 'Webhook';
+  type: TriggerType;
   name: string;
   isActive: boolean;
   settings?: TriggerSettingsDto | null;
@@ -237,7 +260,7 @@ export interface TriggerDto {
 export interface CreateTriggerDto {
   workflowDefinitionId: string;
   workflowVersion: number;
-  type: 'Schedule' | 'Webhook';
+  type: TriggerType;
   name: string;
   isActive?: boolean;
   settings?: TriggerSettingsDto | null;
@@ -286,4 +309,90 @@ export interface UserDto {
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
+}
+
+// --- Projects ---
+
+export interface ProjectDto {
+  id: string;
+  name: string;
+  description: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string | null;
+}
+
+export interface CreateProjectDto {
+  name: string;
+  description?: string | null;
+}
+
+export interface UpdateProjectDto {
+  name: string;
+  description?: string | null;
+}
+
+export interface ProjectMemberDto {
+  id: string;
+  projectId: string;
+  userId: string;
+  role: string;
+  createdAt: string;
+}
+
+export interface AddProjectMemberDto {
+  userId: string;
+  role: string;
+}
+
+export interface UpdateProjectMemberDto {
+  role: string;
+}
+
+// --- Workflow Import/Export ---
+
+export interface WorkflowExportResult {
+  name: string;
+  version: number;
+  nodes: unknown[];
+  connections: unknown[];
+  exportedAt: string;
+  exportedBy: string;
+  styleSettings?: Record<string, unknown> | null;
+}
+
+export interface ImportError {
+  errorType: string;
+  message: string;
+  nodeId?: string | null;
+  connectionId?: string | null;
+}
+
+export interface ImportResult {
+  success: boolean;
+  workflowId?: string | null;
+  workflowName?: string | null;
+  errors: ImportError[];
+}
+
+export interface BatchImportResult {
+  successCount: number;
+  failureCount: number;
+  results: ImportResult[];
+}
+
+export interface ImportWorkflowRequest {
+  json: string;
+  projectId?: string | null;
+  importedBy: string;
+}
+
+export interface ImportBatchRequest {
+  json: string;
+  projectId?: string | null;
+  importedBy: string;
+}
+
+export interface ExportBatchRequest {
+  ids: string[];
 }

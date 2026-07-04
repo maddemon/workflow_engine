@@ -203,8 +203,18 @@ public sealed class HttpRequestNode : INodeType
                 request.Content = new StringContent(bodyJson, Encoding.UTF8, new System.Net.Http.Headers.MediaTypeHeaderValue("application/json"));
             }
 
-            return await HttpExecutionHelper.SendAndBuildResultAsync(request, context.Node.Id, cancellationToken)
-                .ConfigureAwait(false);
+            var client = context.HttpClientPool?.GetClient();
+            var ownedClient = client is null;
+            try
+            {
+                client ??= new HttpClient();
+                return await HttpExecutionHelper.SendAndBuildResultAsync(client, request, context.Node.Id, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                if (ownedClient) client?.Dispose();
+            }
         }
         catch (OperationCanceledException)
         {

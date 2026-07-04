@@ -1,4 +1,5 @@
 using FlowEngine.Application.Audit;
+using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
 using FlowEngine.Application.Triggers;
@@ -24,10 +25,10 @@ public class TriggerServiceTests : IDisposable
             .Options;
         _dbContext = new FlowEngineDbContext(options);
         _eventBus = new InMemoryEventBus();
-        var userContext = new FakeUserContext();
+        var userContext = new FakeUserContext { Roles = ["Admin"] };
         var auditFactory = new AuditEventFactory(userContext);
         var scheduleManager = new FakeScheduleManager();
-        _service = new TriggerService(_dbContext, _eventBus, auditFactory, scheduleManager);
+        _service = new TriggerService(_dbContext, _eventBus, auditFactory, scheduleManager, userContext);
     }
 
     public void Dispose()
@@ -39,9 +40,14 @@ public class TriggerServiceTests : IDisposable
     public async Task CreateAsync_ScheduleTrigger_ReturnsDto()
     {
         var ct = TestContext.Current.CancellationToken;
+        var workflowId = Guid.NewGuid();
+        var workflow = CreateTestWorkflow(workflowId);
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(ct);
+
         var dto = new CreateTriggerDto
         {
-            WorkflowDefinitionId = Guid.NewGuid(),
+            WorkflowDefinitionId = workflowId,
             WorkflowVersion = 1,
             Type = TriggerType.Schedule,
             Name = "Test Schedule",
@@ -65,6 +71,10 @@ public class TriggerServiceTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
         var workflowId = Guid.NewGuid();
+        var workflow = CreateTestWorkflow(workflowId);
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(ct);
+
         var dto = new CreateTriggerDto
         {
             WorkflowDefinitionId = workflowId,
@@ -96,7 +106,10 @@ public class TriggerServiceTests : IDisposable
     public async Task GetByIdAsync_ExistingTrigger_ReturnsDto()
     {
         var ct = TestContext.Current.CancellationToken;
-        var trigger = CreateTestTrigger(TriggerType.Schedule);
+        // 关联的 Workflow 必须存在且 ProjectId 非空，否则 GetByIdAsync 按 fail-closed 返回 null（Code Review I-2）。
+        var workflow = CreateTestWorkflow();
+        _dbContext.Workflows.Add(workflow);
+        var trigger = CreateTestTrigger(TriggerType.Schedule, workflow.Id);
         _dbContext.Triggers.Add(trigger);
         await _dbContext.SaveChangesAsync(ct);
 
@@ -119,6 +132,8 @@ public class TriggerServiceTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
         var workflowId = Guid.NewGuid();
+        var workflow = CreateTestWorkflow(workflowId);
+        _dbContext.Workflows.Add(workflow);
         var trigger1 = CreateTestTrigger(TriggerType.Schedule, workflowId);
         var trigger2 = CreateTestTrigger(TriggerType.Webhook, workflowId);
         var trigger3 = CreateTestTrigger(TriggerType.Schedule, Guid.NewGuid());
@@ -231,9 +246,14 @@ public class TriggerServiceTests : IDisposable
     public async Task CreateAsync_PublishesAuditEvent()
     {
         var ct = TestContext.Current.CancellationToken;
+        var workflowId = Guid.NewGuid();
+        var workflow = CreateTestWorkflow(workflowId);
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(ct);
+
         var dto = new CreateTriggerDto
         {
-            WorkflowDefinitionId = Guid.NewGuid(),
+            WorkflowDefinitionId = workflowId,
             WorkflowVersion = 1,
             Type = TriggerType.Schedule,
             Name = "Test",
@@ -257,12 +277,26 @@ public class TriggerServiceTests : IDisposable
         };
     }
 
+    private static Workflow CreateTestWorkflow(Guid? id = null)
+    {
+        return new Workflow
+        {
+            Id = id ?? Guid.NewGuid(),
+            ProjectId = Guid.NewGuid(),
+            Name = "Test Workflow",
+            CreatedBy = "test-user",
+            IsActive = true,
+            Nodes = [],
+            Connections = [],
+        };
+    }
+
     private sealed class FakeUserContext : IUserContext
     {
         public bool IsAuthenticated => true;
         public Guid? UserId => Guid.NewGuid();
         public string? Email => "test@test.com";
-        public IReadOnlyList<string> Roles => [];
+        public IReadOnlyList<string> Roles { get; set; } = [];
     }
 
     private sealed class InMemoryEventBus : IEventBus
@@ -295,5 +329,8 @@ public class TriggerServiceTests : IDisposable
         public Task RegisterScheduleAsync(Guid triggerId, Guid workflowDefinitionId, string cronExpression, string? timeZone, DateTime? startAt, DateTime? endAt, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task UnregisterScheduleAsync(Guid triggerId, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task<DateTime?> GetNextFireTimeAsync(Guid triggerId, CancellationToken cancellationToken = default) => Task.FromResult<DateTime?>(null);
+        public Task RegisterPollTriggerAsync(Guid triggerId, Guid workflowDefinitionId, int intervalSeconds, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task UnregisterPollTriggerAsync(Guid triggerId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
+
 }

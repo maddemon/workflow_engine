@@ -1,5 +1,7 @@
 using FlowEngine.Application.Credentials;
 using FlowEngine.Application.Dtos;
+using FlowEngine.Core.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace FlowEngine.Host.Controllers;
@@ -8,6 +10,7 @@ namespace FlowEngine.Host.Controllers;
 /// 凭据 CRUD API。
 /// </summary>
 [ApiController]
+[Authorize]
 [Route("api/v1/credentials")]
 public class CredentialsController(CredentialService credentialService) : ControllerBase
 {
@@ -15,6 +18,7 @@ public class CredentialsController(CredentialService credentialService) : Contro
     /// 获取所有凭据摘要列表。
     /// </summary>
     [HttpGet]
+    [AuthorizePermission(Scope.Credential, Operation.Read)]
     public async Task<ActionResult<IReadOnlyCollection<CredentialDto>>> GetAll(
         CancellationToken cancellationToken)
     {
@@ -26,6 +30,7 @@ public class CredentialsController(CredentialService credentialService) : Contro
     /// 按 ID 获取凭据摘要。
     /// </summary>
     [HttpGet("{id:guid}")]
+    [AuthorizePermission(Scope.Credential, Operation.Read)]
     public async Task<ActionResult<CredentialDto>> Get(Guid id, CancellationToken cancellationToken)
     {
         var credential = await credentialService.GetAsync(id, cancellationToken).ConfigureAwait(false);
@@ -41,6 +46,7 @@ public class CredentialsController(CredentialService credentialService) : Contro
     /// 创建凭据。
     /// </summary>
     [HttpPost]
+    [AuthorizePermission(Scope.Credential, Operation.Write)]
     public async Task<ActionResult<CredentialDto>> Create(
         [FromBody] CreateCredentialDto dto,
         CancellationToken cancellationToken)
@@ -53,6 +59,7 @@ public class CredentialsController(CredentialService credentialService) : Contro
     /// 更新凭据。
     /// </summary>
     [HttpPut("{id:guid}")]
+    [AuthorizePermission(Scope.Credential, Operation.Write)]
     public async Task<ActionResult<CredentialDto>> Update(
         Guid id,
         [FromBody] UpdateCredentialDto dto,
@@ -71,6 +78,7 @@ public class CredentialsController(CredentialService credentialService) : Contro
     /// 删除凭据。
     /// </summary>
     [HttpDelete("{id:guid}")]
+    [AuthorizePermission(Scope.Credential, Operation.Delete)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         var result = await credentialService.DeleteAsync(id, cancellationToken).ConfigureAwait(false);

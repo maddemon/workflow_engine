@@ -18,11 +18,11 @@
 |------|------|--------|----------|
 | **MVP** | 验证核心引擎可运行：节点可注册、工作流可编排、可手动执行 | MVP-0 核心可运行 / MVP-1 前端编排 | 单测 ≥30%（MVP-0）/ ≥50%（MVP-1）；单机 10→50 TPS |
 | **Alpha** | 补齐触发器、审计日志、实时执行视图，引入 AI Agent 基础能力 | — | 单测 ≥60%；单机 100 TPS |
-| **Beta** | 增加企业基础能力：权限、多租户、安全、文件、Agent 增强 | — | 单测 ≥70%；单机 200 TPS |
+| **Beta** | 增加企业基础能力：权限、项目分类、安全、文件、Agent 增强 | — | 单测 ≥70%；单机 200 TPS |
 | **GA** | 支撑生产环境：队列、Worker、监控、SSO、Agent 生产化 | — | 单测 ≥75%；1000 TPS（多 Worker） |
 | **Enterprise** | 服务大型企业：版本管理、协作、外部凭据、MCP、AI Builder、合规 | — | 单测 ≥80%；按客户需求 |
 
-阶段之间存在强依赖：Alpha 的触发器/审计日志依赖 MVP 的执行引擎；Beta 的 RBAC/多租户依赖 Alpha 的用户系统；GA 的 Redis 队列/Worker 依赖 Beta 的执行稳定性；Enterprise 的协作编辑/版本管理依赖 GA 的生产化基础。
+阶段之间存在强依赖：Alpha 的触发器/审计日志依赖 MVP 的执行引擎；Beta 的 RBAC/项目分类依赖 Alpha 的用户系统；GA 的 Redis 队列/Worker 依赖 Beta 的执行稳定性；Enterprise 的协作编辑/版本管理依赖 GA 的生产化基础。
 
 ## 3. 目录结构与编号方案
 
@@ -105,7 +105,7 @@ docs/plans/
 |------|------|----------|
 | [plan-beta-00-readme.md](beta/plan-beta-00-readme.md) | Beta 阶段模块依赖与整体验收 | roadmap §4 |
 | [plan-beta-01-rbac.md](beta/plan-beta-01-rbac.md) | 角色定义、Scope 枚举、中间件鉴权 | roadmap §4 |
-| [plan-beta-02-multitenant.md](beta/plan-beta-02-multitenant.md) | 项目 CRUD、成员管理、工作流/凭据作用域隔离 | roadmap §4, overview §6 |
+| [plan-beta-02-project-classification.md](beta/plan-beta-02-project-classification.md) | 项目 CRUD、资源按项目分组筛选 | roadmap §4, overview §6 |
 | [plan-beta-03-rate-limit.md](beta/plan-beta-03-rate-limit.md) | IP/用户限流、配置化阈值、安全中间件 | roadmap §4 |
 | [plan-beta-04-poll-trigger.md](beta/plan-beta-04-poll-trigger.md) | 轮询触发器、去重策略、状态持久化、并发控制 | trigger-system §4 |
 | [plan-beta-05-file-storage.md](beta/plan-beta-05-file-storage.md) | 文件上传、本地/S3 存储、二进制 DataItem 传递 | overview §6, deployment §5 |
@@ -145,7 +145,7 @@ docs/plans/
 flowchart TD
     MVP0[MVP-0 核心可运行<br/>骨架/Core/节点/表达式/执行引擎/持久化/标准节点] --> MVP1[MVP-1 前端编排<br/>画布/参数面板/凭据/手动执行]
     MVP1 --> Alpha[Alpha<br/>WebSocket/审计日志/沙箱/触发器/Agent基础]
-    Alpha --> Beta[Beta<br/>RBAC/多租户/限流/轮询/文件/Agent增强]
+    Alpha --> Beta[Beta<br/>RBAC/项目分类/限流/轮询/文件/Agent增强]
     Beta --> GA[GA<br/>Redis队列/Worker/监控/缓存/SSO/Agent生产化]
     GA --> Enterprise[Enterprise<br/>Git/协作/外部凭据/MCP/AI Builder/合规]
 ```
@@ -183,7 +183,7 @@ flowchart LR
 | MVP-0 | ≥30% | 执行引擎基础拓扑 | 1 条简单工作流手动执行 | 单机 10 TPS |
 | MVP-1 | ≥50% | 多输入等待、错误策略 | HTTP→If→Code 工作流 | 单机 50 TPS |
 | Alpha | ≥60% | 触发器、Webhook、审计日志 | Schedule/Webhook 触发 | 单机 100 TPS |
-| Beta | ≥70% | RBAC、多租户隔离 | 多用户协作编辑 | 单机 200 TPS |
+| Beta | ≥70% | RBAC、项目分类筛选 | 多用户协作编辑 | 单机 200 TPS |
 | GA | ≥75% | Redis 队列+Worker | Worker 故障转移 | 1000 TPS（多 Worker） |
 | Enterprise | ≥80% | MCP、外部凭据 | 完整审批流程 | 按客户需求 |
 
@@ -195,7 +195,7 @@ flowchart LR
 | 表达式引擎安全漏洞 | 用户通过表达式执行恶意代码 | 白名单函数、沙箱、深度/超时限制 | plan-alpha-03 |
 | 多输入等待实现复杂 | 循环/Join 场景出错 | 单元测试覆盖常见拓扑 | plan-mvp-05 |
 | Agent 工具调用循环 | LLM 无限调用 tool | 最大迭代次数与超时 | plan-alpha-06 |
-| 多租户数据隔离 | 跨租户数据泄露 | 查询强制带 projectId 过滤 | plan-beta-02 |
+| 项目分类误用为隔离条件 | 数据被错误隐藏 | 代码审查明确“仅筛选、不隔离” | plan-beta-02 |
 | SQLite 高并发写锁 | 并发执行时写阻塞 | WAL 模式；高并发切 PostgreSQL | plan-mvp-06 |
 
 ## 9. 实施流程
@@ -214,3 +214,4 @@ flowchart LR
 |------|--------|----------|----------|
 | 2026-06-18 | Agent | 创建全量开发计划总览，建立分阶段目录结构 | 计划编写 |
 | 2026-06-18 | Agent | 新增 plan-alpha-09 用户系统，修正 Beta/Enterprise/MVP 边界与依赖 | 计划 review 修复 |
+| 2026-07-04 | Agent | 将多租户/项目调整为项目分类，关闭自助注册 | task-align-no-saas-multitenant |

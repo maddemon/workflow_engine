@@ -29,6 +29,16 @@ public sealed class FlowEngineDbContext : DbContext
 
     public DbSet<UserRole> UserRoles => Set<UserRole>();
 
+    public DbSet<Project> Projects => Set<Project>();
+
+#pragma warning disable CS0618 // ProjectMember 已废弃，保留 DbSet 仅用于兼容历史数据表。
+    public DbSet<ProjectMember> ProjectMembers => Set<ProjectMember>();
+#pragma warning restore CS0618
+
+    public DbSet<StoredFile> StoredFiles => Set<StoredFile>();
+
+    public DbSet<ExecutionDedup> ExecutionDedups => Set<ExecutionDedup>();
+
     public FlowEngineDbContext(DbContextOptions<FlowEngineDbContext> options)
         : base(options)
     {
@@ -37,6 +47,8 @@ public sealed class FlowEngineDbContext : DbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+
+        modelBuilder.Entity<ExecutionDedup>().HasIndex(e => e.IdempotencyKey).IsUnique();
 
         // 必须在遍历 modelBuilder.Model 之前显式配置带 [JsonColumn] 的属性，
         // 否则 EF Core 会对 Dictionary<,>/List<> 等泛型 navigation 进行关联探测并抛出

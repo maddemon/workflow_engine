@@ -41,6 +41,9 @@ public static class AuditEventTypes
     /// <summary>节点执行错误。</summary>
     public const string NodeError = "Node.Error";
 
+    /// <summary>LLM 流式 token 输出。</summary>
+    public const string LlmTokenStream = "Llm.TokenStream";
+
     /// <summary>用户登录。</summary>
     public const string UserLogin = "User.Login";
 
@@ -70,6 +73,21 @@ public static class AuditEventTypes
 
     /// <summary>Webhook 触发。</summary>
     public const string WebhookTriggered = "Webhook.Triggered";
+
+    /// <summary>项目创建。</summary>
+    public const string ProjectCreated = "Project.Created";
+
+    /// <summary>项目更新。</summary>
+    public const string ProjectUpdated = "Project.Updated";
+
+    /// <summary>项目删除。</summary>
+    public const string ProjectDeleted = "Project.Deleted";
+
+    /// <summary>项目成员移除。</summary>
+    public const string MemberRemoved = "ProjectMember.Removed";
+
+    /// <summary>项目成员角色变更。</summary>
+    public const string MemberRoleChanged = "ProjectMember.RoleChanged";
 
     /// <summary>
     /// 需要同步刷盘的关键事件类型集合。

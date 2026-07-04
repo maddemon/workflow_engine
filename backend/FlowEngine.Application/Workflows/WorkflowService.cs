@@ -1,7 +1,9 @@
 using FlowEngine.Application.Audit;
 using FlowEngine.Application.Dtos;
+using FlowEngine.Application.Identity;
 using FlowEngine.Application.Triggers;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -18,10 +20,11 @@ public sealed class WorkflowService(
     WorkflowValidator _workflowValidator,
     IEventBus eventBus,
     AuditEventFactory auditFactory,
-    TriggerService _triggerService)
+    TriggerService _triggerService,
+    IUserContext userContext)
 {
     /// <summary>
-    /// 创建工作流。
+    /// 创建工作流。允许 ProjectId = null 作为未分类工作流；ProjectId 仅用于分类，不做隔离校验。
     /// </summary>
     public async Task<WorkflowDto> CreateAsync(CreateWorkflowDto dto, CancellationToken cancellationToken = default)
     {
@@ -61,11 +64,16 @@ public sealed class WorkflowService(
         var workflow = await dbContext.Workflows
             .FirstOrDefaultAsync(w => w.Id == id, cancellationToken)
             .ConfigureAwait(false);
-        return workflow is null ? null : MapToDto(workflow);
+        if (workflow is null)
+        {
+            return null;
+        }
+
+        return MapToDto(workflow);
     }
 
     /// <summary>
-    /// 分页获取工作流摘要列表。
+    /// 分页获取工作流摘要列表。项目（ProjectId）仅作为分类字段，不对可见性做隔离。
     /// </summary>
     /// <param name="page">页码（从 1 开始）。</param>
     /// <param name="pageSize">每页大小。</param>
@@ -78,20 +86,61 @@ public sealed class WorkflowService(
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 200);
 
-        var totalCount = await dbContext.Workflows
+        var query = dbContext.Workflows.AsQueryable();
+
+        var totalCount = await query
             .CountAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var workflows = await dbContext.Workflows
+        var workflows = await query
             .OrderBy(w => w.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
+        // BE-01: 批量查询关联数据，避免每行 N+1。
+        var workflowIds = workflows.Select(w => w.Id).ToList();
+
+        var lastExecutions = await dbContext.ExecutionRecords
+            .Where(e => workflowIds.Contains(e.WorkflowDefinitionId) && e.CompletedAt != null)
+            .GroupBy(e => e.WorkflowDefinitionId)
+            .Select(g => new { WorkflowId = g.Key, LastCompletedAt = g.Max(e => e.CompletedAt) })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var triggerStats = await dbContext.Triggers
+            .Where(t => workflowIds.Contains(t.WorkflowDefinitionId) && !t.Deleted)
+            .GroupBy(t => t.WorkflowDefinitionId)
+            .Select(g => new { WorkflowId = g.Key, Count = g.Count(), NextTriggerAt = g.Min(t => t.NextTriggerAt) })
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        var lastExecMap = lastExecutions.ToDictionary(x => x.WorkflowId, x => x.LastCompletedAt);
+        var triggerMap = triggerStats.ToDictionary(x => x.WorkflowId);
+
+        var items = workflows.Select(w =>
+        {
+            var lastExec = lastExecMap.GetValueOrDefault(w.Id);
+            var triggerStat = triggerMap.GetValueOrDefault(w.Id);
+            return new WorkflowSummaryDto
+            {
+                Id = w.Id,
+                Name = w.Name,
+                Version = w.Version,
+                IsActive = w.IsActive,
+                ProjectId = w.ProjectId,
+                CreatedAt = w.CreatedAt,
+                UpdatedAt = w.UpdatedAt,
+                LastExecutionAt = lastExec,
+                TriggerCount = triggerStat?.Count ?? 0,
+                NextTriggerAt = triggerStat?.NextTriggerAt,
+            };
+        }).ToList();
+
         return new PagedResult<WorkflowSummaryDto>
         {
-            Items = workflows.Select(MapToSummary).ToList(),
+            Items = items,
             TotalCount = totalCount,
             Page = page,
             PageSize = pageSize
@@ -114,6 +163,11 @@ public sealed class WorkflowService(
         if (existing is null)
         {
             return null;
+        }
+
+        if (!CanWriteWorkflow())
+        {
+            throw new InvalidOperationException("当前用户没有修改工作流的权限。");
         }
 
         var previousIsActive = existing.IsActive;
@@ -171,6 +225,11 @@ public sealed class WorkflowService(
         if (existing is null)
         {
             return false;
+        }
+
+        if (!IsSystemAdmin())
+        {
+            throw new InvalidOperationException("仅管理员可删除工作流。");
         }
 
         dbContext.Workflows.Remove(existing);
@@ -275,6 +334,19 @@ public sealed class WorkflowService(
         }
     }
 
+    private bool CanWriteWorkflow()
+    {
+        return userContext.Roles.Contains("Admin") || userContext.Roles.Contains("Editor");
+    }
+
+    /// <summary>
+    /// 判断当前用户是否为系统 Admin（全局角色）。
+    /// </summary>
+    private bool IsSystemAdmin()
+    {
+        return userContext.Roles.Contains("Admin");
+    }
+
     private static NodeDefinitionDto BuildNodeDto(NodeDefinition n, string id)
     {
         return new NodeDefinitionDto
@@ -371,17 +443,6 @@ public sealed class WorkflowService(
             StyleSettings = workflow.StyleSettings,
             Nodes = nodeDtos,
             Connections = connectionDtos,
-        };
-    }
-
-    private static WorkflowSummaryDto MapToSummary(Workflow workflow)
-    {
-        return new WorkflowSummaryDto
-        {
-            Id = workflow.Id,
-            Name = workflow.Name,
-            Version = workflow.Version,
-            IsActive = workflow.IsActive
         };
     }
 

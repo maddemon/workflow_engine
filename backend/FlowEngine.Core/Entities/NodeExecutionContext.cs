@@ -65,6 +65,11 @@ public class NodeExecutionContext
     public ILlmClient? LlmClient { get; set; }
 
     /// <summary>
+    /// HTTP 客户端连接池，供 HTTP 请求节点使用。
+    /// </summary>
+    public IHttpClientPool? HttpClientPool { get; set; }
+
+    /// <summary>
     /// 节点注册中心，供 Agent 等节点查找下游节点类型。
     /// </summary>
     public INodeRegistry? NodeRegistry { get; set; }
@@ -78,6 +83,23 @@ public class NodeExecutionContext
     /// 工作流加载器，供子工作流工具节点从数据库加载工作流。
     /// </summary>
     public IWorkflowLoader? WorkflowLoader { get; set; }
+
+    /// <summary>
+    /// 当前 Agent 嵌套深度，用于防止无限递归。
+    /// </summary>
+    public int NestingDepth { get; set; }
+
+    /// <summary>
+    /// 工作流执行内的共享数据字典，供 MemoryNode 等节点读写跨节点数据。
+    /// 由 WorkflowExecutor 在构造上下文时注入，同一执行内所有节点共享同一实例。
+    /// </summary>
+    public IDictionary<string, JsonNode?> Memory { get; set; } = new Dictionary<string, JsonNode?>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// LLM 流式 token 回调，由 WorkflowExecutor 注入用于将 LLM 增量 chunk 推送到前端。
+    /// 仅在 AgentNode 等使用 LLM 的节点执行时被触发。
+    /// </summary>
+    public Func<LlmStreamChunk, CancellationToken, Task>? OnLlmStreamChunk { get; set; }
 
     /// <summary>
     /// 获取参数值，优先从 ResolvedParameters 获取，其次从 RawParameters 获取。

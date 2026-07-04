@@ -4,13 +4,16 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Configuration;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Events;
 using FlowEngine.Core.ValueObjects;
 using FlowEngine.Runtime.WaitingArea;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Runtime.Executor;
 
@@ -21,7 +24,9 @@ public sealed class WorkflowExecutor : IEngine
     private readonly NodeExecutionContextFactory _contextFactory;
     private readonly ErrorStrategyHandler _errorHandler;
     private readonly WorkflowExecutionQueue _executionQueue;
+    private readonly IEventBus? _eventBus;
     private readonly ILogger<WorkflowExecutor> _logger;
+    private readonly EngineDefaultsOptions _defaults;
 
     public WorkflowExecutor(
         FlowEngineDbContext dbContext,
@@ -29,7 +34,9 @@ public sealed class WorkflowExecutor : IEngine
         NodeExecutionContextFactory contextFactory,
         ErrorStrategyHandler errorHandler,
         WorkflowExecutionQueue executionQueue,
-        ILogger<WorkflowExecutor> logger)
+        ILogger<WorkflowExecutor> logger,
+        IEventBus? eventBus = null,
+        IOptions<EngineDefaultsOptions>? defaultsOptions = null)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _nodeRegistry = nodeRegistry ?? throw new ArgumentNullException(nameof(nodeRegistry));
@@ -37,6 +44,8 @@ public sealed class WorkflowExecutor : IEngine
         _errorHandler = errorHandler ?? throw new ArgumentNullException(nameof(errorHandler));
         _executionQueue = executionQueue ?? throw new ArgumentNullException(nameof(executionQueue));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _eventBus = eventBus;
+        _defaults = defaultsOptions?.Value ?? new EngineDefaultsOptions();
     }
 
     public async Task<ExecutionId> StartAsync(
@@ -56,6 +65,7 @@ public sealed class WorkflowExecutor : IEngine
         var executionRecord = new ExecutionRecord
         {
             WorkflowDefinitionId = workflowDefinitionId,
+            ProjectId = workflow.ProjectId, // 冗余存储，便于直接按项目隔离查询（GAP-11）
             StartedAt = DateTime.UtcNow,
             Status = ExecutionStatus.Pending,
             NodeRecords = []
@@ -196,12 +206,15 @@ public sealed class WorkflowExecutor : IEngine
                 session.LatestBatches,
                 runIndex,
                 cancellationToken).ConfigureAwait(false);
+            context.Memory = session.Memory;
 
             var resolvedLlmClient = ResolveLlmClientForNode(node, nodeType, session.NodeMap, session.ConnectionsBySource, session.NodeLlmClients);
             if (resolvedLlmClient is not null)
             {
                 context.LlmClient = resolvedLlmClient;
             }
+
+            context.OnLlmStreamChunk = CreateLlmStreamCallback(session.Execution.Id, node.Id, runIndex);
 
             var result = await ExecuteNodeWithRetryAsync(node, nodeType, context, cancellationToken)
                 .ConfigureAwait(false);
@@ -256,16 +269,79 @@ public sealed class WorkflowExecutor : IEngine
         NodeExecutionContext context,
         CancellationToken cancellationToken)
     {
-        var maxRetries = node.ErrorStrategy == ErrorStrategy.Retry
-            ? (node.RetryPolicy?.MaxRetries ?? 2)
-            : 0;
+        var maxRetries = node.RetryPolicy?.MaxRetries
+            ?? (node.ErrorStrategy == ErrorStrategy.Retry ? Math.Max(_defaults.DefaultMaxRetries, 1) : _defaults.DefaultMaxRetries);
+
+        var effectiveTimeout = node.Timeout
+            ?? (_defaults.DefaultTimeoutSeconds.HasValue ? TimeSpan.FromSeconds(_defaults.DefaultTimeoutSeconds.Value) : null);
 
         NodeExecutionResult result;
         for (var attempt = 0; attempt <= maxRetries; attempt++)
         {
+            CancellationTokenSource? timeoutCts = null;
             try
             {
-                result = await nodeType.ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
+                var effectiveToken = cancellationToken;
+                if (effectiveTimeout is { } timeout && timeout > TimeSpan.Zero)
+                {
+                    timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                    timeoutCts.CancelAfter(timeout);
+                    effectiveToken = timeoutCts.Token;
+                }
+
+                result = await nodeType.ExecuteAsync(context, effectiveToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (timeoutCts is not null && timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                // 节点超时，不重试，直接返回超时错误。
+                var timeoutError = new NodeError
+                {
+                    Code = "Timeout",
+                    Message = $"节点执行超时，超时时间：{effectiveTimeout!.Value.TotalMilliseconds}ms。",
+                    NodeDefinitionId = node.Id
+                };
+                return new NodeExecutionResult
+                {
+                    Success = false,
+                    Error = timeoutError,
+                    Output = new DataBatch
+                    {
+                        Items =
+                        [
+                            new DataItem
+                            {
+                                Success = false,
+                                Error = timeoutError
+                            }
+                        ]
+                    }
+                };
+            }
+            catch (OperationCanceledException)
+            {
+                // 取消异常不重试，直接返回取消结果由上层错误策略处理。
+                var cancelledError = new NodeError
+                {
+                    Code = "Cancelled",
+                    Message = "节点执行被取消。",
+                    NodeDefinitionId = node.Id
+                };
+                return new NodeExecutionResult
+                {
+                    Success = false,
+                    Error = cancelledError,
+                    Output = new DataBatch
+                    {
+                        Items =
+                        [
+                            new DataItem
+                            {
+                                Success = false,
+                                Error = cancelledError
+                            }
+                        ]
+                    }
+                };
             }
             catch (Exception ex)
             {
@@ -294,6 +370,20 @@ public sealed class WorkflowExecutor : IEngine
                     }
                 };
             }
+            finally
+            {
+                timeoutCts?.Dispose();
+            }
+
+            // 检查可重试错误码过滤
+            if (!result.Success && node.RetryPolicy?.RetryableErrorCodes?.Count > 0)
+            {
+                var errorCode = result.Error?.Code ?? string.Empty;
+                if (!node.RetryPolicy.RetryableErrorCodes.Contains(errorCode))
+                {
+                    return result; // 错误码不在可重试列表中，直接返回不重试
+                }
+            }
 
             if (result.Success || attempt == maxRetries)
             {
@@ -305,7 +395,7 @@ public sealed class WorkflowExecutor : IEngine
                 return result;
             }
 
-            var delay = CalculateBackoff(node.RetryPolicy, attempt);
+            var delay = CalculateBackoff(node.RetryPolicy, attempt, _defaults);
             _logger.LogWarning(
                 "节点 {NodeName} ({NodeId}) 第 {Attempt} 次执行失败，{Delay}ms 后重试。",
                 node.Name,
@@ -510,20 +600,31 @@ public sealed class WorkflowExecutor : IEngine
         };
     }
 
-    private static TimeSpan CalculateBackoff(RetryPolicy? policy, int attempt)
+    private static TimeSpan CalculateBackoff(RetryPolicy? policy, int attempt, EngineDefaultsOptions? defaults = null)
     {
-        var baseSeconds = Math.Pow(2, attempt);
-        var maxDelay = policy?.MaxDelay.TotalSeconds > 0
+        var baseDelay = policy?.BaseDelay > TimeSpan.Zero
+            ? policy.BaseDelay
+            : TimeSpan.FromSeconds(defaults?.DefaultBaseDelaySeconds ?? 1);
+        var maxDelay = policy?.MaxDelay > TimeSpan.Zero
             ? policy.MaxDelay
-            : TimeSpan.FromSeconds(60);
+            : TimeSpan.FromSeconds(defaults?.DefaultMaxDelaySeconds ?? 60);
 
-        var delay = TimeSpan.FromSeconds(Math.Min(baseSeconds, maxDelay.TotalSeconds));
+        var strategy = policy?.BackoffStrategy ?? BackoffStrategy.Exponential;
+
+        TimeSpan delay = strategy switch
+        {
+            BackoffStrategy.Linear => baseDelay * (attempt + 1),
+            BackoffStrategy.Fixed => baseDelay,
+            _ => TimeSpan.FromTicks((long)(baseDelay.Ticks * Math.Pow(2, attempt))) // Exponential
+        };
+
+        delay = TimeSpan.FromTicks(Math.Min(delay.Ticks, maxDelay.Ticks));
 
         if (policy?.UseJitter == true)
         {
             var jitter = Random.Shared.NextDouble() * delay.TotalMilliseconds;
             delay = TimeSpan.FromMilliseconds(delay.TotalMilliseconds + jitter);
-            delay = TimeSpan.FromMilliseconds(Math.Min(delay.TotalMilliseconds, maxDelay.TotalMilliseconds));
+            delay = TimeSpan.FromTicks(Math.Min(delay.Ticks, maxDelay.Ticks));
         }
 
         return delay;
@@ -543,6 +644,42 @@ public sealed class WorkflowExecutor : IEngine
             .Where(p => p.Direction == PortDirection.Output)
             .Select(p => p.Name)
             .ToList();
+    }
+
+    private Func<LlmStreamChunk, CancellationToken, Task> CreateLlmStreamCallback(
+        Guid executionId,
+        Guid nodeDefinitionId,
+        int runIndex)
+    {
+        var eventBus = _eventBus;
+        if (eventBus is null)
+        {
+            return (_, _) => Task.CompletedTask;
+        }
+
+        return async (chunk, cancellationToken) =>
+        {
+            try
+            {
+                var tokenEvent = new LlmTokenStreamEvent
+                {
+                    ExecutionId = executionId,
+                    NodeDefinitionId = nodeDefinitionId,
+                    RunIndex = runIndex,
+                    Delta = chunk.Delta,
+                    IsFinal = chunk.IsFinal,
+                };
+
+                await eventBus.PublishAsync(tokenEvent, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex,
+                    "Failed to publish LlmTokenStreamEvent for node {NodeDefinitionId}.",
+                    nodeDefinitionId);
+            }
+        };
     }
 
     private static ILlmClient? ResolveLlmClientForNode(

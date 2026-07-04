@@ -13,6 +13,13 @@ namespace FlowEngine.Core.Entities;
 public class Credential : Entity
 {
     /// <summary>
+    /// 项目 ID。
+    /// </summary>
+    [Column("project_id")]
+    [Comment("项目 ID")]
+    public Guid? ProjectId { get; set; }
+
+    /// <summary>
     /// 凭据名称。
     /// </summary>
     [Required]

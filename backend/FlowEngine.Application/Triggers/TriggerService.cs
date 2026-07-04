@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FlowEngine.Application.Audit;
 using FlowEngine.Application.Dtos;
+using FlowEngine.Application.Identity;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
@@ -17,7 +18,8 @@ public sealed class TriggerService(
     FlowEngineDbContext dbContext,
     IEventBus eventBus,
     AuditEventFactory auditFactory,
-    IScheduleManager scheduleManager)
+    IScheduleManager scheduleManager,
+    IUserContext userContext)
 {
     /// <summary>
     /// 创建触发器。
@@ -26,10 +28,24 @@ public sealed class TriggerService(
     {
         ArgumentNullException.ThrowIfNull(dto);
 
+        if (!CanWriteTrigger())
+        {
+            throw new InvalidOperationException("当前用户没有创建触发器的权限。");
+        }
+
+        var workflow = await dbContext.Workflows
+            .FirstOrDefaultAsync(w => w.Id == dto.WorkflowDefinitionId, cancellationToken)
+            .ConfigureAwait(false);
+        if (workflow is null)
+        {
+            throw new InvalidOperationException("关联的工作流不存在。");
+        }
+
         var triggerSettings = dto.Settings is not null ? ConvertToTriggerSettings(dto.Settings) : new TriggerSettings();
         var trigger = new Trigger
         {
             WorkflowDefinitionId = dto.WorkflowDefinitionId,
+            ProjectId = workflow.ProjectId,
             WorkflowVersion = dto.WorkflowVersion,
             Type = dto.Type,
             Name = dto.Name,
@@ -45,6 +61,11 @@ public sealed class TriggerService(
 
         dbContext.Triggers.Add(trigger);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        if (dto.Type == TriggerType.Poll)
+        {
+            await RegisterPollTriggerAsync(trigger, triggerSettings, cancellationToken).ConfigureAwait(false);
+        }
 
         await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
             AuditEventTypes.TriggerCreated,
@@ -68,7 +89,12 @@ public sealed class TriggerService(
         var trigger = await dbContext.Triggers
             .FirstOrDefaultAsync(t => t.Id == id, cancellationToken)
             .ConfigureAwait(false);
-        return trigger is null ? null : MapToDto(trigger);
+        if (trigger is null)
+        {
+            return null;
+        }
+
+        return MapToDto(trigger);
     }
 
     /// <summary>
@@ -86,12 +112,29 @@ public sealed class TriggerService(
     }
 
     /// <summary>
+    /// 获取所有触发器。项目仅用于分类，不对触发器可见性做隔离。
+    /// </summary>
+    public async Task<IReadOnlyCollection<TriggerDto>> GetAllForUserAsync(CancellationToken cancellationToken = default)
+    {
+        var triggers = await dbContext.Triggers
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return triggers.Select(MapToDto).ToList();
+    }
+
+    /// <summary>
     /// 更新触发器。
     /// </summary>
     public async Task<TriggerDto?> UpdateAsync(
         Guid id, UpdateTriggerDto dto, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dto);
+
+        if (!CanWriteTrigger())
+        {
+            throw new InvalidOperationException("当前用户没有修改触发器的权限。");
+        }
 
         var trigger = await dbContext.Triggers
             .FirstOrDefaultAsync(t => t.Id == id, cancellationToken)
@@ -113,6 +156,15 @@ public sealed class TriggerService(
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
+        if (trigger.Type == TriggerType.Poll)
+        {
+            await UnregisterPollTriggerAsync(trigger.Id, cancellationToken).ConfigureAwait(false);
+            if (trigger.IsActive)
+            {
+                await RegisterPollTriggerAsync(trigger, trigger.Settings, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
         await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
             AuditEventTypes.TriggerUpdated,
             "Trigger",
@@ -133,6 +185,11 @@ public sealed class TriggerService(
     /// </summary>
     public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        if (!IsSystemAdmin())
+        {
+            throw new InvalidOperationException("仅管理员可删除触发器。");
+        }
+
         var trigger = await dbContext.Triggers
             .FirstOrDefaultAsync(t => t.Id == id, cancellationToken)
             .ConfigureAwait(false);
@@ -152,6 +209,11 @@ public sealed class TriggerService(
                 .ConfigureAwait(false);
             dbContext.WebhookRoutes.RemoveRange(routes);
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        if (trigger.Type == TriggerType.Poll)
+        {
+            await UnregisterPollTriggerAsync(trigger.Id, cancellationToken).ConfigureAwait(false);
         }
 
         await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
@@ -293,6 +355,22 @@ public sealed class TriggerService(
         };
     }
 
+    /// <summary>
+    /// 判断当前用户是否有触发器写权限（系统全局角色 Admin/Editor）。
+    /// </summary>
+    private bool CanWriteTrigger()
+    {
+        return userContext.Roles.Contains("Admin") || userContext.Roles.Contains("Editor");
+    }
+
+    /// <summary>
+    /// 判断当前用户是否为系统 Admin（全局角色），用于触发器的删除权限校验。
+    /// </summary>
+    private bool IsSystemAdmin()
+    {
+        return userContext.Roles.Contains("Admin");
+    }
+
     private static TriggerSettings ConvertToTriggerSettings(TriggerSettingsDto dto)
     {
         return new TriggerSettings
@@ -307,6 +385,13 @@ public sealed class TriggerService(
             AllowedOrigins = dto.AllowedOrigins,
             IsSync = dto.IsSync,
             MaxWaitSeconds = dto.MaxWaitSeconds,
+            IntervalSeconds = dto.IntervalSeconds,
+            TimeoutSeconds = dto.TimeoutSeconds,
+            PollNodeId = dto.PollNodeId,
+            DedupStrategy = dto.DedupStrategy,
+            SkipIfRunning = dto.SkipIfRunning,
+            LastPollId = dto.LastPollId,
+            LastPollTime = dto.LastPollTime,
         };
     }
 
@@ -424,6 +509,40 @@ public sealed class TriggerService(
             AllowedOrigins = settings.AllowedOrigins,
             IsSync = settings.IsSync,
             MaxWaitSeconds = settings.MaxWaitSeconds,
+            IntervalSeconds = settings.IntervalSeconds,
+            TimeoutSeconds = settings.TimeoutSeconds,
+            PollNodeId = settings.PollNodeId,
+            DedupStrategy = settings.DedupStrategy,
+            SkipIfRunning = settings.SkipIfRunning,
+            LastPollId = settings.LastPollId,
+            LastPollTime = settings.LastPollTime,
         };
+    }
+
+    private async Task RegisterPollTriggerAsync(
+        Trigger trigger,
+        TriggerSettings settings,
+        CancellationToken cancellationToken)
+    {
+        if (trigger.Type != TriggerType.Poll)
+        {
+            return;
+        }
+
+        if (!trigger.IsActive)
+        {
+            return;
+        }
+
+        await scheduleManager.RegisterPollTriggerAsync(
+            trigger.Id,
+            trigger.WorkflowDefinitionId,
+            settings.IntervalSeconds,
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task UnregisterPollTriggerAsync(Guid triggerId, CancellationToken cancellationToken)
+    {
+        await scheduleManager.UnregisterPollTriggerAsync(triggerId, cancellationToken).ConfigureAwait(false);
     }
 }

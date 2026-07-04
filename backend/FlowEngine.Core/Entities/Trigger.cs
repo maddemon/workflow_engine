@@ -22,6 +22,13 @@ public class Trigger : Entity
     public Guid WorkflowDefinitionId { get; set; }
 
     /// <summary>
+    /// 项目 ID（冗余字段，便于直接按项目隔离查询，GAP-11）。
+    /// </summary>
+    [Column("project_id")]
+    [Comment("项目 ID")]
+    public Guid? ProjectId { get; set; }
+
+    /// <summary>
     /// 工作流版本号。
     /// </summary>
     [Column("workflow_version")]
@@ -127,4 +134,49 @@ public sealed class TriggerSettings
     /// 同步响应最大等待时间（秒）（Webhook 类型）。
     /// </summary>
     public int MaxWaitSeconds { get; set; } = 30;
+
+    /// <summary>
+    /// 轮询间隔秒数（Poll 类型）。
+    /// </summary>
+    public int IntervalSeconds { get; set; } = 60;
+
+    /// <summary>
+    /// 轮询超时秒数（Poll 类型）。
+    /// </summary>
+    public int TimeoutSeconds { get; set; } = 30;
+
+    /// <summary>
+    /// 轮询节点类型 ID（Poll 类型）。
+    /// </summary>
+    public string? PollNodeId { get; set; }
+
+    /// <summary>
+    /// 去重策略（Poll 类型）：None/Id/Timestamp/HashSet。
+    /// </summary>
+    public string DedupStrategy { get; set; } = "None";
+
+    /// <summary>
+    /// 如果上一次轮询仍在运行则跳过（Poll 类型）。
+    /// </summary>
+    public bool SkipIfRunning { get; set; } = true;
+
+    /// <summary>
+    /// 上一次轮询 ID（Poll 类型）。
+    /// </summary>
+    public string? LastPollId { get; set; }
+
+    /// <summary>
+    /// 上一次轮询时间（Poll 类型）。
+    /// </summary>
+    public DateTime? LastPollTime { get; set; }
+
+    /// <summary>
+    /// 幂等键模板（Webhook 类型）。支持模板变量如 {headers.x-request-id}、{body.fieldName}。
+    /// </summary>
+    public string? IdempotencyKeyTemplate { get; set; }
+
+    /// <summary>
+    /// 幂等键 TTL（秒），默认 3600。
+    /// </summary>
+    public int? IdempotencyTtlSeconds { get; set; }
 }

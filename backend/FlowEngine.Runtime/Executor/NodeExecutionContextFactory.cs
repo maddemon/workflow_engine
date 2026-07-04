@@ -24,7 +24,8 @@ public sealed class NodeExecutionContextFactory(
     ILogger<ParameterHydrator>? hydratorLogger = null,
     ILogger<JsEngine>? jsLogger = null,
     ILlmClient? llmClient = null,
-    IWorkflowLoader? workflowLoader = null) : Core.Abstractions.INodeExecutionContextFactory
+    IWorkflowLoader? workflowLoader = null,
+    IHttpClientPool? httpClientPool = null) : Core.Abstractions.INodeExecutionContextFactory
 {
     private readonly ParameterHydrator ParameterHydrator = new(credentialAccessor, hydratorLogger);
 
@@ -84,6 +85,7 @@ public sealed class NodeExecutionContextFactory(
             Logger = NullExecutionLogger.Instance,
             CancellationToken = cancellationToken,
             LlmClient = llmClient,
+            HttpClientPool = httpClientPool,
             NodeRegistry = registry,
             ContextFactory = this,
             WorkflowLoader = workflowLoader,

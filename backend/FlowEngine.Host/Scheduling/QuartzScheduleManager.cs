@@ -131,4 +131,61 @@ public sealed class QuartzScheduleManager : IScheduleManager, IHostedService, ID
     {
         (_scheduler as IDisposable)?.Dispose();
     }
+
+    /// <inheritdoc />
+    public async Task RegisterPollTriggerAsync(
+        Guid triggerId,
+        Guid workflowDefinitionId,
+        int intervalSeconds,
+        CancellationToken cancellationToken = default)
+    {
+        if (_scheduler is null)
+        {
+            _logger.LogWarning("调度器未启动，无法注册轮询触发器: {TriggerId}", triggerId);
+            return;
+        }
+
+        var jobKey = new JobKey($"poll-trigger-{triggerId}", "triggers");
+        var triggerKey = new TriggerKey($"poll-trigger-{triggerId}", "triggers");
+
+        if (await _scheduler.CheckExists(jobKey, cancellationToken).ConfigureAwait(false))
+        {
+            await _scheduler.DeleteJob(jobKey, cancellationToken).ConfigureAwait(false);
+        }
+
+        var job = JobBuilder.Create<PollTriggerJob>()
+            .WithIdentity(jobKey)
+            .UsingJobData(PollTriggerJob.TriggerIdKey, triggerId.ToString())
+            .UsingJobData(PollTriggerJob.WorkflowDefinitionIdKey, workflowDefinitionId.ToString())
+            .Build();
+
+        var scheduleBuilder = SimpleScheduleBuilder.Create()
+            .WithIntervalInSeconds(intervalSeconds)
+            .RepeatForever();
+
+        var quartzTrigger = TriggerBuilder.Create()
+            .WithIdentity(triggerKey)
+            .ForJob(jobKey)
+            .WithSchedule(scheduleBuilder)
+            .Build();
+
+        await _scheduler.ScheduleJob(job, quartzTrigger, cancellationToken).ConfigureAwait(false);
+
+        _logger.LogInformation(
+            "已注册轮询触发器: TriggerId={TriggerId}, Interval={IntervalSeconds}s",
+            triggerId, intervalSeconds);
+    }
+
+    /// <inheritdoc />
+    public async Task UnregisterPollTriggerAsync(Guid triggerId, CancellationToken cancellationToken = default)
+    {
+        if (_scheduler is null) return;
+
+        var jobKey = new JobKey($"poll-trigger-{triggerId}", "triggers");
+        if (await _scheduler.CheckExists(jobKey, cancellationToken).ConfigureAwait(false))
+        {
+            await _scheduler.DeleteJob(jobKey, cancellationToken).ConfigureAwait(false);
+            _logger.LogInformation("已注销轮询触发器: TriggerId={TriggerId}", triggerId);
+        }
+    }
 }

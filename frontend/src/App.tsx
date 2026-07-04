@@ -7,6 +7,7 @@ import { WorkflowListPage } from './components/WorkflowList/WorkflowListPage.tsx
 import { WorkflowEditorPage } from './pages/WorkflowEditorPage.tsx';
 import { ExecutionHistoryPage } from './pages/ExecutionHistoryPage.tsx';
 import { LoginPage } from './pages/LoginPage.tsx';
+import { RegisterPage } from './pages/RegisterPage.tsx';
 import { LoadingOverlay } from '@mantine/core';
 import './App.css';
 
@@ -53,6 +54,7 @@ function AppRoutes() {
     <Routes>
       {/* Auth pages - no header/sidebar */}
       <Route path="/login" element={<AuthLayout><LoginPage /></AuthLayout>} />
+      <Route path="/register" element={<AuthLayout><RegisterPage /></AuthLayout>} />
       {/* App pages - with header/sidebar */}
       <Route
         path="/"

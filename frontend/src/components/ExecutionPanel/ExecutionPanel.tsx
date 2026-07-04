@@ -9,6 +9,7 @@ interface ExecutionPanelProps {
   onClose: () => void;
   error?: string | null;
   nodeNames?: Record<string, string>;
+  nodeTypeNames?: Record<string, string>;
 }
 
 const statusConfig: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
@@ -32,7 +33,7 @@ function formatDuration(startedAt: string | null, completedAt: string | null): s
   return `${minutes}m ${seconds}s`;
 }
 
-export function ExecutionPanel({ execution, onClose, error, nodeNames }: ExecutionPanelProps) {
+export function ExecutionPanel({ execution, onClose, error, nodeNames, nodeTypeNames }: ExecutionPanelProps) {
   const nodeExecutionRecords = useWorkflowStore((s) => s.nodeExecutionRecords);
   const records = Object.values(nodeExecutionRecords);
 
@@ -119,7 +120,7 @@ export function ExecutionPanel({ execution, onClose, error, nodeNames }: Executi
         </Text>
       )}
 
-      <NodeOutputList records={records} nodeNames={nodeNames} />
+      <NodeOutputList records={records} nodeNames={nodeNames} nodeTypeNames={nodeTypeNames} />
     </Stack>
   );
 }

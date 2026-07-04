@@ -6,6 +6,11 @@ namespace FlowEngine.Application.Dtos;
 public sealed record CreateCredentialDto
 {
     /// <summary>
+    /// 项目 ID。
+    /// </summary>
+    public Guid? ProjectId { get; init; }
+
+    /// <summary>
     /// 凭据名称。
     /// </summary>
     public string Name { get; init; } = string.Empty;
@@ -48,6 +53,11 @@ public sealed record CredentialDto
     public Guid Id { get; init; }
 
     /// <summary>
+    /// 项目 ID。
+    /// </summary>
+    public Guid? ProjectId { get; init; }
+
+    /// <summary>
     /// 凭据名称。
     /// </summary>
     public string Name { get; init; } = string.Empty;
@@ -56,6 +66,11 @@ public sealed record CredentialDto
     /// 凭据类型。
     /// </summary>
     public string Type { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 凭据明文字段（已解密），查看者角色下将被脱敏为 ***。
+    /// </summary>
+    public Dictionary<string, string> Fields { get; init; } = [];
 
     /// <summary>
     /// 创建时间。

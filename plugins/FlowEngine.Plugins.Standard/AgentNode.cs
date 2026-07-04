@@ -5,6 +5,7 @@ using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Runtime.Agent;
 using FlowEngine.Runtime.Tools;
 
 namespace FlowEngine.Plugins.Standard;
@@ -47,6 +48,18 @@ public sealed class AgentNode : INodeType
     [Description("System prompt template for the LLM.")]
     public string PromptTemplate { get; set; } = string.Empty;
 
+    /// <summary>
+    /// 是否启用对话记忆。
+    /// </summary>
+    [Description("Enable conversation memory across iterations.")]
+    public bool MemoryEnabled { get; set; }
+
+    /// <summary>
+    /// 记忆窗口大小（保留最近 N 条消息）。
+    /// </summary>
+    [Description("Number of recent messages to keep in memory window.")]
+    public int MemoryWindowSize { get; set; } = 20;
+
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
     [
@@ -82,56 +95,47 @@ public sealed class AgentNode : INodeType
         }
 
         var effectiveToken = timeoutCts?.Token ?? cancellationToken;
-        var lastContent = string.Empty;
 
-        for (var i = 0; i < maxIterations; i++)
+        AgentMemory? memory = null;
+        if (MemoryEnabled)
         {
-            if (effectiveToken.IsCancellationRequested)
-            {
-                return CreateTimeoutResult("LLM call timed out or was cancelled.", context);
-            }
-
-            LlmResponse response;
-            try
-            {
-                response = await llmClient.ChatAsync(messages, tools, effectiveToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (timeoutCts is not null)
-            {
-                return CreateTimeoutResult("LLM call timed out.", context);
-            }
-            catch (Exception ex)
-            {
-                return context.ErrorResult("LlmError", $"LLM call failed: {ex.Message}");
-            }
-
-            lastContent = response.Content ?? string.Empty;
-
-            if (!response.HasToolCalls)
-            {
-                return CreateSuccessResult(lastContent, context);
-            }
-
-            messages.Add(new LlmMessage
-            {
-                Role = "assistant",
-                Content = response.Content,
-                ToolCalls = response.ToolCalls
-            });
-
-            foreach (var toolCall in response.ToolCalls!)
-            {
-                var toolResult = await ExecuteToolAsync(toolCall, tools, context, effectiveToken).ConfigureAwait(false);
-                messages.Add(new LlmMessage
-                {
-                    Role = "tool",
-                    ToolCallId = toolCall.Id,
-                    Content = toolResult
-                });
-            }
+            memory = new AgentMemory(MemoryWindowSize > 0 ? MemoryWindowSize : 20);
         }
 
-        return CreateTimeoutResult($"Maximum iterations ({maxIterations}) reached.", context);
+        var resolver = new InlineResolver(
+            llmClient,
+            tools,
+            context,
+            maxIterations,
+            memory: memory);
+
+        try
+        {
+            var result = await resolver.RunAsync(messages, effectiveToken).ConfigureAwait(false);
+
+            switch (result.StoppedReason)
+            {
+                case InlineResolverStopReason.Completed:
+                    return CreateSuccessResult(result.Content, context);
+
+                case InlineResolverStopReason.MaxIterationsReached:
+                    return CreateTimeoutResult($"Maximum iterations ({maxIterations}) reached.", context);
+
+                case InlineResolverStopReason.Cancelled:
+                    return CreateTimeoutResult("LLM call timed out or was cancelled.", context);
+
+                default:
+                    return CreateTimeoutResult("Agent execution stopped.", context);
+            }
+        }
+        catch (OperationCanceledException) when (timeoutCts is not null)
+        {
+            return CreateTimeoutResult("LLM call timed out.", context);
+        }
+        catch (Exception ex)
+        {
+            return context.ErrorResult("LlmError", $"LLM call failed: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -244,155 +248,6 @@ public sealed class AgentNode : INodeType
         }
 
         return firstItem.Data.ToJsonString();
-    }
-
-    private async Task<string> ExecuteToolAsync(
-        LlmToolCall toolCall,
-        IReadOnlyList<ToolDefinition> tools,
-        NodeExecutionContext parentContext,
-        CancellationToken cancellationToken)
-    {
-        var tool = tools.FirstOrDefault(t => t.Name == toolCall.Name);
-        if (tool is null)
-        {
-            return ResultSanitizer.Sanitize(toolCall.Name, $"Tool '{toolCall.Name}' not found.");
-        }
-
-        var toolNode = parentContext.Workflow.Nodes.FirstOrDefault(n => n.Id == tool.TargetNodeDefinitionId);
-        if (toolNode is null)
-        {
-            return ResultSanitizer.Sanitize(toolCall.Name, $"Tool node '{tool.TargetNodeDefinitionId}' not found.");
-        }
-
-        if (parentContext.NodeRegistry?.TryGet(toolNode.TypeName, out var nodeType) != true || nodeType is null)
-        {
-            return ResultSanitizer.Sanitize(toolCall.Name, $"Node type '{toolNode.TypeName}' not found.");
-        }
-
-        JsonNode? args;
-        try
-        {
-            args = JsonNode.Parse(toolCall.Arguments);
-        }
-        catch
-        {
-            args = null;
-        }
-
-        var inputBatch = new DataBatch
-        {
-            Items =
-            [
-                new DataItem
-                {
-                    Data = args,
-                    Success = true,
-                    SourceIndex = 0
-                }
-            ]
-        };
-
-        var startedAt = DateTime.UtcNow;
-        NodeExecutionContext toolContext;
-        INodeType? toolNodeInstance;
-
-        toolNodeInstance = CreateNodeInstance(nodeType);
-
-        if (parentContext.ContextFactory is not null && toolNodeInstance is not null)
-        {
-            var execution = new ExecutionRecord
-            {
-                Id = parentContext.ExecutionId,
-                WorkflowDefinitionId = parentContext.Workflow.Id,
-                StartedAt = startedAt,
-                Status = ExecutionStatus.Running,
-            };
-
-            toolContext = await parentContext.ContextFactory.CreateAsync(
-                parentContext.Workflow,
-                execution,
-                toolNode,
-                toolNodeInstance,
-                new Dictionary<string, DataBatch> { [FlowConstants.PortNames.Input] = inputBatch },
-                new Dictionary<string, DataBatch>(),
-                new Dictionary<string, DataBatch>(),
-                0,
-                cancellationToken).ConfigureAwait(false);
-        }
-        else
-        {
-            // Fallback for contexts created outside the factory or when instance creation fails.
-            toolNodeInstance ??= nodeType;
-            toolContext = new NodeExecutionContext
-            {
-                Workflow = parentContext.Workflow,
-                ExecutionId = parentContext.ExecutionId,
-                Node = new NodeDefinition
-                {
-                    Id = toolNode.Id,
-                    TypeName = toolNode.TypeName,
-                    Name = toolNode.Name,
-                    Parameters = toolNode.Parameters,
-                    Ports = toolNode.Ports
-                },
-                Inputs = new Dictionary<string, DataBatch> { [FlowConstants.PortNames.Input] = inputBatch },
-                RawParameters = toolNode.Parameters,
-                ResolvedParameters = toolNode.Parameters,
-                Credentials = parentContext.Credentials,
-                Logger = parentContext.Logger,
-                CancellationToken = cancellationToken
-            };
-        }
-
-        try
-        {
-            var result = await toolNodeInstance.ExecuteAsync(toolContext, cancellationToken).ConfigureAwait(false);
-
-            var record = new NodeExecutionRecord
-            {
-                NodeDefinitionId = toolNode.Id,
-                RunIndex = 0,
-                StartedAt = startedAt,
-                CompletedAt = DateTime.UtcNow,
-                Inputs = toolContext.Inputs.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
-                Output = result,
-                RawParameters = toolContext.RawParameters.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
-                ResolvedParameters = toolContext.ResolvedParameters.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase)
-            };
-
-            if (!result.Success)
-            {
-                return ResultSanitizer.Sanitize(toolCall.Name, $"Tool execution failed: {result.Error?.Message ?? "Unknown error"}");
-            }
-
-            if (result.Output.Items.Count > 0)
-            {
-                var data = result.Output.Items[0].Data;
-                if (data is not null)
-                {
-                    return ResultSanitizer.Sanitize(toolCall.Name, data.ToJsonString());
-                }
-            }
-
-            return ResultSanitizer.Sanitize(toolCall.Name, "Tool executed successfully.");
-        }
-        catch (Exception ex)
-        {
-            return ResultSanitizer.Sanitize(toolCall.Name, $"Tool execution error: {ex.Message}");
-        }
-    }
-
-    private static INodeType? CreateNodeInstance(INodeType nodeType)
-    {
-        try
-        {
-            var instance = Activator.CreateInstance(nodeType.GetType());
-            return instance as INodeType;
-        }
-        catch
-        {
-            return null;
-        }
     }
 
     private static NodeExecutionResult CreateSuccessResult(string content, NodeExecutionContext context)

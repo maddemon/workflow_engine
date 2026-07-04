@@ -121,14 +121,21 @@ public sealed class WebSearchToolNode : INodeType
             // Get API key
             var apiKey = await GetApiKeyAsync(context, cancellationToken).ConfigureAwait(false);
 
+            // Get HTTP client from connection pool
+            var client = context.HttpClientPool?.GetClient();
+            var ownedClient = client is null;
+            try
+            {
+                client ??= new HttpClient();
+
             // Execute search based on engine type
             var results = SearchEngine switch
             {
-                SearchEngineType.Google => await SearchGoogleAsync(query, apiKey, cancellationToken).ConfigureAwait(false),
-                SearchEngineType.Bing => await SearchBingAsync(query, apiKey, cancellationToken).ConfigureAwait(false),
-                SearchEngineType.DuckDuckGo => await SearchDuckDuckGoAsync(query, cancellationToken).ConfigureAwait(false),
-                SearchEngineType.SerpAPI => await SearchSerpApiAsync(query, apiKey, cancellationToken).ConfigureAwait(false),
-                SearchEngineType.Custom => await SearchCustomAsync(query, apiKey, cancellationToken).ConfigureAwait(false),
+                SearchEngineType.Google => await SearchGoogleAsync(client, query, apiKey, cancellationToken).ConfigureAwait(false),
+                SearchEngineType.Bing => await SearchBingAsync(client, query, apiKey, cancellationToken).ConfigureAwait(false),
+                SearchEngineType.DuckDuckGo => await SearchDuckDuckGoAsync(client, query, cancellationToken).ConfigureAwait(false),
+                SearchEngineType.SerpAPI => await SearchSerpApiAsync(client, query, apiKey, cancellationToken).ConfigureAwait(false),
+                SearchEngineType.Custom => await SearchCustomAsync(client, query, apiKey, cancellationToken).ConfigureAwait(false),
                 _ => throw new InvalidOperationException($"Unsupported search engine: {SearchEngine}")
             };
 
@@ -151,6 +158,11 @@ public sealed class WebSearchToolNode : INodeType
                 Success = true,
                 Output = outputBatch
             };
+            }
+            finally
+            {
+                if (ownedClient) client?.Dispose();
+            }
         }
         catch (OperationCanceledException)
         {
@@ -228,19 +240,19 @@ public sealed class WebSearchToolNode : INodeType
         }
     }
 
-    private async Task<JsonNode?> SearchGoogleAsync(string query, string? apiKey, CancellationToken cancellationToken)
+    private async Task<JsonNode?> SearchGoogleAsync(HttpClient client, string query, string? apiKey, CancellationToken cancellationToken)
     {
         // Google Custom Search API
         var url = $"https://www.googleapis.com/customsearch/v1?key={apiKey}&cx={apiKey}&q={Uri.EscapeDataString(query)}&num={MaxResults}&hl={Language}";
 
         var request = new HttpRequestMessage(HttpMethod.Get, url);
-        var response = await HttpExecutionHelper.SendAndBuildResultAsync(request, Guid.Empty, cancellationToken)
+        var response = await HttpExecutionHelper.SendAndBuildResultAsync(client, request, Guid.Empty, cancellationToken)
             .ConfigureAwait(false);
 
         return response.Output.Items.FirstOrDefault()?.Data;
     }
 
-    private async Task<JsonNode?> SearchBingAsync(string query, string? apiKey, CancellationToken cancellationToken)
+    private async Task<JsonNode?> SearchBingAsync(HttpClient client, string query, string? apiKey, CancellationToken cancellationToken)
     {
         // Bing Web Search API
         var url = $"https://api.bing.microsoft.com/v7.0/search?q={Uri.EscapeDataString(query)}&count={MaxResults}&setLang={Language}";
@@ -251,37 +263,37 @@ public sealed class WebSearchToolNode : INodeType
             request.Headers.TryAddWithoutValidation("Ocp-Apim-Subscription-Key", apiKey);
         }
 
-        var response = await HttpExecutionHelper.SendAndBuildResultAsync(request, Guid.Empty, cancellationToken)
+        var response = await HttpExecutionHelper.SendAndBuildResultAsync(client, request, Guid.Empty, cancellationToken)
             .ConfigureAwait(false);
 
         return response.Output.Items.FirstOrDefault()?.Data;
     }
 
-    private async Task<JsonNode?> SearchDuckDuckGoAsync(string query, CancellationToken cancellationToken)
+    private async Task<JsonNode?> SearchDuckDuckGoAsync(HttpClient client, string query, CancellationToken cancellationToken)
     {
         // DuckDuckGo Instant Answer API (no API key required)
         var url = $"https://api.duckduckgo.com/?q={Uri.EscapeDataString(query)}&format=json&no_html=1&skip_disambig=1";
 
         var request = new HttpRequestMessage(HttpMethod.Get, url);
-        var response = await HttpExecutionHelper.SendAndBuildResultAsync(request, Guid.Empty, cancellationToken)
+        var response = await HttpExecutionHelper.SendAndBuildResultAsync(client, request, Guid.Empty, cancellationToken)
             .ConfigureAwait(false);
 
         return response.Output.Items.FirstOrDefault()?.Data;
     }
 
-    private async Task<JsonNode?> SearchSerpApiAsync(string query, string? apiKey, CancellationToken cancellationToken)
+    private async Task<JsonNode?> SearchSerpApiAsync(HttpClient client, string query, string? apiKey, CancellationToken cancellationToken)
     {
         // SerpAPI (Google Search)
         var url = $"https://serpapi.com/search.json?q={Uri.EscapeDataString(query)}&api_key={apiKey}&hl={Language}&num={MaxResults}";
 
         var request = new HttpRequestMessage(HttpMethod.Get, url);
-        var response = await HttpExecutionHelper.SendAndBuildResultAsync(request, Guid.Empty, cancellationToken)
+        var response = await HttpExecutionHelper.SendAndBuildResultAsync(client, request, Guid.Empty, cancellationToken)
             .ConfigureAwait(false);
 
         return response.Output.Items.FirstOrDefault()?.Data;
     }
 
-    private async Task<JsonNode?> SearchCustomAsync(string query, string? apiKey, CancellationToken cancellationToken)
+    private async Task<JsonNode?> SearchCustomAsync(HttpClient client, string query, string? apiKey, CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(CustomEndpoint))
         {
@@ -303,7 +315,7 @@ public sealed class WebSearchToolNode : INodeType
             }
         }
 
-        var response = await HttpExecutionHelper.SendAndBuildResultAsync(request, Guid.Empty, cancellationToken)
+        var response = await HttpExecutionHelper.SendAndBuildResultAsync(client, request, Guid.Empty, cancellationToken)
             .ConfigureAwait(false);
 
         return response.Output.Items.FirstOrDefault()?.Data;

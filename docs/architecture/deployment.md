@@ -160,7 +160,7 @@ ENTRYPOINT ["dotnet", "FlowEngine.dll"]
 | 能力 | 说明 |
 |------|------|
 | RBAC 权限 | 纯逻辑层，单数据库即可 |
-| 多租户/项目 | `projectId` 过滤，单数据库即可 |
+| 项目分类 | `ProjectId` 字段分类筛选，单数据库即可 |
 | SSO / LDAP | 对接外部 IdP，本系统单机 |
 | 文件存储 | 本地或 MinIO 单实例 |
 | MCP 协议 | 协议层，单机无压力 |

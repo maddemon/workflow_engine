@@ -415,6 +415,50 @@ public sealed class OncePerItemNode : INodeType
 }
 
 /// <summary>
+/// 可配置延迟的测试节点，用于超时测试。
+/// </summary>
+public sealed class DelayedNode : INodeType
+{
+    /// <inheritdoc />
+    public string TypeName => "delayed";
+
+    /// <inheritdoc />
+    public string DisplayName => "Delayed";
+
+    /// <inheritdoc />
+    public string Category => "Test";
+
+    /// <inheritdoc />
+    public string Icon => "test";
+
+    /// <inheritdoc />
+    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
+
+    /// <summary>
+    /// 延迟时间（毫秒）。
+    /// </summary>
+    [Description("Delay in milliseconds.")]
+    public int DelayMs { get; set; } = 500;
+
+    /// <inheritdoc />
+    public IReadOnlyList<PortDefinition> Ports { get; } =
+    [
+        new PortDefinition { Name = "input", Direction = PortDirection.Input, Type = PortType.Main },
+        new PortDefinition { Name = "output", Direction = PortDirection.Output, Type = PortType.Main }
+    ];
+
+    /// <inheritdoc />
+    public bool DefaultIsEntry => true;
+
+    /// <inheritdoc />
+    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    {
+        await Task.Delay(DelayMs, cancellationToken).ConfigureAwait(false);
+        return new NodeExecutionResult { Success = true, Output = new DataBatch() };
+    }
+}
+
+/// <summary>
 /// 长时间运行、可取消的测试节点。
 /// </summary>
 public sealed class SlowNode : INodeType

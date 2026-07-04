@@ -1,6 +1,7 @@
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using FlowEngine.Application.Audit;
 using FlowEngine.Application.Triggers;
 using FlowEngine.Core.Abstractions;
@@ -24,6 +25,7 @@ public sealed class WebhookHandler
     private readonly IEngine _engine;
     private readonly IEventBus _eventBus;
     private readonly AuditEventFactory _auditFactory;
+    private readonly IExecutionIdempotencyService _idempotencyService;
     private readonly ILogger<WebhookHandler> _logger;
 
     /// <summary>
@@ -34,12 +36,14 @@ public sealed class WebhookHandler
         IEngine engine,
         IEventBus eventBus,
         AuditEventFactory auditFactory,
+        IExecutionIdempotencyService idempotencyService,
         ILogger<WebhookHandler> logger)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
         _eventBus = eventBus;
         _auditFactory = auditFactory;
+        _idempotencyService = idempotencyService;
         _logger = logger;
     }
 
@@ -107,10 +111,43 @@ public sealed class WebhookHandler
 
         try
         {
+            // 幂等检查：如果配置了幂等键模板，解析模板并检查是否已执行
+            string? idempotencyKey = null;
+            if (!string.IsNullOrWhiteSpace(trigger.Settings.IdempotencyKeyTemplate))
+            {
+                idempotencyKey = ResolveIdempotencyKeyTemplate(trigger.Settings.IdempotencyKeyTemplate, context, payload);
+                if (!string.IsNullOrEmpty(idempotencyKey))
+                {
+                    // 仅查询，不预注册：先检查是否已有执行，避免使用临时 ExecutionId 造成竞态
+                    var existingExecutionId = await _idempotencyService.TryGetExistingAsync(
+                        idempotencyKey, context.RequestAborted).ConfigureAwait(false);
+                    if (existingExecutionId.HasValue)
+                    {
+                        _logger.LogInformation(
+                            "Webhook 幂等命中: Key={Key}, ExecutionId={ExecutionId}", idempotencyKey, existingExecutionId.Value);
+                        context.Response.StatusCode = StatusCodes.Status200OK;
+                        await context.Response.WriteAsJsonAsync(
+                            new { executionId = existingExecutionId.Value, status = "Idempotent" },
+                            context.RequestAborted).ConfigureAwait(false);
+                        return;
+                    }
+                }
+            }
+
             var executionId = await _engine.StartAsync(
                 route.WorkflowDefinitionId,
                 triggerPayload: new { triggerType = "Webhook", routePath, payload },
                 context.RequestAborted).ConfigureAwait(false);
+
+            // StartAsync 成功后，用真实 ExecutionId 注册幂等键
+            if (!string.IsNullOrEmpty(idempotencyKey))
+            {
+                var ttl = trigger.Settings.IdempotencyTtlSeconds.HasValue
+                    ? TimeSpan.FromSeconds(trigger.Settings.IdempotencyTtlSeconds.Value)
+                    : TimeSpan.FromSeconds(3600);
+                await _idempotencyService.TryGetOrRegisterAsync(
+                    idempotencyKey, executionId.Value, ttl, context.RequestAborted).ConfigureAwait(false);
+            }
 
             if (route.IsSync)
             {
@@ -247,4 +284,40 @@ public sealed class WebhookHandler
         var hash = HMACSHA256.HashData(keyBytes, bodyBytes);
         return Convert.ToHexString(hash).ToLowerInvariant();
     }
+
+    /// <summary>
+    /// 解析幂等键模板，支持 {headers.X-Header-Name} 和 {body.fieldName} 变量。
+    /// </summary>
+    private static string ResolveIdempotencyKeyTemplate(
+        string template,
+        HttpContext context,
+        object? payload)
+    {
+        var result = template;
+
+        // 替换 {headers.Xxx} → 请求头
+        result = Regex.Replace(result, @"\{headers\.([^}]+)\}", match =>
+        {
+            var headerName = match.Groups[1].Value;
+            if (context.Request.Headers.TryGetValue(headerName, out var values))
+            {
+                return values.FirstOrDefault() ?? string.Empty;
+            }
+            return string.Empty;
+        }, RegexOptions.IgnoreCase);
+
+        // 替换 {body.xxx} → 请求体字段
+        if (payload is Dictionary<string, object> bodyDict)
+        {
+            result = Regex.Replace(result, @"\{body\.([^}]+)\}", match =>
+            {
+                var fieldName = match.Groups[1].Value;
+                return bodyDict.TryGetValue(fieldName, out var value) ? value?.ToString() ?? string.Empty : string.Empty;
+            }, RegexOptions.IgnoreCase);
+        }
+
+        return result;
+    }
+
+
 }

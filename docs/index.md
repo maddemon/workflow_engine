@@ -50,7 +50,7 @@ Flow Engine 是一个节点可热插拔的工作流自动化引擎。后端用 C
 | [plans/plan-000-overview.md](plans/plan-000-overview.md) | 开发计划总览：阶段划分、编号方案、依赖图、完整文件清单 |
 | [plans/mvp/plan-mvp-00-readme.md](plans/mvp/plan-mvp-00-readme.md) | MVP 阶段说明（核心可运行 + 前端编排，12 个模块计划） |
 | [plans/alpha/plan-alpha-00-readme.md](plans/alpha/plan-alpha-00-readme.md) | Alpha 阶段说明（触发器/审计/Agent 基础/用户系统，10 个模块计划） |
-| [plans/beta/plan-beta-00-readme.md](plans/beta/plan-beta-00-readme.md) | Beta 阶段说明（RBAC/多租户/Agent 增强，10 个模块计划） |
+| [plans/beta/plan-beta-00-readme.md](plans/beta/plan-beta-00-readme.md) | Beta 阶段说明（RBAC/项目分类/Agent 增强，10 个模块计划） |
 | [plans/ga/plan-ga-00-readme.md](plans/ga/plan-ga-00-readme.md) | GA 阶段说明（队列/Worker/监控/SSO，8 个模块计划） |
 | [plans/enterprise/plan-enterprise-00-readme.md](plans/enterprise/plan-enterprise-00-readme.md) | Enterprise 阶段说明（Git/协作/MCP/AI Builder，7 个模块计划） |
 

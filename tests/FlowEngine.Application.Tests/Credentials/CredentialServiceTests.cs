@@ -1,8 +1,11 @@
 using FlowEngine.Application.Audit;
+using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Credentials;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
+using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Events;
@@ -17,6 +20,7 @@ public sealed class CredentialServiceTests : IDisposable
     private readonly CredentialService _service;
     private readonly StubEncryptionService _encryptionService;
     private readonly StubKeyProvider _keyProvider;
+    private readonly FakeUserContext _userContext;
 
     public CredentialServiceTests()
     {
@@ -27,9 +31,10 @@ public sealed class CredentialServiceTests : IDisposable
         _eventBus = new InMemoryEventBus();
         _encryptionService = new StubEncryptionService();
         _keyProvider = new StubKeyProvider();
-        var userContext = new FakeUserContext();
-        var auditFactory = new AuditEventFactory(userContext);
-        _service = new CredentialService(_dbContext, _encryptionService, _keyProvider, _eventBus, auditFactory);
+        _userContext = new FakeUserContext();
+        var auditFactory = new AuditEventFactory(_userContext);
+        var resourceAuthService = new StubResourceAuthorizationService();
+        _service = new CredentialService(_dbContext, _encryptionService, _keyProvider, _eventBus, auditFactory, resourceAuthService, _userContext);
     }
 
     public void Dispose()
@@ -122,9 +127,10 @@ public sealed class CredentialServiceTests : IDisposable
     public async Task GetAllAsync_ReturnsAllCredentials()
     {
         var ct = TestContext.Current.CancellationToken;
+        var projectId = Guid.NewGuid();
         _dbContext.Credentials.AddRange(
-            CreateTestCredential("Key 1"),
-            CreateTestCredential("Key 2"));
+            CreateTestCredential("Key 1", projectId: projectId),
+            CreateTestCredential("Key 2", projectId: projectId));
         await _dbContext.SaveChangesAsync(ct);
 
         var results = await _service.GetAllAsync(ct);
@@ -199,11 +205,12 @@ public sealed class CredentialServiceTests : IDisposable
         Assert.False(result.Deleted);
     }
 
-    private static Credential CreateTestCredential(string? name = null, Guid? id = null)
+    private static Credential CreateTestCredential(string? name = null, Guid? id = null, Guid? projectId = null)
     {
         return new Credential
         {
             Id = id ?? Guid.NewGuid(),
+            ProjectId = projectId,
             Name = name ?? "Test Credential",
             Type = "apiKey",
             Data = new Dictionary<string, EncryptedField>(),
@@ -263,6 +270,23 @@ public sealed class CredentialServiceTests : IDisposable
         public bool IsAuthenticated => true;
         public Guid? UserId => Guid.NewGuid();
         public string? Email => "test@test.com";
-        public IReadOnlyList<string> Roles => [];
+        public IReadOnlyList<string> Roles => ["Admin"];
+    }
+
+    private sealed class StubResourceAuthorizationService : IResourceAuthorizationService
+    {
+        public Task<bool> CanAccessWorkflowAsync(Guid userId, Guid workflowId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public Task<bool> CanAccessCredentialAsync(Guid userId, Guid credentialId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public Task<bool> CanAccessExecutionAsync(Guid userId, Guid executionId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public Task<bool> CanAccessTriggerAsync(Guid userId, Guid triggerId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public bool ShouldMaskCredentialValues(IReadOnlyList<string> roles) => false;
     }
 }
