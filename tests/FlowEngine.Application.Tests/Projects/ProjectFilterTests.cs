@@ -152,13 +152,15 @@ public sealed class ProjectFilterTests : IDisposable
     private WorkflowService CreateWorkflowService()
     {
         var userContext = new FakeUserContext();
+        var resourceAuthorization = new StubResourceAuthorizationService();
         return new WorkflowService(
             _dbContext,
             new WorkflowValidator(new FakeNodeRegistry()),
             new InMemoryEventBus(),
             new AuditEventFactory(userContext),
             CreateTriggerService(),
-            userContext);
+            userContext,
+            resourceAuthorization);
     }
 
     private CredentialService CreateCredentialService()
@@ -177,12 +179,14 @@ public sealed class ProjectFilterTests : IDisposable
     private TriggerService CreateTriggerService()
     {
         var userContext = new FakeUserContext();
+        var resourceAuthorization = new StubResourceAuthorizationService();
         return new TriggerService(
             _dbContext,
             new InMemoryEventBus(),
             new AuditEventFactory(userContext),
             new FakeScheduleManager(),
-            userContext);
+            userContext,
+            resourceAuthorization);
     }
 
     private static Workflow CreateWorkflow(string name, Guid? projectId)

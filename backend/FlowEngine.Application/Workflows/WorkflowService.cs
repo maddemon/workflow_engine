@@ -1,10 +1,12 @@
 using FlowEngine.Application.Audit;
+using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
 using FlowEngine.Application.Triggers;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
@@ -21,7 +23,8 @@ public sealed class WorkflowService(
     IEventBus eventBus,
     AuditEventFactory auditFactory,
     TriggerService _triggerService,
-    IUserContext userContext)
+    IUserContext userContext,
+    IResourceAuthorizationService resourceAuthorization) : IDisposable
 {
     /// <summary>
     /// 创建工作流。允许 ProjectId = null 作为未分类工作流；ProjectId 仅用于分类，不做隔离校验。
@@ -61,6 +64,17 @@ public sealed class WorkflowService(
     /// </summary>
     public async Task<WorkflowDto?> GetAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        var userId = userContext.UserId;
+        if (userId is null)
+        {
+            throw new PermissionDeniedException("当前用户未认证。");
+        }
+
+        if (!await resourceAuthorization.CanAccessWorkflowAsync(userId.Value, id, Operation.Read, cancellationToken).ConfigureAwait(false))
+        {
+            throw new PermissionDeniedException("当前用户没有读取该工作流的权限。");
+        }
+
         var workflow = await dbContext.Workflows
             .FirstOrDefaultAsync(w => w.Id == id, cancellationToken)
             .ConfigureAwait(false);
@@ -162,6 +176,17 @@ public sealed class WorkflowService(
     {
         ArgumentNullException.ThrowIfNull(dto);
 
+        var userId = userContext.UserId;
+        if (userId is null)
+        {
+            throw new PermissionDeniedException("当前用户未认证。");
+        }
+
+        if (!await resourceAuthorization.CanAccessWorkflowAsync(userId.Value, id, Operation.Write, cancellationToken).ConfigureAwait(false))
+        {
+            throw new PermissionDeniedException("当前用户没有修改该工作流的权限。");
+        }
+
         var existing = await dbContext.Workflows
             .FirstOrDefaultAsync(w => w.Id == id, cancellationToken)
             .ConfigureAwait(false);
@@ -172,7 +197,7 @@ public sealed class WorkflowService(
 
         if (!CanWriteWorkflow())
         {
-            throw new InvalidOperationException("当前用户没有修改工作流的权限。");
+            throw new PermissionDeniedException("当前用户没有修改工作流的权限。");
         }
 
         var previousIsActive = existing.IsActive;
@@ -224,6 +249,17 @@ public sealed class WorkflowService(
     /// </summary>
     public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        var userId = userContext.UserId;
+        if (userId is null)
+        {
+            throw new PermissionDeniedException("当前用户未认证。");
+        }
+
+        if (!await resourceAuthorization.CanAccessWorkflowAsync(userId.Value, id, Operation.Delete, cancellationToken).ConfigureAwait(false))
+        {
+            throw new PermissionDeniedException("当前用户没有删除该工作流的权限。");
+        }
+
         var existing = await dbContext.Workflows
             .FirstOrDefaultAsync(w => w.Id == id, cancellationToken)
             .ConfigureAwait(false);
@@ -234,7 +270,7 @@ public sealed class WorkflowService(
 
         if (!IsSystemAdmin())
         {
-            throw new InvalidOperationException("仅管理员可删除工作流。");
+            throw new PermissionDeniedException("仅管理员可删除工作流。");
         }
 
         dbContext.Workflows.Remove(existing);
@@ -341,7 +377,7 @@ public sealed class WorkflowService(
 
     private bool CanWriteWorkflow()
     {
-        return userContext.Roles.Contains("Admin") || userContext.Roles.Contains("Editor");
+        return userContext.Roles.Contains(RoleConstants.Admin) || userContext.Roles.Contains(RoleConstants.Editor);
     }
 
     /// <summary>
@@ -349,7 +385,7 @@ public sealed class WorkflowService(
     /// </summary>
     private bool IsSystemAdmin()
     {
-        return userContext.Roles.Contains("Admin");
+        return userContext.Roles.Contains(RoleConstants.Admin);
     }
 
     private static NodeDefinitionDto BuildNodeDto(NodeDefinition n, string id)
@@ -460,4 +496,6 @@ public sealed class WorkflowService(
     {
         await _triggerService.UnregisterWorkflowSchedulesAsync(workflowDefinitionId, cancellationToken).ConfigureAwait(false);
     }
+
+    public void Dispose() { }
 }

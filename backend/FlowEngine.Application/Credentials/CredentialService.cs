@@ -4,9 +4,11 @@ using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Events;
+using FlowEngine.Core.Exceptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Credentials;
@@ -70,6 +72,17 @@ public sealed class CredentialService(
     /// </summary>
     public async Task<CredentialDto?> GetAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        var userId = userContext.UserId;
+        if (userId is null)
+        {
+            throw new PermissionDeniedException("当前用户未认证。");
+        }
+
+        if (!await resourceAuthService.CanAccessCredentialAsync(userId.Value, id, Operation.Read, cancellationToken).ConfigureAwait(false))
+        {
+            throw new PermissionDeniedException("当前用户没有读取该凭据的权限。");
+        }
+
         var credential = await dbContext.Credentials
             .FirstOrDefaultAsync(c => c.Id == id, cancellationToken)
             .ConfigureAwait(false);
@@ -107,9 +120,20 @@ public sealed class CredentialService(
     {
         ArgumentNullException.ThrowIfNull(dto);
 
+        var userId = userContext.UserId;
+        if (userId is null)
+        {
+            throw new PermissionDeniedException("当前用户未认证。");
+        }
+
+        if (!await resourceAuthService.CanAccessCredentialAsync(userId.Value, id, Operation.Write, cancellationToken).ConfigureAwait(false))
+        {
+            throw new PermissionDeniedException("当前用户没有修改该凭据的权限。");
+        }
+
         if (!CanWriteCredential())
         {
-            throw new InvalidOperationException("当前用户没有修改凭据的权限。");
+            throw new PermissionDeniedException("当前用户没有修改凭据的权限。");
         }
 
         var credential = await dbContext.Credentials
@@ -138,9 +162,20 @@ public sealed class CredentialService(
     /// </summary>
     public async Task<CredentialDeleteResult> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        var userId = userContext.UserId;
+        if (userId is null)
+        {
+            throw new PermissionDeniedException("当前用户未认证。");
+        }
+
+        if (!await resourceAuthService.CanAccessCredentialAsync(userId.Value, id, Operation.Delete, cancellationToken).ConfigureAwait(false))
+        {
+            throw new PermissionDeniedException("当前用户没有删除该凭据的权限。");
+        }
+
         if (!IsSystemAdmin())
         {
-            throw new InvalidOperationException("仅管理员可删除凭据。");
+            throw new PermissionDeniedException("仅管理员可删除凭据。");
         }
 
         var credential = await dbContext.Credentials
@@ -249,12 +284,12 @@ public sealed class CredentialService(
 
     private bool CanWriteCredential()
     {
-        return userContext.Roles.Contains("Admin") || userContext.Roles.Contains("Editor");
+        return userContext.Roles.Contains(RoleConstants.Admin) || userContext.Roles.Contains(RoleConstants.Editor);
     }
 
     private bool IsSystemAdmin()
     {
-        return userContext.Roles.Contains("Admin");
+        return userContext.Roles.Contains(RoleConstants.Admin);
     }
 
     private Dictionary<string, string> DecryptFields(Credential credential)
