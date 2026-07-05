@@ -135,7 +135,7 @@ public sealed class AgentNode : INodeType
         }
         catch (Exception ex)
         {
-            return context.ErrorResult("LlmError", $"LLM call failed: {ex.Message}");
+            return CreateLlmErrorResult($"LLM call failed: {ex.Message}", context);
         }
     }
 
@@ -290,14 +290,53 @@ public sealed class AgentNode : INodeType
 
     private static NodeExecutionResult CreateTimeoutResult(string message, NodeExecutionContext context)
     {
+        return CreateAgentFailedResult("Cancelled", "AgentTimeout", message, context);
+    }
+
+    private static NodeExecutionResult CreateLlmErrorResult(string message, NodeExecutionContext context)
+    {
+        return CreateAgentFailedResult("Failed", "LlmError", message, context);
+    }
+
+    private static NodeExecutionResult CreateAgentFailedResult(string status, string code, string message, NodeExecutionContext context)
+    {
+        var dto = new AgentExecutionResultDto
+        {
+            AgentInfo = new AgentExecutionInfoDto
+            {
+                Model = context.LlmClient?.GetType().Name ?? "unknown",
+                IterationCount = 0,
+                Status = status,
+                StartedAt = null,
+                CompletedAt = DateTime.UtcNow,
+                ErrorMessage = message,
+                TokenUsage = null,
+            },
+            Iterations = [],
+            SubRecords = [],
+            SystemPrompt = null,
+        };
+
         return new NodeExecutionResult
         {
             Success = false,
             Error = new NodeError
             {
-                Code = "AgentTimeout",
+                Code = code,
                 Message = message,
                 NodeDefinitionId = context.Node.Id
+            },
+            Output = new DataBatch
+            {
+                Items =
+                [
+                    new DataItem
+                    {
+                        Data = JsonSerializer.SerializeToNode(dto, JsonDefaults.Options),
+                        Success = false,
+                        SourceIndex = 0,
+                    }
+                ]
             }
         };
     }

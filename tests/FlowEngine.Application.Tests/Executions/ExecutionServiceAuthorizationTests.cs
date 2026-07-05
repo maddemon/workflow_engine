@@ -93,6 +93,60 @@ public sealed class ExecutionServiceAuthorizationTests : IDisposable
         Assert.Equal(execution.Id, result.Id);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_UnauthenticatedUser_ThrowsPermissionDeniedException()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var workflow = CreateTestWorkflow();
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(ct);
+        _userContext.UserId = null;
+
+        await Assert.ThrowsAsync<PermissionDeniedException>(() => _service.ExecuteAsync(workflow.Id, cancellationToken: ct));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_UnauthorizedRole_ThrowsPermissionDeniedException()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var workflow = CreateTestWorkflow();
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(ct);
+        _userContext.Roles = [RoleConstants.Viewer];
+
+        await Assert.ThrowsAsync<PermissionDeniedException>(() => _service.ExecuteAsync(workflow.Id, cancellationToken: ct));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Admin_CanStartExecution()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var workflow = CreateTestWorkflow();
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(ct);
+        _userContext.Roles = [RoleConstants.Admin];
+
+        var result = await _service.ExecuteAsync(workflow.Id, cancellationToken: ct);
+
+        Assert.NotNull(result);
+        Assert.Equal(workflow.Id, result.WorkflowDefinitionId);
+    }
+
+    private static Workflow CreateTestWorkflow()
+    {
+        return new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "Test Workflow",
+            ProjectId = Guid.NewGuid(),
+            Nodes = [],
+            Connections = [],
+            CreatedBy = "test",
+            Version = 1,
+            IsActive = true,
+        };
+    }
+
     private static ExecutionRecord CreateTestExecution()
     {
         return new ExecutionRecord

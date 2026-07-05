@@ -20,6 +20,11 @@ public class NodeExecutionContext
     public Guid ExecutionId { get; set; }
 
     /// <summary>
+    /// 当前节点执行记录 ID。
+    /// </summary>
+    public Guid NodeExecutionRecordId { get; set; }
+
+    /// <summary>
     /// 当前节点定义。
     /// </summary>
     public NodeDefinition Node { get; set; } = new();

@@ -4,7 +4,7 @@ import { Check, X, Clock, Loader, AlertCircle, ChevronRight, ChevronDown, FileTe
 import { CodeViewer } from './CodeViewer.tsx';
 import { AgentExecutionView } from '../ExecutionView/AgentExecutionView.tsx';
 import type { NodeExecutionRecordDto, ExecutionStatus } from '../../types/workflow.ts';
-import type { AgentExecutionData, AgentIteration, ToolCallRecord } from '../../types/agent-execution.ts';
+import type { AgentExecutionData } from '../../types/agent-execution.ts';
 
 interface NodeOutputListProps {
   records: NodeExecutionRecordDto[];

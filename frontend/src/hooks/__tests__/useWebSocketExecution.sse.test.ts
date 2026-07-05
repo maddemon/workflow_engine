@@ -13,8 +13,10 @@ class MockWebSocket {
   onclose: (() => void) | null = null;
   onerror: (() => void) | null = null;
   onmessage: ((event: { data: string }) => void) | null = null;
+  url: string;
 
-  constructor(public url: string) {
+  constructor(url: string) {
+    this.url = url;
     mockWebSockets.push(this);
   }
 
@@ -47,18 +49,71 @@ class MockEventSource {
 let mockWebSockets: MockWebSocket[] = [];
 let mockEventSources: MockEventSource[] = [];
 
+const localStorageMock = (() => {
+  let store: Record<string, string> = {};
+  return {
+    getItem: (key: string) => store[key] ?? null,
+    setItem: (key: string, value: string) => {
+      store[key] = value;
+    },
+    removeItem: (key: string) => {
+      delete store[key];
+    },
+    clear: () => {
+      store = {};
+    },
+  };
+})();
+
+Object.defineProperty(window, 'localStorage', {
+  value: localStorageMock,
+  writable: true,
+});
+
 describe('useWebSocketExecution SSE fallback', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
+    localStorageMock.clear();
     mockWebSockets = [];
     mockEventSources = [];
-    global.WebSocket = MockWebSocket as unknown as typeof WebSocket;
-    global.EventSource = MockEventSource as unknown as typeof EventSource;
+    (globalThis as unknown as typeof globalThis & { WebSocket: typeof WebSocket }).WebSocket = MockWebSocket as unknown as typeof WebSocket;
+    (globalThis as unknown as typeof globalThis & { EventSource: typeof EventSource }).EventSource = MockEventSource as unknown as typeof EventSource;
   });
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('appends access_token to SSE URL when auth token is present', () => {
+    localStorage.setItem('auth_token', 'test-jwt-token');
+
+    const { result } = renderHook(() => useWebSocketExecution());
+
+    act(() => {
+      result.current.connect();
+      result.current.subscribe('exec-jwt');
+    });
+
+    for (let i = 0; i < 6; i++) {
+      act(() => {
+        const current = mockWebSockets[mockWebSockets.length - 1];
+        current?.close();
+      });
+      if (i < 5) {
+        act(() => {
+          vi.advanceTimersByTime(2000 * Math.pow(2, i));
+        });
+      }
+    }
+
+    expect(mockEventSources.length).toBe(1);
+    expect(mockEventSources[0].url).toBe(
+      '/api/v1/executions/exec-jwt/stream?access_token=test-jwt-token',
+    );
+    expect(result.current.status).toBe('connected');
+
+    localStorage.removeItem('auth_token');
   });
 
   it('creates an EventSource with the expected URL after WebSocket reconnects are exhausted', () => {

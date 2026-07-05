@@ -45,7 +45,9 @@ export function useWebSocketExecution() {
   }, []);
 
   const getSseUrl = useCallback((executionId: string) => {
-    return `/api/v1/executions/${executionId}/stream`;
+    const token = localStorage.getItem('auth_token');
+    const baseUrl = `/api/v1/executions/${executionId}/stream`;
+    return token ? `${baseUrl}?access_token=${encodeURIComponent(token)}` : baseUrl;
   }, []);
 
   const processMessage = useCallback((message: WebSocketPushMessage) => {

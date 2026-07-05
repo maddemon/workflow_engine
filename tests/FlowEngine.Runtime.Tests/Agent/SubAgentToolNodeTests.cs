@@ -25,7 +25,7 @@ public class SubAgentToolNodeTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_Passes_ExecutionId_As_ParentRecordId()
+    public async Task ExecuteAsync_Passes_NodeExecutionRecordId_As_ParentRecordId_When_Available()
     {
         var toolNode = CreateNodeDefinition("tool1", "passThrough");
         var subAgentNode = CreateNodeDefinition("subAgent1", "subAgentTool");
@@ -79,10 +79,12 @@ public class SubAgentToolNodeTests
             PromptTemplate = "You are a helper."
         };
 
+        var nodeExecutionRecordId = Guid.NewGuid();
         var context = new NodeExecutionContext
         {
             Workflow = workflow,
             ExecutionId = executionId,
+            NodeExecutionRecordId = nodeExecutionRecordId,
             Node = subAgentNode,
             Inputs = new Dictionary<string, DataBatch>(),
             RawParameters = new Dictionary<string, object>(),

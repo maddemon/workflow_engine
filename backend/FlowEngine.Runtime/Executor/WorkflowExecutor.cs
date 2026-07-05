@@ -206,6 +206,7 @@ public sealed class WorkflowExecutor : IEngine
                 session.LatestBatches,
                 runIndex,
                 cancellationToken).ConfigureAwait(false);
+            context.NodeExecutionRecordId = Guid.NewGuid();
             context.Memory = session.Memory;
 
             var resolvedLlmClient = ResolveLlmClientForNode(node, nodeType, session.NodeMap, session.ConnectionsBySource, session.NodeLlmClients);
@@ -725,9 +726,18 @@ public sealed class WorkflowExecutor : IEngine
         NodeExecutionResult output,
         NodeExecutionContext context)
     {
-        return BuildNodeExecutionRecord(
-            nodeDefinitionId, runIndex, inputs, output,
-            context.RawParameters, context.ResolvedParameters);
+        return new NodeExecutionRecord
+        {
+            Id = context.NodeExecutionRecordId,
+            NodeDefinitionId = nodeDefinitionId,
+            RunIndex = runIndex,
+            StartedAt = DateTime.UtcNow,
+            CompletedAt = DateTime.UtcNow,
+            Inputs = inputs.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
+            Output = output,
+            RawParameters = context.RawParameters.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
+            ResolvedParameters = context.ResolvedParameters.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase)
+        };
     }
 
     private static NodeExecutionRecord BuildNodeExecutionRecord(

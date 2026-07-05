@@ -53,6 +53,89 @@ public class AgentNodeDtoTests
         Assert.Empty(dto.SubRecords);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_MaxIterations_Output_Deserializes_To_Failed_AgentExecutionResultDto()
+    {
+        var agentNode = CreateNodeDefinition("agent1", "agent", isEntry: true);
+
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "test",
+            CreatedBy = "test",
+            Nodes = [agentNode],
+            Connections = []
+        };
+
+        var callCount = 0;
+        var llmClient = new MockLlmClient(_ =>
+        {
+            callCount++;
+            return new LlmResponse
+            {
+                Content = null,
+                ToolCalls =
+                [
+                    new LlmToolCall
+                    {
+                        Id = $"call{callCount}",
+                        Name = "nonexistent",
+                        Arguments = "{}"
+                    }
+                ]
+            };
+        });
+
+        var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNode.Id);
+        var node = new AgentNode { MaxIterations = 2 };
+
+        var result = await node.ExecuteAsync(context);
+
+        Assert.False(result.Success);
+        Assert.Single(result.Output.Items);
+
+        var data = result.Output.Items[0].Data;
+        Assert.NotNull(data);
+
+        var dto = JsonSerializer.Deserialize<AgentExecutionResultDto>(data.ToJsonString(), JsonDefaults.Options);
+        Assert.NotNull(dto);
+        Assert.Equal("Cancelled", dto.AgentInfo.Status);
+        Assert.Equal(0, dto.AgentInfo.IterationCount);
+        Assert.Contains("Maximum iterations", dto.AgentInfo.ErrorMessage);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_LlmError_Output_Deserializes_To_Failed_AgentExecutionResultDto()
+    {
+        var agentNode = CreateNodeDefinition("agent1", "agent", isEntry: true);
+
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "test",
+            CreatedBy = "test",
+            Nodes = [agentNode],
+            Connections = []
+        };
+
+        var llmClient = new MockLlmClient(_ => throw new InvalidOperationException("API error"));
+        var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNode.Id);
+        var node = new AgentNode();
+
+        var result = await node.ExecuteAsync(context);
+
+        Assert.False(result.Success);
+        Assert.Single(result.Output.Items);
+
+        var data = result.Output.Items[0].Data;
+        Assert.NotNull(data);
+
+        var dto = JsonSerializer.Deserialize<AgentExecutionResultDto>(data.ToJsonString(), JsonDefaults.Options);
+        Assert.NotNull(dto);
+        Assert.Equal("Failed", dto.AgentInfo.Status);
+        Assert.Contains("API error", dto.AgentInfo.ErrorMessage);
+    }
+
     private NodeExecutionContext CreateContext(
         Workflow? workflow = null,
         ILlmClient? llmClient = null,
@@ -79,6 +162,18 @@ public class AgentNodeDtoTests
             CancellationToken = CancellationToken.None,
             LlmClient = llmClient,
             NodeRegistry = _nodeRegistry
+        };
+    }
+
+    private static NodeDefinition CreateNodeDefinition(string name, string typeName, bool isEntry = false)
+    {
+        return new NodeDefinition
+        {
+            Id = Guid.NewGuid(),
+            Name = name,
+            TypeName = typeName,
+            IsEntry = isEntry,
+            Parameters = []
         };
     }
 

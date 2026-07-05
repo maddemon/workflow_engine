@@ -42,6 +42,24 @@ public sealed class ExecutionService(
             return null;
         }
 
+        var userId = userContext.UserId;
+        if (userId is null)
+        {
+            throw new PermissionDeniedException("当前用户未认证。");
+        }
+
+        if (!await resourceAuthorization.CanAccessWorkflowAsync(userId.Value, workflowId, Operation.Execute, cancellationToken).ConfigureAwait(false))
+        {
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.PermissionDenied,
+                "Workflow",
+                workflowId,
+                new Dictionary<string, object> { ["operation"] = Operation.Execute.ToString(), ["reason"] = "role" }),
+                cancellationToken).ConfigureAwait(false);
+
+            throw new PermissionDeniedException("当前用户没有启动该工作流的权限。");
+        }
+
         // 幂等检查：如果提供了幂等键，检查是否已存在
         if (!string.IsNullOrEmpty(idempotencyKey))
         {
