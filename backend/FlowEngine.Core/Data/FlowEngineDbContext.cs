@@ -29,6 +29,8 @@ public sealed class FlowEngineDbContext : DbContext
 
     public DbSet<UserRole> UserRoles => Set<UserRole>();
 
+    public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
+
     public DbSet<Project> Projects => Set<Project>();
 
 #pragma warning disable CS0618 // ProjectMember 已废弃，保留 DbSet 仅用于兼容历史数据表。

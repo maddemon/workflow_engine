@@ -13,6 +13,7 @@ using FlowEngine.Core.Configuration;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Events;
 using FlowEngine.Host.Executor;
+using FlowEngine.Host.Authentication;
 using FlowEngine.Host.Middlewares;
 using FlowEngine.Host.Scheduling;
 using FlowEngine.Host.Services;
@@ -113,6 +114,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IUserStore, UserStore>();
         services.AddScoped<IUserContext, HttpContextUserContext>();
         services.AddScoped<AuthenticationService>();
+        services.AddScoped<ApiKeyService>();
         services.AddSingleton<ITokenBlacklist, TokenBlacklistService>();
         services.AddScoped<AuditEventFactory>();
 
@@ -232,7 +234,30 @@ public static class ServiceCollectionExtensions
         var jwtSecret = configuration["Jwt:Secret"]
             ?? throw new InvalidOperationException("JWT Secret is not configured.");
 
-        services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+        services.AddAuthentication(options =>
+            {
+                options.DefaultScheme = "BearerOrApiKey";
+                options.DefaultAuthenticateScheme = "BearerOrApiKey";
+                options.DefaultChallengeScheme = "BearerOrApiKey";
+            })
+            .AddPolicyScheme("BearerOrApiKey", "Bearer or API Key", options =>
+            {
+                options.ForwardDefaultSelector = context =>
+                {
+                    var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
+                    if (!string.IsNullOrEmpty(authHeader) &&
+                        authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var token = authHeader["Bearer ".Length..];
+                        // JWT 由三段组成，以 '.' 分隔；其余视为 API Key。
+                        return token.Count(c => c == '.') == 2
+                            ? JwtBearerDefaults.AuthenticationScheme
+                            : "ApiKey";
+                    }
+
+                    return JwtBearerDefaults.AuthenticationScheme;
+                };
+            })
             .AddJwtBearer(options =>
             {
                 options.TokenValidationParameters = new TokenValidationParameters
@@ -268,7 +293,8 @@ public static class ServiceCollectionExtensions
                         }
                     },
                 };
-            });
+            })
+            .AddScheme<ApiKeyAuthenticationSchemeOptions, ApiKeyAuthenticationHandler>("ApiKey", _ => { });
         services.AddAuthorization();
         services.AddHttpContextAccessor();
     }

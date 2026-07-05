@@ -156,3 +156,86 @@ public sealed record AssignRoleRequest
     /// </summary>
     public string Role { get; init; } = string.Empty;
 }
+
+/// <summary>
+/// 创建 API Key 请求。
+/// </summary>
+public sealed record CreateApiKeyRequest
+{
+    /// <summary>
+    /// API Key 名称。
+    /// </summary>
+    public string Name { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 过期时间，null 表示永不过期。
+    /// </summary>
+    public DateTime? ExpiresAt { get; init; }
+}
+
+/// <summary>
+/// 创建 API Key 结果，仅返回一次 Key 明文。
+/// </summary>
+public sealed record CreateApiKeyResult
+{
+    /// <summary>
+    /// API Key ID。
+    /// </summary>
+    public Guid Id { get; init; }
+
+    /// <summary>
+    /// API Key 名称。
+    /// </summary>
+    public string Name { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Key 前缀。
+    /// </summary>
+    public string Prefix { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 过期时间。
+    /// </summary>
+    public DateTime? ExpiresAt { get; init; }
+
+    /// <summary>
+    /// Key 明文（仅返回一次）。
+    /// </summary>
+    public string Key { get; init; } = string.Empty;
+}
+
+/// <summary>
+/// API Key 列表项 DTO（不包含明文）。
+/// </summary>
+public sealed record ApiKeyDto
+{
+    /// <summary>
+    /// API Key ID。
+    /// </summary>
+    public Guid Id { get; init; }
+
+    /// <summary>
+    /// API Key 名称。
+    /// </summary>
+    public string Name { get; init; } = string.Empty;
+
+    /// <summary>
+    /// Key 前缀。
+    /// </summary>
+    public string Prefix { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 创建时间。
+    /// </summary>
+    public DateTime CreatedAt { get; init; }
+
+    /// <summary>
+    /// 过期时间。
+    /// </summary>
+    public DateTime? ExpiresAt { get; init; }
+
+    /// <summary>
+    /// 吊销时间。
+    /// </summary>
+    public DateTime? RevokedAt { get; init; }
+}

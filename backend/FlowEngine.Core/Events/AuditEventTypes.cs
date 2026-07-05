@@ -53,6 +53,12 @@ public static class AuditEventTypes
     /// <summary>用户注册。</summary>
     public const string UserRegistered = "User.Registered";
 
+    /// <summary>API Key 创建。</summary>
+    public const string ApiKeyCreated = "ApiKey.Created";
+
+    /// <summary>API Key 吊销。</summary>
+    public const string ApiKeyRevoked = "ApiKey.Revoked";
+
     /// <summary>凭据创建。</summary>
     public const string CredentialCreated = "Credential.Created";
 

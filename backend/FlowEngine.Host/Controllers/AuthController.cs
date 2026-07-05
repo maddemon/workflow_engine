@@ -18,6 +18,7 @@ namespace FlowEngine.Host.Controllers;
 [Route("api/v1/auth")]
 public class AuthController(
     AuthenticationService authenticationService,
+    ApiKeyService apiKeyService,
     IUserContext userContext,
     IUserStore userStore,
     IEventBus eventBus,
@@ -126,5 +127,74 @@ public class AuthController(
             CreatedAt = user.CreatedAt,
             UpdatedAt = user.UpdatedAt,
         });
+    }
+
+    /// <summary>
+    /// 创建 API Key（Personal Access Token）。
+    /// </summary>
+    [Authorize]
+    [HttpPost("api-keys")]
+    public async Task<ActionResult<CreateApiKeyResult>> CreateApiKey(
+        [FromBody] CreateApiKeyRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (userContext.UserId is null)
+        {
+            return Unauthorized();
+        }
+
+        if (string.IsNullOrWhiteSpace(request.Name))
+        {
+            return BadRequest(new { error = "Name is required." });
+        }
+
+        var result = await apiKeyService.CreateAsync(
+            userContext.UserId.Value,
+            request.Name.Trim(),
+            request.ExpiresAt,
+            cancellationToken).ConfigureAwait(false);
+
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// 列出当前用户的 API Key。
+    /// </summary>
+    [Authorize]
+    [HttpGet("api-keys")]
+    public async Task<ActionResult<IReadOnlyList<ApiKeyDto>>> ListApiKeys(CancellationToken cancellationToken)
+    {
+        if (userContext.UserId is null)
+        {
+            return Unauthorized();
+        }
+
+        var list = await apiKeyService.ListAsync(userContext.UserId.Value, cancellationToken)
+            .ConfigureAwait(false);
+
+        return Ok(list);
+    }
+
+    /// <summary>
+    /// 吊销指定 API Key。
+    /// </summary>
+    [Authorize]
+    [HttpDelete("api-keys/{id:guid}")]
+    public async Task<ActionResult> RevokeApiKey(Guid id, CancellationToken cancellationToken)
+    {
+        if (userContext.UserId is null)
+        {
+            return Unauthorized();
+        }
+
+        var result = await apiKeyService.RevokeAsync(userContext.UserId.Value, id, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!result)
+        {
+            return NotFound();
+        }
+
+        return NoContent();
     }
 }
