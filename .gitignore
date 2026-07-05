@@ -393,3 +393,8 @@ backend/FlowEngine.Host/App_Data/flowengine.db-wal
 docs/research/
 .superpowers/
 docs/superpowers/
+
+# CLI build artifacts and local environment
+cli/dist/
+cli/node_modules/
+cli/.env
