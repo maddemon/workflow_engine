@@ -7,6 +7,7 @@ using FlowEngine.Core.Events;
 using FlowEngine.Host.Middlewares;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -30,20 +31,25 @@ public class RateLimitMiddlewareAuditTests
         var logger = new Mock<ILogger<RateLimitMiddleware>>();
         var eventBus = new Mock<IEventBus>();
         var auditFactory = new AuditEventFactory(new FakeUserContext { UserId = Guid.NewGuid() });
+        var serviceProvider = new ServiceCollection()
+            .AddSingleton<IEventBus>(eventBus.Object)
+            .AddScoped<AuditEventFactory>(_ => auditFactory)
+            .BuildServiceProvider();
         var middleware = new RateLimitMiddleware(
             _ => Task.CompletedTask,
             cache,
             Options.Create(DefaultOptions),
-            logger.Object,
-            eventBus.Object,
-            auditFactory);
+            logger.Object);
 
         for (var i = 0; i < 5; i++)
         {
-            await middleware.InvokeAsync(CreateHttpContext("/api/v1/test", ip: "192.168.1.1"));
+            var warmupContext = CreateHttpContext("/api/v1/test", ip: "192.168.1.1");
+            warmupContext.RequestServices = serviceProvider;
+            await middleware.InvokeAsync(warmupContext);
         }
 
         var context = CreateHttpContext("/api/v1/test", ip: "192.168.1.1");
+        context.RequestServices = serviceProvider;
         await middleware.InvokeAsync(context);
 
         Assert.Equal(StatusCodes.Status429TooManyRequests, context.Response.StatusCode);
@@ -69,15 +75,18 @@ public class RateLimitMiddlewareAuditTests
         var logger = new Mock<ILogger<RateLimitMiddleware>>();
         var eventBus = new Mock<IEventBus>();
         var auditFactory = new AuditEventFactory(new FakeUserContext { UserId = Guid.NewGuid() });
+        var serviceProvider = new ServiceCollection()
+            .AddSingleton<IEventBus>(eventBus.Object)
+            .AddScoped<AuditEventFactory>(_ => auditFactory)
+            .BuildServiceProvider();
         var middleware = new RateLimitMiddleware(
             _ => Task.CompletedTask,
             cache,
             Options.Create(DefaultOptions),
-            logger.Object,
-            eventBus.Object,
-            auditFactory);
+            logger.Object);
 
         var context = CreateHttpContext("/api/v1/test");
+        context.RequestServices = serviceProvider;
         await middleware.InvokeAsync(context);
 
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);

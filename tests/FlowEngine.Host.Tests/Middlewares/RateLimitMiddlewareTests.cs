@@ -8,6 +8,7 @@ using FlowEngine.Core.Events;
 using FlowEngine.Host.Middlewares;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Moq;
@@ -18,6 +19,17 @@ public class RateLimitMiddlewareTests
 {
     private readonly IMemoryCache _cache = new MemoryCache(new MemoryCacheOptions());
     private readonly Mock<ILogger<RateLimitMiddleware>> _logger = new();
+    private readonly IServiceProvider _serviceProvider;
+
+    public RateLimitMiddlewareTests()
+    {
+        var eventBus = new Mock<IEventBus>();
+        var auditFactory = new AuditEventFactory(new FakeUserContext { UserId = Guid.NewGuid() });
+        _serviceProvider = new ServiceCollection()
+            .AddSingleton<IEventBus>(eventBus.Object)
+            .AddScoped<AuditEventFactory>(_ => auditFactory)
+            .BuildServiceProvider();
+    }
 
     private static readonly RateLimitOptions DefaultOptions = new()
     {
@@ -215,7 +227,7 @@ public class RateLimitMiddlewareTests
         Assert.False(string.IsNullOrEmpty(context.Response.Headers.RetryAfter.ToString()));
     }
 
-    private static HttpContext CreateHttpContext(
+    private HttpContext CreateHttpContext(
         string path,
         string? ip = null,
         string? userId = null)
@@ -224,6 +236,7 @@ public class RateLimitMiddlewareTests
         {
             Request = { Path = path },
             Response = { Body = new MemoryStream() },
+            RequestServices = _serviceProvider,
         };
 
         if (ip is not null)
@@ -246,15 +259,11 @@ public class RateLimitMiddlewareTests
         RequestDelegate next,
         RateLimitOptions? options = null)
     {
-        var eventBus = new Mock<IEventBus>();
-        var auditFactory = new AuditEventFactory(new FakeUserContext { UserId = Guid.NewGuid() });
         return new RateLimitMiddleware(
             next,
             _cache,
             Options.Create(options ?? DefaultOptions),
-            _logger.Object,
-            eventBus.Object,
-            auditFactory);
+            _logger.Object);
     }
 
     private sealed class FakeUserContext : IUserContext
