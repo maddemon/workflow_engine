@@ -84,7 +84,8 @@ public sealed class SubAgentToolNode : INodeType
             llmClient,
             tools,
             context,
-            maxIterations);
+            maxIterations,
+            parentRecordId: context.ExecutionId);
 
         var result = await resolver.RunAsync(messages, cancellationToken).ConfigureAwait(false);
 
