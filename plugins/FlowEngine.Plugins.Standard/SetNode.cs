@@ -9,7 +9,7 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// 编辑字段节点，用于添加、修改或删除数据字段。
 /// </summary>
-public sealed class SetNode : INodeType, ISupportsDryRun
+public sealed class SetNode : INodeType
 {
     /// <inheritdoc />
     public string TypeName => "set";

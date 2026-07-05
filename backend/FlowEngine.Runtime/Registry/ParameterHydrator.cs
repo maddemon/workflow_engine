@@ -138,7 +138,7 @@ public sealed class ParameterHydrator(ICredentialAccessor? credentialAccessor = 
 
         if (underlying == typeof(CredentialValue))
         {
-            return await ConvertToCredentialAsync(value).ConfigureAwait(false);
+            return value is CredentialValue cv ? cv : await ConvertToCredentialAsync(value).ConfigureAwait(false);
         }
 
         if (IsGenericList(underlying, out var elementType))
@@ -338,16 +338,30 @@ public sealed class ParameterHydrator(ICredentialAccessor? credentialAccessor = 
             return null;
         }
 
-        if (value is string credentialIdStr && Guid.TryParse(credentialIdStr, out var credentialId))
+        if (value is string credentialIdStr)
         {
+            if (Guid.TryParse(credentialIdStr, out var credentialId))
+            {
+                try
+                {
+                    return await credentialAccessor.GetCredentialAsync(credentialId, CancellationToken.None)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    logger?.LogWarning(ex, "凭据 {CredentialId} 解析失败", credentialIdStr);
+                    return null;
+                }
+            }
+
             try
             {
-                return await credentialAccessor.GetCredentialAsync(credentialId, CancellationToken.None)
+                return await credentialAccessor.GetCredentialByNameAsync(credentialIdStr, CancellationToken.None)
                     .ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                logger?.LogWarning(ex, "凭据 {CredentialId} 解析失败", credentialIdStr);
+                logger?.LogWarning(ex, "凭据 {CredentialName} 按名称解析失败", credentialIdStr);
                 return null;
             }
         }

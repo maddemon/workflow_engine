@@ -10,7 +10,7 @@ namespace FlowEngine.Plugins.Standard;
 /// 条件分支节点，根据条件表达式路由到 true 或 false 分支。
 /// 条件值由执行引擎的 ParameterResolver 预先求值后传入 ResolvedParameters。
 /// </summary>
-public sealed class IfNode : INodeType, ISupportsDryRun
+public sealed class IfNode : INodeType
 {
     /// <inheritdoc />
     public string TypeName => "if";

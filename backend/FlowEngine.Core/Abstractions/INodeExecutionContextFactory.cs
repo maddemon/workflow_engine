@@ -4,12 +4,12 @@ using FlowEngine.Core.Entities;
 namespace FlowEngine.Core.Abstractions;
 
 /// <summary>
-/// 节点执行上下文工厂接口，供需要在运行时创建子节点上下文的节点使用。
+/// 节点执行上下文工厂。
 /// </summary>
 public interface INodeExecutionContextFactory
 {
     /// <summary>
-    /// 为指定节点实例创建执行上下文。
+    /// 创建节点执行上下文。
     /// </summary>
     Task<NodeExecutionContext> CreateAsync(
         Workflow workflow,
@@ -20,5 +20,6 @@ public interface INodeExecutionContextFactory
         IReadOnlyDictionary<string, DataBatch> successfulOutputs,
         IReadOnlyDictionary<string, DataBatch> latestBatches,
         int runIndex,
-        CancellationToken cancellationToken);
+        CancellationToken cancellationToken,
+        ICredentialAccessor? credentialAccessorOverride = null);
 }

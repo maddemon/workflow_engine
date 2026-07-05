@@ -316,84 +316,48 @@ public sealed record PagedResult<T>
 }
 
 /// <summary>
-/// Dry-Run 工作流请求。
+/// Dry-Run 工作流请求，直接传入 DSL 定义与临时凭据，不依赖已持久化工作流。
 /// </summary>
 public sealed record DryRunWorkflowRequestDto
 {
     /// <summary>
-    /// 工作流定义 ID。
+    /// 节点定义列表。
     /// </summary>
-    public Guid WorkflowId { get; init; }
+    public List<NodeDefinitionDto> Nodes { get; init; } = [];
 
     /// <summary>
-    /// 触发输入数据。
+    /// 节点连接列表。
     /// </summary>
-    public object? Input { get; init; }
+    public List<ConnectionDto> Connections { get; init; } = [];
+
+    /// <summary>
+    /// 触发输入数据，按端口名映射。
+    /// </summary>
+    public Dictionary<string, object>? Inputs { get; init; }
+
+    /// <summary>
+    /// 临时凭据列表，按名称在节点参数中解析。
+    /// </summary>
+    public List<DryRunCredentialDto>? Credentials { get; init; }
 }
 
 /// <summary>
-/// Dry-Run 工作流响应。
+/// Dry-Run 临时凭据定义。
 /// </summary>
-public sealed record DryRunWorkflowResponseDto
+public sealed record DryRunCredentialDto
 {
     /// <summary>
-    /// 工作流定义 ID。
+    /// 凭据名称。
     /// </summary>
-    public Guid WorkflowId { get; init; }
+    public string Name { get; init; } = string.Empty;
 
     /// <summary>
-    /// 执行状态。
+    /// 凭据类型。
     /// </summary>
-    public string Status { get; init; } = string.Empty;
+    public string Type { get; init; } = string.Empty;
 
     /// <summary>
-    /// 节点执行记录列表。
+    /// 凭据明文字段映射。
     /// </summary>
-    public List<DryRunNodeRecordDto> NodeRecords { get; init; } = [];
-
-    /// <summary>
-    /// 警告信息列表（被跳过的节点）。
-    /// </summary>
-    public List<string> Warnings { get; init; } = [];
-}
-
-/// <summary>
-/// Dry-Run 节点执行记录。
-/// </summary>
-public sealed record DryRunNodeRecordDto
-{
-    /// <summary>
-    /// 节点定义 ID。
-    /// </summary>
-    public Guid NodeDefinitionId { get; init; }
-
-    /// <summary>
-    /// 节点名称。
-    /// </summary>
-    public string NodeName { get; init; } = string.Empty;
-
-    /// <summary>
-    /// 节点类型名。
-    /// </summary>
-    public string NodeType { get; init; } = string.Empty;
-
-    /// <summary>
-    /// 是否被跳过。
-    /// </summary>
-    public bool Skipped { get; init; }
-
-    /// <summary>
-    /// 跳过原因。
-    /// </summary>
-    public string? SkipReason { get; init; }
-
-    /// <summary>
-    /// 是否执行成功。
-    /// </summary>
-    public bool Success { get; init; }
-
-    /// <summary>
-    /// 节点输出。
-    /// </summary>
-    public object? Output { get; init; }
+    public Dictionary<string, string> Fields { get; init; } = [];
 }

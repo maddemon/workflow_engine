@@ -2,7 +2,6 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Text.Json;
-using System.Text.Json.Nodes;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
 using FlowEngine.Core;
@@ -22,7 +21,7 @@ using Microsoft.Extensions.Hosting;
 namespace FlowEngine.Host.Tests.Workflows;
 
 /// <summary>
-/// Dry-Run 端点集成测试：验证仅 [Authorize] 即可访问，JWT 与 API Key 均支持。
+/// Dry-Run 端点集成测试：验证直接传入 DSL 执行，仅 [Authorize] 即可访问。
 /// </summary>
 public class WorkflowDryRunEndpointTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
 {
@@ -70,43 +69,36 @@ public class WorkflowDryRunEndpointTests : IClassFixture<WebApplicationFactory<P
     public async Task DryRun_WithJwt_ReturnsOkAndExecutesSetNode()
     {
         var ct = TestContext.Current.CancellationToken;
-        var workflow = await CreateWorkflowWithSetNodeAsync(ct);
         var client = await CreateAuthenticatedClientAsync("jwt-dryrun@example.com", roles: [], ct);
 
         var response = await client.PostAsJsonAsync(
             "/api/v1/workflows/dry-run",
-            new DryRunWorkflowRequestDto { WorkflowId = workflow.Id, Input = new JsonObject { ["value"] = 1 } },
+            CreateSetNodeRequest(),
             ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var result = await response.Content.ReadFromJsonAsync<DryRunWorkflowResponseDto>(TestJsonOptions, ct);
+        var result = await response.Content.ReadFromJsonAsync<ExecutionDto>(TestJsonOptions, ct);
         Assert.NotNull(result);
-        Assert.Equal(workflow.Id, result!.WorkflowId);
+        Assert.Equal(nameof(ExecutionStatus.DryRunCompleted), result!.Status);
         Assert.Single(result.NodeRecords);
-        Assert.False(result.NodeRecords[0].Skipped);
-        Assert.True(result.NodeRecords[0].Success);
-        Assert.Equal("set", result.NodeRecords[0].NodeType);
+        Assert.Equal("Completed", result.NodeRecords[0].Status);
     }
 
     [Fact]
-    public async Task DryRun_WithApiKey_ReturnsOkAndSkipsHttpNode()
+    public async Task DryRun_WithApiKey_ReturnsOkAndExecutesSetNode()
     {
         var ct = TestContext.Current.CancellationToken;
-        var workflow = await CreateWorkflowWithHttpNodeAsync(ct);
         var (client, _, _) = await CreateClientWithApiKeyAsync("apikey-dryrun@example.com", roles: [], ct);
 
         var response = await client.PostAsJsonAsync(
             "/api/v1/workflows/dry-run",
-            new DryRunWorkflowRequestDto { WorkflowId = workflow.Id, Input = null },
+            CreateSetNodeRequest(),
             ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var result = await response.Content.ReadFromJsonAsync<DryRunWorkflowResponseDto>(TestJsonOptions, ct);
+        var result = await response.Content.ReadFromJsonAsync<ExecutionDto>(TestJsonOptions, ct);
         Assert.NotNull(result);
-        Assert.Single(result!.NodeRecords);
-        Assert.True(result.NodeRecords[0].Skipped);
-        Assert.Contains("httpRequest", result.NodeRecords[0].SkipReason, StringComparison.OrdinalIgnoreCase);
-        Assert.NotEmpty(result.Warnings);
+        Assert.Equal(nameof(ExecutionStatus.DryRunCompleted), result!.Status);
     }
 
     [Fact]
@@ -117,62 +109,98 @@ public class WorkflowDryRunEndpointTests : IClassFixture<WebApplicationFactory<P
 
         var response = await client.PostAsJsonAsync(
             "/api/v1/workflows/dry-run",
-            new DryRunWorkflowRequestDto { WorkflowId = Guid.NewGuid(), Input = null },
+            CreateSetNodeRequest(),
             ct);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }
 
     [Fact]
-    public async Task DryRun_NonExistingWorkflow_ReturnsNotFound()
+    public async Task DryRun_MissingNodes_ReturnsBadRequest()
     {
         var ct = TestContext.Current.CancellationToken;
-        var client = await CreateAuthenticatedClientAsync("jwt-dryrun-notfound@example.com", roles: [], ct);
+        var client = await CreateAuthenticatedClientAsync("jwt-dryrun-badrequest@example.com", roles: [], ct);
 
         var response = await client.PostAsJsonAsync(
             "/api/v1/workflows/dry-run",
-            new DryRunWorkflowRequestDto { WorkflowId = Guid.NewGuid(), Input = null },
+            new DryRunWorkflowRequestDto { Nodes = [], Connections = [] },
             ct);
 
-        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DryRun_MissingConnections_ReturnsBadRequest()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = await CreateAuthenticatedClientAsync("jwt-dryrun-badrequest2@example.com", roles: [], ct);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/v1/workflows/dry-run",
+            new DryRunWorkflowRequestDto { Nodes = [new NodeDefinitionDto { Id = "n1", TypeName = "set", Name = "Set" }], Connections = null! },
+            ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
     }
 
     [Fact]
     public async Task DryRun_WithNonAdminRole_ReturnsOk()
     {
         var ct = TestContext.Current.CancellationToken;
-        var workflow = await CreateWorkflowWithSetNodeAsync(ct);
         var client = await CreateAuthenticatedClientAsync("jwt-dryrun-viewer@example.com", roles: ["Viewer"], ct);
 
         var response = await client.PostAsJsonAsync(
             "/api/v1/workflows/dry-run",
-            new DryRunWorkflowRequestDto { WorkflowId = workflow.Id, Input = null },
+            CreateSetNodeRequest(),
             ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var result = await response.Content.ReadFromJsonAsync<DryRunWorkflowResponseDto>(TestJsonOptions, ct);
+        var result = await response.Content.ReadFromJsonAsync<ExecutionDto>(TestJsonOptions, ct);
         Assert.NotNull(result);
-        Assert.Single(result!.NodeRecords);
-        Assert.False(result.NodeRecords[0].Skipped);
+        Assert.Equal(nameof(ExecutionStatus.DryRunCompleted), result!.Status);
     }
 
-    private async Task<Workflow> CreateWorkflowWithSetNodeAsync(CancellationToken ct)
+    [Fact]
+    public async Task DryRun_DoesNotCreateWorkflowOrExecutionRecords()
     {
-        using var scope = _factory.Services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
+        var ct = TestContext.Current.CancellationToken;
+        var client = await CreateAuthenticatedClientAsync("jwt-dryrun-nopersist@example.com", roles: [], ct);
 
-        var nodeId = Guid.NewGuid();
-        var workflow = new Workflow
+        int workflowCountBefore;
+        int executionCountBefore;
+        using (var scope = _factory.Services.CreateScope())
         {
-            Name = "DryRun Set Endpoint",
-            CreatedBy = "test",
-            IsActive = true,
-            Version = 1,
+            var dbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
+            workflowCountBefore = await dbContext.Workflows.CountAsync(ct);
+            executionCountBefore = await dbContext.ExecutionRecords.CountAsync(ct);
+        }
+
+        var response = await client.PostAsJsonAsync(
+            "/api/v1/workflows/dry-run",
+            CreateSetNodeRequest(),
+            ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
+            var workflowCountAfter = await dbContext.Workflows.CountAsync(ct);
+            var executionCountAfter = await dbContext.ExecutionRecords.CountAsync(ct);
+            Assert.Equal(workflowCountBefore, workflowCountAfter);
+            Assert.Equal(executionCountBefore, executionCountAfter);
+        }
+    }
+
+    private static DryRunWorkflowRequestDto CreateSetNodeRequest()
+    {
+        return new DryRunWorkflowRequestDto
+        {
             Nodes =
             [
-                new NodeDefinition
+                new NodeDefinitionDto
                 {
-                    Id = nodeId,
+                    Id = "set-1",
                     TypeName = "set",
                     Name = "Set",
                     IsEntry = true,
@@ -190,50 +218,6 @@ public class WorkflowDryRunEndpointTests : IClassFixture<WebApplicationFactory<P
             ],
             Connections = []
         };
-
-        dbContext.Workflows.Add(workflow);
-        await dbContext.SaveChangesAsync(ct);
-        return workflow;
-    }
-
-    private async Task<Workflow> CreateWorkflowWithHttpNodeAsync(CancellationToken ct)
-    {
-        using var scope = _factory.Services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
-
-        var nodeId = Guid.NewGuid();
-        var workflow = new Workflow
-        {
-            Name = "DryRun Http Endpoint",
-            CreatedBy = "test",
-            IsActive = true,
-            Version = 1,
-            Nodes =
-            [
-                new NodeDefinition
-                {
-                    Id = nodeId,
-                    TypeName = "httpRequest",
-                    Name = "HTTP",
-                    IsEntry = true,
-                    Parameters = new Dictionary<string, object>
-                    {
-                        ["url"] = "https://example.com",
-                        ["method"] = "GET"
-                    },
-                    Ports =
-                    [
-                        new PortInstance { Name = "input", Direction = PortDirection.Input, Type = PortType.Main },
-                        new PortInstance { Name = "output", Direction = PortDirection.Output, Type = PortType.Main }
-                    ]
-                }
-            ],
-            Connections = []
-        };
-
-        dbContext.Workflows.Add(workflow);
-        await dbContext.SaveChangesAsync(ct);
-        return workflow;
     }
 
     private async Task<HttpClient> CreateAuthenticatedClientAsync(string email, IReadOnlyList<string>? roles = null, CancellationToken ct = default)

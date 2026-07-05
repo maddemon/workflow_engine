@@ -45,6 +45,26 @@ public sealed class CredentialAccessor : ICredentialAccessor
             };
         }
 
+        return DecryptCredential(credential);
+    }
+
+    /// <inheritdoc />
+    public async Task<CredentialValue?> GetCredentialByNameAsync(string name, CancellationToken cancellationToken = default)
+    {
+        var credential = await _dbContext.Credentials
+            .FirstOrDefaultAsync(c => c.Name == name, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (credential is null)
+        {
+            return null;
+        }
+
+        return DecryptCredential(credential);
+    }
+
+    private CredentialValue DecryptCredential(Core.Entities.Credential credential)
+    {
         var key = _keyProvider.GetKey();
         var fields = new Dictionary<string, string>();
         var binaryFields = new Dictionary<string, byte[]>();

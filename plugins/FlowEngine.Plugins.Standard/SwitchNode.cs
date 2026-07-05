@@ -10,7 +10,7 @@ namespace FlowEngine.Plugins.Standard;
 /// Switch 分支节点，根据表达式值路由到不同的输出端口。
 /// 每个 Case 对应一个输出端口，不匹配时路由到 default 端口。
 /// </summary>
-public sealed class SwitchNode : INodeType, ISupportsDryRun
+public sealed class SwitchNode : INodeType
 {
     /// <inheritdoc />
     public string TypeName => "switch";

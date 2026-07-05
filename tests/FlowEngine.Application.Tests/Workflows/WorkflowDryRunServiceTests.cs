@@ -1,9 +1,10 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Application.Dtos;
-using FlowEngine.Application.Identity;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core;
+using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -40,7 +41,8 @@ public sealed class WorkflowDryRunServiceTests : IDisposable
                 new FlowEngine.Plugins.Standard.SortNode(),
                 new FlowEngine.Plugins.Standard.LimitNode(),
                 new FlowEngine.Plugins.Standard.AggregateNode(),
-                new FlowEngine.Plugins.Standard.HttpRequestNode(),
+                new CredentialTestNode(),
+                new FailingTestNode(),
             },
             NullLogger<NodeRegistry>.Instance);
 
@@ -59,90 +61,100 @@ public sealed class WorkflowDryRunServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task DryRunAsync_NonExistingWorkflow_ReturnsNull()
+    public async Task DryRunAsync_WithNodesAndConnections_ReturnsDryRunCompleted()
     {
-        var service = CreateService();
-
-        var result = await service.DryRunAsync(Guid.NewGuid(), null, TestContext.Current.CancellationToken);
-
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public async Task DryRunAsync_SupportsDryRunNode_ExecutesAndReturnsOutput()
-    {
-        var workflow = CreateWorkflowWithSetNode();
-        _dbContext.Workflows.Add(workflow);
-        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var request = CreateSetNodeRequest();
 
         var service = CreateService();
-        var result = await service.DryRunAsync(workflow.Id, new JsonObject { ["value"] = 1 }, TestContext.Current.CancellationToken);
+        var result = await service.DryRunAsync(request, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
-        Assert.Single(result!.NodeRecords);
-        var record = result.NodeRecords[0];
-        Assert.False(record.Skipped);
-        Assert.True(record.Success);
-        Assert.Equal("set", record.NodeType);
-        Assert.NotNull(record.Output);
-    }
-
-    [Fact]
-    public async Task DryRunAsync_NonDryRunNode_SkipsWithWarning()
-    {
-        var workflow = CreateWorkflowWithHttpNode();
-        _dbContext.Workflows.Add(workflow);
-        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
-
-        var service = CreateService();
-        var result = await service.DryRunAsync(workflow.Id, null, TestContext.Current.CancellationToken);
-
-        Assert.NotNull(result);
-        Assert.Single(result!.NodeRecords);
-        var record = result.NodeRecords[0];
-        Assert.True(record.Skipped);
-        Assert.Contains("httpRequest", record.SkipReason, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(nameof(ExecutionStatus.DryRunCompleted), result.Status);
+        Assert.Single(result.NodeRecords);
+        Assert.True(result.NodeRecords[0].Output is not null);
     }
 
     [Fact]
     public async Task DryRunAsync_PureComputationChain_PropagatesData()
     {
-        var workflow = CreateWorkflowWithSetAndFilterNodes();
-        _dbContext.Workflows.Add(workflow);
-        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+        var request = CreateSetAndFilterRequest();
 
         var service = CreateService();
-        var result = await service.DryRunAsync(workflow.Id, new JsonObject { ["value"] = 5 }, TestContext.Current.CancellationToken);
+        var result = await service.DryRunAsync(request, TestContext.Current.CancellationToken);
 
         Assert.NotNull(result);
-        Assert.Equal(2, result!.NodeRecords.Count);
-        Assert.All(result.NodeRecords, r => Assert.True(r.Success, $"Node {r.NodeName} failed: {(r.Output as DataBatch)?.Items.FirstOrDefault()?.Error?.Message}\n{(r.Output as DataBatch)?.Items.FirstOrDefault()?.Error?.StackTrace}"));
-        Assert.All(result.NodeRecords, r => Assert.False(r.Skipped));
+        Assert.Equal(nameof(ExecutionStatus.DryRunCompleted), result.Status);
+        Assert.Equal(2, result.NodeRecords.Count);
+        Assert.All(result.NodeRecords, r => Assert.Equal("Completed", r.Status));
+    }
+
+    [Fact]
+    public async Task DryRunAsync_WithTemporaryCredentials_ResolvesByName()
+    {
+        var request = CreateCredentialNodeRequest();
+
+        var service = CreateService();
+        var result = await service.DryRunAsync(request, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(result);
+        Assert.Equal(nameof(ExecutionStatus.DryRunCompleted), result.Status);
+        Assert.Single(result.NodeRecords);
+        var output = (JsonNode?)result.NodeRecords[0].Output;
+        Assert.NotNull(output);
+        var token = output["output"]?["items"]?[0]?["data"]?["token"];
+        Assert.NotNull(token);
+        Assert.Equal("secret-token", token.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task DryRunAsync_FailingNode_ReturnsFailed()
+    {
+        var request = CreateFailingNodeRequest();
+
+        var service = CreateService();
+        var result = await service.DryRunAsync(request, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(result);
+        Assert.Equal(nameof(ExecutionStatus.Failed), result.Status);
+        Assert.Single(result.NodeRecords);
+        Assert.Equal("Failed", result.NodeRecords[0].Status);
+    }
+
+    [Fact]
+    public async Task DryRunAsync_DoesNotPersistWorkflowOrExecution()
+    {
+        var request = CreateSetNodeRequest();
+        var workflowCountBefore = await _dbContext.Workflows.CountAsync(TestContext.Current.CancellationToken);
+        var executionCountBefore = await _dbContext.ExecutionRecords.CountAsync(TestContext.Current.CancellationToken);
+
+        var service = CreateService();
+        var result = await service.DryRunAsync(request, TestContext.Current.CancellationToken);
+
+        var workflowCountAfter = await _dbContext.Workflows.CountAsync(TestContext.Current.CancellationToken);
+        var executionCountAfter = await _dbContext.ExecutionRecords.CountAsync(TestContext.Current.CancellationToken);
+
+        Assert.NotNull(result);
+        Assert.Equal(workflowCountBefore, workflowCountAfter);
+        Assert.Equal(executionCountBefore, executionCountAfter);
     }
 
     private WorkflowDryRunService CreateService()
     {
         return new WorkflowDryRunService(
-            _dbContext,
             _nodeRegistry,
             _contextFactory,
             NullLogger<WorkflowDryRunService>.Instance);
     }
 
-    private static Workflow CreateWorkflowWithSetNode()
+    private static DryRunWorkflowRequestDto CreateSetNodeRequest()
     {
-        var nodeId = Guid.NewGuid();
-        return new Workflow
+        return new DryRunWorkflowRequestDto
         {
-            Id = Guid.NewGuid(),
-            Name = "DryRun Set",
-            CreatedBy = "test",
-            IsActive = true,
             Nodes =
             [
-                new NodeDefinition
+                new NodeDefinitionDto
                 {
-                    Id = nodeId,
+                    Id = "set-1",
                     TypeName = "set",
                     Name = "Set",
                     IsEntry = true,
@@ -162,54 +174,15 @@ public sealed class WorkflowDryRunServiceTests : IDisposable
         };
     }
 
-    private static Workflow CreateWorkflowWithHttpNode()
+    private static DryRunWorkflowRequestDto CreateSetAndFilterRequest()
     {
-        var nodeId = Guid.NewGuid();
-        return new Workflow
+        return new DryRunWorkflowRequestDto
         {
-            Id = Guid.NewGuid(),
-            Name = "DryRun Http",
-            CreatedBy = "test",
-            IsActive = true,
             Nodes =
             [
-                new NodeDefinition
+                new NodeDefinitionDto
                 {
-                    Id = nodeId,
-                    TypeName = "httpRequest",
-                    Name = "HTTP",
-                    IsEntry = true,
-                    Parameters = new Dictionary<string, object>
-                    {
-                        ["url"] = "https://example.com",
-                        ["method"] = "GET"
-                    },
-                    Ports =
-                    [
-                        new PortInstance { Name = "input", Direction = PortDirection.Input, Type = PortType.Main },
-                        new PortInstance { Name = "output", Direction = PortDirection.Output, Type = PortType.Main }
-                    ]
-                }
-            ],
-            Connections = []
-        };
-    }
-
-    private static Workflow CreateWorkflowWithSetAndFilterNodes()
-    {
-        var setId = Guid.NewGuid();
-        var filterId = Guid.NewGuid();
-        return new Workflow
-        {
-            Id = Guid.NewGuid(),
-            Name = "DryRun Chain",
-            CreatedBy = "test",
-            IsActive = true,
-            Nodes =
-            [
-                new NodeDefinition
-                {
-                    Id = setId,
+                    Id = "set-1",
                     TypeName = "set",
                     Name = "Set",
                     IsEntry = true,
@@ -224,9 +197,9 @@ public sealed class WorkflowDryRunServiceTests : IDisposable
                         new PortInstance { Name = "output", Direction = PortDirection.Output, Type = PortType.Main }
                     ]
                 },
-                new NodeDefinition
+                new NodeDefinitionDto
                 {
-                    Id = filterId,
+                    Id = "filter-1",
                     TypeName = "filter",
                     Name = "Filter",
                     Parameters = new Dictionary<string, object>
@@ -242,21 +215,140 @@ public sealed class WorkflowDryRunServiceTests : IDisposable
             ],
             Connections =
             [
-                new Connection
+                new ConnectionDto
                 {
-                    Id = Guid.NewGuid(),
-                    SourceNodeId = setId,
+                    Id = "conn-1",
+                    SourceNodeId = "set-1",
                     SourcePortName = "output",
-                    TargetNodeId = filterId,
+                    TargetNodeId = "filter-1",
                     TargetPortName = "input"
                 }
             ]
         };
     }
 
-    private sealed class FakeCredentialAccessor : FlowEngine.Core.Abstractions.ICredentialAccessor
+    private static DryRunWorkflowRequestDto CreateCredentialNodeRequest()
+    {
+        return new DryRunWorkflowRequestDto
+        {
+            Nodes =
+            [
+                new NodeDefinitionDto
+                {
+                    Id = "cred-1",
+                    TypeName = "credentialTest",
+                    Name = "CredentialTest",
+                    IsEntry = true,
+                    Parameters = new Dictionary<string, object>
+                    {
+                        ["credential"] = "my-api-key"
+                    },
+                    Ports =
+                    [
+                        new PortInstance { Name = "input", Direction = PortDirection.Input, Type = PortType.Main },
+                        new PortInstance { Name = "output", Direction = PortDirection.Output, Type = PortType.Main }
+                    ]
+                }
+            ],
+            Connections = [],
+            Credentials =
+            [
+                new DryRunCredentialDto
+                {
+                    Name = "my-api-key",
+                    Type = "apiKey",
+                    Fields = new Dictionary<string, string> { ["token"] = "secret-token" }
+                }
+            ]
+        };
+    }
+
+    private static DryRunWorkflowRequestDto CreateFailingNodeRequest()
+    {
+        return new DryRunWorkflowRequestDto
+        {
+            Nodes =
+            [
+                new NodeDefinitionDto
+                {
+                    Id = "fail-1",
+                    TypeName = "failingTest",
+                    Name = "FailingTest",
+                    IsEntry = true,
+                    Parameters = [],
+                    Ports =
+                    [
+                        new PortInstance { Name = "input", Direction = PortDirection.Input, Type = PortType.Main },
+                        new PortInstance { Name = "output", Direction = PortDirection.Output, Type = PortType.Main }
+                    ]
+                }
+            ],
+            Connections = []
+        };
+    }
+
+    private sealed class FakeCredentialAccessor : ICredentialAccessor
     {
         public Task<CredentialValue> GetCredentialAsync(Guid credentialId, CancellationToken cancellationToken = default)
             => Task.FromResult(new CredentialValue { Fields = [] });
+
+        public Task<CredentialValue?> GetCredentialByNameAsync(string name, CancellationToken cancellationToken = default)
+            => Task.FromResult<CredentialValue?>(null);
+    }
+
+    private sealed class CredentialTestNode : INodeType
+    {
+        public string TypeName => "credentialTest";
+        public string DisplayName => "Credential Test";
+        public string Category => "Test";
+        public string Icon => "test";
+        public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
+
+        public IReadOnlyList<PortDefinition> Ports { get; } =
+        [
+            new PortDefinition { Name = "input", DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
+            new PortDefinition { Name = "output", DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
+        ];
+
+        public bool DefaultIsEntry => false;
+
+        [Credential("apiKey")]
+        public CredentialValue? Credential { get; set; }
+
+        public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+        {
+            var token = Credential?.Fields.GetValueOrDefault("token") ?? string.Empty;
+            var output = new JsonObject { ["token"] = token };
+            return Task.FromResult(new NodeExecutionResult
+            {
+                Success = true,
+                Output = new DataBatch
+                {
+                    Items = [new DataItem { Data = output, Success = true, SourceIndex = 0 }]
+                }
+            });
+        }
+    }
+
+    private sealed class FailingTestNode : INodeType
+    {
+        public string TypeName => "failingTest";
+        public string DisplayName => "Failing Test";
+        public string Category => "Test";
+        public string Icon => "test";
+        public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
+
+        public IReadOnlyList<PortDefinition> Ports { get; } =
+        [
+            new PortDefinition { Name = "input", DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
+            new PortDefinition { Name = "output", DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
+        ];
+
+        public bool DefaultIsEntry => false;
+
+        public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+        {
+            throw new InvalidOperationException("Dry-run failure simulation.");
+        }
     }
 }

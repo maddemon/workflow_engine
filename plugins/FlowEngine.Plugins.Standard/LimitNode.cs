@@ -8,7 +8,7 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// 限制节点，限制数据项数量。
 /// </summary>
-public sealed class LimitNode : INodeType, ISupportsDryRun
+public sealed class LimitNode : INodeType
 {
     /// <inheritdoc />
     public string TypeName => "limit";

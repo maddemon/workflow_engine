@@ -3,62 +3,45 @@ using System.Text.Json;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
-using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Runtime.Executor;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Application.Workflows;
 
 /// <summary>
-/// 工作流 Dry-Run 服务，在无副作用模式下预演工作流执行。
+/// 工作流 Dry-Run 服务，直接在内存中构建 DSL 定义并执行，不持久化任何记录。
 /// </summary>
 public sealed class WorkflowDryRunService(
-    FlowEngineDbContext dbContext,
     INodeRegistry nodeRegistry,
     NodeExecutionContextFactory contextFactory,
     ILogger<WorkflowDryRunService> logger)
 {
     /// <summary>
-    /// 对指定工作流执行 Dry-Run。
+    /// 对传入的 DSL 工作流执行 Dry-Run。
     /// </summary>
-    /// <param name="workflowId">工作流定义 ID。</param>
-    /// <param name="input">可选的触发输入数据。</param>
+    /// <param name="request">Dry-Run 请求，包含节点、连接、输入与临时凭据。</param>
     /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>Dry-Run 结果；工作流不存在时返回 null。</returns>
-    public async Task<DryRunWorkflowResponseDto?> DryRunAsync(
-        Guid workflowId,
-        object? input = null,
+    /// <returns>执行结果 DTO。</returns>
+    public async Task<ExecutionDto> DryRunAsync(
+        DryRunWorkflowRequestDto request,
         CancellationToken cancellationToken = default)
     {
-        var workflow = await dbContext.Workflows
-            .AsNoTracking()
-            .FirstOrDefaultAsync(w => w.Id == workflowId, cancellationToken)
-            .ConfigureAwait(false);
+        ArgumentNullException.ThrowIfNull(request);
 
-        if (workflow is null)
-        {
-            return null;
-        }
-
+        var workflow = BuildWorkflow(request);
+        var credentialAccessor = BuildCredentialAccessor(request.Credentials);
+        PreResolveCredentialParameters(workflow, credentialAccessor);
         var executionRecord = new ExecutionRecord
         {
-            WorkflowDefinitionId = workflowId,
+            Id = Guid.NewGuid(),
+            WorkflowDefinitionId = workflow.Id,
             ProjectId = workflow.ProjectId,
             StartedAt = DateTime.UtcNow,
             Status = ExecutionStatus.Running,
             NodeRecords = []
         };
-
-        var nodeRecords = new List<DryRunNodeRecordDto>();
-        var warnings = new List<string>();
-        var successfulOutputs = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase);
-        var latestBatches = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase);
-        var nodeOutputs = new Dictionary<Guid, DataBatch>();
-        var pendingInputs = new Dictionary<Guid, Dictionary<string, DataBatch>>();
-        var processedNodes = new HashSet<Guid>();
 
         var nodeMap = workflow.Nodes.ToDictionary(n => n.Id);
         var incomingByTarget = workflow.Connections
@@ -68,19 +51,19 @@ public sealed class WorkflowDryRunService(
             .GroupBy(c => c.SourceNodeId)
             .ToDictionary(g => g.Key, g => g.ToList());
 
+        var nodeOutputs = new Dictionary<Guid, DataBatch>();
+        var successfulOutputs = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase);
+        var latestBatches = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase);
+        var waitingArea = new DryRunWaitingArea();
+        var processedNodes = new HashSet<Guid>();
         var queue = new Queue<Guid>();
-        var hasIncoming = workflow.Connections.Select(c => c.TargetNodeId).ToHashSet();
 
-        foreach (var node in workflow.Nodes)
-        {
-            var nodeType = nodeRegistry.Get(node.TypeName);
-            if (node.IsEntry || nodeType.DefaultIsEntry || !hasIncoming.Contains(node.Id))
-            {
-                queue.Enqueue(node.Id);
-            }
-        }
+        var triggerBatch = CreateDataBatch(request.Inputs);
+        EnqueueEntryNodes(workflow, queue, processedNodes, triggerBatch, nodeOutputs, latestBatches);
 
-        while (queue.Count > 0)
+        var failed = false;
+
+        while (queue.Count > 0 && !cancellationToken.IsCancellationRequested)
         {
             var nodeId = queue.Dequeue();
             if (!nodeMap.TryGetValue(nodeId, out var node))
@@ -88,77 +71,77 @@ public sealed class WorkflowDryRunService(
                 continue;
             }
 
-            var nodeType = nodeRegistry.Get(node.TypeName);
-            var inputPortNames = nodeType.Ports
-                .Where(p => p.Direction == PortDirection.Input)
-                .Select(p => p.Name)
-                .ToList();
-
-            var inputs = CollectInputs(nodeId, inputPortNames, incomingByTarget, nodeOutputs, pendingInputs);
-
-            if (inputs.Count == 0 && inputPortNames.Count > 0)
+            if (processedNodes.Contains(nodeId))
             {
-                inputs[inputPortNames[0]] = CreateDataBatch(input);
+                continue;
             }
+
+            var nodeType = nodeRegistry.Get(node.TypeName);
+            var inputPortNames = GetInputPortNames(nodeType);
+            var inputs = CollectInputs(nodeId, inputPortNames, incomingByTarget, nodeOutputs, waitingArea);
 
             if (inputPortNames.Count > 1 && inputPortNames.Any(p => !inputs.ContainsKey(p)))
             {
+                // 多输入端口未全部就绪，继续等待。
                 continue;
             }
 
             processedNodes.Add(nodeId);
 
-            DryRunNodeRecordDto record;
-            if (nodeType is ISupportsDryRun)
-            {
-                record = await ExecuteNodeAsync(
-                    workflow,
-                    executionRecord,
-                    node,
-                    nodeType,
-                    inputs,
-                    successfulOutputs,
-                    latestBatches,
-                    cancellationToken).ConfigureAwait(false);
+            var context = await contextFactory.CreateAsync(
+                workflow,
+                executionRecord,
+                node,
+                nodeType,
+                inputs,
+                successfulOutputs,
+                latestBatches,
+                runIndex: 0,
+                cancellationToken,
+                credentialAccessor).ConfigureAwait(false);
 
-                if (record.Output is DataBatch outputBatch)
-                {
-                    nodeOutputs[nodeId] = outputBatch;
-                    latestBatches[node.Name] = outputBatch;
-                    if (record.Success)
-                    {
-                        successfulOutputs[node.Name] = outputBatch;
-                    }
-                }
+            NodeExecutionResult result;
+            try
+            {
+                result = await ExecuteNodeAsync(node, nodeType, context, cancellationToken).ConfigureAwait(false);
             }
-            else
+            catch (Exception ex)
             {
-                var warning = $"节点 '{node.Name}' ({node.TypeName}) 不支持 Dry-Run，已跳过。";
-                warnings.Add(warning);
-                logger.LogDebug("Dry-run skipped node {NodeName} ({NodeType})", node.Name, node.TypeName);
-
-                var passThrough = inputs.Values.FirstOrDefault() ?? new DataBatch();
-                nodeOutputs[nodeId] = passThrough;
-                latestBatches[node.Name] = passThrough;
-
-                record = new DryRunNodeRecordDto
+                logger.LogWarning(ex, "Dry-run 节点 {NodeName} ({NodeType}) 执行异常。", node.Name, node.TypeName);
+                var error = new NodeError
                 {
+                    Code = ex.GetType().Name,
+                    Message = ex.Message,
                     NodeDefinitionId = node.Id,
-                    NodeName = node.Name,
-                    NodeType = node.TypeName,
-                    Skipped = true,
-                    SkipReason = warning,
-                    Success = true
+                    StackTrace = ex.StackTrace
+                };
+                result = new NodeExecutionResult
+                {
+                    Success = false,
+                    Error = error,
+                    Output = new DataBatch { Items = [new DataItem { Success = false, Error = error }] }
                 };
             }
 
-            nodeRecords.Add(record);
+            var record = BuildNodeExecutionRecord(node.Id, 0, inputs, result, context);
+            executionRecord.NodeRecords.Add(record);
+
+            nodeOutputs[nodeId] = result.Output;
+            latestBatches[node.Name] = result.Output;
+            if (result.Success)
+            {
+                successfulOutputs[node.Name] = result.Output;
+            }
+            else
+            {
+                failed = true;
+            }
 
             if (outgoingBySource.TryGetValue(nodeId, out var outgoingConnections))
             {
                 foreach (var connection in outgoingConnections)
                 {
-                    if (!queue.Contains(connection.TargetNodeId) && !processedNodes.Contains(connection.TargetNodeId))
+                    if (!processedNodes.Contains(connection.TargetNodeId) && !queue.Contains(connection.TargetNodeId))
                     {
                         queue.Enqueue(connection.TargetNodeId);
                     }
@@ -166,13 +149,120 @@ public sealed class WorkflowDryRunService(
             }
         }
 
-        return new DryRunWorkflowResponseDto
+        executionRecord.CompletedAt = DateTime.UtcNow;
+        executionRecord.Status = failed ? ExecutionStatus.Failed : ExecutionStatus.DryRunCompleted;
+
+        return MapToDto(executionRecord);
+    }
+
+    private static Workflow BuildWorkflow(DryRunWorkflowRequestDto request)
+    {
+        var nodeIdMap = new Dictionary<string, Guid>();
+        var nodes = request.Nodes.Select(n => WorkflowMapper.ToEntity(n, nodeIdMap)).ToList();
+        var connections = request.Connections.Select(c => WorkflowMapper.ToEntity(c, nodeIdMap)).ToList();
+
+        return new Workflow
         {
-            WorkflowId = workflowId,
-            Status = "Completed",
-            NodeRecords = nodeRecords,
-            Warnings = warnings
+            Id = Guid.NewGuid(),
+            Name = "dry-run",
+            CreatedBy = "dry-run",
+            IsActive = true,
+            Version = 1,
+            Nodes = nodes,
+            Connections = connections
         };
+    }
+
+    private static TemporaryCredentialAccessor BuildCredentialAccessor(IReadOnlyCollection<DryRunCredentialDto>? credentials)
+    {
+        var values = new Dictionary<string, CredentialValue>(StringComparer.OrdinalIgnoreCase);
+        if (credentials is not null)
+        {
+            foreach (var credential in credentials)
+            {
+                values[credential.Name] = new CredentialValue
+                {
+                    Name = credential.Name,
+                    Type = credential.Type,
+                    Fields = credential.Fields,
+                    BinaryFields = []
+                };
+            }
+        }
+
+        return new TemporaryCredentialAccessor(values);
+    }
+
+    private void PreResolveCredentialParameters(Workflow workflow, TemporaryCredentialAccessor credentialAccessor)
+    {
+        foreach (var node in workflow.Nodes)
+        {
+            var descriptor = nodeRegistry.GetDescriptor(node.TypeName);
+            var credentialParameters = descriptor.Parameters
+                .Where(p => p.Type == ParameterType.Credential)
+                .Select(p => p.Name)
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var key in node.Parameters.Keys.ToList())
+            {
+                if (!credentialParameters.Contains(key))
+                {
+                    continue;
+                }
+
+                var value = node.Parameters[key];
+                if (value is string credentialName)
+                {
+                    var credential = credentialAccessor.GetCredentialByNameAsync(credentialName, CancellationToken.None)
+                        .ConfigureAwait(false).GetAwaiter().GetResult();
+                    if (credential is not null)
+                    {
+                        node.Parameters[key] = credential;
+                    }
+                }
+            }
+        }
+    }
+
+    private void EnqueueEntryNodes(
+        Workflow workflow,
+        Queue<Guid> queue,
+        HashSet<Guid> processedNodes,
+        DataBatch triggerBatch,
+        Dictionary<Guid, DataBatch> nodeOutputs,
+        Dictionary<string, DataBatch> latestBatches)
+    {
+        var hasIncoming = workflow.Connections.Select(c => c.TargetNodeId).ToHashSet();
+
+        foreach (var node in workflow.Nodes)
+        {
+            var nodeType = nodeRegistry.Get(node.TypeName);
+            var isEntry = node.IsEntry || nodeType.DefaultIsEntry || !hasIncoming.Contains(node.Id);
+            if (!isEntry)
+            {
+                continue;
+            }
+
+            var inputPorts = GetInputPortNames(nodeType);
+            if (inputPorts.Count > 0)
+            {
+                nodeOutputs[node.Id] = triggerBatch;
+                latestBatches[node.Name] = triggerBatch;
+            }
+
+            if (!processedNodes.Contains(node.Id) && !queue.Contains(node.Id))
+            {
+                queue.Enqueue(node.Id);
+            }
+        }
+    }
+
+    private static IReadOnlyList<string> GetInputPortNames(INodeType nodeType)
+    {
+        return nodeType.Ports
+            .Where(p => p.Direction == PortDirection.Input)
+            .Select(p => p.Name)
+            .ToList();
     }
 
     private static Dictionary<string, DataBatch> CollectInputs(
@@ -180,7 +270,7 @@ public sealed class WorkflowDryRunService(
         IReadOnlyList<string> inputPortNames,
         IReadOnlyDictionary<Guid, List<Connection>> incomingByTarget,
         IReadOnlyDictionary<Guid, DataBatch> nodeOutputs,
-        IDictionary<Guid, Dictionary<string, DataBatch>> pendingInputs)
+        DryRunWaitingArea waitingArea)
     {
         var inputs = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase);
 
@@ -197,87 +287,76 @@ public sealed class WorkflowDryRunService(
 
         if (inputPortNames.Count > 1 && inputPortNames.Any(p => !inputs.ContainsKey(p)))
         {
-            if (pendingInputs.TryGetValue(nodeId, out var pending))
+            var pending = waitingArea.Take(nodeId);
+            foreach (var (portName, batch) in pending)
             {
-                foreach (var (portName, batch) in pending)
-                {
-                    inputs[portName] = batch;
-                }
+                inputs[portName] = batch;
             }
 
-            if (inputPortNames.Any(p => !inputs.ContainsKey(p)))
+            var missing = inputPortNames.Where(p => !inputs.ContainsKey(p)).ToList();
+            if (missing.Count > 0)
             {
-                pendingInputs[nodeId] = new Dictionary<string, DataBatch>(inputs, StringComparer.OrdinalIgnoreCase);
+                waitingArea.Store(nodeId, inputs);
             }
         }
 
         return inputs;
     }
 
-    private async Task<DryRunNodeRecordDto> ExecuteNodeAsync(
-        Workflow workflow,
-        ExecutionRecord executionRecord,
+    private async Task<NodeExecutionResult> ExecuteNodeAsync(
         NodeDefinition node,
         INodeType nodeType,
-        IReadOnlyDictionary<string, DataBatch> inputs,
-        IReadOnlyDictionary<string, DataBatch> successfulOutputs,
-        IReadOnlyDictionary<string, DataBatch> latestBatches,
+        NodeExecutionContext context,
         CancellationToken cancellationToken)
     {
+        var timeout = node.Timeout;
+        if (timeout is null || timeout <= TimeSpan.Zero)
+        {
+            return await nodeType.ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
+        }
+
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(timeout.Value);
         try
         {
-            var context = await contextFactory.CreateAsync(
-                workflow,
-                executionRecord,
-                node,
-                nodeType,
-                inputs,
-                successfulOutputs,
-                latestBatches,
-                runIndex: 0,
-                cancellationToken).ConfigureAwait(false);
-
-            var result = await nodeType.ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
-
-            return new DryRunNodeRecordDto
-            {
-                NodeDefinitionId = node.Id,
-                NodeName = node.Name,
-                NodeType = node.TypeName,
-                Skipped = false,
-                Success = result.Success,
-                Output = result.Output
-            };
+            return await nodeType.ExecuteAsync(context, timeoutCts.Token).ConfigureAwait(false);
         }
-        catch (Exception ex)
+        catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
         {
-            logger.LogWarning(ex, "Dry-run node {NodeName} ({NodeType}) execution failed.", node.Name, node.TypeName);
-            return new DryRunNodeRecordDto
+            var error = new NodeError
             {
-                NodeDefinitionId = node.Id,
-                NodeName = node.Name,
-                NodeType = node.TypeName,
-                Skipped = false,
+                Code = "Timeout",
+                Message = $"节点执行超时，超时时间：{timeout.Value.TotalMilliseconds}ms。",
+                NodeDefinitionId = node.Id
+            };
+            return new NodeExecutionResult
+            {
                 Success = false,
-                Output = new DataBatch
-                {
-                    Items =
-                    [
-                        new DataItem
-                        {
-                            Success = false,
-                            Error = new NodeError
-                            {
-                                Code = ex.GetType().Name,
-                                Message = ex.Message,
-                                NodeDefinitionId = node.Id,
-                                StackTrace = ex.StackTrace
-                            }
-                        }
-                    ]
-                }
+                Error = error,
+                Output = new DataBatch { Items = [new DataItem { Success = false, Error = error }] }
             };
         }
+    }
+
+    private static NodeExecutionRecord BuildNodeExecutionRecord(
+        Guid nodeDefinitionId,
+        int runIndex,
+        IReadOnlyDictionary<string, DataBatch> inputs,
+        NodeExecutionResult output,
+        NodeExecutionContext context)
+    {
+        return new NodeExecutionRecord
+        {
+            Id = context.NodeExecutionRecordId,
+            NodeDefinitionId = nodeDefinitionId,
+            RunIndex = runIndex,
+            StartedAt = DateTime.UtcNow,
+            CompletedAt = DateTime.UtcNow,
+            Inputs = inputs.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
+            Output = output,
+            RawParameters = context.RawParameters.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
+            ResolvedParameters = context.ResolvedParameters.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase)
+        };
     }
 
     private static DataBatch CreateDataBatch(object? payload)
@@ -322,5 +401,117 @@ public sealed class WorkflowDryRunService(
         {
             Items = [new DataItem { Data = data, Success = true, SourceIndex = 0 }]
         };
+    }
+
+    private static ExecutionDto MapToDto(ExecutionRecord record)
+    {
+        return new ExecutionDto
+        {
+            Id = record.Id,
+            WorkflowDefinitionId = record.WorkflowDefinitionId,
+            Status = record.Status.ToString(),
+            StartedAt = record.StartedAt,
+            CompletedAt = record.CompletedAt,
+            NodeRecords = record.NodeRecords.Select(MapToNodeRecord).ToList()
+        };
+    }
+
+    private static NodeExecutionRecordDto MapToNodeRecord(NodeExecutionRecord node)
+    {
+        return new NodeExecutionRecordDto
+        {
+            Id = node.Id,
+            NodeDefinitionId = node.NodeDefinitionId,
+            RunIndex = node.RunIndex,
+            Status = node.Output.Success ? "Completed" : "Failed",
+            StartedAt = node.StartedAt ?? default,
+            CompletedAt = node.CompletedAt,
+            Inputs = SerializeInputs(node.Inputs),
+            Output = JsonSerializer.SerializeToNode(node.Output, JsonDefaults.Options),
+            RawParameters = SerializeToDictionary(node.RawParameters),
+            ResolvedParameters = SerializeToDictionary(node.ResolvedParameters)
+        };
+    }
+
+    private static Dictionary<string, object>? SerializeInputs(IReadOnlyDictionary<string, DataBatch>? inputs)
+    {
+        if (inputs is null || inputs.Count == 0)
+        {
+            return null;
+        }
+
+        var result = new Dictionary<string, object>(inputs.Count);
+        foreach (var (key, value) in inputs)
+        {
+            result[key] = JsonSerializer.SerializeToNode(value, JsonDefaults.Options) ?? string.Empty;
+        }
+
+        return result;
+    }
+
+    private static Dictionary<string, object>? SerializeToDictionary(IReadOnlyDictionary<string, object>? dict)
+    {
+        if (dict is null || dict.Count == 0)
+        {
+            return null;
+        }
+
+        var result = new Dictionary<string, object>(dict.Count);
+        foreach (var (key, value) in dict)
+        {
+            result[key] = value is string or int or long or double or float or decimal or bool or DateTime
+                ? value
+                : JsonSerializer.SerializeToNode(value, JsonDefaults.Options) ?? string.Empty;
+        }
+
+        return result;
+    }
+
+    private sealed class DryRunWaitingArea
+    {
+        private readonly Dictionary<Guid, Dictionary<string, DataBatch>> _pending = new();
+
+        public void Store(Guid nodeId, Dictionary<string, DataBatch> inputs)
+        {
+            _pending[nodeId] = new Dictionary<string, DataBatch>(inputs, StringComparer.OrdinalIgnoreCase);
+        }
+
+        public Dictionary<string, DataBatch> Take(Guid nodeId)
+        {
+            if (!_pending.TryGetValue(nodeId, out var pending))
+            {
+                return [];
+            }
+
+            _pending.Remove(nodeId);
+            return pending;
+        }
+    }
+
+    private sealed class TemporaryCredentialAccessor : ICredentialAccessor
+    {
+        private readonly IReadOnlyDictionary<string, CredentialValue> _credentials;
+
+        public TemporaryCredentialAccessor(IReadOnlyDictionary<string, CredentialValue> credentials)
+        {
+            _credentials = credentials;
+        }
+
+        public Task<CredentialValue> GetCredentialAsync(Guid credentialId, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(new CredentialValue
+            {
+                Name = string.Empty,
+                Type = string.Empty,
+                Fields = new Dictionary<string, string> { ["__error"] = $"凭据 {credentialId} 不存在" },
+                BinaryFields = []
+            });
+        }
+
+        public Task<CredentialValue?> GetCredentialByNameAsync(string name, CancellationToken cancellationToken = default)
+        {
+            _credentials.TryGetValue(name, out var value);
+            return Task.FromResult(value);
+        }
     }
 }

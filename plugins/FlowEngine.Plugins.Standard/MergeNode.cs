@@ -8,7 +8,7 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// 合并节点，将多个输入分支的数据合并为一个输出。
 /// </summary>
-public sealed class MergeNode : INodeType, ISupportsDryRun
+public sealed class MergeNode : INodeType
 {
     /// <inheritdoc />
     public string TypeName => "merge";

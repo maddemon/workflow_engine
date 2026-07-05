@@ -102,20 +102,21 @@ public class WorkflowsController(
     /// </summary>
     [HttpPost("dry-run")]
     [Authorize]
-    public async Task<ActionResult<DryRunWorkflowResponseDto>> DryRun(
+    public async Task<ActionResult<ExecutionDto>> DryRun(
         [FromBody] DryRunWorkflowRequestDto request,
         CancellationToken cancellationToken)
     {
-        var result = await dryRunService.DryRunAsync(
-            request.WorkflowId,
-            request.Input,
-            cancellationToken).ConfigureAwait(false);
-
-        if (result is null)
+        if (request.Nodes is null || request.Nodes.Count == 0)
         {
-            return NotFound();
+            return BadRequest(new { error = "BadRequest", message = "Nodes 不能为空。" });
         }
 
+        if (request.Connections is null)
+        {
+            return BadRequest(new { error = "BadRequest", message = "Connections 不能为空。" });
+        }
+
+        var result = await dryRunService.DryRunAsync(request, cancellationToken).ConfigureAwait(false);
         return Ok(result);
     }
 

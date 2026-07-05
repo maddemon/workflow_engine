@@ -39,7 +39,8 @@ public sealed class NodeExecutionContextFactory(
         IReadOnlyDictionary<string, DataBatch> successfulOutputs,
         IReadOnlyDictionary<string, DataBatch> latestBatches,
         int runIndex,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        ICredentialAccessor? credentialAccessorOverride = null)
     {
         var nodeDefinition = node;
         var descriptor = registry.GetDescriptor(node.TypeName);
@@ -71,7 +72,10 @@ public sealed class NodeExecutionContextFactory(
 
         var resolvedParameters = parameterResolver.Resolve(rawParameters, js, cacheKey);
 
-        await ParameterHydrator.HydrateAsync(nodeInstance, resolvedParameters).ConfigureAwait(false);
+        var hydrator = credentialAccessorOverride is null
+            ? ParameterHydrator
+            : new ParameterHydrator(credentialAccessorOverride, hydratorLogger);
+        await hydrator.HydrateAsync(nodeInstance, resolvedParameters).ConfigureAwait(false);
 
         return new NodeExecutionContext
         {
