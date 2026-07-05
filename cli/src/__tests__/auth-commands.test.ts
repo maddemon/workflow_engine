@@ -3,7 +3,7 @@ import axios, { type AxiosInstance } from 'axios';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { login, logout, profile } from '../commands/auth.js';
+import { login, logout, me, profile } from '../commands/auth.js';
 import { getConfig, getProfile, setProfile, type ConfigOptions } from '../config.js';
 import { CLIError, ErrorCode, ExitCode } from '../errors.js';
 import { setOutputOptions } from '../output.js';
@@ -255,6 +255,77 @@ describe('commands/auth', () => {
     expect(parsed.authType).toBe('apiKey');
     expect(parsed.apiKeyPrefix).toContain('****');
     expect(parsed.apiKey).toBeUndefined();
+    spy.mockRestore();
+  });
+
+  it('me - fetches current user in human mode', async () => {
+    setProfile(
+      'dev',
+      {
+        baseUrl: 'http://dev.example.com',
+        token: 'jwt-token',
+        userId: 'user-1',
+        email: 'a@example.com',
+      },
+      options,
+    );
+
+    mockInstance.get.mockResolvedValue({
+      data: {
+        id: 'user-1',
+        email: 'a@example.com',
+        userName: 'alice',
+        displayName: 'Alice',
+        isActive: true,
+        createdAt: '2024-01-01T00:00:00Z',
+        updatedAt: '2025-01-01T00:00:00Z',
+      },
+    });
+
+    setOutputOptions({ json: false, verbose: false });
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await me({ profile: 'dev', configOptions: options });
+
+    expect(mockInstance.get).toHaveBeenCalledWith('/auth/me');
+    const output = spy.mock.calls.map((call) => call[0]).join('\n');
+    expect(output).toContain('user-1');
+    expect(output).toContain('a@example.com');
+    expect(output).toContain('Alice');
+    spy.mockRestore();
+  });
+
+  it('me - outputs JSON in json mode', async () => {
+    setProfile(
+      'dev',
+      {
+        baseUrl: 'http://dev.example.com',
+        token: 'jwt-token',
+        userId: 'user-1',
+        email: 'a@example.com',
+      },
+      options,
+    );
+
+    mockInstance.get.mockResolvedValue({
+      data: {
+        id: 'user-1',
+        email: 'a@example.com',
+        userName: 'alice',
+        isActive: true,
+        createdAt: '2024-01-01T00:00:00Z',
+      },
+    });
+
+    setOutputOptions({ json: true, verbose: false });
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+    await me({ profile: 'dev', configOptions: options });
+
+    const parsed = JSON.parse(spy.mock.calls[0][0] as string);
+    expect(parsed.id).toBe('user-1');
+    expect(parsed.email).toBe('a@example.com');
+    expect(parsed.userName).toBe('alice');
     spy.mockRestore();
   });
 });

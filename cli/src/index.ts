@@ -3,7 +3,12 @@ import { Command } from 'commander';
 import pkg from '../package.json' with { type: 'json' };
 import { CLIError, ErrorCode, ExitCode } from './errors.js';
 import { error, isJsonMode, log, setOutputOptions, writeJson } from './output.js';
-import { login, logout, profile } from './commands/auth.js';
+import { login, logout, me, profile } from './commands/auth.js';
+import {
+  apiKeyCreate,
+  apiKeyList,
+  apiKeyRevoke,
+} from './commands/api-keys.js';
 import {
   execute,
   executionCancel,
@@ -243,12 +248,54 @@ program
 program
   .command('me')
   .description('获取当前用户信息')
-  .action(placeholderAction('me'));
+  .action(async function () {
+    const command = this;
+    const opts = command.optsWithGlobals<{ profile?: string }>();
+    await me({ profile: opts.profile });
+  });
+
+const apiKeysCreateCmd = new Command('create')
+  .description('创建 API Key')
+  .requiredOption('--name <name>', 'API Key 名称')
+  .option('--expires-at <date>', '过期时间（ISO 8601）')
+  .action(async function () {
+    const command = this;
+    const opts = command.optsWithGlobals<{
+      name?: string;
+      expiresAt?: string;
+      profile?: string;
+    }>();
+    await apiKeyCreate({
+      name: opts.name!,
+      expiresAt: opts.expiresAt,
+      profile: opts.profile,
+    });
+  });
+
+const apiKeysListCmd = new Command('list')
+  .description('列出 API Key')
+  .action(async function () {
+    const command = this;
+    const opts = command.optsWithGlobals<{ profile?: string }>();
+    await apiKeyList({ profile: opts.profile });
+  });
+
+const apiKeysRevokeCmd = new Command('revoke')
+  .description('吊销 API Key')
+  .argument('<id>', 'API Key ID')
+  .option('--confirm', '确认吊销')
+  .action(async function (id: string) {
+    const command = this;
+    const opts = command.optsWithGlobals<{ confirm?: boolean; profile?: string }>();
+    await apiKeyRevoke({ id, confirm: opts.confirm, profile: opts.profile });
+  });
 
 program
   .command('api-keys')
   .description('管理 API Key')
-  .action(placeholderAction('api-keys'));
+  .addCommand(apiKeysCreateCmd)
+  .addCommand(apiKeysListCmd)
+  .addCommand(apiKeysRevokeCmd);
 
 program
   .command('execute <workflow-id>')

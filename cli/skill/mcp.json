@@ -1,0 +1,85 @@
+{
+  "name": "flowengine",
+  "description": "Flow Engine AI Agent CLI MCP server skill schema。",
+  "tools": [
+    {
+      "name": "login",
+      "description": "使用邮箱密码或 API Key 登录并保存 profile。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "url": { "type": "string", "description": "后端地址" },
+          "email": { "type": "string", "description": "邮箱" },
+          "password": { "type": "string", "description": "密码" },
+          "apiKey": { "type": "string", "description": "API Key" }
+        }
+      }
+    },
+    {
+      "name": "me",
+      "description": "获取当前登录用户信息。",
+      "inputSchema": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "api_keys_create",
+      "description": "创建新的 API Key。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string", "description": "API Key 名称" },
+          "expiresAt": { "type": "string", "description": "过期时间 ISO 8601" }
+        },
+        "required": ["name"]
+      }
+    },
+    {
+      "name": "list_node_types",
+      "description": "列出当前后端支持的节点类型。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "category": { "type": "string", "description": "按分类过滤" }
+        }
+      }
+    },
+    {
+      "name": "get_node_type",
+      "description": "获取单个节点类型的详细 schema。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "typeName": { "type": "string", "description": "节点类型名称" }
+        },
+        "required": ["typeName"]
+      }
+    },
+    {
+      "name": "list_projects",
+      "description": "列出项目。",
+      "inputSchema": { "type": "object", "properties": {} }
+    },
+    {
+      "name": "get_project",
+      "description": "获取项目详情。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "description": "项目 ID" }
+        },
+        "required": ["id"]
+      }
+    },
+    {
+      "name": "test_workflow",
+      "description": "使用 Dry-Run 测试工作流 DSL。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "file": { "type": "string", "description": "DSL JSON 文件路径" },
+          "credentials": { "type": "object", "description": "临时凭据" }
+        },
+        "required": ["file"]
+      }
+    }
+  ]
+}

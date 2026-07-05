@@ -52,7 +52,11 @@ interface CliCommandReference {
 const cliCommands: CliCommandReference[] = [
   { command: 'login [--url <url>] [--email <email>] [--password <password>] [--api-key <key>]', description: '登录并保存认证信息' },
   { command: 'logout', description: '登出当前会话' },
+  { command: 'me', description: '获取当前用户信息' },
   { command: 'profile', description: '显示当前 profile 认证信息' },
+  { command: 'api-keys create --name <name> [--expires-at <date>]', description: '创建 API Key' },
+  { command: 'api-keys list', description: '列出 API Key' },
+  { command: 'api-keys revoke <id> --confirm', description: '吊销 API Key' },
   { command: 'config get', description: '获取当前配置' },
   { command: 'config set <key> <value>', description: '设置配置项（baseUrl、email）' },
   { command: 'config use-profile <name>', description: '切换默认 profile' },

@@ -270,6 +270,45 @@ function maskCredential(value: string | undefined): string | undefined {
   return `${value.slice(0, visibleLength)}****`;
 }
 
+export async function me(options: ProfileOptions): Promise<void> {
+  const config = getConfig(options.profile, options.configOptions);
+  const client = createClient({
+    baseURL: `${config.baseUrl}/api/v1`,
+    token: config.token,
+    apiKey: config.apiKey,
+  });
+
+  const response = await client.get<UserDto>('/auth/me');
+  const user = response.data;
+
+  const output = {
+    id: user.id,
+    email: user.email,
+    userName: user.userName,
+    displayName: user.displayName,
+    isActive: user.isActive,
+    createdAt: user.createdAt,
+    updatedAt: user.updatedAt,
+  };
+
+  if (isJsonMode()) {
+    writeJson(output);
+    return;
+  }
+
+  log(`User ID: ${user.id}`);
+  log(`Email: ${user.email}`);
+  log(`User Name: ${user.userName}`);
+  if (user.displayName) {
+    log(`Display Name: ${user.displayName}`);
+  }
+  log(`Active: ${user.isActive}`);
+  log(`Created At: ${user.createdAt}`);
+  if (user.updatedAt) {
+    log(`Updated At: ${user.updatedAt}`);
+  }
+}
+
 export async function profile(options: ProfileOptions): Promise<void> {
   const config = getConfig(options.profile, options.configOptions);
   const authType = config.apiKey ? 'apiKey' : config.token ? 'jwt' : 'none';

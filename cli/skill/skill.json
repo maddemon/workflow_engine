@@ -1,0 +1,32 @@
+{
+  "name": "Flow Engine AI Agent CLI Skill",
+  "version": "0.1.0",
+  "description": "Flow Engine AI Agent CLI 静态 Skill 模板，包含常用命令参考与 DSL 编写要点。",
+  "cliCommands": [
+    { "command": "login [--url <url>] [--email <email>] [--password <password>] [--api-key <key>]", "description": "登录并保存认证信息" },
+    { "command": "logout", "description": "登出当前会话" },
+    { "command": "me", "description": "获取当前用户信息" },
+    { "command": "profile", "description": "显示当前 profile 认证信息" },
+    { "command": "api-keys create --name <name> [--expires-at <date>]", "description": "创建 API Key" },
+    { "command": "api-keys list", "description": "列出 API Key" },
+    { "command": "api-keys revoke <id> --confirm", "description": "吊销 API Key" },
+    { "command": "config get", "description": "获取当前配置" },
+    { "command": "config set <key> <value>", "description": "设置配置项" },
+    { "command": "config use-profile <name>", "description": "切换默认 profile" },
+    { "command": "node-types list [--category <category>]", "description": "列出节点类型" },
+    { "command": "node-types get <typeName>", "description": "查看单个节点类型详情" },
+    { "command": "project list", "description": "列出项目" },
+    { "command": "project get <id>", "description": "查看项目详情" },
+    { "command": "credential create --name <name> --type <type> --fields <json>", "description": "创建凭据" },
+    { "command": "workflow create --file <file> [--project-id <id>] [--dry-run]", "description": "创建工作流" },
+    { "command": "execute <workflow-id> [--wait] [--input <json>]", "description": "执行工作流" },
+    { "command": "execution list [--project-id <id>]", "description": "列出执行记录" },
+    { "command": "test --file <file> [--credentials <json>]", "description": "Dry-Run 测试工作流 DSL" }
+  ],
+  "dslNotes": [
+    "顶层字段：Name、ProjectId、Nodes、Connections、StyleSettings。",
+    "每个节点必须有 Id、TypeName、Name、Parameters。",
+    "连接必须匹配端口的 Input/Output 方向。",
+    "Credential 类型参数需要传入凭据 Guid。"
+  ]
+}
