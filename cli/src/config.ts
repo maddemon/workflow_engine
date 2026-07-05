@@ -41,7 +41,7 @@ export function getConfigPath(options?: ConfigOptions): string {
 function ensureConfigDir(options?: ConfigOptions): void {
   const dir = getConfigDir(options);
   if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
+    mkdirSync(dir, { recursive: true, mode: 0o700 });
   }
 }
 
@@ -170,7 +170,7 @@ export function getConfig(
   options?: ConfigOptions,
 ): ResolvedConfig {
   const config = readConfigFile(options);
-  const targetProfile = profileName ?? config.defaultProfile;
+  const targetProfile = profileName && profileName.length > 0 ? profileName : config.defaultProfile;
   const defaultProfile = config.profiles[config.defaultProfile] ?? {};
   const currentProfile = config.profiles[targetProfile] ?? {};
 

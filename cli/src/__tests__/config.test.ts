@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import {
@@ -11,8 +11,8 @@ import {
   setDefaultProfile,
   setProfile,
   type ConfigOptions,
-} from '../config.ts';
-import { CLIError, ErrorCode } from '../errors.ts';
+} from '../config.js';
+import { CLIError, ErrorCode } from '../errors.js';
 
 describe('config', () => {
   let tempDir: string;
@@ -43,6 +43,26 @@ describe('config', () => {
     const config = getConfig(undefined, options);
     expect(config.baseUrl).toBe(DEFAULT_BASE_URL);
     expect(config.profile).toBe('default');
+  });
+
+  it('getConfig - falls back to default profile for empty string profile name', () => {
+    setProfile('default', { baseUrl: 'http://default.example.com' }, options);
+    const config = getConfig('', options);
+    expect(config.profile).toBe('default');
+    expect(config.baseUrl).toBe('http://default.example.com');
+  });
+
+  it('writeConfigFile - creates config directory and file with restricted permissions', () => {
+    setProfile('default', { baseUrl: 'http://example.com' }, options);
+
+    const dirStat = statSync(options.configDir!);
+    const fileStat = statSync(getConfigPath(options));
+
+    // Windows does not enforce POSIX permission bits; only assert on non-Windows.
+    if (process.platform !== 'win32') {
+      expect(dirStat.mode & 0o777).toBe(0o700);
+      expect(fileStat.mode & 0o777).toBe(0o600);
+    }
   });
 
   it('setProfile and getProfile - persist and read profile values', () => {

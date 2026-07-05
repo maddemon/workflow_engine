@@ -5,8 +5,8 @@ import axios, {
   type AxiosInstance,
   type InternalAxiosRequestConfig,
 } from 'axios';
-import { createClient, maskSecrets } from '../api/client.ts';
-import { CLIError, ErrorCode, ExitCode } from '../errors.ts';
+import { createClient, maskSecrets } from '../api/client.js';
+import { CLIError, ErrorCode, ExitCode } from '../errors.js';
 
 vi.mock('axios', async (importOriginal) => {
   const actual = await importOriginal<typeof import('axios')>();
@@ -188,7 +188,7 @@ describe('api/client', () => {
       string,
       unknown
     >;
-    expect(masked.Authorization).toBe('Bearer ***oken');
+    expect(masked.Authorization).toBe('Bearer ***');
   });
 
   it('maskSecrets - masks token, password and credential fields', () => {
@@ -202,10 +202,26 @@ describe('api/client', () => {
       public: 'keep-me',
     }) as Record<string, unknown>;
 
-    expect(masked.token).toBe('***oken');
-    expect(masked.password).toBe('***word');
-    expect((masked.fields as Record<string, unknown>).apiKey).toBe('***-key');
-    expect((masked.fields as Record<string, unknown>).secret).toBe('***cret');
+    expect(masked.token).toBe('***');
+    expect(masked.password).toBe('***');
+    expect((masked.fields as Record<string, unknown>).apiKey).toBe('***');
+    expect((masked.fields as Record<string, unknown>).secret).toBe('***');
     expect(masked.public).toBe('keep-me');
+  });
+
+  it('maskSecrets - does not mask non-sensitive fields', () => {
+    const masked = maskSecrets({
+      name: 'workflow-name',
+      key: 'plain-key-name',
+      fields: {
+        label: 'visible',
+        secret: 'hidden',
+      },
+    }) as Record<string, unknown>;
+
+    expect(masked.name).toBe('workflow-name');
+    expect(masked.key).toBe('plain-key-name');
+    expect((masked.fields as Record<string, unknown>).label).toBe('visible');
+    expect((masked.fields as Record<string, unknown>).secret).toBe('***');
   });
 });

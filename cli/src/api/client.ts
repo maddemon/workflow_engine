@@ -37,10 +37,17 @@ const SENSITIVE_KEYS = new Set([
   'apikey',
   'api-key',
   'api_key',
-  'key',
-  'secret',
   'password',
-  'fields',
+  'secret',
+  'privatekey',
+  'private-key',
+  'private_key',
+  'accesstoken',
+  'access-token',
+  'access_token',
+  'refreshtoken',
+  'refresh-token',
+  'refresh_token',
 ]);
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -52,7 +59,7 @@ function isSensitiveKey(key: string): boolean {
 }
 
 function maskString(value: string): string {
-  return value.length > 4 ? `***${value.slice(-4)}` : '***';
+  return '***';
 }
 
 function maskAuthorization(value: string): string {
