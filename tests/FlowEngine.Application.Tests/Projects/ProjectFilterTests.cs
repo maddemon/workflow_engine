@@ -232,7 +232,7 @@ public sealed class ProjectFilterTests : IDisposable
         public bool IsAuthenticated => true;
         public Guid? UserId => Guid.NewGuid();
         public string? Email => "test@test.com";
-        public IReadOnlyList<string> Roles => ["Admin"];
+        public IReadOnlyList<string> Roles => [RoleConstants.Admin];
     }
 
     private sealed class InMemoryEventBus : IEventBus
