@@ -1,6 +1,9 @@
+using FlowEngine.Application.Audit;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Files;
+using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
+using FlowEngine.Core.Events;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -12,7 +15,10 @@ namespace FlowEngine.Host.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/v1/files")]
-public class FilesController(FileService fileService) : ControllerBase
+public class FilesController(
+    FileService fileService,
+    IEventBus eventBus,
+    AuditEventFactory auditFactory) : ControllerBase
 {
     /// <summary>
     /// 上传文件。
@@ -43,6 +49,18 @@ public class FilesController(FileService fileService) : ControllerBase
         }
         catch (UnauthorizedAccessException ex)
         {
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.FileAccessDenied,
+                "File",
+                Guid.Empty,
+                new Dictionary<string, object>
+                {
+                    ["operation"] = Operation.Write.ToString(),
+                    ["projectId"] = projectId,
+                    ["reason"] = ex.Message,
+                }),
+                cancellationToken).ConfigureAwait(false);
+
             return Problem(ex.Message, statusCode: StatusCodes.Status403Forbidden);
         }
         catch (InvalidOperationException ex)

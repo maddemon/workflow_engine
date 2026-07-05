@@ -80,11 +80,16 @@ public sealed class SubAgentToolNode : INodeType
         var messages = BuildMessages(context);
         var maxIterations = ResolveMaxIterations(context);
 
+        var parentRecordId = context.NodeExecutionRecordId != Guid.Empty
+            ? context.NodeExecutionRecordId
+            : context.ExecutionId;
+
         var resolver = new Runtime.Agent.InlineResolver(
             llmClient,
             tools,
             context,
-            maxIterations);
+            maxIterations,
+            parentRecordId: parentRecordId);
 
         var result = await resolver.RunAsync(messages, cancellationToken).ConfigureAwait(false);
 

@@ -1,4 +1,4 @@
-namespace FlowEngine.Application.Dtos;
+namespace FlowEngine.Core.Dtos;
 
 /// <summary>
 /// Agent 执行信息 DTO，与前端 AgentExecutionInfo 类型对齐（GAP-25）。
@@ -147,12 +147,12 @@ public sealed record AgentIterationDto
     /// <summary>
     /// 开始时间（ISO 8601 字符串）。
     /// </summary>
-    public DateTime? StartedAt { get; init; }
+    public string? StartedAt { get; init; }
 
     /// <summary>
     /// 完成时间（ISO 8601 字符串）。
     /// </summary>
-    public DateTime? CompletedAt { get; init; }
+    public string? CompletedAt { get; init; }
 }
 
 /// <summary>

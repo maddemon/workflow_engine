@@ -1,11 +1,13 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
+using FlowEngine.Application.Audit;
 using FlowEngine.Application.Triggers;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Events;
 using FlowEngine.Core.ValueObjects;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
@@ -23,7 +25,9 @@ public sealed class PollTriggerJob(
     INodeRegistry nodeRegistry,
     IMemoryCache cache,
     IExecutionIdempotencyService idempotencyService,
-    ILogger<PollTriggerJob> logger) : IJob
+    ILogger<PollTriggerJob> logger,
+    IEventBus eventBus,
+    AuditEventFactory auditFactory) : IJob
 {
     /// <summary>
     /// JobDataMap 中触发器 ID 的键。
@@ -111,6 +115,19 @@ public sealed class PollTriggerJob(
                 if (PollDeduplication.ShouldProcess(item, settings.DedupStrategy, settings.LastPollId, settings.LastPollTime))
                 {
                     newItems.Add(item);
+                }
+                else
+                {
+                    await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                        AuditEventTypes.PollSkipped,
+                        "Trigger",
+                        trigger.Id,
+                        new Dictionary<string, object>
+                        {
+                            ["reason"] = "deduplication",
+                            ["lastPollId"] = settings.LastPollId ?? string.Empty,
+                        }),
+                        context.CancellationToken).ConfigureAwait(false);
                 }
             }
 

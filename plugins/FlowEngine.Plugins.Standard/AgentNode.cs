@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Dtos;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Runtime.Agent;
@@ -116,7 +117,7 @@ public sealed class AgentNode : INodeType
             switch (result.StoppedReason)
             {
                 case InlineResolverStopReason.Completed:
-                    return CreateSuccessResult(result.Content, context);
+                    return CreateSuccessResult(result, context);
 
                 case InlineResolverStopReason.MaxIterationsReached:
                     return CreateTimeoutResult($"Maximum iterations ({maxIterations}) reached.", context);
@@ -134,7 +135,7 @@ public sealed class AgentNode : INodeType
         }
         catch (Exception ex)
         {
-            return context.ErrorResult("LlmError", $"LLM call failed: {ex.Message}");
+            return CreateLlmErrorResult($"LLM call failed: {ex.Message}", context);
         }
     }
 
@@ -250,8 +251,25 @@ public sealed class AgentNode : INodeType
         return firstItem.Data.ToJsonString();
     }
 
-    private static NodeExecutionResult CreateSuccessResult(string content, NodeExecutionContext context)
+    private static NodeExecutionResult CreateSuccessResult(InlineResolverResult result, NodeExecutionContext context)
     {
+        var dto = new AgentExecutionResultDto
+        {
+            AgentInfo = new AgentExecutionInfoDto
+            {
+                Model = context.LlmClient?.GetType().Name ?? "unknown",
+                IterationCount = result.Iterations.Count,
+                Status = "Completed",
+                StartedAt = null,
+                CompletedAt = DateTime.UtcNow,
+                ErrorMessage = null,
+                TokenUsage = null,
+            },
+            Iterations = result.Iterations,
+            SubRecords = new List<SubRecordDto>(),
+            SystemPrompt = null,
+        };
+
         return new NodeExecutionResult
         {
             Success = true,
@@ -261,9 +279,9 @@ public sealed class AgentNode : INodeType
                 [
                     new DataItem
                     {
-                        Data = content,
+                        Data = JsonSerializer.SerializeToNode(dto, JsonDefaults.Options),
                         Success = true,
-                        SourceIndex = 0
+                        SourceIndex = 0,
                     }
                 ]
             }
@@ -272,14 +290,53 @@ public sealed class AgentNode : INodeType
 
     private static NodeExecutionResult CreateTimeoutResult(string message, NodeExecutionContext context)
     {
+        return CreateAgentFailedResult("Cancelled", "AgentTimeout", message, context);
+    }
+
+    private static NodeExecutionResult CreateLlmErrorResult(string message, NodeExecutionContext context)
+    {
+        return CreateAgentFailedResult("Failed", "LlmError", message, context);
+    }
+
+    private static NodeExecutionResult CreateAgentFailedResult(string status, string code, string message, NodeExecutionContext context)
+    {
+        var dto = new AgentExecutionResultDto
+        {
+            AgentInfo = new AgentExecutionInfoDto
+            {
+                Model = context.LlmClient?.GetType().Name ?? "unknown",
+                IterationCount = 0,
+                Status = status,
+                StartedAt = null,
+                CompletedAt = DateTime.UtcNow,
+                ErrorMessage = message,
+                TokenUsage = null,
+            },
+            Iterations = [],
+            SubRecords = [],
+            SystemPrompt = null,
+        };
+
         return new NodeExecutionResult
         {
             Success = false,
             Error = new NodeError
             {
-                Code = "AgentTimeout",
+                Code = code,
                 Message = message,
                 NodeDefinitionId = context.Node.Id
+            },
+            Output = new DataBatch
+            {
+                Items =
+                [
+                    new DataItem
+                    {
+                        Data = JsonSerializer.SerializeToNode(dto, JsonDefaults.Options),
+                        Success = false,
+                        SourceIndex = 0,
+                    }
+                ]
             }
         };
     }

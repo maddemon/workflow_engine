@@ -61,6 +61,7 @@ public static class ServiceCollectionExtensions
 
         // ── Rate Limiting ───────────────────────────────────────────
         services.Configure<RateLimitOptions>(configuration.GetSection(RateLimitOptions.SectionName));
+        services.AddTransient<RateLimitMiddleware>();
 
         // ── File Storage ───────────────────────────────────────────
         services.Configure<FlowEngine.Application.Files.FileStorageOptions>(
@@ -105,9 +106,6 @@ public static class ServiceCollectionExtensions
             FlowEngine.Application.Authorization.AuthorizationService>();
         services.AddScoped<FlowEngine.Application.Authorization.IResourceAuthorizationService,
             FlowEngine.Application.Authorization.ResourceAuthorizationService>();
-        services.AddScoped<FlowEngine.Application.Authorization.IProjectContext,
-            FlowEngine.Application.Authorization.ProjectContext>();
-
         // ── Identity ────────────────────────────────────────────────
         services.AddScoped<IPasswordHasher, PasswordHasher>();
         services.AddScoped<IPasswordValidator, PasswordValidator>();
@@ -250,6 +248,16 @@ public static class ServiceCollectionExtensions
 
                 options.Events = new JwtBearerEvents
                 {
+                    OnMessageReceived = context =>
+                    {
+                        var accessToken = context.Request.Query["access_token"];
+                        if (!string.IsNullOrEmpty(accessToken))
+                        {
+                            context.Token = accessToken;
+                        }
+
+                        return Task.CompletedTask;
+                    },
                     OnTokenValidated = async context =>
                     {
                         var blacklist = context.HttpContext.RequestServices.GetRequiredService<ITokenBlacklist>();

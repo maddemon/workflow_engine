@@ -30,6 +30,7 @@ export function useWebSocketExecution() {
   const [lastSequence, setLastSequence] = useState(0);
   const lastSequenceRef = useRef(0);
   const wsRef = useRef<WebSocket | null>(null);
+  const eventSourceRef = useRef<EventSource | null>(null);
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const subscribedExecutionsRef = useRef<Set<string>>(new Set());
   const reconnectAttemptsRef = useRef(0);
@@ -41,6 +42,12 @@ export function useWebSocketExecution() {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
     return `${protocol}//${host}/ws/execution`;
+  }, []);
+
+  const getSseUrl = useCallback((executionId: string) => {
+    const token = localStorage.getItem('auth_token');
+    const baseUrl = `/api/v1/executions/${executionId}/stream`;
+    return token ? `${baseUrl}?access_token=${encodeURIComponent(token)}` : baseUrl;
   }, []);
 
   const processMessage = useCallback((message: WebSocketPushMessage) => {
@@ -136,6 +143,33 @@ export function useWebSocketExecution() {
     }
   }, []);
 
+  const trySseFallback = useCallback((executionId: string) => {
+    eventSourceRef.current?.close();
+    eventSourceRef.current = null;
+
+    const eventSource = new EventSource(getSseUrl(executionId));
+    setStatus('connected');
+
+    eventSource.onmessage = (event) => {
+      try {
+        const message = JSON.parse(event.data) as WebSocketPushMessage;
+        lastSequenceRef.current = message.sequence;
+        setLastSequence(message.sequence);
+        processMessage(message);
+      } catch {
+        console.error('Failed to parse SSE message');
+      }
+    };
+
+    eventSource.onerror = () => {
+      setStatus('error');
+      eventSource.close();
+      eventSourceRef.current = null;
+    };
+
+    eventSourceRef.current = eventSource;
+  }, [getSseUrl, processMessage]);
+
   const doConnect = useCallback(() => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       return;
@@ -179,6 +213,9 @@ export function useWebSocketExecution() {
           reconnectAttemptsRef.current++;
           connectFnRef.current();
         }, reconnectInterval * Math.pow(2, reconnectAttemptsRef.current));
+      } else if (subscribedExecutionsRef.current.size > 0) {
+        const executionId = subscribedExecutionsRef.current.values().next().value as string;
+        trySseFallback(executionId);
       }
     };
 
@@ -187,7 +224,7 @@ export function useWebSocketExecution() {
     };
 
     wsRef.current = ws;
-  }, [getWebSocketUrl, processMessage]);
+  }, [getWebSocketUrl, trySseFallback]);
 
   useEffect(() => {
     connectFnRef.current = doConnect;
@@ -206,6 +243,11 @@ export function useWebSocketExecution() {
     if (wsRef.current) {
       wsRef.current.close();
       wsRef.current = null;
+    }
+
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
     }
 
     setStatus('disconnected');

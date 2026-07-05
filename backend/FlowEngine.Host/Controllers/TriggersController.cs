@@ -21,7 +21,8 @@ public class TriggersController(TriggerService triggerService) : ControllerBase
     [AuthorizePermission(Scope.Trigger, Operation.Read)]
     public async Task<ActionResult<IReadOnlyCollection<TriggerDto>>> GetTriggers(
         [FromQuery] Guid? workflowDefinitionId,
-        CancellationToken cancellationToken)
+        [FromQuery] Guid? projectId = null,
+        CancellationToken cancellationToken = default)
     {
         if (workflowDefinitionId is { } wfId)
         {
@@ -32,7 +33,7 @@ public class TriggersController(TriggerService triggerService) : ControllerBase
         }
 
         var all = await triggerService
-            .GetAllForUserAsync(cancellationToken)
+            .GetAllForUserAsync(projectId, cancellationToken)
             .ConfigureAwait(false);
         return Ok(all);
     }

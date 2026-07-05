@@ -1,11 +1,16 @@
 using System.Text.Json;
+using FlowEngine.Application.Audit;
+using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
-using FlowEngine.Application.Workflows;
+using FlowEngine.Application.Identity;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Events;
+using FlowEngine.Core.Exceptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Executions;
@@ -13,14 +18,14 @@ namespace FlowEngine.Application.Executions;
 /// <summary>
 /// 执行应用服务，编排工作流执行与查询。
 /// </summary>
-/// <remarks>
-/// 初始化执行应用服务。
-/// </remarks>
 public sealed class ExecutionService(
     IEngine engine,
     FlowEngineDbContext dbContext,
-    WorkflowService workflowService,
-    IExecutionIdempotencyService idempotencyService)
+    IExecutionIdempotencyService idempotencyService,
+    IUserContext userContext,
+    IResourceAuthorizationService resourceAuthorization,
+    IEventBus eventBus,
+    AuditEventFactory auditFactory)
 {
 
     /// <summary>
@@ -28,10 +33,31 @@ public sealed class ExecutionService(
     /// </summary>
     public async Task<ExecutionDto?> ExecuteAsync(Guid workflowId, string? idempotencyKey = null, CancellationToken cancellationToken = default)
     {
-        var workflow = await workflowService.GetAsync(workflowId, cancellationToken).ConfigureAwait(false);
+        var workflow = await dbContext.Workflows
+            .AsNoTracking()
+            .FirstOrDefaultAsync(w => w.Id == workflowId, cancellationToken)
+            .ConfigureAwait(false);
         if (workflow is null)
         {
             return null;
+        }
+
+        var userId = userContext.UserId;
+        if (userId is null)
+        {
+            throw new PermissionDeniedException("当前用户未认证。");
+        }
+
+        if (!await resourceAuthorization.CanAccessWorkflowAsync(userId.Value, workflowId, Operation.Execute, cancellationToken).ConfigureAwait(false))
+        {
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.PermissionDenied,
+                "Workflow",
+                workflowId,
+                new Dictionary<string, object> { ["operation"] = Operation.Execute.ToString(), ["reason"] = "role" }),
+                cancellationToken).ConfigureAwait(false);
+
+            throw new PermissionDeniedException("当前用户没有启动该工作流的权限。");
         }
 
         // 幂等检查：如果提供了幂等键，检查是否已存在
@@ -93,6 +119,24 @@ public sealed class ExecutionService(
     /// </summary>
     public async Task<ExecutionDto?> GetAsync(Guid executionId, CancellationToken cancellationToken = default)
     {
+        var userId = userContext.UserId;
+        if (userId is null)
+        {
+            throw new PermissionDeniedException("当前用户未认证。");
+        }
+
+        if (!await resourceAuthorization.CanAccessExecutionAsync(userId.Value, executionId, Operation.Read, cancellationToken).ConfigureAwait(false))
+        {
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.PermissionDenied,
+                "Execution",
+                executionId,
+                new Dictionary<string, object> { ["operation"] = Operation.Read.ToString(), ["reason"] = "role" }),
+                cancellationToken).ConfigureAwait(false);
+
+            throw new PermissionDeniedException("当前用户没有读取该执行记录的权限。");
+        }
+
         var record = await dbContext.ExecutionRecords
             .FirstOrDefaultAsync(e => e.Id == executionId, cancellationToken)
             .ConfigureAwait(false);
@@ -109,13 +153,22 @@ public sealed class ExecutionService(
     /// </summary>
     public async Task<IReadOnlyCollection<ExecutionSummaryDto>> GetByWorkflowAsync(
         Guid workflowId,
+        Guid? projectId = null,
         CancellationToken cancellationToken = default)
     {
-        var records = await dbContext.ExecutionRecords
-            .Where(e => e.WorkflowDefinitionId == workflowId)
+        var query = dbContext.ExecutionRecords
+            .Where(e => e.WorkflowDefinitionId == workflowId);
+
+        if (projectId.HasValue)
+        {
+            query = query.Where(e => e.ProjectId == projectId.Value);
+        }
+
+        var records = await query
             .OrderByDescending(e => e.StartedAt)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
+
         return records.Select(MapToSummary).ToList();
     }
 

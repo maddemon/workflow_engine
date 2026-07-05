@@ -56,9 +56,10 @@ public class ExecutionsController(ExecutionService executionService) : Controlle
     [AuthorizePermission(Scope.Execution, Operation.Read)]
     public async Task<ActionResult<IReadOnlyCollection<ExecutionSummaryDto>>> GetByWorkflow(
         Guid workflowId,
-        CancellationToken cancellationToken)
+        [FromQuery] Guid? projectId = null,
+        CancellationToken cancellationToken = default)
     {
-        var executions = await executionService.GetByWorkflowAsync(workflowId, cancellationToken)
+        var executions = await executionService.GetByWorkflowAsync(workflowId, projectId, cancellationToken)
             .ConfigureAwait(false);
         return Ok(executions);
     }

@@ -183,6 +183,13 @@ public sealed class WorkflowImportService(
             new Dictionary<string, object> { ["name"] = workflow.Name, ["imported"] = true }),
             cancellationToken).ConfigureAwait(false);
 
+        await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+            AuditEventTypes.ImportPerformed,
+            "Workflow",
+            workflow.Id,
+            new Dictionary<string, object> { ["importedBy"] = importedBy, ["name"] = workflow.Name }),
+            cancellationToken).ConfigureAwait(false);
+
         return new ImportResult
         {
             Success = true,

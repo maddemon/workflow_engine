@@ -1,10 +1,12 @@
 using FlowEngine.Application.Audit;
+using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
 using FlowEngine.Application.Triggers;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
@@ -22,7 +24,8 @@ public sealed class WorkflowService(
     IEventBus eventBus,
     AuditEventFactory auditFactory,
     TriggerService _triggerService,
-    IUserContext userContext)
+    IUserContext userContext,
+    IResourceAuthorizationService resourceAuthorization)
 {
     /// <summary>
     /// 创建工作流。允许 ProjectId = null 作为未分类工作流；ProjectId 仅用于分类，不做隔离校验。
@@ -62,6 +65,24 @@ public sealed class WorkflowService(
     /// </summary>
     public async Task<WorkflowDto?> GetAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        var userId = userContext.UserId;
+        if (userId is null)
+        {
+            throw new PermissionDeniedException("当前用户未认证。");
+        }
+
+        if (!await resourceAuthorization.CanAccessWorkflowAsync(userId.Value, id, Operation.Read, cancellationToken).ConfigureAwait(false))
+        {
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.PermissionDenied,
+                "Workflow",
+                id,
+                new Dictionary<string, object> { ["operation"] = Operation.Read.ToString(), ["reason"] = "role" }),
+                cancellationToken).ConfigureAwait(false);
+
+            throw new PermissionDeniedException("当前用户没有读取该工作流的权限。");
+        }
+
         var workflow = await dbContext.Workflows
             .FirstOrDefaultAsync(w => w.Id == id, cancellationToken)
             .ConfigureAwait(false);
@@ -80,6 +101,7 @@ public sealed class WorkflowService(
     /// <param name="pageSize">每页大小。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     public async Task<PagedResult<WorkflowSummaryDto>> GetAllAsync(
+        Guid? projectId = null,
         int page = 1,
         int pageSize = 20,
         CancellationToken cancellationToken = default)
@@ -88,6 +110,10 @@ public sealed class WorkflowService(
         pageSize = Math.Clamp(pageSize, 1, 200);
 
         var query = dbContext.Workflows.AsQueryable();
+        if (projectId.HasValue)
+        {
+            query = query.Where(w => w.ProjectId == projectId.Value);
+        }
 
         var totalCount = await query
             .CountAsync(cancellationToken)
@@ -158,6 +184,24 @@ public sealed class WorkflowService(
     {
         ArgumentNullException.ThrowIfNull(dto);
 
+        var userId = userContext.UserId;
+        if (userId is null)
+        {
+            throw new PermissionDeniedException("当前用户未认证。");
+        }
+
+        if (!await resourceAuthorization.CanAccessWorkflowAsync(userId.Value, id, Operation.Write, cancellationToken).ConfigureAwait(false))
+        {
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.PermissionDenied,
+                "Workflow",
+                id,
+                new Dictionary<string, object> { ["operation"] = Operation.Write.ToString(), ["reason"] = "role" }),
+                cancellationToken).ConfigureAwait(false);
+
+            throw new PermissionDeniedException("当前用户没有修改该工作流的权限。");
+        }
+
         var existing = await dbContext.Workflows
             .FirstOrDefaultAsync(w => w.Id == id, cancellationToken)
             .ConfigureAwait(false);
@@ -220,6 +264,24 @@ public sealed class WorkflowService(
     /// </summary>
     public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        var userId = userContext.UserId;
+        if (userId is null)
+        {
+            throw new PermissionDeniedException("当前用户未认证。");
+        }
+
+        if (!await resourceAuthorization.CanAccessWorkflowAsync(userId.Value, id, Operation.Delete, cancellationToken).ConfigureAwait(false))
+        {
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.PermissionDenied,
+                "Workflow",
+                id,
+                new Dictionary<string, object> { ["operation"] = Operation.Delete.ToString(), ["reason"] = "role" }),
+                cancellationToken).ConfigureAwait(false);
+
+            throw new PermissionDeniedException("当前用户没有删除该工作流的权限。");
+        }
+
         var existing = await dbContext.Workflows
             .FirstOrDefaultAsync(w => w.Id == id, cancellationToken)
             .ConfigureAwait(false);
@@ -307,6 +369,37 @@ public sealed class WorkflowService(
     private bool IsSystemAdmin()
     {
         return userContext.Roles.Contains(RoleConstants.Admin);
+    }
+
+    private static NodeDefinitionDto BuildNodeDto(NodeDefinition n, string id)
+    {
+        return new NodeDefinitionDto
+        {
+            Id = id,
+            TypeName = n.TypeName,
+            Name = n.Name,
+            Parameters = n.Parameters,
+            Ports = n.Ports,
+            PositionX = n.PositionX,
+            PositionY = n.PositionY,
+            IsEntry = n.IsEntry,
+            RetryPolicy = n.RetryPolicy,
+            ErrorStrategy = n.ErrorStrategy,
+            Timeout = n.Timeout,
+        };
+    }
+
+    private static ConnectionDto BuildConnectionDto(Connection c, string id, string sourceNodeId, string targetNodeId)
+    {
+        return new ConnectionDto
+        {
+            Id = id,
+            SourceNodeId = sourceNodeId,
+            SourcePortName = c.SourcePortName,
+            TargetNodeId = targetNodeId,
+            TargetPortName = c.TargetPortName,
+            Condition = c.Condition,
+        };
     }
 
     /// <summary>

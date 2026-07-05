@@ -256,8 +256,8 @@ public sealed class WorkflowImportExportTests
         return new WorkflowImportService(
             dbContext,
             registry,
-            new StubEventBus(),
-            new AuditEventFactory(new StubUserContext()));
+            new FakeEventBus(),
+            new AuditEventFactory(new FakeUserContext()));
     }
 
     private static NodeTypeDescriptor CreateDescriptor(
@@ -271,6 +271,30 @@ public sealed class WorkflowImportExportTests
             Category = "Test",
             Ports = ports ?? [],
         };
+    }
+
+    private sealed class FakeEventBus : IEventBus
+    {
+        public Task PublishAsync<TEvent>(TEvent eventInstance, CancellationToken cancellationToken = default)
+            where TEvent : IDomainEvent
+            => Task.CompletedTask;
+
+        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler)
+            where TEvent : IDomainEvent
+            => new FakeSubscription();
+    }
+
+    private sealed class FakeSubscription : IDisposable
+    {
+        public void Dispose() { }
+    }
+
+    private sealed class FakeUserContext : IUserContext
+    {
+        public bool IsAuthenticated => true;
+        public Guid? UserId { get; } = Guid.NewGuid();
+        public string? Email => "test@test.com";
+        public IReadOnlyList<string> Roles { get; } = [];
     }
 
     private sealed class StubNodeRegistry(IReadOnlyCollection<NodeTypeDescriptor> descriptors) : INodeRegistry

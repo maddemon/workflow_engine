@@ -101,8 +101,6 @@ public static class ApplicationBuilderExtensions
         app.UseMiddleware<SecurityHeadersMiddleware>();
         app.UseMiddleware<RateLimitMiddleware>();
         app.UseCors();
-        // 在认证之前注入项目上下文，使 IProjectContext.CurrentProjectId 在认证/授权阶段可用（GAP-12）
-        app.UseMiddleware<ProjectContextMiddleware>();
         app.UseAuthentication();
         app.UseMiddleware<CurrentUserMiddleware>();
         app.UseAuthorization();

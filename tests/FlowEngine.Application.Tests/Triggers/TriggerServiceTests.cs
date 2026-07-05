@@ -4,6 +4,7 @@ using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
 using FlowEngine.Application.Triggers;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -25,10 +26,11 @@ public class TriggerServiceTests : IDisposable
             .Options;
         _dbContext = new FlowEngineDbContext(options);
         _eventBus = new InMemoryEventBus();
-        var userContext = new FakeUserContext { Roles = ["Admin"] };
+        var userContext = new FakeUserContext { Roles = [RoleConstants.Admin] };
         var auditFactory = new AuditEventFactory(userContext);
         var scheduleManager = new FakeScheduleManager();
-        _service = new TriggerService(_dbContext, _eventBus, auditFactory, scheduleManager, userContext, new WebhookRouteService(_dbContext));
+        var resourceAuthorization = new StubResourceAuthorizationService();
+        _service = new TriggerService(_dbContext, _eventBus, auditFactory, scheduleManager, userContext, resourceAuthorization);
     }
 
     public void Dispose()
@@ -331,6 +333,23 @@ public class TriggerServiceTests : IDisposable
         public Task<DateTime?> GetNextFireTimeAsync(Guid triggerId, CancellationToken cancellationToken = default) => Task.FromResult<DateTime?>(null);
         public Task RegisterPollTriggerAsync(Guid triggerId, Guid workflowDefinitionId, int intervalSeconds, CancellationToken cancellationToken = default) => Task.CompletedTask;
         public Task UnregisterPollTriggerAsync(Guid triggerId, CancellationToken cancellationToken = default) => Task.CompletedTask;
+    }
+
+    private sealed class StubResourceAuthorizationService : IResourceAuthorizationService
+    {
+        public Task<bool> CanAccessWorkflowAsync(Guid userId, Guid workflowId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public Task<bool> CanAccessCredentialAsync(Guid userId, Guid credentialId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public Task<bool> CanAccessExecutionAsync(Guid userId, Guid executionId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public Task<bool> CanAccessTriggerAsync(Guid userId, Guid triggerId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public bool ShouldMaskCredentialValues(IReadOnlyList<string> roles) => false;
     }
 
 }

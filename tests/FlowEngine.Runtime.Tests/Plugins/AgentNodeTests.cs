@@ -1,5 +1,8 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
+using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Dtos;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Plugins.Standard;
@@ -633,6 +636,16 @@ public class AgentNodeTests
         if (data is JsonValue jsonValue && jsonValue.TryGetValue<string>(out var str))
         {
             return str;
+        }
+
+        var dto = JsonSerializer.Deserialize<AgentExecutionResultDto>(data.ToJsonString(), JsonDefaults.Options);
+        if (dto?.Iterations is { Count: > 0 } iterations)
+        {
+            var lastIteration = iterations[^1];
+            if (lastIteration.LlmChunks is { Count: > 0 } chunks)
+            {
+                return chunks[0].Content;
+            }
         }
 
         return data.ToJsonString();

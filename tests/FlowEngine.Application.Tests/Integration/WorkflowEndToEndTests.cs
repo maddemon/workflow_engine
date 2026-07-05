@@ -7,6 +7,7 @@ using FlowEngine.Application.Identity;
 using FlowEngine.Application.Triggers;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -38,11 +39,12 @@ public sealed class WorkflowEndToEndTests : IDisposable
         var userContext = new FakeUserContext();
         var auditFactory = new AuditEventFactory(userContext);
         var scheduleManager = new FakeScheduleManager();
-        var triggerService = new TriggerService(_dbContext, eventBus, auditFactory, scheduleManager, userContext, new WebhookRouteService(_dbContext));
+        var resourceAuthorization = new StubResourceAuthorizationService();
+        var triggerService = new TriggerService(_dbContext, eventBus, auditFactory, scheduleManager, userContext, resourceAuthorization);
         var validator = new WorkflowValidator(new EmptyRegistry());
-        _workflowService = new WorkflowService(_dbContext, validator, eventBus, auditFactory, triggerService, userContext);
+        _workflowService = new WorkflowService(_dbContext, validator, eventBus, auditFactory, triggerService, userContext, resourceAuthorization);
         _engine = new StubEngine(_dbContext);
-        _executionService = new ExecutionService(_engine, _dbContext, _workflowService, new StubIdempotencyService());
+        _executionService = new ExecutionService(_engine, _dbContext, new StubIdempotencyService(), userContext, resourceAuthorization, eventBus, auditFactory);
     }
 
     public void Dispose() => _dbContext.Dispose();
@@ -198,7 +200,7 @@ public sealed class WorkflowEndToEndTests : IDisposable
         var workflow = await _workflowService.CreateAsync(dto, ct);
         await _executionService.ExecuteAsync(workflow.Id, idempotencyKey: null, ct);
 
-        var executions = await _executionService.GetByWorkflowAsync(workflow.Id, ct);
+        var executions = await _executionService.GetByWorkflowAsync(workflow.Id, cancellationToken: ct);
 
         Assert.NotEmpty(executions);
         var summary = executions.First();
@@ -312,5 +314,22 @@ public sealed class WorkflowEndToEndTests : IDisposable
 
         public Task CleanupExpiredAsync(CancellationToken ct = default)
             => Task.CompletedTask;
+    }
+
+    private sealed class StubResourceAuthorizationService : IResourceAuthorizationService
+    {
+        public Task<bool> CanAccessWorkflowAsync(Guid userId, Guid workflowId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public Task<bool> CanAccessCredentialAsync(Guid userId, Guid credentialId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public Task<bool> CanAccessExecutionAsync(Guid userId, Guid executionId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public Task<bool> CanAccessTriggerAsync(Guid userId, Guid triggerId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public bool ShouldMaskCredentialValues(IReadOnlyList<string> roles) => false;
     }
 }

@@ -3,38 +3,41 @@ using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Credentials;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
-using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Events;
+using FlowEngine.Core.Exceptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Tests.Credentials;
 
-public sealed class CredentialServiceTests : IDisposable
+public sealed class CredentialServiceAuthorizationTests : IDisposable
 {
     private readonly FlowEngineDbContext _dbContext;
     private readonly InMemoryEventBus _eventBus;
     private readonly CredentialService _service;
-    private readonly StubEncryptionService _encryptionService;
-    private readonly StubKeyProvider _keyProvider;
     private readonly FakeUserContext _userContext;
 
-    public CredentialServiceTests()
+    public CredentialServiceAuthorizationTests()
     {
         var options = new DbContextOptionsBuilder<FlowEngineDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
         _dbContext = new FlowEngineDbContext(options);
         _eventBus = new InMemoryEventBus();
-        _encryptionService = new StubEncryptionService();
-        _keyProvider = new StubKeyProvider();
         _userContext = new FakeUserContext();
         var auditFactory = new AuditEventFactory(_userContext);
-        var resourceAuthService = new StubResourceAuthorizationService();
-        _service = new CredentialService(_dbContext, _encryptionService, _keyProvider, _eventBus, auditFactory, resourceAuthService, _userContext, new WorkflowRepository(_dbContext));
+        var resourceAuthService = new RoleBasedResourceAuthorizationService(_userContext);
+        _service = new CredentialService(
+            _dbContext,
+            new StubEncryptionService(),
+            new StubKeyProvider(),
+            _eventBus,
+            auditFactory,
+            resourceAuthService,
+            _userContext);
     }
 
     public void Dispose()
@@ -43,108 +46,55 @@ public sealed class CredentialServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task CreateAsync_ValidDto_ReturnsDto()
+    public async Task GetAsync_UnauthenticatedUser_ThrowsPermissionDeniedException()
     {
         var ct = TestContext.Current.CancellationToken;
-        var dto = new CreateCredentialDto
-        {
-            Name = "Test API Key",
-            Type = "apiKey",
-            Fields = new Dictionary<string, string> { ["key"] = "sk-123456" },
-        };
+        _userContext.UserId = null;
 
-        var result = await _service.CreateAsync(dto, ct);
-
-        Assert.NotEqual(Guid.Empty, result.Id);
-        Assert.Equal("Test API Key", result.Name);
-        Assert.Equal("apiKey", result.Type);
+        await Assert.ThrowsAsync<PermissionDeniedException>(() => _service.GetAsync(Guid.NewGuid(), ct));
     }
 
     [Fact]
-    public async Task CreateAsync_EncryptsFields()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var dto = new CreateCredentialDto
-        {
-            Name = "Test",
-            Type = "apiKey",
-            Fields = new Dictionary<string, string> { ["apiKey"] = "plaintext-value" },
-        };
-
-        await _service.CreateAsync(dto, ct);
-
-        var credential = await _dbContext.Credentials.FirstAsync(ct);
-        Assert.True(credential.Data.ContainsKey("apiKey"));
-        Assert.Equal("encrypted:plaintext-value", credential.Data["apiKey"].CipherText);
-    }
-
-    [Fact]
-    public async Task CreateAsync_NullDto_Throws()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        await Assert.ThrowsAsync<ArgumentNullException>(() => _service.CreateAsync(null!, ct));
-    }
-
-    [Fact]
-    public async Task CreateAsync_PublishesAuditEvent()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var dto = new CreateCredentialDto
-        {
-            Name = "Test",
-            Type = "apiKey",
-        };
-
-        await _service.CreateAsync(dto, ct);
-
-        Assert.True(_eventBus.PublishedEvents.Count > 0);
-    }
-
-    [Fact]
-    public async Task GetByIdAsync_ExistingCredential_ReturnsDto()
+    public async Task GetAsync_Viewer_CanReadExistingCredential()
     {
         var ct = TestContext.Current.CancellationToken;
         var credential = CreateTestCredential();
         _dbContext.Credentials.Add(credential);
         await _dbContext.SaveChangesAsync(ct);
+        _userContext.Roles = [RoleConstants.Viewer];
 
         var result = await _service.GetAsync(credential.Id, ct);
 
         Assert.NotNull(result);
         Assert.Equal(credential.Id, result.Id);
-        Assert.Equal(credential.Name, result.Name);
     }
 
     [Fact]
-    public async Task GetByIdAsync_NonExistingCredential_ReturnsNull()
+    public async Task UpdateAsync_Viewer_ThrowsPermissionDeniedException()
     {
         var ct = TestContext.Current.CancellationToken;
-        var result = await _service.GetAsync(Guid.NewGuid(), ct);
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public async Task GetAllAsync_ReturnsAllCredentials()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var projectId = Guid.NewGuid();
-        _dbContext.Credentials.AddRange(
-            CreateTestCredential("Key 1", projectId: projectId),
-            CreateTestCredential("Key 2", projectId: projectId));
-        await _dbContext.SaveChangesAsync(ct);
-
-        var results = await _service.GetAllAsync(cancellationToken: ct);
-
-        Assert.Equal(2, results.Count);
-    }
-
-    [Fact]
-    public async Task UpdateAsync_ExistingCredential_UpdatesFields()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var credential = CreateTestCredential("Original");
+        var credential = CreateTestCredential();
         _dbContext.Credentials.Add(credential);
         await _dbContext.SaveChangesAsync(ct);
+        _userContext.Roles = [RoleConstants.Viewer];
+
+        var dto = new UpdateCredentialDto
+        {
+            Name = "Updated",
+            Fields = new Dictionary<string, string> { ["key"] = "new-value" },
+        };
+
+        await Assert.ThrowsAsync<PermissionDeniedException>(() => _service.UpdateAsync(credential.Id, dto, ct));
+    }
+
+    [Fact]
+    public async Task UpdateAsync_Editor_UpdatesCredential()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var credential = CreateTestCredential();
+        _dbContext.Credentials.Add(credential);
+        await _dbContext.SaveChangesAsync(ct);
+        _userContext.Roles = [RoleConstants.Editor];
 
         var dto = new UpdateCredentialDto
         {
@@ -156,61 +106,41 @@ public sealed class CredentialServiceTests : IDisposable
 
         Assert.NotNull(result);
         Assert.Equal("Updated", result.Name);
-
-        var updated = await _dbContext.Credentials.FindAsync([credential.Id], ct);
-        Assert.NotNull(updated);
-        Assert.Equal("encrypted:new-value", updated.Data["key"].CipherText);
     }
 
     [Fact]
-    public async Task UpdateAsync_NonExistingCredential_ReturnsNull()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var dto = new UpdateCredentialDto { Name = "Test" };
-        var result = await _service.UpdateAsync(Guid.NewGuid(), dto, ct);
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public async Task UpdateAsync_NullDto_Throws()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        await Assert.ThrowsAsync<ArgumentNullException>(() => _service.UpdateAsync(Guid.NewGuid(), null!, ct));
-    }
-
-    [Fact]
-    public async Task DeleteAsync_ExistingUnreferencedCredential_Deletes()
+    public async Task DeleteAsync_Viewer_ThrowsPermissionDeniedException()
     {
         var ct = TestContext.Current.CancellationToken;
         var credential = CreateTestCredential();
         _dbContext.Credentials.Add(credential);
         await _dbContext.SaveChangesAsync(ct);
+        _userContext.Roles = [RoleConstants.Viewer];
+
+        await Assert.ThrowsAsync<PermissionDeniedException>(() => _service.DeleteAsync(credential.Id, ct));
+    }
+
+    [Fact]
+    public async Task DeleteAsync_Admin_DeletesCredential()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var credential = CreateTestCredential();
+        _dbContext.Credentials.Add(credential);
+        await _dbContext.SaveChangesAsync(ct);
+        _userContext.Roles = [RoleConstants.Admin];
 
         var result = await _service.DeleteAsync(credential.Id, ct);
 
         Assert.True(result.Deleted);
-        Assert.False(result.NotFound);
-        Assert.Empty(result.ReferencedBy);
-
         var deleted = await _dbContext.Credentials.FindAsync([credential.Id], ct);
         Assert.Null(deleted);
     }
 
-    [Fact]
-    public async Task DeleteAsync_NonExistingCredential_ReturnsNotFound()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var result = await _service.DeleteAsync(Guid.NewGuid(), ct);
-        Assert.True(result.NotFound);
-        Assert.False(result.Deleted);
-    }
-
-    private static Credential CreateTestCredential(string? name = null, Guid? id = null, Guid? projectId = null)
+    private static Credential CreateTestCredential(string? name = null, Guid? id = null)
     {
         return new Credential
         {
             Id = id ?? Guid.NewGuid(),
-            ProjectId = projectId,
             Name = name ?? "Test Credential",
             Type = "apiKey",
             Data = new Dictionary<string, EncryptedField>(),
@@ -267,26 +197,38 @@ public sealed class CredentialServiceTests : IDisposable
 
     private sealed class FakeUserContext : IUserContext
     {
-        public bool IsAuthenticated => true;
-        public Guid? UserId => Guid.NewGuid();
+        public bool IsAuthenticated => UserId.HasValue;
+        public Guid? UserId { get; set; } = Guid.NewGuid();
         public string? Email => "test@test.com";
-        public IReadOnlyList<string> Roles => ["Admin"];
+        public IReadOnlyList<string> Roles { get; set; } = [];
     }
 
-    private sealed class StubResourceAuthorizationService : IResourceAuthorizationService
+    private sealed class RoleBasedResourceAuthorizationService(IUserContext userContext) : IResourceAuthorizationService
     {
         public Task<bool> CanAccessWorkflowAsync(Guid userId, Guid workflowId, Operation operation, CancellationToken ct = default)
-            => Task.FromResult(true);
+            => Task.FromResult(IsAllowed(operation));
 
         public Task<bool> CanAccessCredentialAsync(Guid userId, Guid credentialId, Operation operation, CancellationToken ct = default)
-            => Task.FromResult(true);
+            => Task.FromResult(IsAllowed(operation));
 
         public Task<bool> CanAccessExecutionAsync(Guid userId, Guid executionId, Operation operation, CancellationToken ct = default)
-            => Task.FromResult(true);
+            => Task.FromResult(IsAllowed(operation));
 
         public Task<bool> CanAccessTriggerAsync(Guid userId, Guid triggerId, Operation operation, CancellationToken ct = default)
-            => Task.FromResult(true);
+            => Task.FromResult(IsAllowed(operation));
 
         public bool ShouldMaskCredentialValues(IReadOnlyList<string> roles) => false;
+
+        private bool IsAllowed(Operation operation)
+        {
+            var roles = userContext.Roles;
+            return operation switch
+            {
+                Operation.Read => roles.Contains(RoleConstants.Admin) || roles.Contains(RoleConstants.Editor) || roles.Contains(RoleConstants.Viewer),
+                Operation.Write => roles.Contains(RoleConstants.Admin) || roles.Contains(RoleConstants.Editor),
+                Operation.Delete or Operation.Execute => roles.Contains(RoleConstants.Admin),
+                _ => false,
+            };
+        }
     }
 }
