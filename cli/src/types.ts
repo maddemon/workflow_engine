@@ -11,6 +11,80 @@ export type PortType = 'Main' | 'AgentTool' | 'LLM' | 'Memory';
 
 export type TriggerType = 'Schedule' | 'Webhook' | 'Poll';
 
+export enum ExecutionMode {
+  OnceForAll = 'OnceForAll',
+  OncePerItem = 'OncePerItem',
+}
+
+export enum ParameterType {
+  String = 'String',
+  Number = 'Number',
+  Boolean = 'Boolean',
+  Options = 'Options',
+  Json = 'Json',
+  Code = 'Code',
+  Credential = 'Credential',
+  Resource = 'Resource',
+  Array = 'Array',
+  File = 'File',
+  Script = 'Script',
+}
+
+export interface DataSchemaDto {
+  type?: string;
+  properties?: Record<string, DataSchemaDto>;
+  required?: string[];
+  items?: DataSchemaDto;
+  description?: string;
+}
+
+export interface ValidationRuleDto {
+  ruleType: string;
+  value?: unknown;
+  errorMessage?: string;
+}
+
+export interface ParameterOptionDto {
+  label?: string;
+  value?: unknown;
+}
+
+export interface ParameterDefinitionDto {
+  name: string;
+  displayName: string;
+  type: ParameterType | string;
+  required: boolean;
+  defaultValue?: unknown;
+  validationRules: ValidationRuleDto[];
+  credentialType?: string;
+  hint?: string;
+  description?: string;
+  options: ParameterOptionDto[];
+}
+
+export interface PortDefinitionDto {
+  name: string;
+  displayName: string;
+  direction: PortDirection;
+  type: PortType | string;
+  required: boolean;
+  condition?: string;
+  allowedTypes: string[];
+  outputSchema?: DataSchemaDto;
+  expectedSchema?: DataSchemaDto;
+}
+
+export interface NodeTypeDescriptorDto {
+  typeName: string;
+  displayName: string;
+  category: string;
+  icon?: string;
+  executionMode: ExecutionMode | string;
+  defaultIsEntry: boolean;
+  parameters: ParameterDefinitionDto[];
+  ports: PortDefinitionDto[];
+}
+
 export interface WorkflowStyleSettings {
   layoutDirection: 'vertical' | 'horizontal';
 }
@@ -121,6 +195,7 @@ export interface DryRunWorkflowRequestDto {
 export interface NodeExecutionRecordDto {
   id: string;
   nodeDefinitionId: string;
+  nodeStringId?: string;
   runIndex: number;
   status: string;
   startedAt: string;
@@ -146,6 +221,28 @@ export interface ExecutionSummaryDto {
   status: string;
   startedAt: string;
   completedAt?: string;
+}
+
+export interface ExecuteWorkflowRequestDto {
+  inputs?: Record<string, unknown>;
+  idempotencyKey?: string;
+}
+
+export interface ExecuteWorkflowResponseDto {
+  id: string;
+  status?: string;
+}
+
+export interface DryRunNodeResultDto {
+  status: string;
+  output?: unknown;
+}
+
+export interface DryRunResultDto {
+  executionId?: string;
+  status?: string;
+  nodeSummary?: Record<string, string>;
+  nodes?: Record<string, DryRunNodeResultDto>;
 }
 
 export interface StartExecutionDto {

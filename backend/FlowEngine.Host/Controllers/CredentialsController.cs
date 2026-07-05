@@ -44,6 +44,24 @@ public class CredentialsController(CredentialService credentialService) : Contro
     }
 
     /// <summary>
+    /// 幂等创建或更新凭据。
+    /// </summary>
+    [HttpPost("ensure")]
+    [AuthorizePermission(Scope.Credential, Operation.Write)]
+    public async Task<ActionResult<CredentialDto>> Ensure(
+        [FromBody] CreateCredentialDto dto,
+        CancellationToken cancellationToken)
+    {
+        var (credential, created) = await credentialService.EnsureAsync(dto, cancellationToken).ConfigureAwait(false);
+        if (created)
+        {
+            return CreatedAtAction(nameof(Get), new { id = credential.Id }, credential);
+        }
+
+        return Ok(credential);
+    }
+
+    /// <summary>
     /// 创建凭据。
     /// </summary>
     [HttpPost]

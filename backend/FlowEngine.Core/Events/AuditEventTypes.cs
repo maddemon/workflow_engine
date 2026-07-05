@@ -62,6 +62,9 @@ public static class AuditEventTypes
     /// <summary>凭据创建。</summary>
     public const string CredentialCreated = "Credential.Created";
 
+    /// <summary>凭据更新。</summary>
+    public const string CredentialUpdated = "Credential.Updated";
+
     /// <summary>凭据访问。</summary>
     public const string CredentialAccessed = "Credential.Accessed";
 

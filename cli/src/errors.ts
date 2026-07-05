@@ -19,6 +19,8 @@ export enum ErrorCode {
   NetworkError = 'NETWORK_ERROR',
   ServerError = 'SERVER_ERROR',
   ApiError = 'API_ERROR',
+  ExecutionTimeout = 'EXECUTION_TIMEOUT',
+  AssertionFailed = 'ASSERTION_FAILED',
   UserInterrupted = 'USER_INTERRUPTED',
 }
 

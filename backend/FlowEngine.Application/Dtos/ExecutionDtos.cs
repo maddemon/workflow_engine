@@ -12,6 +12,22 @@ public sealed record StartExecutionDto
 }
 
 /// <summary>
+/// 工作流执行请求体（可选输入参数与幂等键）。
+/// </summary>
+public sealed record ExecuteWorkflowDto
+{
+    /// <summary>
+    /// 触发负载输入参数。
+    /// </summary>
+    public Dictionary<string, object>? Inputs { get; init; }
+
+    /// <summary>
+    /// 幂等键。优先于请求头中的 X-Idempotency-Key。
+    /// </summary>
+    public string? IdempotencyKey { get; init; }
+}
+
+/// <summary>
 /// 执行详情响应。
 /// </summary>
 public sealed record ExecutionDto

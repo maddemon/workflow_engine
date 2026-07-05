@@ -43,6 +43,77 @@ public sealed class CredentialService(
             throw new PermissionDeniedException("当前用户没有创建凭据的权限。");
         }
 
+        return await CreateCredentialInternalAsync(dto, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 幂等创建或更新凭据。按 (Name, Type, ProjectId) 查找，存在则覆盖 Fields，不存在则创建。
+    /// </summary>
+    public async Task<(CredentialDto Credential, bool Created)> EnsureAsync(CreateCredentialDto dto, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dto);
+
+        var userId = userContext.UserId;
+        if (userId is null)
+        {
+            throw new PermissionDeniedException("当前用户未认证。");
+        }
+
+        if (!CanWriteCredential())
+        {
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.PermissionDenied,
+                "Credential",
+                Guid.Empty,
+                new Dictionary<string, object> { ["operation"] = Operation.Write.ToString(), ["reason"] = "role" }),
+                cancellationToken).ConfigureAwait(false);
+
+            throw new PermissionDeniedException("当前用户没有创建或更新凭据的权限。");
+        }
+
+        var existing = await dbContext.Credentials
+            .FirstOrDefaultAsync(
+                c => c.Name == dto.Name
+                     && c.Type == dto.Type
+                     && c.ProjectId == dto.ProjectId,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (existing is not null)
+        {
+            if (!await resourceAuthorization.CanAccessCredentialAsync(userId.Value, existing.Id, Operation.Write, cancellationToken).ConfigureAwait(false))
+            {
+                await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                    AuditEventTypes.PermissionDenied,
+                    "Credential",
+                    existing.Id,
+                    new Dictionary<string, object> { ["operation"] = Operation.Write.ToString(), ["reason"] = "role" }),
+                    cancellationToken).ConfigureAwait(false);
+
+                throw new PermissionDeniedException("当前用户没有更新该凭据的权限。");
+            }
+
+            var key = keyProvider.GetKey();
+            existing.Data = EncryptFields(dto.Fields, key);
+            existing.UpdatedAt = DateTime.UtcNow;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.CredentialUpdated,
+                "Credential",
+                existing.Id,
+                new Dictionary<string, object> { ["name"] = existing.Name, ["type"] = existing.Type }),
+                cancellationToken).ConfigureAwait(false);
+
+            return (MapToDto(existing, maskValues: false), false);
+        }
+
+        var created = await CreateCredentialInternalAsync(dto, cancellationToken).ConfigureAwait(false);
+        return (created, true);
+    }
+
+    private async Task<CredentialDto> CreateCredentialInternalAsync(CreateCredentialDto dto, CancellationToken cancellationToken)
+    {
         var key = keyProvider.GetKey();
         var encryptedData = EncryptFields(dto.Fields, key);
 

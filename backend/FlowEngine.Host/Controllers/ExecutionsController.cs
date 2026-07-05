@@ -22,12 +22,39 @@ public class ExecutionsController(ExecutionService executionService) : Controlle
     public async Task<ActionResult<ExecutionDto>> Execute(
         Guid workflowId,
         [FromHeader(Name = "X-Idempotency-Key")] string? idempotencyKey,
+        [FromBody] ExecuteWorkflowDto? dto,
         CancellationToken cancellationToken)
     {
-        var execution = await executionService.ExecuteAsync(workflowId, idempotencyKey, cancellationToken).ConfigureAwait(false);
+        var effectiveIdempotencyKey = dto?.IdempotencyKey ?? idempotencyKey;
+        var execution = await executionService.ExecuteAsync(
+            workflowId,
+            effectiveIdempotencyKey,
+            cancellationToken,
+            dto?.Inputs).ConfigureAwait(false);
         if (execution is null)
         {
             return NotFound(new { message = $"工作流 '{workflowId}' 不存在。" });
+        }
+
+        return Ok(execution);
+    }
+
+    /// <summary>
+    /// 取消执行。
+    /// </summary>
+    [HttpPost("executions/{id:guid}/cancel")]
+    [AuthorizePermission(Scope.Execution, Operation.Execute)]
+    public async Task<ActionResult<ExecutionDto>> Cancel(Guid id, CancellationToken cancellationToken)
+    {
+        var (execution, conflict) = await executionService.CancelAsync(id, cancellationToken).ConfigureAwait(false);
+        if (execution is null)
+        {
+            return NotFound();
+        }
+
+        if (conflict)
+        {
+            return Conflict(new { message = $"执行 '{id}' 当前状态为 '{execution.Status}'，无法取消。" });
         }
 
         return Ok(execution);

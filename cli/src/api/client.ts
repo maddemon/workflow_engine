@@ -62,6 +62,44 @@ function maskString(value: string): string {
   return '***';
 }
 
+function looksLikeCredential(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    typeof value.name === 'string' &&
+    typeof value.type === 'string' &&
+    isRecord(value.fields)
+  );
+}
+
+function maskCredentialFields(value: unknown): unknown {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return value.map((item) => maskCredentialFields(item));
+  }
+
+  if (!isRecord(value)) {
+    return value;
+  }
+
+  if (looksLikeCredential(value)) {
+    const masked: Record<string, unknown> = { ...value };
+    const fields = value.fields as Record<string, unknown>;
+    masked.fields = Object.fromEntries(
+      Object.entries(fields).map(([fieldKey]) => [fieldKey, '***']),
+    );
+    return masked;
+  }
+
+  const result: Record<string, unknown> = {};
+  for (const [key, val] of Object.entries(value)) {
+    result[key] = maskCredentialFields(val);
+  }
+  return result;
+}
+
 function maskAuthorization(value: string): string {
   const trimmed = value.trim();
   if (trimmed.toLowerCase().startsWith('bearer ')) {
@@ -81,6 +119,11 @@ export function maskSecrets(value: unknown): unknown {
 
   if (!isRecord(value)) {
     return value;
+  }
+
+  // 对 Dry-run 等场景中的 Credentials[].fields 做整体脱敏
+  if (looksLikeCredential(value)) {
+    return maskCredentialFields(value);
   }
 
   const masked: Record<string, unknown> = {};

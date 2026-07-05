@@ -13,10 +13,14 @@
 
 ## 待完成项
 
-- [ ] Task 1: 后端 API Key（实体、迁移、Service、Controller、认证中间件扩展）
-- [ ] Task 2: 后端 Dry-Run 执行 API
-- [ ] Task 3: CLI 项目基础架构
-- [ ] Task 4: CLI 认证与配置命令
+- [x] Task 1: 后端 API Key（实体、迁移、Service、Controller、认证中间件扩展）
+- [x] Task 2: 后端 Dry-Run 执行 API
+- [x] Task 3: CLI 项目基础架构
+- [ ] Task 3 Fix: 配置文件权限与 verbose 脱敏策略收尾（writeFileSync mode: 0o600）
+- [ ] Task 4: CLI 认证与配置命令（login/logout/profile/config）
+- [ ] Task 4 Backend: 补齐 P1 后端 API（credential ensure、execute inputs、execution cancel）
+- [ ] Task 5: CLI 核心命令（node-types/credential/project/workflow/execute/test）
+- [ ] Task 6: 最终全分支 review 与收尾
 - [ ] 编译/测试通过
 - [ ] SubAgent Code Review
 
@@ -30,4 +34,8 @@
 
 ## 主要修改记录
 
-- 待定
+- `backend/FlowEngine.Core/Identity/ApiKey.cs`、`ApiKeyService`、`ApiKeyAuthenticationHandler`：API Key 长期认证。
+- `backend/FlowEngine.Application/Workflows/WorkflowDryRunService.cs`、`WorkflowsController.DryRun`：Dry-Run 执行 API。
+- `cli/`：Node.js CLI 子项目基础架构与命令实现。
+- `backend/FlowEngine.Host/Controllers/CredentialsController.cs`、`ExecutionsController.cs`：新增 credential ensure、execute inputs、execution cancel 端点。
+- 待最终整理

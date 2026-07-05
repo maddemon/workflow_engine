@@ -122,7 +122,7 @@ export function readConfigFile(options?: ConfigOptions): ConfigFile {
 export function writeConfigFile(config: ConfigFile, options?: ConfigOptions): void {
   ensureConfigDir(options);
   try {
-    writeFileSync(getConfigPath(options), JSON.stringify(config, undefined, 2));
+    writeFileSync(getConfigPath(options), JSON.stringify(config, undefined, 2), { mode: 0o600 });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     throw new CLIError(

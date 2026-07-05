@@ -31,7 +31,11 @@ public sealed class ExecutionService(
     /// <summary>
     /// 启动工作流执行。
     /// </summary>
-    public async Task<ExecutionDto?> ExecuteAsync(Guid workflowId, string? idempotencyKey = null, CancellationToken cancellationToken = default)
+    public async Task<ExecutionDto?> ExecuteAsync(
+        Guid workflowId,
+        string? idempotencyKey = null,
+        CancellationToken cancellationToken = default,
+        Dictionary<string, object>? inputs = null)
     {
         var workflow = await dbContext.Workflows
             .AsNoTracking()
@@ -82,7 +86,7 @@ public sealed class ExecutionService(
             }
         }
 
-        var executionId = await engine.StartAsync(workflowId, null, cancellationToken).ConfigureAwait(false);
+        var executionId = await engine.StartAsync(workflowId, inputs, cancellationToken).ConfigureAwait(false);
 
         // 更新幂等记录的 ExecutionId 为实际值
         if (!string.IsNullOrEmpty(idempotencyKey))
@@ -96,6 +100,13 @@ public sealed class ExecutionService(
                 await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             }
         }
+
+        await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+            AuditEventTypes.ExecutionStarted,
+            "Execution",
+            executionId.Value,
+            new Dictionary<string, object> { ["workflowDefinitionId"] = workflowId }),
+            cancellationToken).ConfigureAwait(false);
 
         var record = await dbContext.ExecutionRecords
             .FirstOrDefaultAsync(e => e.Id == executionId.Value, cancellationToken)
@@ -112,6 +123,52 @@ public sealed class ExecutionService(
         }
 
         return MapToDto(record);
+    }
+
+    /// <summary>
+    /// 取消执行。仅 Pending 或 Running 状态可取消；返回 null 表示执行不存在，Conflict 表示状态不可取消。
+    /// </summary>
+    public async Task<(ExecutionDto? Execution, bool Conflict)> CancelAsync(Guid executionId, CancellationToken cancellationToken = default)
+    {
+        var userId = userContext.UserId;
+        if (userId is null)
+        {
+            throw new PermissionDeniedException("当前用户未认证。");
+        }
+
+        if (!await resourceAuthorization.CanAccessExecutionAsync(userId.Value, executionId, Operation.Execute, cancellationToken).ConfigureAwait(false))
+        {
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.PermissionDenied,
+                "Execution",
+                executionId,
+                new Dictionary<string, object> { ["operation"] = Operation.Execute.ToString(), ["reason"] = "role" }),
+                cancellationToken).ConfigureAwait(false);
+
+            throw new PermissionDeniedException("当前用户没有取消该执行记录的权限。");
+        }
+
+        var record = await dbContext.ExecutionRecords
+            .FirstOrDefaultAsync(e => e.Id == executionId, cancellationToken)
+            .ConfigureAwait(false);
+        if (record is null)
+        {
+            return (null, false);
+        }
+
+        if (record.Status is not (ExecutionStatus.Pending or ExecutionStatus.Running))
+        {
+            return (MapToDto(record), true);
+        }
+
+        record.Status = ExecutionStatus.Cancelled;
+        record.CompletedAt = DateTime.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        var cancelledEvent = new WorkflowCancelledEvent(record.Id, record.WorkflowDefinitionId);
+        await eventBus.PublishAsync(cancelledEvent, cancellationToken).ConfigureAwait(false);
+
+        return (MapToDto(record), false);
     }
 
     /// <summary>
