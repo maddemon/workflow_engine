@@ -4,8 +4,8 @@ using FlowEngine.Application.Audit;
 using FlowEngine.Application.RateLimiting;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Events;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Host.Middlewares;
@@ -15,17 +15,18 @@ namespace FlowEngine.Host.Middlewares;
 /// 匿名请求按 IP 地址限流，已认证请求按用户 ID 限流。
 /// </summary>
 public class RateLimitMiddleware(
-    RequestDelegate next,
     IMemoryCache cache,
     IOptions<RateLimitOptions> options,
-    ILogger<RateLimitMiddleware> logger)
+    ILogger<RateLimitMiddleware> logger,
+    IEventBus eventBus,
+    AuditEventFactory auditFactory) : IMiddleware
 {
     private static readonly TimeSpan CleanupInterval = TimeSpan.FromMinutes(5);
 
     /// <summary>
     /// 处理请求并执行速率限制检查。
     /// </summary>
-    public async Task InvokeAsync(HttpContext context)
+    public async Task InvokeAsync(HttpContext context, RequestDelegate next)
     {
         var path = context.Request.Path.Value ?? string.Empty;
 
@@ -59,8 +60,6 @@ public class RateLimitMiddleware(
         if (counter.Count > rule.PermitLimit)
         {
             var identifier = GetRateLimitKey(context, path);
-            var eventBus = context.RequestServices.GetRequiredService<IEventBus>();
-            var auditFactory = context.RequestServices.GetRequiredService<AuditEventFactory>();
             await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
                 AuditEventTypes.RateLimited,
                 "Security",

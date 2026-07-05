@@ -61,6 +61,7 @@ public static class ServiceCollectionExtensions
 
         // ── Rate Limiting ───────────────────────────────────────────
         services.Configure<RateLimitOptions>(configuration.GetSection(RateLimitOptions.SectionName));
+        services.AddTransient<RateLimitMiddleware>();
 
         // ── File Storage ───────────────────────────────────────────
         services.Configure<FlowEngine.Application.Files.FileStorageOptions>(

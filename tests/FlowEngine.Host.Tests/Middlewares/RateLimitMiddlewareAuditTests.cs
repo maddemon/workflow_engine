@@ -36,21 +36,22 @@ public class RateLimitMiddlewareAuditTests
             .AddScoped<AuditEventFactory>(_ => auditFactory)
             .BuildServiceProvider();
         var middleware = new RateLimitMiddleware(
-            _ => Task.CompletedTask,
             cache,
             Options.Create(DefaultOptions),
-            logger.Object);
+            logger.Object,
+            eventBus.Object,
+            auditFactory);
 
         for (var i = 0; i < 5; i++)
         {
             var warmupContext = CreateHttpContext("/api/v1/test", ip: "192.168.1.1");
             warmupContext.RequestServices = serviceProvider;
-            await middleware.InvokeAsync(warmupContext);
+            await middleware.InvokeAsync(warmupContext, _ => Task.CompletedTask);
         }
 
         var context = CreateHttpContext("/api/v1/test", ip: "192.168.1.1");
         context.RequestServices = serviceProvider;
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, _ => Task.CompletedTask);
 
         Assert.Equal(StatusCodes.Status429TooManyRequests, context.Response.StatusCode);
         eventBus.Verify(
@@ -80,14 +81,15 @@ public class RateLimitMiddlewareAuditTests
             .AddScoped<AuditEventFactory>(_ => auditFactory)
             .BuildServiceProvider();
         var middleware = new RateLimitMiddleware(
-            _ => Task.CompletedTask,
             cache,
             Options.Create(DefaultOptions),
-            logger.Object);
+            logger.Object,
+            eventBus.Object,
+            auditFactory);
 
         var context = CreateHttpContext("/api/v1/test");
         context.RequestServices = serviceProvider;
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, _ => Task.CompletedTask);
 
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
         eventBus.Verify(

@@ -217,22 +217,19 @@ public sealed class WorkflowImportService(
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
         }
 
-        if (eventBus is not null && auditFactory is not null)
-        {
-            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
-                AuditEventTypes.WorkflowCreated,
-                "Workflow",
-                workflow.Id,
-                new Dictionary<string, object> { ["name"] = workflow.Name, ["imported"] = true }),
-                cancellationToken).ConfigureAwait(false);
+        await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+            AuditEventTypes.WorkflowCreated,
+            "Workflow",
+            workflow.Id,
+            new Dictionary<string, object> { ["name"] = workflow.Name, ["imported"] = true }),
+            cancellationToken).ConfigureAwait(false);
 
-            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
-                AuditEventTypes.ImportPerformed,
-                "Workflow",
-                workflow.Id,
-                new Dictionary<string, object> { ["importedBy"] = importedBy, ["name"] = workflow.Name }),
-                cancellationToken).ConfigureAwait(false);
-        }
+        await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+            AuditEventTypes.ImportPerformed,
+            "Workflow",
+            workflow.Id,
+            new Dictionary<string, object> { ["importedBy"] = importedBy, ["name"] = workflow.Name }),
+            cancellationToken).ConfigureAwait(false);
 
         return new ImportResult
         {

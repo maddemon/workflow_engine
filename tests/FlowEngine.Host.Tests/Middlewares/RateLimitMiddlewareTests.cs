@@ -19,15 +19,17 @@ public class RateLimitMiddlewareTests
 {
     private readonly IMemoryCache _cache = new MemoryCache(new MemoryCacheOptions());
     private readonly Mock<ILogger<RateLimitMiddleware>> _logger = new();
+    private readonly Mock<IEventBus> _eventBus;
+    private readonly AuditEventFactory _auditFactory;
     private readonly IServiceProvider _serviceProvider;
 
     public RateLimitMiddlewareTests()
     {
-        var eventBus = new Mock<IEventBus>();
-        var auditFactory = new AuditEventFactory(new FakeUserContext { UserId = Guid.NewGuid() });
+        _eventBus = new Mock<IEventBus>();
+        _auditFactory = new AuditEventFactory(new FakeUserContext { UserId = Guid.NewGuid() });
         _serviceProvider = new ServiceCollection()
-            .AddSingleton<IEventBus>(eventBus.Object)
-            .AddScoped<AuditEventFactory>(_ => auditFactory)
+            .AddSingleton<IEventBus>(_eventBus.Object)
+            .AddScoped<AuditEventFactory>(_ => _auditFactory)
             .BuildServiceProvider();
     }
 
@@ -44,9 +46,10 @@ public class RateLimitMiddlewareTests
     {
         var context = CreateHttpContext("/api/v1/test");
         var nextCalled = false;
-        var middleware = CreateMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
+        RequestDelegate next = _ => { nextCalled = true; return Task.CompletedTask; };
+        var middleware = CreateMiddleware(next);
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, next);
 
         Assert.True(nextCalled);
         Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
@@ -56,15 +59,16 @@ public class RateLimitMiddlewareTests
     public async Task ExceedsLimit_Returns429()
     {
         var context = CreateHttpContext("/api/v1/test");
-        var middleware = CreateMiddleware(_ => Task.CompletedTask);
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = CreateMiddleware(next);
 
         // 5 requests allowed by default Api rule, 6th should be blocked
         for (var i = 0; i < 5; i++)
         {
-            await middleware.InvokeAsync(CreateHttpContext("/api/v1/test"));
+            await middleware.InvokeAsync(CreateHttpContext("/api/v1/test"), next);
         }
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, next);
 
         Assert.Equal(StatusCodes.Status429TooManyRequests, context.Response.StatusCode);
         Assert.NotNull(context.Response.Headers.RetryAfter.ToString());
@@ -74,14 +78,15 @@ public class RateLimitMiddlewareTests
     public async Task ExceedsLimit_Returns429WithJsonBody()
     {
         var context = CreateHttpContext("/api/v1/test");
-        var middleware = CreateMiddleware(_ => Task.CompletedTask);
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = CreateMiddleware(next);
 
         for (var i = 0; i < 5; i++)
         {
-            await middleware.InvokeAsync(CreateHttpContext("/api/v1/test"));
+            await middleware.InvokeAsync(CreateHttpContext("/api/v1/test"), next);
         }
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, next);
 
         Assert.Equal(StatusCodes.Status429TooManyRequests, context.Response.StatusCode);
 
@@ -98,61 +103,66 @@ public class RateLimitMiddlewareTests
     [Fact]
     public async Task DifferentIps_AreIndependent()
     {
-        var middleware = CreateMiddleware(_ => Task.CompletedTask);
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = CreateMiddleware(next);
 
         // Exhaust limit for IP 1
         for (var i = 0; i < 5; i++)
         {
-            await middleware.InvokeAsync(CreateHttpContext("/api/v1/test", "192.168.1.1"));
+            await middleware.InvokeAsync(CreateHttpContext("/api/v1/test", "192.168.1.1"), next);
         }
 
         // IP 1 should be blocked
         var context1 = CreateHttpContext("/api/v1/test", "192.168.1.1");
-        await middleware.InvokeAsync(context1);
+        await middleware.InvokeAsync(context1, next);
         Assert.Equal(StatusCodes.Status429TooManyRequests, context1.Response.StatusCode);
 
         // IP 2 should still pass
         var context2 = CreateHttpContext("/api/v1/test", "192.168.1.2");
         var nextCalled = false;
-        var middleware2 = CreateMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
-        await middleware2.InvokeAsync(context2);
+        RequestDelegate next2 = _ => { nextCalled = true; return Task.CompletedTask; };
+        var middleware2 = CreateMiddleware(next2);
+        await middleware2.InvokeAsync(context2, next2);
         Assert.True(nextCalled);
     }
 
     [Fact]
     public async Task DifferentUsers_AreIndependent()
     {
-        var middleware = CreateMiddleware(_ => Task.CompletedTask);
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = CreateMiddleware(next);
 
         // Exhaust limit for user 1
         for (var i = 0; i < 5; i++)
         {
-            await middleware.InvokeAsync(CreateHttpContext("/api/v1/test", userId: "user-1"));
+            await middleware.InvokeAsync(CreateHttpContext("/api/v1/test", userId: "user-1"), next);
         }
 
         // User 1 should be blocked
         var context1 = CreateHttpContext("/api/v1/test", userId: "user-1");
-        await middleware.InvokeAsync(context1);
+        await middleware.InvokeAsync(context1, next);
         Assert.Equal(StatusCodes.Status429TooManyRequests, context1.Response.StatusCode);
 
         // User 2 should still pass
         var context2 = CreateHttpContext("/api/v1/test", userId: "user-2");
         var nextCalled = false;
-        var middleware2 = CreateMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
-        await middleware2.InvokeAsync(context2);
+        RequestDelegate next2 = _ => { nextCalled = true; return Task.CompletedTask; };
+        var middleware2 = CreateMiddleware(next2);
+        await middleware2.InvokeAsync(context2, next2);
         Assert.True(nextCalled);
     }
 
     [Fact]
     public async Task WhitelistedPaths_BypassRateLimit()
     {
-        var middleware = CreateMiddleware(_ => Task.CompletedTask);
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = CreateMiddleware(next);
 
         // Send 10 requests to /health (whitelisted)
         for (var i = 0; i < 10; i++)
         {
             var context = CreateHttpContext("/health");
-            await middleware.InvokeAsync(context);
+            await middleware.InvokeAsync(context, next);
             Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
         }
     }
@@ -160,15 +170,16 @@ public class RateLimitMiddlewareTests
     [Fact]
     public async Task LoginPath_UsesLoginRule()
     {
-        var middleware = CreateMiddleware(_ => Task.CompletedTask);
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = CreateMiddleware(next);
 
         // Login allows 2 requests
-        await middleware.InvokeAsync(CreateHttpContext("/auth/login"));
-        await middleware.InvokeAsync(CreateHttpContext("/auth/login"));
+        await middleware.InvokeAsync(CreateHttpContext("/auth/login"), next);
+        await middleware.InvokeAsync(CreateHttpContext("/auth/login"), next);
 
         // 3rd should be blocked
         var blocked = CreateHttpContext("/auth/login");
-        await middleware.InvokeAsync(blocked);
+        await middleware.InvokeAsync(blocked, next);
 
         Assert.Equal(StatusCodes.Status429TooManyRequests, blocked.Response.StatusCode);
     }
@@ -176,17 +187,18 @@ public class RateLimitMiddlewareTests
     [Fact]
     public async Task RegisterPath_UsesRegisterRule()
     {
-        var middleware = CreateMiddleware(_ => Task.CompletedTask);
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = CreateMiddleware(next);
 
         // Register allows 3 requests
         for (var i = 0; i < 3; i++)
         {
-            await middleware.InvokeAsync(CreateHttpContext("/auth/register"));
+            await middleware.InvokeAsync(CreateHttpContext("/auth/register"), next);
         }
 
         // 4th should be blocked
         var blocked = CreateHttpContext("/auth/register");
-        await middleware.InvokeAsync(blocked);
+        await middleware.InvokeAsync(blocked, next);
 
         Assert.Equal(StatusCodes.Status429TooManyRequests, blocked.Response.StatusCode);
     }
@@ -199,13 +211,14 @@ public class RateLimitMiddlewareTests
             Api = new RateLimitRule { PermitLimit = 1, WindowSeconds = 60, Enabled = false },
             WhitelistedPaths = [],
         };
-        var middleware = CreateMiddleware(_ => Task.CompletedTask, options);
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = CreateMiddleware(next, options);
 
         // Even though PermitLimit is 1, rule is disabled so all pass
         for (var i = 0; i < 10; i++)
         {
             var context = CreateHttpContext("/api/v1/test");
-            await middleware.InvokeAsync(context);
+            await middleware.InvokeAsync(context, next);
             Assert.Equal(StatusCodes.Status200OK, context.Response.StatusCode);
         }
     }
@@ -214,14 +227,15 @@ public class RateLimitMiddlewareTests
     public async Task RetryAfterHeader_IsPresent()
     {
         var context = CreateHttpContext("/api/v1/test");
-        var middleware = CreateMiddleware(_ => Task.CompletedTask);
+        RequestDelegate next = _ => Task.CompletedTask;
+        var middleware = CreateMiddleware(next);
 
         for (var i = 0; i < 5; i++)
         {
-            await middleware.InvokeAsync(CreateHttpContext("/api/v1/test"));
+            await middleware.InvokeAsync(CreateHttpContext("/api/v1/test"), next);
         }
 
-        await middleware.InvokeAsync(context);
+        await middleware.InvokeAsync(context, next);
 
         Assert.Equal(StatusCodes.Status429TooManyRequests, context.Response.StatusCode);
         Assert.False(string.IsNullOrEmpty(context.Response.Headers.RetryAfter.ToString()));
@@ -260,10 +274,11 @@ public class RateLimitMiddlewareTests
         RateLimitOptions? options = null)
     {
         return new RateLimitMiddleware(
-            next,
             _cache,
             Options.Create(options ?? DefaultOptions),
-            _logger.Object);
+            _logger.Object,
+            _eventBus.Object,
+            _auditFactory);
     }
 
     private sealed class FakeUserContext : IUserContext
