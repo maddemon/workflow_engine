@@ -24,7 +24,7 @@ public sealed class WorkflowService(
     AuditEventFactory auditFactory,
     TriggerService _triggerService,
     IUserContext userContext,
-    IResourceAuthorizationService resourceAuthorization) : IDisposable
+    IResourceAuthorizationService resourceAuthorization)
 {
     /// <summary>
     /// 创建工作流。允许 ProjectId = null 作为未分类工作流；ProjectId 仅用于分类，不做隔离校验。
@@ -496,6 +496,4 @@ public sealed class WorkflowService(
     {
         await _triggerService.UnregisterWorkflowSchedulesAsync(workflowDefinitionId, cancellationToken).ConfigureAwait(false);
     }
-
-    public void Dispose() { }
 }

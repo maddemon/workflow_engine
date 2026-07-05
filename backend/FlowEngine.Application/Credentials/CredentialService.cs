@@ -25,7 +25,7 @@ public sealed class CredentialService(
     ICryptoKeyProvider _keyProvider,
     IEventBus eventBus,
     AuditEventFactory auditFactory,
-    IResourceAuthorizationService resourceAuthService,
+    IResourceAuthorizationService resourceAuthorization,
     IUserContext userContext)
 {
     private const string KeyVersion = "v1";
@@ -78,7 +78,7 @@ public sealed class CredentialService(
             throw new PermissionDeniedException("当前用户未认证。");
         }
 
-        if (!await resourceAuthService.CanAccessCredentialAsync(userId.Value, id, Operation.Read, cancellationToken).ConfigureAwait(false))
+        if (!await resourceAuthorization.CanAccessCredentialAsync(userId.Value, id, Operation.Read, cancellationToken).ConfigureAwait(false))
         {
             throw new PermissionDeniedException("当前用户没有读取该凭据的权限。");
         }
@@ -126,7 +126,7 @@ public sealed class CredentialService(
             throw new PermissionDeniedException("当前用户未认证。");
         }
 
-        if (!await resourceAuthService.CanAccessCredentialAsync(userId.Value, id, Operation.Write, cancellationToken).ConfigureAwait(false))
+        if (!await resourceAuthorization.CanAccessCredentialAsync(userId.Value, id, Operation.Write, cancellationToken).ConfigureAwait(false))
         {
             throw new PermissionDeniedException("当前用户没有修改该凭据的权限。");
         }
@@ -168,7 +168,7 @@ public sealed class CredentialService(
             throw new PermissionDeniedException("当前用户未认证。");
         }
 
-        if (!await resourceAuthService.CanAccessCredentialAsync(userId.Value, id, Operation.Delete, cancellationToken).ConfigureAwait(false))
+        if (!await resourceAuthorization.CanAccessCredentialAsync(userId.Value, id, Operation.Delete, cancellationToken).ConfigureAwait(false))
         {
             throw new PermissionDeniedException("当前用户没有删除该凭据的权限。");
         }
@@ -279,7 +279,7 @@ public sealed class CredentialService(
             return false;
         }
 
-        return resourceAuthService.ShouldMaskCredentialValues(userContext.Roles);
+        return resourceAuthorization.ShouldMaskCredentialValues(userContext.Roles);
     }
 
     private bool CanWriteCredential()

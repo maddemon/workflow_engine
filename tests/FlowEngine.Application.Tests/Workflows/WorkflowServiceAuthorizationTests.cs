@@ -40,7 +40,6 @@ public sealed class WorkflowServiceAuthorizationTests : IDisposable
 
     public void Dispose()
     {
-        _service.Dispose();
         _dbContext.Dispose();
     }
 
