@@ -85,11 +85,17 @@ public sealed class CredentialService(
     /// <summary>
     /// 获取所有凭据摘要列表。项目（ProjectId）仅作为分类字段，不做隔离。
     /// </summary>
-    public async Task<IReadOnlyCollection<CredentialDto>> GetAllAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<CredentialDto>> GetAllAsync(
+        Guid? projectId = null,
+        CancellationToken cancellationToken = default)
     {
-        var credentials = await dbContext.Credentials
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
+        var query = dbContext.Credentials.AsQueryable();
+        if (projectId.HasValue)
+        {
+            query = query.Where(c => c.ProjectId == projectId.Value);
+        }
+
+        var credentials = await query.ToListAsync(cancellationToken).ConfigureAwait(false);
         var shouldMask = ShouldMaskCredentialValues();
         return credentials.Select(c => MapToDto(c, shouldMask)).ToList();
     }

@@ -20,9 +20,10 @@ public class CredentialsController(CredentialService credentialService) : Contro
     [HttpGet]
     [AuthorizePermission(Scope.Credential, Operation.Read)]
     public async Task<ActionResult<IReadOnlyCollection<CredentialDto>>> GetAll(
-        CancellationToken cancellationToken)
+        [FromQuery] Guid? projectId = null,
+        CancellationToken cancellationToken = default)
     {
-        var credentials = await credentialService.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        var credentials = await credentialService.GetAllAsync(projectId, cancellationToken).ConfigureAwait(false);
         return Ok(credentials);
     }
 

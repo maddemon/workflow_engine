@@ -105,9 +105,6 @@ public static class ServiceCollectionExtensions
             FlowEngine.Application.Authorization.AuthorizationService>();
         services.AddScoped<FlowEngine.Application.Authorization.IResourceAuthorizationService,
             FlowEngine.Application.Authorization.ResourceAuthorizationService>();
-        services.AddScoped<FlowEngine.Application.Authorization.IProjectContext,
-            FlowEngine.Application.Authorization.ProjectContext>();
-
         // ── Identity ────────────────────────────────────────────────
         services.AddScoped<IPasswordHasher, PasswordHasher>();
         services.AddScoped<IPasswordValidator, PasswordValidator>();

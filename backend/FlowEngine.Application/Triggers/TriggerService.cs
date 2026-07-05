@@ -114,12 +114,17 @@ public sealed class TriggerService(
     /// <summary>
     /// 获取所有触发器。项目仅用于分类，不对触发器可见性做隔离。
     /// </summary>
-    public async Task<IReadOnlyCollection<TriggerDto>> GetAllForUserAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<TriggerDto>> GetAllForUserAsync(
+        Guid? projectId = null,
+        CancellationToken cancellationToken = default)
     {
-        var triggers = await dbContext.Triggers
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
+        var query = dbContext.Triggers.AsQueryable();
+        if (projectId.HasValue)
+        {
+            query = query.Where(t => t.ProjectId == projectId.Value);
+        }
 
+        var triggers = await query.ToListAsync(cancellationToken).ConfigureAwait(false);
         return triggers.Select(MapToDto).ToList();
     }
 

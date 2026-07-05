@@ -121,13 +121,22 @@ public sealed class ExecutionService
     /// </summary>
     public async Task<IReadOnlyCollection<ExecutionSummaryDto>> GetByWorkflowAsync(
         Guid workflowId,
+        Guid? projectId = null,
         CancellationToken cancellationToken = default)
     {
-        var records = await _dbContext.ExecutionRecords
-            .Where(e => e.WorkflowDefinitionId == workflowId)
+        var query = _dbContext.ExecutionRecords
+            .Where(e => e.WorkflowDefinitionId == workflowId);
+
+        if (projectId.HasValue)
+        {
+            query = query.Where(e => e.ProjectId == projectId.Value);
+        }
+
+        var records = await query
             .OrderByDescending(e => e.StartedAt)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
+
         return records.Select(MapToSummary).ToList();
     }
 

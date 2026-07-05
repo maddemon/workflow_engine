@@ -133,7 +133,7 @@ public sealed class CredentialServiceTests : IDisposable
             CreateTestCredential("Key 2", projectId: projectId));
         await _dbContext.SaveChangesAsync(ct);
 
-        var results = await _service.GetAllAsync(ct);
+        var results = await _service.GetAllAsync(cancellationToken: ct);
 
         Assert.Equal(2, results.Count);
     }

@@ -198,7 +198,7 @@ public sealed class WorkflowEndToEndTests : IDisposable
         var workflow = await _workflowService.CreateAsync(dto, ct);
         await _executionService.ExecuteAsync(workflow.Id, idempotencyKey: null, ct);
 
-        var executions = await _executionService.GetByWorkflowAsync(workflow.Id, ct);
+        var executions = await _executionService.GetByWorkflowAsync(workflow.Id, cancellationToken: ct);
 
         Assert.NotEmpty(executions);
         var summary = executions.First();

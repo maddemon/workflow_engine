@@ -23,11 +23,12 @@ public class WorkflowsController(
     [HttpGet]
     [AuthorizePermission(Scope.Workflow, Operation.Read)]
     public async Task<ActionResult<PagedResult<WorkflowSummaryDto>>> GetAll(
+        [FromQuery] Guid? projectId = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
-        var result = await workflowService.GetAllAsync(page, pageSize, cancellationToken).ConfigureAwait(false);
+        var result = await workflowService.GetAllAsync(projectId, page, pageSize, cancellationToken).ConfigureAwait(false);
         return Ok(result);
     }
 

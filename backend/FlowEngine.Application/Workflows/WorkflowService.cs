@@ -79,6 +79,7 @@ public sealed class WorkflowService(
     /// <param name="pageSize">每页大小。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     public async Task<PagedResult<WorkflowSummaryDto>> GetAllAsync(
+        Guid? projectId = null,
         int page = 1,
         int pageSize = 20,
         CancellationToken cancellationToken = default)
@@ -87,6 +88,10 @@ public sealed class WorkflowService(
         pageSize = Math.Clamp(pageSize, 1, 200);
 
         var query = dbContext.Workflows.AsQueryable();
+        if (projectId.HasValue)
+        {
+            query = query.Where(w => w.ProjectId == projectId.Value);
+        }
 
         var totalCount = await query
             .CountAsync(cancellationToken)
