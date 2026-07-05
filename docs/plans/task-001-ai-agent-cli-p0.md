@@ -16,13 +16,13 @@
 - [x] Task 1: 后端 API Key（实体、迁移、Service、Controller、认证中间件扩展）
 - [x] Task 2: 后端 Dry-Run 执行 API
 - [x] Task 3: CLI 项目基础架构
-- [ ] Task 3 Fix: 配置文件权限与 verbose 脱敏策略收尾（writeFileSync mode: 0o600）
-- [ ] Task 4: CLI 认证与配置命令（login/logout/profile/config）
-- [ ] Task 4 Backend: 补齐 P1 后端 API（credential ensure、execute inputs、execution cancel）
-- [ ] Task 5: CLI 核心命令（node-types/credential/project/workflow/execute/test）
-- [ ] Task 6: 最终全分支 review 与收尾
-- [ ] 编译/测试通过
-- [ ] SubAgent Code Review
+- [x] Task 3 Fix: 配置文件权限与 verbose 脱敏策略收尾（writeFileSync mode: 0o600）
+- [x] Task 4: CLI 认证与配置命令（login/logout/profile/config）
+- [x] Task 4 Backend: 补齐 P1 后端 API（credential ensure、execute inputs、execution cancel）
+- [x] Task 5: CLI 核心命令（node-types/credential/project/workflow/execute/test）
+- [x] Task 6: 最终全分支 review 与收尾
+- [x] 编译/测试通过
+- [x] SubAgent Code Review
 
 ## 完成标准
 
