@@ -66,7 +66,7 @@ public class ApiKeyServiceTests : IDisposable
         var stored = await _dbContext.Set<ApiKey>().AsNoTracking().FirstOrDefaultAsync(x => x.Id == result.Id, ct);
         Assert.NotNull(stored);
         Assert.NotEqual(result.Key, stored!.KeyHash);
-        Assert.True(stored.KeyHash.Length > 0);
+        Assert.Matches("^[0-9a-f]{64}$", stored.KeyHash);
         Assert.Null(stored.RevokedAt);
     }
 
@@ -95,6 +95,18 @@ public class ApiKeyServiceTests : IDisposable
 
         await Assert.ThrowsAsync<ArgumentException>(async () =>
             await _apiKeyService.CreateAsync(user.Id, "", null, ct));
+    }
+
+    [Fact]
+    public async Task CreateAsync_PastExpiration_ThrowsArgumentException()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var user = await CreateUserAsync("pastexpiration@example.com", ct);
+
+        var ex = await Assert.ThrowsAsync<ArgumentException>(async () =>
+            await _apiKeyService.CreateAsync(user.Id, "Past Key", DateTime.UtcNow.AddDays(-1), ct));
+
+        Assert.Equal("expiresAt", ex.ParamName);
     }
 
     [Fact]
@@ -210,9 +222,32 @@ public class ApiKeyServiceTests : IDisposable
 
         var created = await _apiKeyService.CreateAsync(user.Id, "Validate Key", null, ct);
 
-        var userId = await _apiKeyService.ValidateAsync(created.Key, ct);
+        var result = await _apiKeyService.ValidateAsync(created.Key, ct);
 
-        Assert.Equal(user.Id, userId);
+        Assert.NotNull(result);
+        Assert.Equal(user.Id, result!.UserId);
+        Assert.Empty(result.Roles);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_WithRoles_ReturnsUserIdAndRoles()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var user = await CreateUserAsync("roletest@example.com", ct);
+        _userContext.SetUser(user.Id);
+        _dbContext.Set<UserRole>().Add(new UserRole { UserId = user.Id, Role = "Editor" });
+        _dbContext.Set<UserRole>().Add(new UserRole { UserId = user.Id, Role = "Viewer" });
+        await _dbContext.SaveChangesAsync(ct);
+
+        var created = await _apiKeyService.CreateAsync(user.Id, "Role Test Key", null, ct);
+
+        var result = await _apiKeyService.ValidateAsync(created.Key, ct);
+
+        Assert.NotNull(result);
+        Assert.Equal(user.Id, result!.UserId);
+        Assert.Equal(2, result.Roles.Count);
+        Assert.Contains("Editor", result.Roles);
+        Assert.Contains("Viewer", result.Roles);
     }
 
     [Fact]
@@ -225,9 +260,9 @@ public class ApiKeyServiceTests : IDisposable
         var created = await _apiKeyService.CreateAsync(user.Id, "Revoked Validate Key", null, ct);
         await _apiKeyService.RevokeAsync(user.Id, created.Id, ct);
 
-        var userId = await _apiKeyService.ValidateAsync(created.Key, ct);
+        var result = await _apiKeyService.ValidateAsync(created.Key, ct);
 
-        Assert.Null(userId);
+        Assert.Null(result);
     }
 
     [Fact]
@@ -240,12 +275,14 @@ public class ApiKeyServiceTests : IDisposable
         var created = await _apiKeyService.CreateAsync(
             user.Id,
             "Expired Validate Key",
-            DateTime.UtcNow.AddDays(-1),
+            DateTime.UtcNow.AddSeconds(1),
             ct);
 
-        var userId = await _apiKeyService.ValidateAsync(created.Key, ct);
+        await Task.Delay(TimeSpan.FromSeconds(2), ct);
 
-        Assert.Null(userId);
+        var result = await _apiKeyService.ValidateAsync(created.Key, ct);
+
+        Assert.Null(result);
     }
 
     [Fact]
@@ -253,9 +290,9 @@ public class ApiKeyServiceTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
 
-        var userId = await _apiKeyService.ValidateAsync("fe_invalid_key", ct);
+        var result = await _apiKeyService.ValidateAsync("fe_invalid_key", ct);
 
-        Assert.Null(userId);
+        Assert.Null(result);
     }
 
     [Fact]
@@ -270,9 +307,9 @@ public class ApiKeyServiceTests : IDisposable
         _dbContext.Set<User>().Update(user);
         await _dbContext.SaveChangesAsync(ct);
 
-        var userId = await _apiKeyService.ValidateAsync(created.Key, ct);
+        var result = await _apiKeyService.ValidateAsync(created.Key, ct);
 
-        Assert.Null(userId);
+        Assert.Null(result);
     }
 
     private async Task<User> CreateUserAsync(string email, CancellationToken ct)

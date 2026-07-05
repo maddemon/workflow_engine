@@ -115,8 +115,10 @@ public class ApiKeyAuthenticationTests : IClassFixture<WebApplicationFactory<Pro
         var ct = TestContext.Current.CancellationToken;
         var (client, key, _) = await CreateClientWithApiKeyAsync(
             "expiredkey@example.com",
-            DateTime.UtcNow.AddDays(-1),
-            ct);
+            expiresAt: DateTime.UtcNow.AddSeconds(1),
+            ct: ct);
+
+        await Task.Delay(TimeSpan.FromSeconds(2), ct);
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", key);
         var response = await client.GetAsync("/api/v1/auth/me", ct);
@@ -159,9 +161,40 @@ public class ApiKeyAuthenticationTests : IClassFixture<WebApplicationFactory<Pro
         Assert.NotNull(listAfterRevoke![0].RevokedAt);
     }
 
+    [Fact]
+    public async Task GetWorkflows_WithApiKeyAndRole_ReturnsOk()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (client, _, _) = await CreateClientWithApiKeyAsync(
+            "workflowapikey@example.com",
+            roles: ["Viewer"],
+            ct: ct);
+
+        var response = await client.GetAsync("/api/v1/workflows", ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task CreateApiKey_WithApiKeyAuthentication_ReturnsUnauthorizedOrForbidden()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var (client, _, _) = await CreateClientWithApiKeyAsync("apikeycreateskey@example.com", ct: ct);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/v1/auth/api-keys",
+            new CreateApiKeyRequest { Name = "Should Fail" },
+            ct);
+
+        Assert.True(
+            response.StatusCode == HttpStatusCode.Unauthorized || response.StatusCode == HttpStatusCode.Forbidden,
+            $"Expected 401 or 403, got {(int)response.StatusCode}.");
+    }
+
     private async Task<(HttpClient Client, string Key, Guid UserId)> CreateClientWithApiKeyAsync(
         string email,
         DateTime? expiresAt = null,
+        IReadOnlyList<string>? roles = null,
         CancellationToken ct = default)
     {
         using var scope = _factory.Services.CreateScope();
@@ -179,6 +212,16 @@ public class ApiKeyAuthenticationTests : IClassFixture<WebApplicationFactory<Pro
         };
         dbContext.Set<User>().Add(user);
         await dbContext.SaveChangesAsync(ct);
+
+        if (roles is not null)
+        {
+            foreach (var role in roles)
+            {
+                dbContext.Set<UserRole>().Add(new UserRole { UserId = user.Id, Role = role });
+            }
+
+            await dbContext.SaveChangesAsync(ct);
+        }
 
         var created = await apiKeyService.CreateAsync(user.Id, "Test Key", expiresAt, ct);
 

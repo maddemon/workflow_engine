@@ -4,6 +4,7 @@ using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Events;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -132,7 +133,7 @@ public class AuthController(
     /// <summary>
     /// 创建 API Key（Personal Access Token）。
     /// </summary>
-    [Authorize]
+    [Authorize(AuthenticationSchemes = JwtBearerDefaults.AuthenticationScheme)]
     [HttpPost("api-keys")]
     public async Task<ActionResult<CreateApiKeyResult>> CreateApiKey(
         [FromBody] CreateApiKeyRequest request,

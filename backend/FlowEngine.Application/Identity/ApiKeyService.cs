@@ -12,6 +12,13 @@ using Microsoft.Extensions.Logging;
 namespace FlowEngine.Application.Identity;
 
 /// <summary>
+/// API Key 验证结果。
+/// </summary>
+/// <param name="UserId">用户 ID。</param>
+/// <param name="Roles">用户角色列表。</param>
+public sealed record ApiKeyValidationResult(Guid UserId, IReadOnlyList<string> Roles);
+
+/// <summary>
 /// API Key 应用服务，负责创建、列出、吊销和验证 API Key。
 /// </summary>
 public class ApiKeyService(
@@ -42,6 +49,11 @@ public class ApiKeyService(
         if (string.IsNullOrWhiteSpace(name))
         {
             throw new ArgumentException("API Key 名称不能为空", nameof(name));
+        }
+
+        if (expiresAt.HasValue && expiresAt.Value <= DateTime.UtcNow)
+        {
+            throw new ArgumentException("过期时间必须晚于当前时间", nameof(expiresAt));
         }
 
         var plaintextKey = GenerateKey();
@@ -143,8 +155,8 @@ public class ApiKeyService(
     /// </summary>
     /// <param name="key">Key 明文。</param>
     /// <param name="ct">取消令牌。</param>
-    /// <returns>有效时返回用户 ID，否则返回 null。</returns>
-    public async Task<Guid?> ValidateAsync(string key, CancellationToken ct = default)
+    /// <returns>有效时返回用户 ID 与角色列表，否则返回 null。</returns>
+    public async Task<ApiKeyValidationResult?> ValidateAsync(string key, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(key))
         {
@@ -173,7 +185,14 @@ public class ApiKeyService(
             return null;
         }
 
-        return apiKey.UserId;
+        var roles = await dbContext.Set<UserRole>()
+            .AsNoTracking()
+            .Where(x => x.UserId == apiKey.UserId && !x.Deleted)
+            .Select(x => x.Role)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+
+        return new ApiKeyValidationResult(apiKey.UserId, roles);
     }
 
     private static string GenerateKey()

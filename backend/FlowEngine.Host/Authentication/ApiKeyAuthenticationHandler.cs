@@ -47,16 +47,21 @@ public class ApiKeyAuthenticationHandler(
             return AuthenticateResult.NoResult();
         }
 
-        var userId = await apiKeyService.ValidateAsync(key, Context.RequestAborted).ConfigureAwait(false);
-        if (userId is null)
+        var validationResult = await apiKeyService.ValidateAsync(key, Context.RequestAborted).ConfigureAwait(false);
+        if (validationResult is null)
         {
             return AuthenticateResult.Fail("Invalid API key.");
         }
 
         var claims = new List<Claim>
         {
-            new(ClaimTypes.NameIdentifier, userId.Value.ToString()),
+            new(ClaimTypes.NameIdentifier, validationResult.UserId.ToString()),
         };
+
+        foreach (var role in validationResult.Roles)
+        {
+            claims.Add(new Claim(ClaimTypes.Role, role));
+        }
 
         var identity = new ClaimsIdentity(claims, Scheme.Name);
         var principal = new ClaimsPrincipal(identity);
