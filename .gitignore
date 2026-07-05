@@ -382,6 +382,7 @@ backend/FlowEngine.Host/flowengine.db-wal
 backend/FlowEngine.Host/flowengine.db
 backend/FlowEngine.Host/storage/
 .superpowers/
+.worktrees/
 .agents/skills/
 skills-lock.json
 backend/FlowEngine.Host/App_Data/crypto.key
