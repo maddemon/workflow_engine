@@ -26,7 +26,8 @@ public sealed class CredentialService(
     IEventBus eventBus,
     AuditEventFactory auditFactory,
     IResourceAuthorizationService resourceAuthorization,
-    IUserContext userContext)
+    IUserContext userContext,
+    WorkflowRepository workflowRepository)
 {
     private const string KeyVersion = "v1";
 

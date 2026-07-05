@@ -33,7 +33,7 @@ public sealed class WorkflowServiceAuthorizationTests : IDisposable
         var auditFactory = new AuditEventFactory(_userContext);
         var scheduleManager = new FakeScheduleManager();
         var resourceAuthorization = new RoleBasedResourceAuthorizationService(_userContext);
-        var triggerService = new TriggerService(_dbContext, eventBus, auditFactory, scheduleManager, _userContext, resourceAuthorization);
+        var triggerService = new TriggerService(_dbContext, eventBus, auditFactory, scheduleManager, _userContext, resourceAuthorization, new WebhookRouteService(_dbContext));
         var validator = new WorkflowValidator(new FakeNodeRegistry());
         _service = new WorkflowService(_dbContext, validator, eventBus, auditFactory, triggerService, _userContext, resourceAuthorization);
     }

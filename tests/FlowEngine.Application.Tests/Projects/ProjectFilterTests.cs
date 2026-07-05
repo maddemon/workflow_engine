@@ -173,7 +173,8 @@ public sealed class ProjectFilterTests : IDisposable
             new InMemoryEventBus(),
             new AuditEventFactory(userContext),
             new StubResourceAuthorizationService(),
-            userContext);
+            userContext,
+            new WorkflowRepository(_dbContext));
     }
 
     private TriggerService CreateTriggerService()
@@ -186,7 +187,8 @@ public sealed class ProjectFilterTests : IDisposable
             new AuditEventFactory(userContext),
             new FakeScheduleManager(),
             userContext,
-            resourceAuthorization);
+            resourceAuthorization,
+            new WebhookRouteService(_dbContext));
     }
 
     private static Workflow CreateWorkflow(string name, Guid? projectId)

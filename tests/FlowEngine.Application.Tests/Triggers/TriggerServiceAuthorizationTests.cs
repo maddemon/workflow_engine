@@ -32,7 +32,7 @@ public sealed class TriggerServiceAuthorizationTests : IDisposable
         var auditFactory = new AuditEventFactory(_userContext);
         var scheduleManager = new FakeScheduleManager();
         var resourceAuthorization = new RoleBasedResourceAuthorizationService(_userContext);
-        _service = new TriggerService(_dbContext, eventBus, auditFactory, scheduleManager, _userContext, resourceAuthorization);
+        _service = new TriggerService(_dbContext, eventBus, auditFactory, scheduleManager, _userContext, resourceAuthorization, new WebhookRouteService(_dbContext));
     }
 
     public void Dispose()

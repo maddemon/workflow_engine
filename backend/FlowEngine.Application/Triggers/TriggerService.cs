@@ -23,7 +23,8 @@ public sealed class TriggerService(
     AuditEventFactory auditFactory,
     IScheduleManager scheduleManager,
     IUserContext userContext,
-    IResourceAuthorizationService resourceAuthorization)
+    IResourceAuthorizationService resourceAuthorization,
+    WebhookRouteService webhookRouteService)
 {
     /// <summary>
     /// 创建触发器。

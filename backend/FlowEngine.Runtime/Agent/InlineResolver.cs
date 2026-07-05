@@ -49,7 +49,7 @@ public sealed class InlineResolver(
         var finalContent = string.Empty;
         var stopReason = InlineResolverStopReason.MaxIterationsReached;
 
-        for (var i = 0; i < _maxIterations; i++)
+        for (var i = 0; i < maxIterations; i++)
         {
             if (cancellationToken.IsCancellationRequested)
             {
@@ -107,7 +107,7 @@ public sealed class InlineResolver(
                         Content = toolResult.Output?.ToString()
                     };
                     messages.Add(toolMessage);
-                    _memory?.AddMessage(toolMessage);
+                    memory?.AddMessage(toolMessage);
                 }
             }
 

@@ -40,7 +40,7 @@ public sealed class WorkflowEndToEndTests : IDisposable
         var auditFactory = new AuditEventFactory(userContext);
         var scheduleManager = new FakeScheduleManager();
         var resourceAuthorization = new StubResourceAuthorizationService();
-        var triggerService = new TriggerService(_dbContext, eventBus, auditFactory, scheduleManager, userContext, resourceAuthorization);
+        var triggerService = new TriggerService(_dbContext, eventBus, auditFactory, scheduleManager, userContext, resourceAuthorization, new WebhookRouteService(_dbContext));
         var validator = new WorkflowValidator(new EmptyRegistry());
         _workflowService = new WorkflowService(_dbContext, validator, eventBus, auditFactory, triggerService, userContext, resourceAuthorization);
         _engine = new StubEngine(_dbContext);

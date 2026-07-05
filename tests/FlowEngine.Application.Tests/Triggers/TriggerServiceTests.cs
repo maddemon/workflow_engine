@@ -30,7 +30,7 @@ public class TriggerServiceTests : IDisposable
         var auditFactory = new AuditEventFactory(userContext);
         var scheduleManager = new FakeScheduleManager();
         var resourceAuthorization = new StubResourceAuthorizationService();
-        _service = new TriggerService(_dbContext, _eventBus, auditFactory, scheduleManager, userContext, resourceAuthorization);
+        _service = new TriggerService(_dbContext, _eventBus, auditFactory, scheduleManager, userContext, resourceAuthorization, new WebhookRouteService(_dbContext));
     }
 
     public void Dispose()
