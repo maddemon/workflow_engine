@@ -12,7 +12,7 @@ public sealed class NodeRegistry : INodeRegistry
 {
     private readonly ConcurrentDictionary<string, Type> _nodeTypes = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, NodeTypeDescriptor> _descriptors = new(StringComparer.OrdinalIgnoreCase);
-    private readonly ParameterDiscoverer _parameterDiscoverer = new();
+    private readonly ParameterDiscoverer _parameterDiscoverer;
     private readonly ILogger<NodeRegistry> _logger;
 
     /// <summary>
@@ -23,6 +23,7 @@ public sealed class NodeRegistry : INodeRegistry
     public NodeRegistry(IEnumerable<INodeType> initialNodes, ILogger<NodeRegistry> logger)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _parameterDiscoverer = new ParameterDiscoverer(logger);
 
         foreach (var node in initialNodes)
         {

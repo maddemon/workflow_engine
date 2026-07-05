@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
+using FlowEngine.Core.Exceptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Tests.Workflows;
@@ -186,7 +187,7 @@ public sealed class WorkflowExportServiceTests : IDisposable
     public async Task ExportAsync_NonExistentWorkflow_Throws()
     {
         var ct = TestContext.Current.CancellationToken;
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        await Assert.ThrowsAsync<NotFoundException>(
             () => _service.ExportAsync(Guid.NewGuid(), "tester", ct));
     }
 
@@ -196,7 +197,7 @@ public sealed class WorkflowExportServiceTests : IDisposable
         var ct = TestContext.Current.CancellationToken;
         var existing = CreateWorkflowWithParameters([]);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        await Assert.ThrowsAsync<NotFoundException>(
             () => _service.ExportBatchAsync([existing.Id, Guid.NewGuid()], "tester", ct));
     }
 

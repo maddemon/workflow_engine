@@ -4,6 +4,7 @@ using FlowEngine.Application.Identity;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
+using FlowEngine.Core.Exceptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -80,7 +81,7 @@ public sealed class FileServiceTests : IDisposable
         _options.MaxFileSizeBytes = 10; // 10 字节上限
         var content = new MemoryStream(new byte[11]); // 11 字节，超限
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        await Assert.ThrowsAsync<BusinessException>(
             () => _service.UploadAsync("big.bin", content, "application/octet-stream", projectId, ct));
     }
 
@@ -92,7 +93,7 @@ public sealed class FileServiceTests : IDisposable
         _options.AllowedContentTypes = ["text/plain"];
         var content = new MemoryStream("test"u8.ToArray());
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        await Assert.ThrowsAsync<BusinessException>(
             () => _service.UploadAsync("a.exe", content, "application/octet-stream", projectId, ct));
     }
 
@@ -118,7 +119,7 @@ public sealed class FileServiceTests : IDisposable
         _options.AllowedContentTypes = ["text/plain"];
         var content = new MemoryStream("test"u8.ToArray());
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        await Assert.ThrowsAsync<BusinessException>(
             () => _service.UploadAsync("a.txt", content, null, projectId, ct));
     }
 
@@ -131,7 +132,7 @@ public sealed class FileServiceTests : IDisposable
         _options.AllowedContentTypes = ["text/plain"];
         var content = new MemoryStream("test"u8.ToArray());
 
-        await Assert.ThrowsAsync<InvalidOperationException>(
+        await Assert.ThrowsAsync<BusinessException>(
             () => _service.UploadAsync("a.txt", content, "", projectId, ct));
     }
 

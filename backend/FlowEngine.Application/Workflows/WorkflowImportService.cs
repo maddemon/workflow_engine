@@ -146,46 +146,8 @@ public sealed class WorkflowImportService(
         }
 
         var nodeIdMap = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
-        var nodes = exportResult.Nodes.Select(n =>
-        {
-            var node = new NodeDefinition
-            {
-                Id = Guid.NewGuid(),
-                TypeName = n.TypeName,
-                Name = n.Name,
-                Parameters = n.Parameters,
-                Ports = n.Ports,
-                PositionX = n.PositionX,
-                PositionY = n.PositionY,
-                IsEntry = n.IsEntry,
-                RetryPolicy = n.RetryPolicy,
-                ErrorStrategy = n.ErrorStrategy,
-                Timeout = n.Timeout,
-            };
-
-            if (!string.IsNullOrEmpty(n.Id))
-            {
-                nodeIdMap[n.Id] = node.Id;
-            }
-
-            return node;
-        }).ToList();
-
-        var connections = exportResult.Connections.Select(c =>
-        {
-            var sourceGuid = nodeIdMap.TryGetValue(c.SourceNodeId, out var s) ? s : Guid.Empty;
-            var targetGuid = nodeIdMap.TryGetValue(c.TargetNodeId, out var t) ? t : Guid.Empty;
-
-            return new Connection
-            {
-                Id = Guid.NewGuid(),
-                SourceNodeId = sourceGuid,
-                SourcePortName = c.SourcePortName,
-                TargetNodeId = targetGuid,
-                TargetPortName = c.TargetPortName,
-                Condition = c.Condition,
-            };
-        }).ToList();
+        var nodes = exportResult.Nodes.Select(n => WorkflowMapper.ToEntity(n, nodeIdMap)).ToList();
+        var connections = exportResult.Connections.Select(c => WorkflowMapper.ToEntity(c, nodeIdMap)).ToList();
 
         var workflow = new Workflow
         {
@@ -211,21 +173,15 @@ public sealed class WorkflowImportService(
             };
         }
 
-        if (dbContext is not null)
-        {
-            dbContext.Workflows.Add(workflow);
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        }
+        dbContext.Workflows.Add(workflow);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        if (eventBus is not null && auditFactory is not null)
-        {
-            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
-                AuditEventTypes.WorkflowCreated,
-                "Workflow",
-                workflow.Id,
-                new Dictionary<string, object> { ["name"] = workflow.Name, ["imported"] = true }),
-                cancellationToken).ConfigureAwait(false);
-        }
+        await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+            AuditEventTypes.WorkflowCreated,
+            "Workflow",
+            workflow.Id,
+            new Dictionary<string, object> { ["name"] = workflow.Name, ["imported"] = true }),
+            cancellationToken).ConfigureAwait(false);
 
         return new ImportResult
         {

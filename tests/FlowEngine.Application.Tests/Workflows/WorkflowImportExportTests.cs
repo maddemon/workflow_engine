@@ -1,9 +1,13 @@
 using System.Text.Json;
+using FlowEngine.Application.Audit;
 using FlowEngine.Application.Dtos;
+using FlowEngine.Application.Identity;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Tests.Workflows;
 
@@ -245,11 +249,15 @@ public sealed class WorkflowImportExportTests
 
     private static WorkflowImportService CreateImportService(INodeRegistry registry)
     {
+        var options = new DbContextOptionsBuilder<FlowEngineDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        var dbContext = new FlowEngineDbContext(options);
         return new WorkflowImportService(
-            null!,
+            dbContext,
             registry,
-            null!,
-            null!);
+            new StubEventBus(),
+            new AuditEventFactory(new StubUserContext()));
     }
 
     private static NodeTypeDescriptor CreateDescriptor(
@@ -275,5 +283,29 @@ public sealed class WorkflowImportExportTests
         public IReadOnlyCollection<NodeTypeDescriptor> GetDescriptors() => descriptors;
         public NodeTypeDescriptor GetDescriptor(string typeName) =>
             descriptors.First(d => d.TypeName.Equals(typeName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private sealed class StubEventBus : IEventBus
+    {
+        public Task PublishAsync<TEvent>(TEvent eventInstance, CancellationToken cancellationToken = default)
+            where TEvent : IDomainEvent
+            => Task.CompletedTask;
+
+        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler)
+            where TEvent : IDomainEvent
+            => new StubDisposable();
+
+        private sealed class StubDisposable : IDisposable
+        {
+            public void Dispose() { }
+        }
+    }
+
+    private sealed class StubUserContext : IUserContext
+    {
+        public Guid? UserId => Guid.NewGuid();
+        public bool IsAuthenticated => true;
+        public string? Email => "test@test.com";
+        public IReadOnlyList<string> Roles => [];
     }
 }

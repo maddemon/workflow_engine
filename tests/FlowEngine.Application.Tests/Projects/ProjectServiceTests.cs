@@ -7,6 +7,7 @@ using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Events;
+using FlowEngine.Core.Exceptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Tests.Projects;
@@ -165,7 +166,7 @@ public sealed class ProjectServiceTests : IDisposable
         _dbContext.Projects.Add(project);
         await _dbContext.SaveChangesAsync(ct);
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => _service.DeleteAsync(project.Id, ct));
+        await Assert.ThrowsAsync<PermissionDeniedException>(() => _service.DeleteAsync(project.Id, ct));
     }
 
     [Fact]
@@ -211,7 +212,7 @@ public sealed class ProjectServiceTests : IDisposable
 
         var dto = new AddProjectMemberDto { UserId = userId, Role = "Editor" };
 
-        await Assert.ThrowsAsync<InvalidOperationException>(() => _service.AddMemberAsync(project.Id, dto, ct));
+        await Assert.ThrowsAsync<BusinessException>(() => _service.AddMemberAsync(project.Id, dto, ct));
     }
 
     [Fact]

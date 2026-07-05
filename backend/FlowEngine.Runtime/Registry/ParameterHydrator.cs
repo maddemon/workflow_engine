@@ -11,22 +11,13 @@ namespace FlowEngine.Runtime.Registry;
 /// <summary>
 /// 将 <c>resolvedValues</c> 字典赋值到节点实例属性上。
 /// </summary>
-public sealed class ParameterHydrator
+/// <remarks>
+/// 初始化 Hydrator。
+/// </remarks>
+/// <param name="credentialAccessor">凭据访问器（可选，用于 <see cref="CredentialValue"/> 属性）。</param>
+/// <param name="logger">日志记录器（可选）。</param>
+public sealed class ParameterHydrator(ICredentialAccessor? credentialAccessor = null, ILogger<ParameterHydrator>? logger = null)
 {
-    private readonly ICredentialAccessor? _credentialAccessor;
-    private readonly ILogger<ParameterHydrator>? _logger;
-
-    /// <summary>
-    /// 初始化 Hydrator。
-    /// </summary>
-    /// <param name="credentialAccessor">凭据访问器（可选，用于 <see cref="CredentialValue"/> 属性）。</param>
-    /// <param name="logger">日志记录器（可选）。</param>
-    public ParameterHydrator(ICredentialAccessor? credentialAccessor = null,
-        ILogger<ParameterHydrator>? logger = null)
-    {
-        _credentialAccessor = credentialAccessor;
-        _logger = logger;
-    }
 
     /// <summary>
     /// 将已解析的参数值赋值到节点实例的对应属性上。
@@ -80,7 +71,7 @@ public sealed class ParameterHydrator
             }
             catch (Exception ex)
             {
-                _logger?.LogWarning(ex, "ParameterHydrator: 属性 {PropertyName} 赋值失败", property.Name);
+                logger?.LogWarning(ex, "ParameterHydrator: 属性 {PropertyName} 赋值失败", property.Name);
             }
         }
     }
@@ -188,8 +179,9 @@ public sealed class ParameterHydrator
         {
             return Convert.ChangeType(value, underlying);
         }
-        catch
+        catch (Exception ex)
         {
+            logger?.LogWarning(ex, "类型转换失败：{Value} → {TargetType}。", value, underlying.Name);
             return null;
         }
     }
@@ -290,7 +282,7 @@ public sealed class ParameterHydrator
         };
     }
 
-    private static object? ConvertToEnum(object value, Type enumType)
+    private object? ConvertToEnum(object value, Type enumType)
     {
         try
         {
@@ -306,8 +298,9 @@ public sealed class ParameterHydrator
                 _ => Enum.Parse(enumType, value.ToString()!, ignoreCase: true)
             };
         }
-        catch
+        catch (Exception ex)
         {
+            logger?.LogWarning(ex, "枚举类型 {EnumType} 解析失败，使用默认值。", enumType.Name);
             return Enum.GetValues(enumType).GetValue(0);
         }
     }
@@ -339,7 +332,7 @@ public sealed class ParameterHydrator
 
     private async Task<CredentialValue?> ConvertToCredentialAsync(object value)
     {
-        if (_credentialAccessor is null)
+        if (credentialAccessor is null)
         {
             return null;
         }
@@ -348,12 +341,12 @@ public sealed class ParameterHydrator
         {
             try
             {
-                return await _credentialAccessor.GetCredentialAsync(credentialId, CancellationToken.None)
+                return await credentialAccessor.GetCredentialAsync(credentialId, CancellationToken.None)
                     .ConfigureAwait(false);
             }
             catch (Exception ex)
             {
-                _logger?.LogWarning(ex, "凭据 {CredentialId} 解析失败", credentialIdStr);
+                logger?.LogWarning(ex, "凭据 {CredentialId} 解析失败", credentialIdStr);
                 return null;
             }
         }
@@ -361,7 +354,7 @@ public sealed class ParameterHydrator
         return null;
     }
 
-    private static object? ConvertToList(object value, Type listType, Type elementType)
+    private object? ConvertToList(object value, Type listType, Type elementType)
     {
         try
         {
@@ -374,8 +367,9 @@ public sealed class ParameterHydrator
                 _ => null
             };
         }
-        catch
+        catch (Exception ex)
         {
+            logger?.LogWarning(ex, "列表类型 {ListType} 反序列化失败。", listType.Name);
             return null;
         }
     }
@@ -396,7 +390,7 @@ public sealed class ParameterHydrator
         return DateTime.TryParse(str, out var dt) ? dt : null;
     }
 
-    private static object? ConvertToDictionary(object value, Type dictType)
+    private object? ConvertToDictionary(object value, Type dictType)
     {
         try
         {
@@ -408,8 +402,9 @@ public sealed class ParameterHydrator
                 _ => null
             };
         }
-        catch
+        catch (Exception ex)
         {
+            logger?.LogWarning(ex, "字典类型 {DictType} 反序列化失败。", dictType.Name);
             return null;
         }
     }

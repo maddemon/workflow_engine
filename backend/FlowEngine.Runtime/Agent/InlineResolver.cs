@@ -5,39 +5,25 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Runtime.Tools;
+using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Runtime.Agent;
 
 /// <summary>
 /// 内联工具调用解析器，处理 Agent 节点的工具调用循环。
 /// </summary>
-public sealed class InlineResolver
+/// <remarks>
+/// 创建 InlineResolver 实例。
+/// </remarks>
+public sealed class InlineResolver(
+    ILlmClient llmClient,
+    IReadOnlyList<ToolDefinition> tools,
+    NodeExecutionContext parentContext,
+    int maxIterations = 10,
+    Guid? parentRecordId = null,
+    AgentMemory? memory = null,
+    ILogger? logger = null)
 {
-    private readonly ILlmClient _llmClient;
-    private readonly IReadOnlyList<ToolDefinition> _tools;
-    private readonly NodeExecutionContext _parentContext;
-    private readonly int _maxIterations;
-    private readonly Guid? _parentRecordId;
-    private readonly AgentMemory? _memory;
-
-    /// <summary>
-    /// 创建 InlineResolver 实例。
-    /// </summary>
-    public InlineResolver(
-        ILlmClient llmClient,
-        IReadOnlyList<ToolDefinition> tools,
-        NodeExecutionContext parentContext,
-        int maxIterations = 10,
-        Guid? parentRecordId = null,
-        AgentMemory? memory = null)
-    {
-        _llmClient = llmClient;
-        _tools = tools;
-        _parentContext = parentContext;
-        _maxIterations = maxIterations;
-        _parentRecordId = parentRecordId;
-        _memory = memory;
-    }
 
     /// <summary>
     /// 执行工具调用循环，直到 LLM 返回无工具调用或达到最大迭代次数。
@@ -51,14 +37,14 @@ public sealed class InlineResolver
     {
         // 若启用记忆，先把历史记忆合并到消息列表前部（system prompt 之后），
         // 使 Agent 能引用前序轮次的上下文（GAP-02）。
-        if (_memory is not null && _memory.Count > 0)
+        if (memory is not null && memory.Count > 0)
         {
-            var memoryMessages = _memory.GetMessages();
+            var memoryMessages = memory.GetMessages();
             var insertIndex = messages.Count > 0 && messages[0].Role == "system" ? 1 : 0;
             messages.InsertRange(insertIndex, memoryMessages);
         }
 
-        for (var i = 0; i < _maxIterations; i++)
+        for (var i = 0; i < maxIterations; i++)
         {
             if (cancellationToken.IsCancellationRequested)
             {
@@ -93,7 +79,7 @@ public sealed class InlineResolver
                 ToolCalls = response.ToolCalls
             };
             messages.Add(assistantMessage);
-            _memory?.AddMessage(assistantMessage);
+            memory?.AddMessage(assistantMessage);
 
             if (!response.HasToolCalls)
             {
@@ -127,14 +113,14 @@ public sealed class InlineResolver
                     Content = toolResult
                 };
                 messages.Add(toolMessage);
-                _memory?.AddMessage(toolMessage);
+                memory?.AddMessage(toolMessage);
             }
         }
 
         return new InlineResolverResult
         {
             Content = string.Empty,
-            Iterations = _maxIterations,
+            Iterations = maxIterations,
             StoppedReason = InlineResolverStopReason.MaxIterationsReached
         };
     }
@@ -149,9 +135,9 @@ public sealed class InlineResolver
     {
         var contentBuilder = new StringBuilder();
         IReadOnlyList<LlmToolCall>? toolCalls = null;
-        var callback = _parentContext.OnLlmStreamChunk;
+        var callback = parentContext.OnLlmStreamChunk;
 
-        await foreach (var chunk in _llmClient.ChatStreamAsync(messages, _tools, cancellationToken)
+        await foreach (var chunk in llmClient.ChatStreamAsync(messages, tools, cancellationToken)
             .ConfigureAwait(false))
         {
             if (!string.IsNullOrEmpty(chunk.Delta))
@@ -181,20 +167,20 @@ public sealed class InlineResolver
         LlmToolCall toolCall,
         CancellationToken cancellationToken)
     {
-        var tool = _tools.FirstOrDefault(t => t.Name == toolCall.Name);
+        var tool = tools.FirstOrDefault(t => t.Name == toolCall.Name);
         if (tool is null)
         {
             return ResultSanitizer.Sanitize(toolCall.Name, $"Tool '{toolCall.Name}' not found.");
         }
 
-        var toolNode = _parentContext.Workflow.Nodes
+        var toolNode = parentContext.Workflow.Nodes
             .FirstOrDefault(n => n.Id == tool.TargetNodeDefinitionId);
         if (toolNode is null)
         {
             return ResultSanitizer.Sanitize(toolCall.Name, $"Tool node '{tool.TargetNodeDefinitionId}' not found.");
         }
 
-        if (_parentContext.NodeRegistry?.TryGet(toolNode.TypeName, out var nodeType) != true
+        if (parentContext.NodeRegistry?.TryGet(toolNode.TypeName, out var nodeType) != true
             || nodeType is null)
         {
             return ResultSanitizer.Sanitize(toolCall.Name, $"Node type '{toolNode.TypeName}' not found.");
@@ -205,8 +191,9 @@ public sealed class InlineResolver
         {
             args = JsonNode.Parse(toolCall.Arguments);
         }
-        catch
+        catch (Exception ex)
         {
+            logger?.LogWarning(ex, "解析工具调用参数失败。");
             args = null;
         }
 
@@ -230,27 +217,28 @@ public sealed class InlineResolver
         {
             toolNodeInstance = (INodeType?)Activator.CreateInstance(nodeType.GetType());
         }
-        catch
+        catch (Exception ex)
         {
+            logger?.LogWarning(ex, "创建工具节点实例失败，类型：{TypeName}。", nodeType.GetType().Name);
             toolNodeInstance = null;
         }
 
         toolNodeInstance ??= nodeType;
 
         NodeExecutionContext toolContext;
-        if (_parentContext.ContextFactory is not null && toolNodeInstance is not null)
+        if (parentContext.ContextFactory is not null && toolNodeInstance is not null)
         {
             var execution = new ExecutionRecord
             {
-                Id = _parentContext.ExecutionId,
-                WorkflowDefinitionId = _parentContext.Workflow.Id,
-                ProjectId = _parentContext.Workflow.ProjectId, // 冗余存储（GAP-11）
+                Id = parentContext.ExecutionId,
+                WorkflowDefinitionId = parentContext.Workflow.Id,
+                ProjectId = parentContext.Workflow.ProjectId, // 冗余存储（GAP-11）
                 StartedAt = startedAt,
                 Status = ExecutionStatus.Running,
             };
 
-            toolContext = await _parentContext.ContextFactory.CreateAsync(
-                _parentContext.Workflow,
+            toolContext = await parentContext.ContextFactory.CreateAsync(
+                parentContext.Workflow,
                 execution,
                 toolNode,
                 toolNodeInstance,
@@ -260,14 +248,14 @@ public sealed class InlineResolver
                 0,
                 cancellationToken).ConfigureAwait(false);
             // ContextFactory 不感知嵌套深度，需在此处显式递增（GAP-03）。
-            toolContext.NestingDepth = _parentContext.NestingDepth + 1;
+            toolContext.NestingDepth = parentContext.NestingDepth + 1;
         }
         else
         {
             toolContext = new NodeExecutionContext
             {
-                Workflow = _parentContext.Workflow,
-                ExecutionId = _parentContext.ExecutionId,
+                Workflow = parentContext.Workflow,
+                ExecutionId = parentContext.ExecutionId,
                 Node = new NodeDefinition
                 {
                     Id = toolNode.Id,
@@ -279,10 +267,10 @@ public sealed class InlineResolver
                 Inputs = new Dictionary<string, DataBatch> { [FlowConstants.PortNames.Input] = inputBatch },
                 RawParameters = toolNode.Parameters,
                 ResolvedParameters = toolNode.Parameters,
-                Credentials = _parentContext.Credentials,
-                Logger = _parentContext.Logger,
+                Credentials = parentContext.Credentials,
+                Logger = parentContext.Logger,
                 CancellationToken = cancellationToken,
-                NestingDepth = _parentContext.NestingDepth + 1
+                NestingDepth = parentContext.NestingDepth + 1
             };
         }
 
@@ -307,7 +295,7 @@ public sealed class InlineResolver
                 Output = result,
                 RawParameters = toolContext.RawParameters.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
                 ResolvedParameters = toolContext.ResolvedParameters.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
-                ParentRecordId = _parentRecordId
+                ParentRecordId = parentRecordId
             };
 
             if (!result.Success)

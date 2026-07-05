@@ -3,10 +3,12 @@ using FlowEngine.Application.Audit;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
+using FlowEngine.Core.Exceptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Triggers;
@@ -19,7 +21,8 @@ public sealed class TriggerService(
     IEventBus eventBus,
     AuditEventFactory auditFactory,
     IScheduleManager scheduleManager,
-    IUserContext userContext)
+    IUserContext userContext,
+    WebhookRouteService webhookRouteService)
 {
     /// <summary>
     /// 创建触发器。
@@ -30,7 +33,7 @@ public sealed class TriggerService(
 
         if (!CanWriteTrigger())
         {
-            throw new InvalidOperationException("当前用户没有创建触发器的权限。");
+            throw new PermissionDeniedException("当前用户没有创建触发器的权限。");
         }
 
         var workflow = await dbContext.Workflows
@@ -38,7 +41,7 @@ public sealed class TriggerService(
             .ConfigureAwait(false);
         if (workflow is null)
         {
-            throw new InvalidOperationException("关联的工作流不存在。");
+            throw new NotFoundException("关联的工作流不存在。");
         }
 
         var triggerSettings = dto.Settings is not null ? ConvertToTriggerSettings(dto.Settings) : new TriggerSettings();
@@ -56,7 +59,7 @@ public sealed class TriggerService(
 
         if (dto.Type == TriggerType.Webhook)
         {
-            await ApplyWebhookRouteAsync(trigger, triggerSettings, cancellationToken).ConfigureAwait(false);
+            await webhookRouteService.ApplyRouteAsync(trigger, triggerSettings, cancellationToken).ConfigureAwait(false);
         }
 
         dbContext.Triggers.Add(trigger);
@@ -133,7 +136,7 @@ public sealed class TriggerService(
 
         if (!CanWriteTrigger())
         {
-            throw new InvalidOperationException("当前用户没有修改触发器的权限。");
+            throw new PermissionDeniedException("当前用户没有修改触发器的权限。");
         }
 
         var trigger = await dbContext.Triggers
@@ -151,7 +154,7 @@ public sealed class TriggerService(
 
         if (trigger.Type == TriggerType.Webhook)
         {
-            await UpdateWebhookRouteAsync(trigger, trigger.Settings, cancellationToken).ConfigureAwait(false);
+            await webhookRouteService.UpdateRouteAsync(trigger, trigger.Settings, cancellationToken).ConfigureAwait(false);
         }
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -187,7 +190,7 @@ public sealed class TriggerService(
     {
         if (!IsSystemAdmin())
         {
-            throw new InvalidOperationException("仅管理员可删除触发器。");
+            throw new PermissionDeniedException("仅管理员可删除触发器。");
         }
 
         var trigger = await dbContext.Triggers
@@ -198,18 +201,14 @@ public sealed class TriggerService(
             return false;
         }
 
-        dbContext.Triggers.Remove(trigger);
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
+        // Webhook 路由在删除触发器前加载，确保在同一 SaveChanges 中一并删除。
         if (trigger.Type == TriggerType.Webhook)
         {
-            var routes = await dbContext.WebhookRoutes
-                .Where(r => r.TriggerId == id)
-                .ToListAsync(cancellationToken)
-                .ConfigureAwait(false);
-            dbContext.WebhookRoutes.RemoveRange(routes);
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await webhookRouteService.RemoveRoutesByTriggerIdAsync(id, cancellationToken).ConfigureAwait(false);
         }
+
+        dbContext.Triggers.Remove(trigger);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         if (trigger.Type == TriggerType.Poll)
         {
@@ -244,11 +243,7 @@ public sealed class TriggerService(
             .ConfigureAwait(false);
         dbContext.Triggers.RemoveRange(triggers);
 
-        var routes = await dbContext.WebhookRoutes
-            .Where(r => r.WorkflowDefinitionId == workflowDefinitionId)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-        dbContext.WebhookRoutes.RemoveRange(routes);
+        await webhookRouteService.RemoveRoutesByWorkflowIdAsync(workflowDefinitionId, cancellationToken).ConfigureAwait(false);
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
@@ -360,7 +355,7 @@ public sealed class TriggerService(
     /// </summary>
     private bool CanWriteTrigger()
     {
-        return userContext.Roles.Contains("Admin") || userContext.Roles.Contains("Editor");
+        return userContext.Roles.Contains(RoleConstants.Admin) || userContext.Roles.Contains(RoleConstants.Editor);
     }
 
     /// <summary>
@@ -368,7 +363,7 @@ public sealed class TriggerService(
     /// </summary>
     private bool IsSystemAdmin()
     {
-        return userContext.Roles.Contains("Admin");
+        return userContext.Roles.Contains(RoleConstants.Admin);
     }
 
     private static TriggerSettings ConvertToTriggerSettings(TriggerSettingsDto dto)
@@ -393,106 +388,6 @@ public sealed class TriggerService(
             LastPollId = dto.LastPollId,
             LastPollTime = dto.LastPollTime,
         };
-    }
-
-    private async Task ApplyWebhookRouteAsync(
-        Trigger trigger,
-        TriggerSettings settings,
-        CancellationToken cancellationToken)
-    {
-        if (trigger.Type != TriggerType.Webhook)
-        {
-            return;
-        }
-
-        if (string.IsNullOrWhiteSpace(settings.WebhookPath))
-        {
-            return;
-        }
-
-        await ValidateWebhookPathAsync(settings.WebhookPath, excludeTriggerId: null, cancellationToken)
-            .ConfigureAwait(false);
-
-        var route = new WebhookRoute
-        {
-            Path = settings.WebhookPath,
-            Method = "POST",
-            WorkflowDefinitionId = trigger.WorkflowDefinitionId,
-            TriggerId = trigger.Id,
-            IsStatic = false,
-            Secret = settings.Secret,
-            AllowedIps = settings.AllowedIps,
-            AllowedOrigins = settings.AllowedOrigins,
-            IsSync = settings.IsSync,
-            MaxWaitSeconds = settings.MaxWaitSeconds,
-        };
-
-        dbContext.WebhookRoutes.Add(route);
-    }
-
-    private async Task UpdateWebhookRouteAsync(
-        Trigger trigger,
-        TriggerSettings settings,
-        CancellationToken cancellationToken)
-    {
-        if (trigger.Type != TriggerType.Webhook)
-        {
-            return;
-        }
-
-        var existingRoutes = await dbContext.WebhookRoutes
-            .Where(r => r.TriggerId == trigger.Id)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        if (string.IsNullOrWhiteSpace(settings.WebhookPath))
-        {
-            dbContext.WebhookRoutes.RemoveRange(existingRoutes);
-            return;
-        }
-
-        await ValidateWebhookPathAsync(settings.WebhookPath, trigger.Id, cancellationToken)
-            .ConfigureAwait(false);
-
-        var route = existingRoutes.FirstOrDefault();
-        if (route is null)
-        {
-            route = new WebhookRoute
-            {
-                Method = "POST",
-                WorkflowDefinitionId = trigger.WorkflowDefinitionId,
-                TriggerId = trigger.Id,
-                IsStatic = false,
-            };
-            dbContext.WebhookRoutes.Add(route);
-        }
-
-        route.Path = settings.WebhookPath;
-        route.Secret = settings.Secret;
-        route.AllowedIps = settings.AllowedIps;
-        route.AllowedOrigins = settings.AllowedOrigins;
-        route.IsSync = settings.IsSync;
-        route.MaxWaitSeconds = settings.MaxWaitSeconds;
-    }
-
-    private async Task ValidateWebhookPathAsync(
-        string path,
-        Guid? excludeTriggerId,
-        CancellationToken cancellationToken)
-    {
-        var query = dbContext.WebhookRoutes
-            .Where(r => r.Path == path);
-
-        if (excludeTriggerId.HasValue)
-        {
-            query = query.Where(r => r.TriggerId != excludeTriggerId.Value);
-        }
-
-        var exists = await query.AnyAsync(cancellationToken).ConfigureAwait(false);
-        if (exists)
-        {
-            throw new InvalidOperationException($"Webhook path '{path}' is already in use.");
-        }
     }
 
     private static TriggerSettingsDto ConvertToTriggerSettingsDto(TriggerSettings settings)

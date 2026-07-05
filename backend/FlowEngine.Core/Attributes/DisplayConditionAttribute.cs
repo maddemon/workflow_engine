@@ -11,27 +11,21 @@ namespace FlowEngine.Core.Attributes;
 /// public JsonObject? Body { get; set; }
 /// </code>
 /// </example>
+/// <remarks>
+/// 声明条件显隐规则。
+/// </remarks>
+/// <param name="propertyName">依赖的属性名（使用 <c>nameof</c>）。</param>
+/// <param name="value">匹配值。</param>
 [AttributeUsage(AttributeTargets.Property, AllowMultiple = true)]
-public sealed class DisplayConditionAttribute : Attribute
+public sealed class DisplayConditionAttribute(string propertyName, object value) : Attribute
 {
     /// <summary>
     /// 依赖的属性名（PascalCase，Discoverer 会转为 camelCase）。
     /// </summary>
-    public string PropertyName { get; }
+    public string PropertyName { get; } = propertyName ?? throw new ArgumentNullException(nameof(propertyName));
 
     /// <summary>
     /// 匹配值。
     /// </summary>
-    public object Value { get; }
-
-    /// <summary>
-    /// 声明条件显隐规则。
-    /// </summary>
-    /// <param name="propertyName">依赖的属性名（使用 <c>nameof</c>）。</param>
-    /// <param name="value">匹配值。</param>
-    public DisplayConditionAttribute(string propertyName, object value)
-    {
-        PropertyName = propertyName ?? throw new ArgumentNullException(nameof(propertyName));
-        Value = value ?? throw new ArgumentNullException(nameof(value));
-    }
+    public object Value { get; } = value ?? throw new ArgumentNullException(nameof(value));
 }

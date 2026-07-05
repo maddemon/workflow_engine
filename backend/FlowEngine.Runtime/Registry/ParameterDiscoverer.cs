@@ -7,13 +7,18 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Runtime.Registry;
 
 /// <summary>
 /// 反射扫描节点属性，生成 <see cref="ParameterDefinition"/> 列表。
 /// </summary>
-public sealed class ParameterDiscoverer
+/// <remarks>
+/// 初始化 ParameterDiscoverer。
+/// </remarks>
+/// <param name="logger">日志记录器（可选）。</param>
+public sealed class ParameterDiscoverer(ILogger? logger = null)
 {
     private readonly ConcurrentDictionary<Type, IReadOnlyList<ParameterDefinition>> _cache = new();
 
@@ -27,7 +32,7 @@ public sealed class ParameterDiscoverer
         return _cache.GetOrAdd(nodeType, DiscoverInternal);
     }
 
-    private static IReadOnlyList<ParameterDefinition> DiscoverInternal(Type nodeType)
+    private IReadOnlyList<ParameterDefinition> DiscoverInternal(Type nodeType)
     {
         object? instance = null;
         try
@@ -37,9 +42,9 @@ public sealed class ParameterDiscoverer
                 instance = Activator.CreateInstance(nodeType);
             }
         }
-        catch
+        catch (Exception ex)
         {
-            // 无法创建实例，跳过默认值读取
+            logger?.LogWarning(ex, "无法创建节点类型 {NodeType} 的实例，跳过默认值读取。", nodeType.Name);
         }
 
         var parameters = new List<ParameterDefinition>();
@@ -212,7 +217,7 @@ public sealed class ParameterDiscoverer
         return true;
     }
 
-    private static object? ReadPropertyDefault(object instance, PropertyInfo property)
+    private object? ReadPropertyDefault(object instance, PropertyInfo property)
     {
         try
         {
@@ -229,8 +234,9 @@ public sealed class ParameterDiscoverer
 
             return value;
         }
-        catch
+        catch (Exception ex)
         {
+            logger?.LogWarning(ex, "读取属性 {PropertyName} 默认值失败。", property.Name);
             return null;
         }
     }

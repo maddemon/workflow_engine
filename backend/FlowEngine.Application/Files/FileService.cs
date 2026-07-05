@@ -3,6 +3,7 @@ using FlowEngine.Application.Identity;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
+using FlowEngine.Core.Exceptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -36,7 +37,7 @@ public sealed class FileService(
         // 文件大小校验（GAP-07）。
         if (opts.MaxFileSizeBytes > 0 && content.Length > opts.MaxFileSizeBytes)
         {
-            throw new InvalidOperationException(
+            throw new BusinessException(
                 $"文件大小 {content.Length} 字节超过上限 {opts.MaxFileSizeBytes} 字节。");
         }
 
@@ -46,7 +47,7 @@ public sealed class FileService(
             if (string.IsNullOrWhiteSpace(contentType)
                 || !allowed.Contains(contentType, StringComparer.OrdinalIgnoreCase))
             {
-                throw new InvalidOperationException(
+                throw new BusinessException(
                     $"文件类型 '{contentType ?? "<空>"}' 不在允许列表内。");
             }
         }

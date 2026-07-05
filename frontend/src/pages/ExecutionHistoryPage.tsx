@@ -13,30 +13,10 @@ import {
   Divider,
   Pagination,
 } from '@mantine/core';
-import { ArrowLeft, RefreshCw, Check, X, Clock, Loader as LoaderIcon, Eye, ChevronDown, ChevronRight } from 'lucide-react';
+import { ArrowLeft, RefreshCw, X, Eye, ChevronDown, ChevronRight } from 'lucide-react';
 import { getWorkflowExecutions, getExecution } from '../services/api.ts';
-import type { ExecutionDto, ExecutionStatus } from '../types/workflow.ts';
-
-const statusConfig: Record<ExecutionStatus, { color: string; icon: React.ReactNode }> = {
-  Pending: { color: 'gray', icon: <Clock size={14} /> },
-  Running: { color: 'blue', icon: <LoaderIcon size={14} speed={2} /> },
-  Completed: { color: 'green', icon: <Check size={14} strokeWidth={3} /> },
-  Failed: { color: 'red', icon: <X size={14} strokeWidth={3} /> },
-  Cancelled: { color: 'gray', icon: <X size={14} /> },
-};
-
-function formatDuration(startedAt: string | null, completedAt: string | null): string | null {
-  if (!startedAt) return null;
-  const start = new Date(startedAt).getTime();
-  const end = completedAt ? new Date(completedAt).getTime() : Date.now();
-  const ms = end - start;
-  if (ms < 0) return null;
-  if (ms < 1000) return `${ms}ms`;
-  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
-  const minutes = Math.floor(ms / 60000);
-  const seconds = Math.floor((ms % 60000) / 1000);
-  return `${minutes}m ${seconds}s`;
-}
+import type { ExecutionDto } from '../types/workflow.ts';
+import { statusConfig, formatDuration } from '../utils/execution.tsx';
 
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return '-';

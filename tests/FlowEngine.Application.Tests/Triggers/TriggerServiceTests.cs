@@ -28,7 +28,7 @@ public class TriggerServiceTests : IDisposable
         var userContext = new FakeUserContext { Roles = ["Admin"] };
         var auditFactory = new AuditEventFactory(userContext);
         var scheduleManager = new FakeScheduleManager();
-        _service = new TriggerService(_dbContext, _eventBus, auditFactory, scheduleManager, userContext);
+        _service = new TriggerService(_dbContext, _eventBus, auditFactory, scheduleManager, userContext, new WebhookRouteService(_dbContext));
     }
 
     public void Dispose()

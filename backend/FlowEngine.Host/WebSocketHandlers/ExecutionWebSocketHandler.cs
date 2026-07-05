@@ -19,6 +19,10 @@ public sealed class ExecutionWebSocketHandler
 
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan HeartbeatTimeout = TimeSpan.FromSeconds(60);
+    private static readonly JsonSerializerOptions JsonOpts = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
 
     /// <summary>
     /// 初始化执行 WebSocket 端点处理器。
@@ -223,10 +227,7 @@ public sealed class ExecutionWebSocketHandler
                 break;
             }
 
-            var json = JsonSerializer.Serialize(evt, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            });
+            var json = JsonSerializer.Serialize(evt, JsonOpts);
             var bytes = System.Text.Encoding.UTF8.GetBytes(json);
             await connection.WebSocket.SendAsync(
                 new ArraySegment<byte>(bytes),
@@ -277,10 +278,7 @@ public sealed class ExecutionWebSocketHandler
             return;
         }
 
-        var json = JsonSerializer.Serialize(message, new JsonSerializerOptions
-        {
-            PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        });
+        var json = JsonSerializer.Serialize(message, JsonOpts);
         var bytes = Encoding.UTF8.GetBytes(json);
         var segment = new ArraySegment<byte>(bytes);
 

@@ -8,6 +8,7 @@ using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
+using FlowEngine.Core.Exceptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Workflows;
@@ -167,7 +168,7 @@ public sealed class WorkflowService(
 
         if (!CanWriteWorkflow())
         {
-            throw new InvalidOperationException("当前用户没有修改工作流的权限。");
+            throw new PermissionDeniedException("当前用户没有修改工作流的权限。");
         }
 
         var previousIsActive = existing.IsActive;
@@ -229,7 +230,7 @@ public sealed class WorkflowService(
 
         if (!IsSystemAdmin())
         {
-            throw new InvalidOperationException("仅管理员可删除工作流。");
+            throw new PermissionDeniedException("仅管理员可删除工作流。");
         }
 
         dbContext.Workflows.Remove(existing);
@@ -281,47 +282,8 @@ public sealed class WorkflowService(
         List<ConnectionDto> connectionDtos)
     {
         var nodeIdMap = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
-
-        var nodes = nodeDtos.Select(dto =>
-        {
-            var node = new NodeDefinition
-            {
-                Id = Guid.NewGuid(),
-                TypeName = dto.TypeName,
-                Name = dto.Name,
-                Parameters = dto.Parameters,
-                Ports = dto.Ports,
-                PositionX = dto.PositionX,
-                PositionY = dto.PositionY,
-                IsEntry = dto.IsEntry,
-                RetryPolicy = dto.RetryPolicy,
-                ErrorStrategy = dto.ErrorStrategy,
-                Timeout = dto.Timeout,
-            };
-
-            if (!string.IsNullOrEmpty(dto.Id))
-            {
-                nodeIdMap[dto.Id] = node.Id;
-            }
-
-            return node;
-        }).ToList();
-
-        var connections = connectionDtos.Select(dto =>
-        {
-            var sourceGuid = nodeIdMap.TryGetValue(dto.SourceNodeId, out var s) ? s : Guid.Empty;
-            var targetGuid = nodeIdMap.TryGetValue(dto.TargetNodeId, out var t) ? t : Guid.Empty;
-
-            return new Connection
-            {
-                SourceNodeId = sourceGuid,
-                SourcePortName = dto.SourcePortName,
-                TargetNodeId = targetGuid,
-                TargetPortName = dto.TargetPortName,
-                Condition = dto.Condition,
-            };
-        }).ToList();
-
+        var nodes = nodeDtos.Select(dto => WorkflowMapper.ToEntity(dto, nodeIdMap)).ToList();
+        var connections = connectionDtos.Select(dto => WorkflowMapper.ToEntity(dto, nodeIdMap)).ToList();
         return (nodes, connections, nodeIdMap);
     }
 
@@ -330,13 +292,13 @@ public sealed class WorkflowService(
         var result = _workflowValidator.Validate(workflow);
         if (!result.IsValid)
         {
-            throw new InvalidOperationException("工作流校验失败：" + string.Join("; ", result.Errors));
+            throw new BusinessException("工作流校验失败：" + string.Join("; ", result.Errors));
         }
     }
 
     private bool CanWriteWorkflow()
     {
-        return userContext.Roles.Contains("Admin") || userContext.Roles.Contains("Editor");
+        return userContext.Roles.Contains(RoleConstants.Admin) || userContext.Roles.Contains(RoleConstants.Editor);
     }
 
     /// <summary>
@@ -344,38 +306,7 @@ public sealed class WorkflowService(
     /// </summary>
     private bool IsSystemAdmin()
     {
-        return userContext.Roles.Contains("Admin");
-    }
-
-    private static NodeDefinitionDto BuildNodeDto(NodeDefinition n, string id)
-    {
-        return new NodeDefinitionDto
-        {
-            Id = id,
-            TypeName = n.TypeName,
-            Name = n.Name,
-            Parameters = n.Parameters,
-            Ports = n.Ports,
-            PositionX = n.PositionX,
-            PositionY = n.PositionY,
-            IsEntry = n.IsEntry,
-            RetryPolicy = n.RetryPolicy,
-            ErrorStrategy = n.ErrorStrategy,
-            Timeout = n.Timeout,
-        };
-    }
-
-    private static ConnectionDto BuildConnectionDto(Connection c, string id, string sourceNodeId, string targetNodeId)
-    {
-        return new ConnectionDto
-        {
-            Id = id,
-            SourceNodeId = sourceNodeId,
-            SourcePortName = c.SourcePortName,
-            TargetNodeId = targetNodeId,
-            TargetPortName = c.TargetPortName,
-            Condition = c.Condition,
-        };
+        return userContext.Roles.Contains(RoleConstants.Admin);
     }
 
     /// <summary>
@@ -383,9 +314,9 @@ public sealed class WorkflowService(
     /// </summary>
     private static WorkflowDto MapToDto(Workflow workflow)
     {
-        var nodeDtos = workflow.Nodes.Select(n => BuildNodeDto(n, n.Id.ToString())).ToList();
+        var nodeDtos = workflow.Nodes.Select(n => WorkflowMapper.ToDto(n, n.Id.ToString())).ToList();
         var connectionDtos = workflow.Connections.Select(c =>
-            BuildConnectionDto(c, c.Id.ToString(), c.SourceNodeId.ToString(), c.TargetNodeId.ToString())).ToList();
+            WorkflowMapper.ToDto(c, c.Id.ToString(), c.SourceNodeId.ToString(), c.TargetNodeId.ToString())).ToList();
 
         return new WorkflowDto
         {
@@ -417,7 +348,7 @@ public sealed class WorkflowService(
         var nodeDtos = workflow.Nodes.Select(n =>
         {
             var originalId = reverseNodeIdMap.TryGetValue(n.Id, out var origId) ? origId : n.Id.ToString();
-            return BuildNodeDto(n, originalId);
+            return WorkflowMapper.ToDto(n, originalId);
         }).ToList();
 
         var connectionDtos = workflow.Connections.Select(c =>
@@ -427,7 +358,7 @@ public sealed class WorkflowService(
             var origConn = originalConnectionDtos.FirstOrDefault(cd =>
                 cd.SourceNodeId == origSource && cd.TargetNodeId == origTarget);
 
-            return BuildConnectionDto(c, origConn?.Id ?? c.Id.ToString(), origSource, origTarget);
+            return WorkflowMapper.ToDto(c, origConn?.Id ?? c.Id.ToString(), origSource, origTarget);
         }).ToList();
 
         return new WorkflowDto

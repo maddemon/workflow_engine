@@ -29,26 +29,28 @@ public sealed class JsEngine : IDisposable
     /// <summary>
     /// 创建 JsEngine 实例。每个实例有独立的沙箱。
     /// </summary>
+    /// <param name="options">JS 引擎安全限制配置。为 null 时使用默认值。</param>
     /// <param name="configure">可选的 Engine 选项配置回调。</param>
     /// <param name="logger">可选的日志记录器。</param>
-    public static JsEngine Create(Action<Options>? configure = null, ILogger? logger = null)
+    public static JsEngine Create(JsEngineOptions? options = null, Action<Options>? configure = null, ILogger? logger = null)
     {
-        var engine = new Engine(options =>
+        var opts = options ?? new JsEngineOptions();
+        var engine = new Engine(o =>
         {
-            options.Strict = true;
-            options.TimeoutInterval(TimeSpan.FromSeconds(5));
-            options.LimitMemory(8_000_000);
-            options.MaxStatements(5000);
-            options.LimitRecursion(50);
-            options.RegexTimeoutInterval(TimeSpan.FromSeconds(2));
-            options.MaxArraySize(100_000);
-            options.DisableStringCompilation();
-            configure?.Invoke(options);
+            o.Strict = true;
+            o.TimeoutInterval(TimeSpan.FromMilliseconds(opts.ExecutionTimeoutMs));
+            o.LimitMemory(opts.MemoryLimitBytes);
+            o.MaxStatements(opts.MaxStatements);
+            o.LimitRecursion(opts.RecursionDepthLimit);
+            o.RegexTimeoutInterval(TimeSpan.FromMilliseconds(opts.RegexTimeoutMs));
+            o.MaxArraySize((uint)opts.ArraySizeLimit);
+            o.DisableStringCompilation();
+            configure?.Invoke(o);
         });
 
         InjectConsole(engine, logger);
         InjectNow(engine);
-        InjectJmespath(engine);
+        InjectJmespath(engine, logger);
         InjectWhitelistFunctions(engine);
 
         return new JsEngine(engine, logger);
@@ -144,7 +146,7 @@ public sealed class JsEngine : IDisposable
     /// <summary>
     /// JsValue → DataItem 转换（用于 JSNode/CodeSnippet 输出）。
     /// </summary>
-    public static DataItem ToDataItem(JsValue result)
+    public DataItem ToDataItem(JsValue result)
     {
         if (result.IsUndefined() || result.IsNull())
         {
@@ -173,8 +175,9 @@ public sealed class JsEngine : IDisposable
                 var json = JsonSerializer.SerializeToNode(result.ToObject());
                 return new DataItem { Data = json, Success = true, SourceIndex = 0 };
             }
-            catch
+            catch (Exception ex)
             {
+                _logger?.LogWarning(ex, "JsValue 序列化为 JSON 失败，将尝试 ToString 回退。");
             }
         }
 
@@ -183,8 +186,9 @@ public sealed class JsEngine : IDisposable
         {
             return new DataItem { Data = JsonNode.Parse(str), Success = true, SourceIndex = 0 };
         }
-        catch
+        catch (Exception ex)
         {
+            _logger?.LogWarning(ex, "JsValue.ToString() 解析为 JSON 失败，将作为字符串返回。");
             return new DataItem { Data = JsonValue.Create(str), Success = true, SourceIndex = 0 };
         }
     }
@@ -238,7 +242,7 @@ public sealed class JsEngine : IDisposable
         engine.SetValue("nowIso", new Func<string>(() => FormatIsoDateTime(DateTime.UtcNow)));
     }
 
-    private static void InjectJmespath(Engine engine)
+    private static void InjectJmespath(Engine engine, ILogger? logger)
     {
         engine.SetValue("jmespath", new Func<JsonNode?, string, object?>((data, query) =>
         {
@@ -252,8 +256,9 @@ public sealed class JsEngine : IDisposable
                 var result = NavigateJsonPath(data, query.AsSpan());
                 return result?.ToJsonString();
             }
-            catch
+            catch (Exception ex)
             {
+                logger?.LogWarning(ex, "jmespath 查询失败：{Query}", query);
                 return null;
             }
         }));

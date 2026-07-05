@@ -8,9 +8,7 @@ namespace FlowEngine.Application.Authorization;
 /// <summary>
 /// 资源级授权服务实现，基于用户角色与权限矩阵判定资源访问权限。
 /// </summary>
-public sealed class ResourceAuthorizationService(
-    FlowEngineDbContext dbContext,
-    IAuthorizationService authorizationService) : IResourceAuthorizationService
+public sealed class ResourceAuthorizationService(FlowEngineDbContext dbContext, IAuthorizationService authorizationService) : IResourceAuthorizationService
 {
     /// <inheritdoc />
     public async Task<bool> CanAccessWorkflowAsync(Guid userId, Guid workflowId, Operation operation, CancellationToken ct = default)
@@ -43,7 +41,7 @@ public sealed class ResourceAuthorizationService(
     /// <inheritdoc />
     public bool ShouldMaskCredentialValues(IReadOnlyList<string> roles)
     {
-        return roles.Any(r => string.Equals(r, nameof(Role.Viewer), StringComparison.OrdinalIgnoreCase));
+        return roles.Any(r => string.Equals(r, RoleConstants.Viewer, StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task<IReadOnlyList<string>> GetUserRolesAsync(Guid userId, CancellationToken ct)

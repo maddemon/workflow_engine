@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Core.Data;
+using FlowEngine.Core.Exceptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Workflows;
@@ -38,7 +39,7 @@ public sealed class WorkflowExportService(FlowEngineDbContext dbContext)
 
         if (workflow is null)
         {
-            throw new InvalidOperationException($"工作流 {workflowId} 不存在。");
+            throw new NotFoundException($"工作流 {workflowId} 不存在。");
         }
 
         var result = MapToExportResult(workflow, exportedBy);
@@ -62,7 +63,7 @@ public sealed class WorkflowExportService(FlowEngineDbContext dbContext)
         var missingIds = idList.Except(workflows.Select(w => w.Id)).ToList();
         if (missingIds.Count > 0)
         {
-            throw new InvalidOperationException(
+            throw new NotFoundException(
                 $"以下工作流不存在：{string.Join(", ", missingIds)}。");
         }
 
@@ -74,31 +75,29 @@ public sealed class WorkflowExportService(FlowEngineDbContext dbContext)
         Core.Entities.Workflow workflow,
         string exportedBy)
     {
-        var nodeDtos = workflow.Nodes.Select(n => new NodeDefinitionDto
+        var nodeDtos = workflow.Nodes.Select(n =>
         {
-            Id = n.Id.ToString(),
-            TypeName = n.TypeName,
-            Name = n.Name,
             // 导出前对参数做凭据脱敏，移除 CredentialValue 中的明文字段（GAP-01）。
-            Parameters = SanitizeParameters(n.Parameters),
-            Ports = n.Ports,
-            PositionX = n.PositionX,
-            PositionY = n.PositionY,
-            IsEntry = n.IsEntry,
-            RetryPolicy = n.RetryPolicy,
-            ErrorStrategy = n.ErrorStrategy,
-            Timeout = n.Timeout,
+            var sanitized = SanitizeParameters(n.Parameters);
+            var dto = WorkflowMapper.ToDto(n, n.Id.ToString());
+            return new NodeDefinitionDto
+            {
+                Id = dto.Id,
+                TypeName = dto.TypeName,
+                Name = dto.Name,
+                Parameters = sanitized,
+                Ports = dto.Ports,
+                PositionX = dto.PositionX,
+                PositionY = dto.PositionY,
+                IsEntry = dto.IsEntry,
+                RetryPolicy = dto.RetryPolicy,
+                ErrorStrategy = dto.ErrorStrategy,
+                Timeout = dto.Timeout,
+            };
         }).ToList();
 
-        var connectionDtos = workflow.Connections.Select(c => new ConnectionDto
-        {
-            Id = c.Id.ToString(),
-            SourceNodeId = c.SourceNodeId.ToString(),
-            SourcePortName = c.SourcePortName,
-            TargetNodeId = c.TargetNodeId.ToString(),
-            TargetPortName = c.TargetPortName,
-            Condition = c.Condition,
-        }).ToList();
+        var connectionDtos = workflow.Connections.Select(c =>
+            WorkflowMapper.ToDto(c, c.Id.ToString(), c.SourceNodeId.ToString(), c.TargetNodeId.ToString())).ToList();
 
         return new WorkflowExportResult
         {

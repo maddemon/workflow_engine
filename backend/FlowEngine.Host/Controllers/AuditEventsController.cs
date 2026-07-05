@@ -17,29 +17,9 @@ public class AuditEventsController(AuditLogReader reader) : ControllerBase
     /// 查询审计事件，支持按类型、时间、资源过滤与分页。
     /// </summary>
     [HttpGet]
-    public async Task<ActionResult> Query(
-        [FromQuery] string? eventType,
-        [FromQuery] DateTime? from,
-        [FromQuery] DateTime? to,
-        [FromQuery] string? resourceType,
-        [FromQuery] Guid? resourceId,
-        [FromQuery] int offset = 0,
-        [FromQuery] int limit = 50,
-        CancellationToken cancellationToken = default)
+    public async Task<ActionResult> Query(AuditQueryParameters parameters, CancellationToken cancellationToken = default)
     {
-        var parameters = new AuditQueryParameters
-        {
-            EventType = eventType,
-            From = from,
-            To = to,
-            ResourceType = resourceType,
-            ResourceId = resourceId,
-            Offset = Math.Max(0, offset),
-            Limit = Math.Clamp(limit, 1, 200),
-        };
-
-        var result = await reader.QueryAsync(parameters, cancellationToken)
-            .ConfigureAwait(false);
+        var result = await reader.QueryAsync(parameters, cancellationToken).ConfigureAwait(false);
 
         var events = result.Events.Select(doc =>
         {

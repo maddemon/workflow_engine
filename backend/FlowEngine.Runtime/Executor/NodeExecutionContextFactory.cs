@@ -23,6 +23,7 @@ public sealed class NodeExecutionContextFactory(
     IReadOnlySet<string> environmentWhitelist,
     ILogger<ParameterHydrator>? hydratorLogger = null,
     ILogger<JsEngine>? jsLogger = null,
+    JsEngineOptions? jsEngineOptions = null,
     ILlmClient? llmClient = null,
     IWorkflowLoader? workflowLoader = null,
     IHttpClientPool? httpClientPool = null) : Core.Abstractions.INodeExecutionContextFactory
@@ -45,7 +46,7 @@ public sealed class NodeExecutionContextFactory(
         var rawParameters = MergeParameters(nodeDefinition, descriptor);
         var cacheKey = BuildCacheKey(descriptor);
 
-        using var js = JsEngine.Create(logger: jsLogger);
+        using var js = JsEngine.Create(options: jsEngineOptions, logger: jsLogger);
         js.SetValue("input", GetCurrentInput(inputs, runIndex));
         js.SetValue("inputs", inputs);
         js.SetValue("parameter", rawParameters);

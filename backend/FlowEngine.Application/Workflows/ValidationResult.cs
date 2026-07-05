@@ -3,16 +3,12 @@ namespace FlowEngine.Application.Workflows;
 /// <summary>
 /// 工作流校验结果。
 /// </summary>
-public sealed class ValidationResult
+/// <remarks>
+/// 初始化校验结果。
+/// </remarks>
+/// <param name="errors">错误信息列表。</param>
+public sealed class ValidationResult(IEnumerable<string>? errors = null)
 {
-    /// <summary>
-    /// 初始化校验结果。
-    /// </summary>
-    /// <param name="errors">错误信息列表。</param>
-    public ValidationResult(IEnumerable<string>? errors = null)
-    {
-        Errors = (errors ?? Array.Empty<string>()).ToList().AsReadOnly();
-    }
 
     /// <summary>
     /// 是否通过校验。
@@ -22,5 +18,5 @@ public sealed class ValidationResult
     /// <summary>
     /// 错误信息列表。
     /// </summary>
-    public IReadOnlyList<string> Errors { get; }
+    public IReadOnlyList<string> Errors { get; } = (errors ?? Array.Empty<string>()).ToList().AsReadOnly();
 }

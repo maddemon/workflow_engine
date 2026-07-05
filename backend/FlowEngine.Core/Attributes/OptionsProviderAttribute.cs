@@ -14,20 +14,15 @@ namespace FlowEngine.Core.Attributes;
 /// private IEnumerable&lt;Option&gt; GetDepartments() => [...];
 /// </code>
 /// </example>
+/// <remarks>
+/// 指定选项源方法。
+/// </remarks>
+/// <param name="methodName">方法名（使用 <c>nameof</c>）。</param>
 [AttributeUsage(AttributeTargets.Property)]
-public sealed class OptionsProviderAttribute : Attribute
+public sealed class OptionsProviderAttribute(string methodName) : Attribute
 {
     /// <summary>
     /// 提供选项的方法名（同一类上的实例方法）。
     /// </summary>
-    public string MethodName { get; }
-
-    /// <summary>
-    /// 指定选项源方法。
-    /// </summary>
-    /// <param name="methodName">方法名（使用 <c>nameof</c>）。</param>
-    public OptionsProviderAttribute(string methodName)
-    {
-        MethodName = methodName ?? throw new ArgumentNullException(nameof(methodName));
-    }
+    public string MethodName { get; } = methodName ?? throw new ArgumentNullException(nameof(methodName));
 }

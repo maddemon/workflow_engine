@@ -10,20 +10,15 @@ namespace FlowEngine.Core.Attributes;
 /// public CredentialValue? ApiCredential { get; set; }
 /// </code>
 /// </example>
+/// <remarks>
+/// 标记凭据属性。
+/// </remarks>
+/// <param name="credentialType">凭据类型标识。</param>
 [AttributeUsage(AttributeTargets.Property)]
-public sealed class CredentialAttribute : Attribute
+public sealed class CredentialAttribute(string credentialType) : Attribute
 {
     /// <summary>
     /// 凭据类型标识（如 "apiKey"、"oauth"、"basicAuth"）。
     /// </summary>
-    public string CredentialType { get; }
-
-    /// <summary>
-    /// 标记凭据属性。
-    /// </summary>
-    /// <param name="credentialType">凭据类型标识。</param>
-    public CredentialAttribute(string credentialType)
-    {
-        CredentialType = credentialType ?? throw new ArgumentNullException(nameof(credentialType));
-    }
+    public string CredentialType { get; } = credentialType ?? throw new ArgumentNullException(nameof(credentialType));
 }

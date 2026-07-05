@@ -4,9 +4,11 @@ using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Events;
+using FlowEngine.Core.Exceptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Credentials;
@@ -19,12 +21,13 @@ namespace FlowEngine.Application.Credentials;
 /// </remarks>
 public sealed class CredentialService(
     FlowEngineDbContext dbContext,
-    ICredentialEncryptionService _encryptionService,
-    ICryptoKeyProvider _keyProvider,
+    ICredentialEncryptionService encryptionService,
+    ICryptoKeyProvider keyProvider,
     IEventBus eventBus,
     AuditEventFactory auditFactory,
     IResourceAuthorizationService resourceAuthService,
-    IUserContext userContext)
+    IUserContext userContext,
+    WorkflowRepository workflowRepository)
 {
     private const string KeyVersion = "v1";
 
@@ -37,10 +40,10 @@ public sealed class CredentialService(
 
         if (!CanWriteCredential())
         {
-            throw new InvalidOperationException("当前用户没有创建凭据的权限。");
+            throw new PermissionDeniedException("当前用户没有创建凭据的权限。");
         }
 
-        var key = _keyProvider.GetKey();
+        var key = keyProvider.GetKey();
         var encryptedData = EncryptFields(dto.Fields, key);
 
         var credential = new Credential
@@ -103,7 +106,7 @@ public sealed class CredentialService(
 
         if (!CanWriteCredential())
         {
-            throw new InvalidOperationException("当前用户没有修改凭据的权限。");
+            throw new PermissionDeniedException("当前用户没有修改凭据的权限。");
         }
 
         var credential = await dbContext.Credentials
@@ -114,7 +117,7 @@ public sealed class CredentialService(
             return null;
         }
 
-        var key = _keyProvider.GetKey();
+        var key = keyProvider.GetKey();
         var encryptedData = EncryptFields(dto.Fields, key);
 
         credential.Name = dto.Name;
@@ -134,7 +137,7 @@ public sealed class CredentialService(
     {
         if (!IsSystemAdmin())
         {
-            throw new InvalidOperationException("仅管理员可删除凭据。");
+            throw new PermissionDeniedException("仅管理员可删除凭据。");
         }
 
         var credential = await dbContext.Credentials
@@ -145,7 +148,7 @@ public sealed class CredentialService(
             return new CredentialDeleteResult { NotFound = true };
         }
 
-        var referencingWorkflows = await FindReferencingWorkflowsAsync(id, cancellationToken).ConfigureAwait(false);
+        var referencingWorkflows = await workflowRepository.FindReferencingCredentialAsync(id, cancellationToken).ConfigureAwait(false);
         if (referencingWorkflows.Count > 0)
         {
             return new CredentialDeleteResult { ReferencedBy = referencingWorkflows };
@@ -168,67 +171,9 @@ public sealed class CredentialService(
         var result = new Dictionary<string, EncryptedField>();
         foreach (var (fieldName, value) in fields)
         {
-            result[fieldName] = _encryptionService.Encrypt(value, key);
+            result[fieldName] = encryptionService.Encrypt(value, key);
         }
         return result;
-    }
-
-    private static string GetLikePattern(string credentialIdStr)
-    {
-        // GUID 固定长度 36 字符，出现在 JSON 列值中，误匹配概率极低。
-        return $"%{credentialIdStr}%";
-    }
-
-    private async Task<List<string>> FindReferencingWorkflowsAsync(Guid credentialId, CancellationToken cancellationToken)
-    {
-        var credentialIdStr = credentialId.ToString();
-        var pattern = GetLikePattern(credentialIdStr);
-        var provider = dbContext.Database.ProviderName;
-
-        // 使用数据库侧 LIKE 过滤候选工作流，避免全表加载到内存。
-        // 第一次内存精确匹配消除 LIKE 的潜在误匹配。
-        IQueryable<Workflow> filteredQuery = provider switch
-        {
-            "Microsoft.EntityFrameworkCore.Sqlite" =>
-                dbContext.Workflows.FromSqlInterpolated(
-                    $"SELECT * FROM \"workflows\" WHERE CAST(\"nodes\" AS TEXT) LIKE {pattern}"),
-            "Npgsql.EntityFrameworkCore.PostgreSQL" =>
-                dbContext.Workflows.FromSqlInterpolated(
-                    $"SELECT * FROM \"flow\".\"workflows\" WHERE \"nodes\"::text LIKE {pattern}"),
-            _ => dbContext.Workflows.Where(w => true)
-        };
-
-        var candidates = await filteredQuery
-            .Select(w => new { w.Id, w.Name, w.Nodes })
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        var referencing = new List<string>();
-        foreach (var candidate in candidates)
-        {
-            if (WorkflowReferencesCredential(candidate.Nodes, credentialIdStr))
-            {
-                referencing.Add(candidate.Name);
-            }
-        }
-
-        return referencing;
-    }
-
-    private static bool WorkflowReferencesCredential(List<NodeDefinition> nodes, string credentialId)
-    {
-        foreach (var node in nodes)
-        {
-            foreach (var paramValue in node.Parameters.Values)
-            {
-                if (paramValue is string strValue && strValue.Equals(credentialId, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-            }
-        }
-
-        return false;
     }
 
     private bool ShouldMaskCredentialValues()
@@ -243,12 +188,12 @@ public sealed class CredentialService(
 
     private bool CanWriteCredential()
     {
-        return userContext.Roles.Contains("Admin") || userContext.Roles.Contains("Editor");
+        return userContext.Roles.Contains(RoleConstants.Admin) || userContext.Roles.Contains(RoleConstants.Editor);
     }
 
     private bool IsSystemAdmin()
     {
-        return userContext.Roles.Contains("Admin");
+        return userContext.Roles.Contains(RoleConstants.Admin);
     }
 
     private Dictionary<string, string> DecryptFields(Credential credential)
@@ -258,11 +203,11 @@ public sealed class CredentialService(
             return [];
         }
 
-        var key = _keyProvider.GetKey();
+        var key = keyProvider.GetKey();
         var fields = new Dictionary<string, string>();
         foreach (var (fieldName, encryptedField) in credential.Data)
         {
-            fields[fieldName] = _encryptionService.DecryptString(encryptedField, key);
+            fields[fieldName] = encryptionService.DecryptString(encryptedField, key);
         }
         return fields;
     }

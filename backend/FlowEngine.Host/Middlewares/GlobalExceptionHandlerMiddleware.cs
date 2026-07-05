@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
+using FlowEngine.Core.Exceptions;
 
 namespace FlowEngine.Host.Middlewares;
 
@@ -69,10 +70,13 @@ public class GlobalExceptionHandlerMiddleware(
     {
         return exception switch
         {
+            PermissionDeniedException => (StatusCodes.Status403Forbidden, "Forbidden"),
+            NotFoundException => (StatusCodes.Status404NotFound, "Not Found"),
+            BusinessException => (StatusCodes.Status400BadRequest, "Bad Request"),
             ArgumentException => (StatusCodes.Status400BadRequest, "Bad Request"),
+            InvalidOperationException => (StatusCodes.Status500InternalServerError, "Internal Server Error"),
+            UnauthorizedAccessException => (StatusCodes.Status401Unauthorized, "Unauthorized"),
             KeyNotFoundException => (StatusCodes.Status404NotFound, "Not Found"),
-            UnauthorizedAccessException => (StatusCodes.Status403Forbidden, "Forbidden"),
-            InvalidOperationException => (StatusCodes.Status400BadRequest, "Bad Request"),
             _ => (StatusCodes.Status500InternalServerError, "Internal Server Error"),
         };
     }

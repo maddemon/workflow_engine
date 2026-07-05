@@ -73,6 +73,7 @@ public static class ServiceCollectionExtensions
 
         // ── Engine Defaults ────────────────────────────────────────
         services.Configure<EngineDefaultsOptions>(configuration.GetSection(EngineDefaultsOptions.SectionName));
+        services.AddSingleton(new JsEngineOptions());
 
         // ── Database ────────────────────────────────────────────────
         AddDbContext(services, configuration);
@@ -81,7 +82,6 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<InternalErrorSink>();
         services.AddSingleton<IEventBus, InMemoryEventBus>();
         services.AddScoped<ParameterResolver>();
-        services.AddScoped<CredentialAccessor>();
 
         services.AddSingleton<AuditLogFileSink>(sp =>
         {
@@ -122,6 +122,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICryptoKeyProvider, CryptoKeyProvider>();
         services.AddSingleton<ICredentialEncryptionService, CredentialEncryptionService>();
         services.AddScoped<CredentialService>();
+        services.AddScoped<WorkflowRepository>();
         services.AddScoped<ICredentialAccessor, CredentialAccessor>();
         services.AddScoped<WorkflowValidator>();
         services.AddScoped<WorkflowService>();
@@ -129,6 +130,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<WorkflowImportService>();
         services.AddScoped<ProjectService>();
         services.AddScoped<TriggerService>();
+        services.AddScoped<WebhookRouteService>();
         services.AddScoped<WebhookHandler>();
         services.AddScoped<ErrorStrategyHandler>();
         services.AddSingleton<WorkflowExecutionQueue>();
@@ -167,6 +169,7 @@ public static class ServiceCollectionExtensions
                 new HashSet<string>(whitelist, StringComparer.OrdinalIgnoreCase),
                 hydratorLogger: provider.GetService<ILogger<ParameterHydrator>>(),
                 jsLogger: provider.GetService<ILogger<JsEngine>>(),
+                jsEngineOptions: provider.GetService<JsEngineOptions>(),
                 workflowLoader: provider.GetService<IWorkflowLoader>(),
                 httpClientPool: provider.GetService<IHttpClientPool>());
         });

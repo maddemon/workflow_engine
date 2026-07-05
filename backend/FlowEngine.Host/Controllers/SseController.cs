@@ -1,4 +1,4 @@
-using System.Text.Json;
+using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using FlowEngine.Application.Identity;
 using FlowEngine.Core.Abstractions;
@@ -6,13 +6,17 @@ using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Events;
 using FlowEngine.Host.WebSocketHandlers;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.AspNetCore.Mvc;
+using System.Net.ServerSentEvents;
 
 namespace FlowEngine.Host.Controllers;
 
 /// <summary>
 /// SSE（Server-Sent Events）兜底推送端点，当 WebSocket 不可用（如反向代理不支持）时
 /// 通过 HTTP 长连接向客户端推送执行进度事件。
+/// 使用 .NET 10 内置 <see cref="SseItem{T}"/> 和 <see cref="ServerSentEvents"/> 结果类型，
+/// 自动处理 Content-Type、SSE 格式化和 Flush。
 /// </summary>
 [ApiController]
 [Authorize]
@@ -22,11 +26,6 @@ public class SseController(
     IUserContext userContext,
     ILogger<SseController> logger) : ControllerBase
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
-
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(30);
 
     /// <summary>
@@ -36,17 +35,13 @@ public class SseController(
     /// <param name="cancellationToken">客户端断开时触发的取消令牌。</param>
     [HttpGet("executions/{executionId:guid}/stream")]
     [AuthorizePermission(Scope.Execution, Operation.Read)]
-    public async Task Stream(Guid executionId, CancellationToken cancellationToken)
+    public IResult Stream(Guid executionId, CancellationToken cancellationToken)
     {
         if (!userContext.IsAuthenticated)
         {
-            Response.StatusCode = StatusCodes.Status401Unauthorized;
-            return;
+            return TypedResults.StatusCode(StatusCodes.Status401Unauthorized);
         }
 
-        Response.Headers.ContentType = "text/event-stream";
-        Response.Headers.CacheControl = "no-cache";
-        Response.Headers.Connection = "keep-alive";
         // 禁用 nginx 反向代理缓冲，确保事件实时推送
         Response.Headers["X-Accel-Buffering"] = "no";
 
@@ -56,7 +51,22 @@ public class SseController(
             SingleWriter = false,
         });
 
-        var subscriptions = SubscribeExecutionEvents(executionId, channel.Writer);
+        var subscriptions = SubscribeExecutionEvents(executionId, channel.Writer).ToList();
+
+        return TypedResults.ServerSentEvents(
+            StreamEventsAsync(channel, subscriptions, executionId, cancellationToken));
+    }
+
+    /// <summary>
+    /// 将通道中的消息以 <see cref="SseItem{T}"/> 形式异步枚举，供 SSE 结果类型消费。
+    /// 负责心跳推送、连接确认、订阅释放和通道关闭。
+    /// </summary>
+    private async IAsyncEnumerable<SseItem<WebSocketPushMessage>> StreamEventsAsync(
+        Channel<WebSocketPushMessage> channel,
+        List<IDisposable> subscriptions,
+        Guid executionId,
+        [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
         CancellationTokenSource? heartbeatCts = null;
 
         try
@@ -64,31 +74,22 @@ public class SseController(
             logger.LogInformation("SSE connection established for execution {ExecutionId}", executionId);
 
             // 立即推送一次 connected 事件，确认连接已建立
-            await WriteSseAsync(new WebSocketPushMessage
-            {
-                Type = "connected",
-                ExecutionId = executionId,
-                Timestamp = DateTime.UtcNow,
-            }, cancellationToken).ConfigureAwait(false);
+            yield return new SseItem<WebSocketPushMessage>(
+                new WebSocketPushMessage
+                {
+                    Type = "connected",
+                    ExecutionId = executionId,
+                    Timestamp = DateTime.UtcNow,
+                },
+                eventType: "connected");
 
             heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            var heartbeatTask = RunHeartbeatAsync(channel.Writer, heartbeatCts.Token);
+            _ = RunHeartbeatAsync(channel.Writer, heartbeatCts.Token);
 
             await foreach (var message in channel.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
-                await WriteSseAsync(message, cancellationToken).ConfigureAwait(false);
-                await Response.Body.FlushAsync(cancellationToken).ConfigureAwait(false);
+                yield return new SseItem<WebSocketPushMessage>(message, eventType: message.Type);
             }
-
-            await heartbeatTask.ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-            // 客户端断开连接，正常退出
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "SSE stream error for execution {ExecutionId}", executionId);
         }
         finally
         {
@@ -105,11 +106,9 @@ public class SseController(
     /// <summary>
     /// 订阅与指定执行相关的事件，过滤非本执行的事件后写入通道。
     /// </summary>
-    private List<IDisposable> SubscribeExecutionEvents(Guid executionId, ChannelWriter<WebSocketPushMessage> writer)
+    private IEnumerable<IDisposable> SubscribeExecutionEvents(Guid executionId, ChannelWriter<WebSocketPushMessage> writer)
     {
-        var subs = new List<IDisposable>();
-
-        subs.Add(eventBus.Subscribe<WorkflowStartedEvent>((evt, _) =>
+        yield return eventBus.Subscribe<WorkflowStartedEvent>((evt, _) =>
         {
             if (evt.ExecutionId == executionId)
             {
@@ -126,9 +125,8 @@ public class SseController(
                 });
             }
             return Task.CompletedTask;
-        }));
-
-        subs.Add(eventBus.Subscribe<NodeExecutedEvent>((evt, _) =>
+        });
+        yield return eventBus.Subscribe<NodeExecutedEvent>((evt, _) =>
         {
             if (evt.ExecutionId == executionId)
             {
@@ -141,9 +139,8 @@ public class SseController(
                 });
             }
             return Task.CompletedTask;
-        }));
-
-        subs.Add(eventBus.Subscribe<NodeErrorEvent>((evt, _) =>
+        });
+        yield return eventBus.Subscribe<NodeErrorEvent>((evt, _) =>
         {
             if (evt.ExecutionId == executionId)
             {
@@ -166,9 +163,8 @@ public class SseController(
                 });
             }
             return Task.CompletedTask;
-        }));
-
-        subs.Add(eventBus.Subscribe<WorkflowCompletedEvent>((evt, _) =>
+        });
+        yield return eventBus.Subscribe<WorkflowCompletedEvent>((evt, _) =>
         {
             if (evt.ExecutionId == executionId)
             {
@@ -186,9 +182,8 @@ public class SseController(
                 });
             }
             return Task.CompletedTask;
-        }));
-
-        subs.Add(eventBus.Subscribe<WorkflowFailedEvent>((evt, _) =>
+        });
+        yield return eventBus.Subscribe<WorkflowFailedEvent>((evt, _) =>
         {
             if (evt.ExecutionId == executionId)
             {
@@ -210,9 +205,8 @@ public class SseController(
                 });
             }
             return Task.CompletedTask;
-        }));
-
-        subs.Add(eventBus.Subscribe<WorkflowCancelledEvent>((evt, _) =>
+        });
+        yield return eventBus.Subscribe<WorkflowCancelledEvent>((evt, _) =>
         {
             if (evt.ExecutionId == executionId)
             {
@@ -229,9 +223,8 @@ public class SseController(
                 });
             }
             return Task.CompletedTask;
-        }));
-
-        subs.Add(eventBus.Subscribe<LlmTokenStreamEvent>((evt, _) =>
+        });
+        yield return eventBus.Subscribe<LlmTokenStreamEvent>((evt, _) =>
         {
             if (evt.ExecutionId == executionId)
             {
@@ -251,9 +244,7 @@ public class SseController(
                 });
             }
             return Task.CompletedTask;
-        }));
-
-        return subs;
+        });
     }
 
     private static object BuildNodeExecutedPayload(NodeExecutedEvent evt)
@@ -301,14 +292,5 @@ public class SseController(
         {
             // 通道已关闭，正常退出
         }
-    }
-
-    /// <summary>
-    /// 将消息以 SSE 格式写入响应流。
-    /// </summary>
-    private async Task WriteSseAsync(WebSocketPushMessage message, CancellationToken cancellationToken)
-    {
-        var json = JsonSerializer.Serialize(message, JsonOptions);
-        await Response.WriteAsync($"data: {json}\n\n", cancellationToken).ConfigureAwait(false);
     }
 }

@@ -2,9 +2,11 @@ using FlowEngine.Application.Audit;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Events;
+using FlowEngine.Core.Exceptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Projects;
@@ -112,7 +114,7 @@ public sealed class ProjectService(
     {
         if (!IsSystemAdmin())
         {
-            throw new InvalidOperationException("仅系统管理员可删除项目。");
+            throw new PermissionDeniedException("仅系统管理员可删除项目。");
         }
 
         var project = await dbContext.Projects
@@ -204,7 +206,7 @@ public sealed class ProjectService(
             .ConfigureAwait(false);
         if (alreadyMember)
         {
-            throw new InvalidOperationException("用户已是项目成员。");
+            throw new BusinessException("用户已是项目成员。");
         }
 
         var member = new ProjectMember
@@ -297,7 +299,7 @@ public sealed class ProjectService(
 
     private bool IsSystemAdmin()
     {
-        return userContext.Roles.Contains("Admin");
+        return userContext.Roles.Contains(RoleConstants.Admin);
     }
 
     private static ProjectDto MapToDto(Project project)

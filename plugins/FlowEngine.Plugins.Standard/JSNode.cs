@@ -108,7 +108,7 @@ public sealed class JSNode : INodeType
         js.SetValue("$input", inputHelper);
 
         var result = js.Run(Code);
-        var outputItem = JsEngine.ToDataItem(result);
+        var outputItem = js.ToDataItem(result);
 
         return Task.FromResult(new NodeExecutionResult
         {
@@ -134,7 +134,7 @@ public sealed class JSNode : INodeType
             js.SetValue("$input", inputHelper);
 
             var result = js.Run(Code);
-            var outputItem = JsEngine.ToDataItem(result);
+            var outputItem = js.ToDataItem(result);
             outputItems.Add(outputItem);
         }
 

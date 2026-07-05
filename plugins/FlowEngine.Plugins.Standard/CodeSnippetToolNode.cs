@@ -81,7 +81,7 @@ public sealed class CodeSnippetToolNode : INodeType
             }
 
             var result = js.Run(Code);
-            var outputItem = JsEngine.ToDataItem(result);
+            var outputItem = js.ToDataItem(result);
 
             return Task.FromResult(new NodeExecutionResult
             {

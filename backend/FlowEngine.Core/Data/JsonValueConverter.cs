@@ -34,19 +34,14 @@ public static class JsonValueConverter
 /// 强类型 JSON 值转换器,使用 <see cref="JsonDefaults.Options"/> 序列化/反序列化。
 /// </summary>
 /// <typeparam name="T">属性 CLR 类型。</typeparam>
-public sealed class JsonValueConverter<T> : ValueConverter<T, string>
+/// <remarks>
+/// 初始化 JSON 值转换器。
+/// </remarks>
+/// <param name="options">JSON 序列化选项。</param>
+public sealed class JsonValueConverter<T>(JsonSerializerOptions options) : ValueConverter<T, string>(
+        v => Serialize(v, options),
+        v => Deserialize(v, options))
 {
-    /// <summary>
-    /// 初始化 JSON 值转换器。
-    /// </summary>
-    /// <param name="options">JSON 序列化选项。</param>
-    public JsonValueConverter(JsonSerializerOptions options)
-        : base(
-            v => Serialize(v, options),
-            v => Deserialize(v, options))
-    {
-    }
-
     private static string Serialize(T value, JsonSerializerOptions options)
     {
         if (value is null)
