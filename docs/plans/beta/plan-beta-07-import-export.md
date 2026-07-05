@@ -21,7 +21,7 @@
 
 - 工作流导出 API（GET /api/v1/workflows/{id}/export）。
 - 工作流导入 API（POST /api/v1/workflows/import）。
-- 批量导出 API（GET /api/v1/workflows/export）。
+- 批量导出 API（POST /api/v1/workflows/export-batch）。
 - 批量导入 API（POST /api/v1/workflows/import-batch）。
 - 导出 JSON 格式定义（节点、连线、参数、元数据）。
 - 导入校验逻辑（节点类型存在性、端口匹配、参数合法性）。
@@ -71,7 +71,7 @@
 
 - 目标：支持批量导出与导入。
 - 核心任务：
-  - 实现 GET /api/v1/workflows/export 批量导出（按 projectId 或选中工作流）。
+  - 实现 POST /api/v1/workflows/export-batch 批量导出（按 projectId 或选中工作流）。
   - 实现 POST /api/v1/workflows/import-batch 批量导入。
   - 批量导入逐条校验，部分失败不影响其他。
   - 批量操作结果汇总（成功数、失败数、失败详情）。
@@ -116,3 +116,4 @@ flowchart LR
 | 日期 | 修改人 | 修改内容 | 关联任务 |
 |------|--------|----------|----------|
 | 2026-06-18 | Agent | 创建导入导出开发计划 | Beta 计划编写 |
+| 2026-07-05 | Agent | 批量导出端点路径对齐：GET /api/v1/workflows/export → POST /api/v1/workflows/export-batch | task-9 |

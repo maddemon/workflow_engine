@@ -132,13 +132,14 @@
   - 存量数据根据关联的 WorkflowDefinitionId 回填 ProjectId（迁移脚本内完成，无关联时保持 null）。
 - **验收标准**：两个实体均可按 ProjectId 筛选；存量数据可正确回填或保持未分类。
 
-### GAP-12：CurrentProjectId 无中间件注入
+### GAP-12：项目分类筛选缺少 ProjectId 来源
 
 - **关联**：plan-beta-02
+- **状态**：已完成
 - **问题**：IProjectContext.CurrentProjectId 永远为 null，分类筛选默认值无法生效。
 - **影响**：列表无法按当前选中项目默认过滤。
-- **修复方案**：实现 ProjectContextMiddleware，从请求头、QueryString 或路由中提取 ProjectId 并注入 IProjectContext，仅用于分类筛选。
-- **验收标准**：请求携带 ProjectId 时 IProjectContext 能正确读取；缺失时保持 null 并返回全部资源。
+- **修复方案**：移除 IProjectContext 抽象；列表接口直接通过可选的 `projectId` 查询参数接收项目标识，未提供时返回全部资源（仅分类，不隔离）。
+- **验收标准**：请求携带 `projectId` 查询参数时列表按该项目过滤；缺失时返回全部资源。
 
 ### GAP-13：删除项目后资源归属未处理
 
@@ -151,9 +152,10 @@
 ### GAP-14：批量导出端点未暴露
 
 - **关联**：plan-beta-07
-- **问题**：ExportBatchAsync 服务方法已有，但 Controller 无 HttpGet 端点。
+- **状态**：已完成
+- **问题**：ExportBatchAsync 服务方法已有，但 Controller 无对应端点。
 - **影响**：批量导出功能不可用。
-- **修复方案**：在 WorkflowsController 添加 `[HttpGet("export-batch")]` 端点。
+- **修复方案**：在 WorkflowsController 添加 `POST /api/v1/workflows/export-batch` 端点。
 - **验收标准**：批量导出端点可正常调用并返回结果。
 
 ### GAP-15：导入未校验端口类型与参数合法性
@@ -172,12 +174,13 @@
 - **修复方案**：创建 UsersController，暴露角色分配/撤销端点。
 - **验收标准**：管理员可通过 API 分配和撤销用户角色。
 
-### GAP-17：ResourceAuthorizationService 未被调用
+### GAP-17：ResourceAuthorizationService 调用位置
 
 - **关联**：plan-beta-01
+- **状态**：已完成
 - **问题**：资源级 RBAC 校验流于形式，业务服务未调用。
 - **影响**：资源级权限控制不生效。
-- **修复方案**：在各业务 Service 的关键操作中注入并调用 ResourceAuthorizationService。
+- **修复方案**：在 Service 层关键操作中注入并调用 ResourceAuthorizationService，统一完成资源级权限校验。
 - **验收标准**：越权访问具体资源时被拒绝。
 
 ### GAP-18：Poll 触发器重启不恢复调度
@@ -208,6 +211,7 @@
 
 ### GAP-21：关键事件未写入审计
 
+- **状态**：已完成
 - **问题**：越权拒绝、限流命中、成员变更、Poll 跳过等事件均未写入审计日志。
 - **影响**：安全事件不可追溯。
 - **修复方案**：在 AuditEventTypes 中新增 PermissionDenied / RateLimited / MemberAdded / MemberRemoved / MemberRoleChanged / PollSkipped / FileAccessDenied / ExportPerformed / ImportPerformed 等类型，在对应位置写入审计事件。
@@ -239,6 +243,7 @@
 ### GAP-25：前后端 Agent 数据契约未建立
 
 - **关联**：plan-beta-09
+- **状态**：已完成
 - **问题**：后端 AgentNode.CreateSuccessResult 仅返回字符串，前端 agent-execution.ts 定义的 AgentExecutionData 等类型后端无对应 DTO。前端靠 extractAgentData 反向推断且大概率失效。
 - **影响**：前后端数据格式不匹配，功能异常。
 - **修复方案**：
@@ -263,11 +268,12 @@
 - **修复方案**：在 SecurityHeadersMiddleware 中添加 CSP 头。
 - **验收标准**：响应包含 CSP 头。
 
-### GAP-28：文件端点路径不符
+### GAP-28：文件端点路径对齐
 
 - **关联**：plan-beta-05
-- **问题**：实际 /files/upload 与 /files/{id}/download，计划要求 /files 与 /files/{id}/content。
-- **修复方案**：统一端点路径，或更新计划文档与实际一致。
+- **状态**：已完成
+- **问题**：下载端点计划为 /files/{id}/content，实际实现为 /files/{id}/download。
+- **修复方案**：更新计划文档与实际实现一致，保持 `GET /api/v1/files/{id}/download`。
 - **验收标准**：端点路径与计划文档一致。
 
 ### GAP-29：文件存储配置项不一致
@@ -287,6 +293,7 @@
 ### GAP-31：SubAgentToolNode 硬编码
 
 - **关联**：plan-beta-08
+- **状态**：已完成
 - **问题**：硬编码 maxIterations=10，未传递 ParentRecordId。
 - **修复方案**：从配置或上下文读取 maxIterations，正确传递 ParentRecordId。
 - **验收标准**：参数可配置，子记录正确关联父记录。
@@ -294,6 +301,7 @@
 ### GAP-32：SSE 兜底未实现
 
 - **关联**：plan-beta-09
+- **状态**：已完成
 - **问题**：WebSocket 不可用时无 SSE 降级方案。
 - **修复方案**：实现 SSE 端点作为 WebSocket 的降级方案。
 - **验收标准**：WebSocket 断开时自动切换到 SSE。
@@ -391,3 +399,4 @@ flowchart TD
 | 2026-07-03 | Agent  | 创建 Beta 缺口补齐计划               | Beta 完整性检查 |
 | 2026-07-03 | Agent | 基于深度代码审查重写，补充 32 项缺口 | Beta 深度审查 |
 | 2026-07-04 | Agent | 调整 GAP-05/06/11/12/13 等多租户相关项为项目分类语义 | task-align-no-saas-multitenant |
+| 2026-07-05 | Agent | 对齐 GAP-12/14/17/21/25/28/31/32 实现状态；批量导出与文件下载端点路径更新 | task-9 |

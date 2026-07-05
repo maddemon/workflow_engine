@@ -54,7 +54,7 @@
 - 核心任务：
   - 实现 POST /api/v1/files 上传端点。
   - 实现 GET /api/v1/files/{id} 查询文件元数据。
-  - 实现 GET /api/v1/files/{id}/content 下载文件内容。
+  - 实现 GET /api/v1/files/{id}/download 下载文件内容。
   - 上传文件受 RBAC 鉴权，projectId 仅用于分类，不做隔离。
   - 文件大小限制与类型校验。
 - 输入：阶段一存储抽象。
@@ -118,3 +118,4 @@ flowchart LR
 | 日期 | 修改人 | 修改内容 | 关联任务 |
 |------|--------|----------|----------|
 | 2026-06-18 | Agent | 创建文件存储开发计划 | Beta 计划编写 |
+| 2026-07-05 | Agent | 下载端点路径对齐：GET /api/v1/files/{id}/content → GET /api/v1/files/{id}/download | task-9 |
