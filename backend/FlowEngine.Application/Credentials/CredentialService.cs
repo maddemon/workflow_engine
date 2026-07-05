@@ -80,6 +80,13 @@ public sealed class CredentialService(
 
         if (!await resourceAuthorization.CanAccessCredentialAsync(userId.Value, id, Operation.Read, cancellationToken).ConfigureAwait(false))
         {
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.PermissionDenied,
+                "Credential",
+                id,
+                new Dictionary<string, object> { ["operation"] = Operation.Read.ToString(), ["reason"] = "role" }),
+                cancellationToken).ConfigureAwait(false);
+
             throw new PermissionDeniedException("当前用户没有读取该凭据的权限。");
         }
 
@@ -128,6 +135,13 @@ public sealed class CredentialService(
 
         if (!await resourceAuthorization.CanAccessCredentialAsync(userId.Value, id, Operation.Write, cancellationToken).ConfigureAwait(false))
         {
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.PermissionDenied,
+                "Credential",
+                id,
+                new Dictionary<string, object> { ["operation"] = Operation.Write.ToString(), ["reason"] = "role" }),
+                cancellationToken).ConfigureAwait(false);
+
             throw new PermissionDeniedException("当前用户没有修改该凭据的权限。");
         }
 
@@ -170,6 +184,13 @@ public sealed class CredentialService(
 
         if (!await resourceAuthorization.CanAccessCredentialAsync(userId.Value, id, Operation.Delete, cancellationToken).ConfigureAwait(false))
         {
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.PermissionDenied,
+                "Credential",
+                id,
+                new Dictionary<string, object> { ["operation"] = Operation.Delete.ToString(), ["reason"] = "role" }),
+                cancellationToken).ConfigureAwait(false);
+
             throw new PermissionDeniedException("当前用户没有删除该凭据的权限。");
         }
 

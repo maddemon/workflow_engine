@@ -72,6 +72,13 @@ public sealed class WorkflowService(
 
         if (!await resourceAuthorization.CanAccessWorkflowAsync(userId.Value, id, Operation.Read, cancellationToken).ConfigureAwait(false))
         {
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.PermissionDenied,
+                "Workflow",
+                id,
+                new Dictionary<string, object> { ["operation"] = Operation.Read.ToString(), ["reason"] = "role" }),
+                cancellationToken).ConfigureAwait(false);
+
             throw new PermissionDeniedException("当前用户没有读取该工作流的权限。");
         }
 
@@ -184,6 +191,13 @@ public sealed class WorkflowService(
 
         if (!await resourceAuthorization.CanAccessWorkflowAsync(userId.Value, id, Operation.Write, cancellationToken).ConfigureAwait(false))
         {
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.PermissionDenied,
+                "Workflow",
+                id,
+                new Dictionary<string, object> { ["operation"] = Operation.Write.ToString(), ["reason"] = "role" }),
+                cancellationToken).ConfigureAwait(false);
+
             throw new PermissionDeniedException("当前用户没有修改该工作流的权限。");
         }
 
@@ -257,6 +271,13 @@ public sealed class WorkflowService(
 
         if (!await resourceAuthorization.CanAccessWorkflowAsync(userId.Value, id, Operation.Delete, cancellationToken).ConfigureAwait(false))
         {
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.PermissionDenied,
+                "Workflow",
+                id,
+                new Dictionary<string, object> { ["operation"] = Operation.Delete.ToString(), ["reason"] = "role" }),
+                cancellationToken).ConfigureAwait(false);
+
             throw new PermissionDeniedException("当前用户没有删除该工作流的权限。");
         }
 

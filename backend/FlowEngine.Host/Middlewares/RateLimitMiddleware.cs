@@ -1,6 +1,9 @@
 using System.Security.Claims;
 using System.Text.Json;
+using FlowEngine.Application.Audit;
 using FlowEngine.Application.RateLimiting;
+using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Events;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 
@@ -14,7 +17,9 @@ public class RateLimitMiddleware(
     RequestDelegate next,
     IMemoryCache cache,
     IOptions<RateLimitOptions> options,
-    ILogger<RateLimitMiddleware> logger)
+    ILogger<RateLimitMiddleware> logger,
+    IEventBus eventBus,
+    AuditEventFactory auditFactory)
 {
     private static readonly TimeSpan CleanupInterval = TimeSpan.FromMinutes(5);
 
@@ -54,6 +59,18 @@ public class RateLimitMiddleware(
 
         if (counter.Count > rule.PermitLimit)
         {
+            var identifier = GetRateLimitKey(context, path);
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.RateLimited,
+                "Security",
+                Guid.Empty,
+                new Dictionary<string, object>
+                {
+                    ["identifier"] = identifier,
+                    ["rule"] = rule.Key,
+                }),
+                CancellationToken.None);
+
             var retryAfter = counter.GetRetryAfterSeconds(now, window);
             context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
             context.Response.Headers.RetryAfter = retryAfter.ToString();
@@ -91,12 +108,23 @@ public class RateLimitMiddleware(
         var normalized = path.TrimEnd('/').ToLowerInvariant();
 
         if (normalized.Contains("/auth/login") || normalized.Contains("/account/login"))
-            return options.Value.Login;
+            return CreateRule(options.Value.Login, "Login");
 
         if (normalized.Contains("/auth/register") || normalized.Contains("/account/register"))
-            return options.Value.Register;
+            return CreateRule(options.Value.Register, "Register");
 
-        return options.Value.Api;
+        return CreateRule(options.Value.Api, "Api");
+    }
+
+    private static RateLimitRule CreateRule(RateLimitRule source, string key)
+    {
+        return new RateLimitRule
+        {
+            PermitLimit = source.PermitLimit,
+            WindowSeconds = source.WindowSeconds,
+            Enabled = source.Enabled,
+            Key = key,
+        };
     }
 
     private static string GetRateLimitKey(HttpContext context, string path)

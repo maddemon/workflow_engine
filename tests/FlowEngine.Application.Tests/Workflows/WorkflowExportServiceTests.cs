@@ -1,8 +1,12 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using FlowEngine.Application.Audit;
+using FlowEngine.Application.Identity;
 using FlowEngine.Application.Workflows;
+using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
+using FlowEngine.Core.Events;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Tests.Workflows;
@@ -22,7 +26,9 @@ public sealed class WorkflowExportServiceTests : IDisposable
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
         _dbContext = new FlowEngineDbContext(options);
-        _service = new WorkflowExportService(_dbContext);
+        var eventBus = new InMemoryEventBus();
+        var auditFactory = new AuditEventFactory(new FakeUserContext { UserId = Guid.NewGuid() });
+        _service = new WorkflowExportService(_dbContext, eventBus, auditFactory);
     }
 
     public void Dispose() => _dbContext.Dispose();
@@ -198,6 +204,23 @@ public sealed class WorkflowExportServiceTests : IDisposable
 
         await Assert.ThrowsAsync<InvalidOperationException>(
             () => _service.ExportBatchAsync([existing.Id, Guid.NewGuid()], "tester", ct));
+    }
+
+    private sealed class FakeUserContext : IUserContext
+    {
+        public bool IsAuthenticated => UserId.HasValue;
+        public Guid? UserId { get; set; }
+        public string? Email => "test@test.com";
+        public IReadOnlyList<string> Roles { get; set; } = [];
+    }
+
+    private sealed class InMemoryEventBus : IEventBus
+    {
+        public Task PublishAsync<TEvent>(TEvent eventInstance, CancellationToken cancellationToken = default)
+            where TEvent : IDomainEvent => Task.CompletedTask;
+        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler)
+            where TEvent : IDomainEvent => new Disposable();
+        private sealed class Disposable : IDisposable { public void Dispose() { } }
     }
 
     /// <summary>

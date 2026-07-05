@@ -50,4 +50,9 @@ public class RateLimitRule
     /// 是否启用该规则。
     /// </summary>
     public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// 规则标识键（用于审计日志）。
+    /// </summary>
+    public string Key { get; set; } = string.Empty;
 }

@@ -1,7 +1,10 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using FlowEngine.Application.Audit;
 using FlowEngine.Application.Dtos;
+using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Data;
+using FlowEngine.Core.Events;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Workflows;
@@ -9,7 +12,10 @@ namespace FlowEngine.Application.Workflows;
 /// <summary>
 /// 工作流导出服务。
 /// </summary>
-public sealed class WorkflowExportService(FlowEngineDbContext dbContext)
+public sealed class WorkflowExportService(
+    FlowEngineDbContext dbContext,
+    IEventBus eventBus,
+    AuditEventFactory auditFactory)
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -42,6 +48,14 @@ public sealed class WorkflowExportService(FlowEngineDbContext dbContext)
         }
 
         var result = MapToExportResult(workflow, exportedBy);
+
+        await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+            AuditEventTypes.ExportPerformed,
+            "Workflow",
+            workflowId,
+            new Dictionary<string, object> { ["exportedBy"] = exportedBy }),
+            cancellationToken).ConfigureAwait(false);
+
         return JsonSerializer.Serialize(result, JsonOptions);
     }
 
@@ -67,6 +81,14 @@ public sealed class WorkflowExportService(FlowEngineDbContext dbContext)
         }
 
         var results = workflows.Select(w => MapToExportResult(w, exportedBy)).ToList();
+
+        await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+            AuditEventTypes.ExportPerformed,
+            "Workflow",
+            Guid.Empty,
+            new Dictionary<string, object> { ["exportedBy"] = exportedBy, ["count"] = idList.Count }),
+            cancellationToken).ConfigureAwait(false);
+
         return JsonSerializer.Serialize(results, JsonOptions);
     }
 

@@ -1,3 +1,4 @@
+using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Executions;
@@ -7,6 +8,7 @@ using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Events;
 using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.ValueObjects;
 using Microsoft.EntityFrameworkCore;
@@ -30,7 +32,9 @@ public sealed class ExecutionServiceAuthorizationTests : IDisposable
         var resourceAuthorization = new RoleBasedResourceAuthorizationService(_userContext);
         var engine = new StubEngine();
         var idempotencyService = new StubIdempotencyService();
-        _service = new ExecutionService(engine, _dbContext, idempotencyService, _userContext, resourceAuthorization);
+        var eventBus = new InMemoryEventBus();
+        var auditFactory = new AuditEventFactory(_userContext);
+        _service = new ExecutionService(engine, _dbContext, idempotencyService, _userContext, resourceAuthorization, eventBus, auditFactory);
     }
 
     public void Dispose()
@@ -108,6 +112,15 @@ public sealed class ExecutionServiceAuthorizationTests : IDisposable
         public Guid? UserId { get; set; } = Guid.NewGuid();
         public string? Email => "test@test.com";
         public IReadOnlyList<string> Roles { get; set; } = [];
+    }
+
+    private sealed class InMemoryEventBus : IEventBus
+    {
+        public Task PublishAsync<TEvent>(TEvent eventInstance, CancellationToken cancellationToken = default)
+            where TEvent : IDomainEvent => Task.CompletedTask;
+        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler)
+            where TEvent : IDomainEvent => new Disposable();
+        private sealed class Disposable : IDisposable { public void Dispose() { } }
     }
 
     private sealed class StubEngine : IEngine

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
@@ -8,6 +9,7 @@ using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Events;
 using FlowEngine.Core.Exceptions;
 using Microsoft.EntityFrameworkCore;
 
@@ -21,7 +23,9 @@ public sealed class ExecutionService(
     FlowEngineDbContext dbContext,
     IExecutionIdempotencyService idempotencyService,
     IUserContext userContext,
-    IResourceAuthorizationService resourceAuthorization)
+    IResourceAuthorizationService resourceAuthorization,
+    IEventBus eventBus,
+    AuditEventFactory auditFactory)
 {
 
     /// <summary>
@@ -105,6 +109,13 @@ public sealed class ExecutionService(
 
         if (!await resourceAuthorization.CanAccessExecutionAsync(userId.Value, executionId, Operation.Read, cancellationToken).ConfigureAwait(false))
         {
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.PermissionDenied,
+                "Execution",
+                executionId,
+                new Dictionary<string, object> { ["operation"] = Operation.Read.ToString(), ["reason"] = "role" }),
+                cancellationToken).ConfigureAwait(false);
+
             throw new PermissionDeniedException("当前用户没有读取该执行记录的权限。");
         }
 

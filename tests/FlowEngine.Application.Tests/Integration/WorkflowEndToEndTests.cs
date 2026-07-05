@@ -44,7 +44,7 @@ public sealed class WorkflowEndToEndTests : IDisposable
         var validator = new WorkflowValidator(new EmptyRegistry());
         _workflowService = new WorkflowService(_dbContext, validator, eventBus, auditFactory, triggerService, userContext, resourceAuthorization);
         _engine = new StubEngine(_dbContext);
-        _executionService = new ExecutionService(_engine, _dbContext, new StubIdempotencyService(), userContext, resourceAuthorization);
+        _executionService = new ExecutionService(_engine, _dbContext, new StubIdempotencyService(), userContext, resourceAuthorization, eventBus, auditFactory);
     }
 
     public void Dispose() => _dbContext.Dispose();

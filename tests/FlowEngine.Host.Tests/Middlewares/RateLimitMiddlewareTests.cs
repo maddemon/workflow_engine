@@ -1,6 +1,10 @@
 using System.Security.Claims;
 using System.Text.Json;
+using FlowEngine.Application.Audit;
+using FlowEngine.Application.Identity;
 using FlowEngine.Application.RateLimiting;
+using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Events;
 using FlowEngine.Host.Middlewares;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Caching.Memory;
@@ -242,10 +246,22 @@ public class RateLimitMiddlewareTests
         RequestDelegate next,
         RateLimitOptions? options = null)
     {
+        var eventBus = new Mock<IEventBus>();
+        var auditFactory = new AuditEventFactory(new FakeUserContext { UserId = Guid.NewGuid() });
         return new RateLimitMiddleware(
             next,
             _cache,
             Options.Create(options ?? DefaultOptions),
-            _logger.Object);
+            _logger.Object,
+            eventBus.Object,
+            auditFactory);
+    }
+
+    private sealed class FakeUserContext : IUserContext
+    {
+        public bool IsAuthenticated => UserId.HasValue;
+        public Guid? UserId { get; set; }
+        public string? Email => "test@test.com";
+        public IReadOnlyList<string> Roles { get; set; } = [];
     }
 }

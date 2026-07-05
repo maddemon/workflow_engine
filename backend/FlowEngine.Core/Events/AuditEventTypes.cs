@@ -74,6 +74,24 @@ public static class AuditEventTypes
     /// <summary>Webhook 触发。</summary>
     public const string WebhookTriggered = "Webhook.Triggered";
 
+    /// <summary>权限拒绝。</summary>
+    public const string PermissionDenied = "Security.PermissionDenied";
+
+    /// <summary>速率限制触发。</summary>
+    public const string RateLimited = "Security.RateLimited";
+
+    /// <summary>轮询触发跳过。</summary>
+    public const string PollSkipped = "Trigger.PollSkipped";
+
+    /// <summary>工作流导出执行。</summary>
+    public const string ExportPerformed = "Workflow.ExportPerformed";
+
+    /// <summary>工作流导入执行。</summary>
+    public const string ImportPerformed = "Workflow.ImportPerformed";
+
+    /// <summary>文件访问拒绝。</summary>
+    public const string FileAccessDenied = "File.AccessDenied";
+
     /// <summary>项目创建。</summary>
     public const string ProjectCreated = "Project.Created";
 

@@ -98,6 +98,13 @@ public sealed class TriggerService(
 
         if (!await resourceAuthorization.CanAccessTriggerAsync(userId.Value, id, Operation.Read, cancellationToken).ConfigureAwait(false))
         {
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.PermissionDenied,
+                "Trigger",
+                id,
+                new Dictionary<string, object> { ["operation"] = Operation.Read.ToString(), ["reason"] = "role" }),
+                cancellationToken).ConfigureAwait(false);
+
             throw new PermissionDeniedException("当前用户没有读取该触发器的权限。");
         }
 
@@ -159,6 +166,13 @@ public sealed class TriggerService(
 
         if (!await resourceAuthorization.CanAccessTriggerAsync(userId.Value, id, Operation.Write, cancellationToken).ConfigureAwait(false))
         {
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.PermissionDenied,
+                "Trigger",
+                id,
+                new Dictionary<string, object> { ["operation"] = Operation.Write.ToString(), ["reason"] = "role" }),
+                cancellationToken).ConfigureAwait(false);
+
             throw new PermissionDeniedException("当前用户没有修改该触发器的权限。");
         }
 
@@ -224,6 +238,13 @@ public sealed class TriggerService(
 
         if (!await resourceAuthorization.CanAccessTriggerAsync(userId.Value, id, Operation.Delete, cancellationToken).ConfigureAwait(false))
         {
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.PermissionDenied,
+                "Trigger",
+                id,
+                new Dictionary<string, object> { ["operation"] = Operation.Delete.ToString(), ["reason"] = "role" }),
+                cancellationToken).ConfigureAwait(false);
+
             throw new PermissionDeniedException("当前用户没有删除该触发器的权限。");
         }
 
