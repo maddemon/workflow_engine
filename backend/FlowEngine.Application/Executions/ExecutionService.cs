@@ -2,7 +2,6 @@ using System.Text.Json;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
-using FlowEngine.Application.Workflows;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
@@ -20,7 +19,6 @@ namespace FlowEngine.Application.Executions;
 public sealed class ExecutionService(
     IEngine engine,
     FlowEngineDbContext dbContext,
-    WorkflowService workflowService,
     IExecutionIdempotencyService idempotencyService,
     IUserContext userContext,
     IResourceAuthorizationService resourceAuthorization)
@@ -31,7 +29,10 @@ public sealed class ExecutionService(
     /// </summary>
     public async Task<ExecutionDto?> ExecuteAsync(Guid workflowId, string? idempotencyKey = null, CancellationToken cancellationToken = default)
     {
-        var workflow = await workflowService.GetAsync(workflowId, cancellationToken).ConfigureAwait(false);
+        var workflow = await dbContext.Workflows
+            .AsNoTracking()
+            .FirstOrDefaultAsync(w => w.Id == workflowId, cancellationToken)
+            .ConfigureAwait(false);
         if (workflow is null)
         {
             return null;

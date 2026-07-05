@@ -1,16 +1,12 @@
-using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Executions;
 using FlowEngine.Application.Identity;
-using FlowEngine.Application.Triggers;
-using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
-using FlowEngine.Core.Events;
 using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.ValueObjects;
 using Microsoft.EntityFrameworkCore;
@@ -31,16 +27,10 @@ public sealed class ExecutionServiceAuthorizationTests : IDisposable
         _dbContext = new FlowEngineDbContext(options);
         _userContext = new FakeUserContext();
 
-        var eventBus = new InMemoryEventBus();
-        var auditFactory = new AuditEventFactory(_userContext);
-        var scheduleManager = new FakeScheduleManager();
         var resourceAuthorization = new RoleBasedResourceAuthorizationService(_userContext);
-        var triggerService = new TriggerService(_dbContext, eventBus, auditFactory, scheduleManager, _userContext, resourceAuthorization);
-        var validator = new WorkflowValidator(new FakeNodeRegistry());
-        var workflowService = new WorkflowService(_dbContext, validator, eventBus, auditFactory, triggerService, _userContext, resourceAuthorization);
         var engine = new StubEngine();
         var idempotencyService = new StubIdempotencyService();
-        _service = new ExecutionService(engine, _dbContext, workflowService, idempotencyService, _userContext, resourceAuthorization);
+        _service = new ExecutionService(engine, _dbContext, idempotencyService, _userContext, resourceAuthorization);
     }
 
     public void Dispose()
@@ -118,37 +108,6 @@ public sealed class ExecutionServiceAuthorizationTests : IDisposable
         public Guid? UserId { get; set; } = Guid.NewGuid();
         public string? Email => "test@test.com";
         public IReadOnlyList<string> Roles { get; set; } = [];
-    }
-
-    private sealed class FakeNodeRegistry : INodeRegistry
-    {
-        public void Register(INodeType nodeType) { }
-        public INodeType Get(string typeName) => throw new InvalidOperationException();
-        public bool TryGet(string typeName, out INodeType? nodeType) { nodeType = null; return false; }
-        public IReadOnlyCollection<INodeType> GetAll() => [];
-        public INodeType CreateInstance(string typeName) => throw new InvalidOperationException();
-        public IReadOnlyCollection<NodeTypeDescriptor> GetDescriptors() => [];
-        public NodeTypeDescriptor GetDescriptor(string typeName) => throw new InvalidOperationException();
-    }
-
-    private sealed class InMemoryEventBus : IEventBus
-    {
-        public Task PublishAsync<TEvent>(TEvent eventInstance, CancellationToken cancellationToken = default)
-            where TEvent : IDomainEvent => Task.CompletedTask;
-        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler)
-            where TEvent : IDomainEvent => new Disposable();
-        private sealed class Disposable : IDisposable { public void Dispose() { } }
-    }
-
-    private sealed class FakeScheduleManager : IScheduleManager
-    {
-        public Task StartAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task StopAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task RegisterScheduleAsync(Guid triggerId, Guid workflowDefinitionId, string cronExpression, string? timeZone, DateTime? startAt, DateTime? endAt, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task UnregisterScheduleAsync(Guid triggerId, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task<DateTime?> GetNextFireTimeAsync(Guid triggerId, CancellationToken cancellationToken = default) => Task.FromResult<DateTime?>(null);
-        public Task RegisterPollTriggerAsync(Guid triggerId, Guid workflowDefinitionId, int intervalSeconds, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task UnregisterPollTriggerAsync(Guid triggerId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class StubEngine : IEngine
