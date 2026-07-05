@@ -128,6 +128,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<WorkflowService>();
         services.AddScoped<WorkflowExportService>();
         services.AddScoped<WorkflowImportService>();
+        services.AddScoped<WorkflowDryRunService>();
         services.AddScoped<ProjectService>();
         services.AddScoped<TriggerService>();
         services.AddScoped<WebhookRouteService>();

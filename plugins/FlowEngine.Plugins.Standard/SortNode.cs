@@ -9,7 +9,7 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// 排序节点，对数据进行排序。
 /// </summary>
-public sealed class SortNode : INodeType
+public sealed class SortNode : INodeType, ISupportsDryRun
 {
     /// <inheritdoc />
     public string TypeName => "sort";

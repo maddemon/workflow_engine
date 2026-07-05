@@ -29,6 +29,8 @@
     <ProjectReference Include="..\..\backend\FlowEngine.Application\FlowEngine.Application.csproj" />
     <ProjectReference Include="..\..\backend\FlowEngine.Core\FlowEngine.Core.csproj" />
     <ProjectReference Include="..\..\backend\FlowEngine.Infrastructure\FlowEngine.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\backend\FlowEngine.Runtime\FlowEngine.Runtime.csproj" />
+    <ProjectReference Include="..\..\plugins\FlowEngine.Plugins.Standard\FlowEngine.Plugins.Standard.csproj" />
   </ItemGroup>
 
 </Project>

@@ -9,7 +9,7 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// 聚合节点，将多个数据项合并为一个。
 /// </summary>
-public sealed class AggregateNode : INodeType
+public sealed class AggregateNode : INodeType, ISupportsDryRun
 {
     /// <inheritdoc />
     public string TypeName => "aggregate";

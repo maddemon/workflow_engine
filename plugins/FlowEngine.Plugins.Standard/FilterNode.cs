@@ -10,7 +10,7 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// 过滤节点，根据条件保留或丢弃数据项。
 /// </summary>
-public sealed class FilterNode : INodeType
+public sealed class FilterNode : INodeType, ISupportsDryRun
 {
     /// <inheritdoc />
     public string TypeName => "filter";

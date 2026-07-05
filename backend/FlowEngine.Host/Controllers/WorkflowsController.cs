@@ -15,7 +15,8 @@ namespace FlowEngine.Host.Controllers;
 public class WorkflowsController(
     WorkflowService workflowService,
     WorkflowExportService exportService,
-    WorkflowImportService importService) : ControllerBase
+    WorkflowImportService importService,
+    WorkflowDryRunService dryRunService) : ControllerBase
 {
     /// <summary>
     /// 分页获取工作流摘要列表。
@@ -94,6 +95,28 @@ public class WorkflowsController(
         }
 
         return NoContent();
+    }
+
+    /// <summary>
+    /// 在无副作用模式下预演工作流执行。
+    /// </summary>
+    [HttpPost("dry-run")]
+    [Authorize]
+    public async Task<ActionResult<DryRunWorkflowResponseDto>> DryRun(
+        [FromBody] DryRunWorkflowRequestDto request,
+        CancellationToken cancellationToken)
+    {
+        var result = await dryRunService.DryRunAsync(
+            request.WorkflowId,
+            request.Input,
+            cancellationToken).ConfigureAwait(false);
+
+        if (result is null)
+        {
+            return NotFound();
+        }
+
+        return Ok(result);
     }
 
     /// <summary>

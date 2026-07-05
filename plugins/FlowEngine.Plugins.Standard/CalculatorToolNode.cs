@@ -10,7 +10,7 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// 计算器工具节点，作为 Agent 的工具执行数学计算。
 /// </summary>
-public sealed class CalculatorToolNode : INodeType
+public sealed class CalculatorToolNode : INodeType, ISupportsDryRun
 {
     /// <inheritdoc />
     public string TypeName => "calculatorTool";

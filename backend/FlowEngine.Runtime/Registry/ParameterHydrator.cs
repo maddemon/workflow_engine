@@ -1,3 +1,4 @@
+using System.Collections;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -364,7 +365,8 @@ public sealed class ParameterHydrator(ICredentialAccessor? credentialAccessor = 
                     => JsonSerializer.Deserialize(element.GetRawText(), listType),
                 string s => JsonSerializer.Deserialize(s, listType),
                 JsonNode node => JsonSerializer.Deserialize(node.ToJsonString(), listType),
-                _ => null
+                _ when listType.IsInstanceOfType(value) => value,
+                _ => ConvertEnumerableToList(value, listType, elementType)
             };
         }
         catch (Exception ex)
@@ -372,6 +374,39 @@ public sealed class ParameterHydrator(ICredentialAccessor? credentialAccessor = 
             logger?.LogWarning(ex, "列表类型 {ListType} 反序列化失败。", listType.Name);
             return null;
         }
+    }
+
+    private static object? ConvertEnumerableToList(object value, Type listType, Type elementType)
+    {
+        if (value is not IEnumerable enumerable || value is string)
+        {
+            return null;
+        }
+
+        var list = (IList?)Activator.CreateInstance(listType);
+        if (list is null)
+        {
+            return null;
+        }
+
+        foreach (var item in enumerable)
+        {
+            if (item is null)
+            {
+                continue;
+            }
+
+            if (elementType.IsInstanceOfType(item))
+            {
+                list.Add(item);
+            }
+            else
+            {
+                return null;
+            }
+        }
+
+        return list;
     }
 
     private static object? ConvertToDateTime(object value, Type targetType)

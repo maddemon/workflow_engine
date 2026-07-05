@@ -314,3 +314,86 @@ public sealed record PagedResult<T>
     /// </summary>
     public int TotalPages => (int)Math.Ceiling((double)TotalCount / Math.Max(1, PageSize));
 }
+
+/// <summary>
+/// Dry-Run 工作流请求。
+/// </summary>
+public sealed record DryRunWorkflowRequestDto
+{
+    /// <summary>
+    /// 工作流定义 ID。
+    /// </summary>
+    public Guid WorkflowId { get; init; }
+
+    /// <summary>
+    /// 触发输入数据。
+    /// </summary>
+    public object? Input { get; init; }
+}
+
+/// <summary>
+/// Dry-Run 工作流响应。
+/// </summary>
+public sealed record DryRunWorkflowResponseDto
+{
+    /// <summary>
+    /// 工作流定义 ID。
+    /// </summary>
+    public Guid WorkflowId { get; init; }
+
+    /// <summary>
+    /// 执行状态。
+    /// </summary>
+    public string Status { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 节点执行记录列表。
+    /// </summary>
+    public List<DryRunNodeRecordDto> NodeRecords { get; init; } = [];
+
+    /// <summary>
+    /// 警告信息列表（被跳过的节点）。
+    /// </summary>
+    public List<string> Warnings { get; init; } = [];
+}
+
+/// <summary>
+/// Dry-Run 节点执行记录。
+/// </summary>
+public sealed record DryRunNodeRecordDto
+{
+    /// <summary>
+    /// 节点定义 ID。
+    /// </summary>
+    public Guid NodeDefinitionId { get; init; }
+
+    /// <summary>
+    /// 节点名称。
+    /// </summary>
+    public string NodeName { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 节点类型名。
+    /// </summary>
+    public string NodeType { get; init; } = string.Empty;
+
+    /// <summary>
+    /// 是否被跳过。
+    /// </summary>
+    public bool Skipped { get; init; }
+
+    /// <summary>
+    /// 跳过原因。
+    /// </summary>
+    public string? SkipReason { get; init; }
+
+    /// <summary>
+    /// 是否执行成功。
+    /// </summary>
+    public bool Success { get; init; }
+
+    /// <summary>
+    /// 节点输出。
+    /// </summary>
+    public object? Output { get; init; }
+}
