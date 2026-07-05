@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Dtos;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Runtime.Tools;
@@ -58,17 +59,20 @@ public sealed class InlineResolver
             messages.InsertRange(insertIndex, memoryMessages);
         }
 
+        var iterations = new List<AgentIterationDto>();
+        var finalContent = string.Empty;
+        var stopReason = InlineResolverStopReason.MaxIterationsReached;
+
         for (var i = 0; i < _maxIterations; i++)
         {
             if (cancellationToken.IsCancellationRequested)
             {
-                return new InlineResolverResult
-                {
-                    Content = string.Empty,
-                    Iterations = i,
-                    StoppedReason = InlineResolverStopReason.Cancelled
-                };
+                stopReason = InlineResolverStopReason.Cancelled;
+                finalContent = string.Empty;
+                break;
             }
+
+            var iterationStartedAt = DateTime.UtcNow;
 
             LlmResponse response;
             try
@@ -78,14 +82,12 @@ public sealed class InlineResolver
             }
             catch (OperationCanceledException)
             {
-                return new InlineResolverResult
-                {
-                    Content = string.Empty,
-                    Iterations = i,
-                    StoppedReason = InlineResolverStopReason.Cancelled
-                };
+                stopReason = InlineResolverStopReason.Cancelled;
+                finalContent = string.Empty;
+                break;
             }
 
+            var assistantContent = response.Content ?? string.Empty;
             var assistantMessage = new LlmMessage
             {
                 Role = "assistant",
@@ -95,47 +97,74 @@ public sealed class InlineResolver
             messages.Add(assistantMessage);
             _memory?.AddMessage(assistantMessage);
 
-            if (!response.HasToolCalls)
+            var toolResults = new List<ToolResult>();
+
+            if (response.HasToolCalls)
             {
-                return new InlineResolverResult
+                foreach (var toolCall in response.ToolCalls!)
                 {
-                    Content = response.Content ?? string.Empty,
-                    Iterations = i + 1,
-                    StoppedReason = InlineResolverStopReason.Completed
-                };
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        stopReason = InlineResolverStopReason.Cancelled;
+                        finalContent = string.Empty;
+                        break;
+                    }
+
+                    var toolResult = await ExecuteToolAsync(toolCall, cancellationToken)
+                        .ConfigureAwait(false);
+                    toolResults.Add(toolResult);
+
+                    var toolMessage = new LlmMessage
+                    {
+                        Role = "tool",
+                        ToolCallId = toolCall.Id,
+                        Content = toolResult.Output?.ToString()
+                    };
+                    messages.Add(toolMessage);
+                    _memory?.AddMessage(toolMessage);
+                }
             }
 
-            foreach (var toolCall in response.ToolCalls!)
+            var iteration = new AgentIterationDto
             {
-                if (cancellationToken.IsCancellationRequested)
+                Index = iterations.Count,
+                LlmChunks = new List<LlmChunkDto>
                 {
-                    return new InlineResolverResult
-                    {
-                        Content = string.Empty,
-                        Iterations = i + 1,
-                        StoppedReason = InlineResolverStopReason.Cancelled
-                    };
-                }
-
-                var toolResult = await ExecuteToolAsync(toolCall, cancellationToken)
-                    .ConfigureAwait(false);
-
-                var toolMessage = new LlmMessage
+                    new() { Content = assistantContent, Role = "assistant", Timestamp = DateTime.UtcNow.ToString("O") }
+                },
+                ToolCalls = toolResults.Select(tr => new ToolCallRecordDto
                 {
-                    Role = "tool",
-                    ToolCallId = toolCall.Id,
-                    Content = toolResult
-                };
-                messages.Add(toolMessage);
-                _memory?.AddMessage(toolMessage);
+                    Id = tr.ToolCallId ?? Guid.NewGuid().ToString(),
+                    ToolName = tr.ToolName,
+                    Input = tr.Input,
+                    Output = tr.Output,
+                    Status = tr.Success ? "Completed" : "Failed",
+                    Duration = null,
+                    Error = tr.Error,
+                }).ToList(),
+                StartedAt = iterationStartedAt.ToString("O"),
+                CompletedAt = DateTime.UtcNow.ToString("O"),
+            };
+            iterations.Add(iteration);
+
+            if (stopReason == InlineResolverStopReason.Cancelled)
+            {
+                break;
+            }
+
+            if (!response.HasToolCalls)
+            {
+                finalContent = assistantContent;
+                stopReason = InlineResolverStopReason.Completed;
+                break;
             }
         }
 
         return new InlineResolverResult
         {
-            Content = string.Empty,
-            Iterations = _maxIterations,
-            StoppedReason = InlineResolverStopReason.MaxIterationsReached
+            Content = finalContent,
+            StoppedReason = stopReason,
+            Iterations = iterations,
         };
     }
 
@@ -177,27 +206,33 @@ public sealed class InlineResolver
         };
     }
 
-    private async Task<string> ExecuteToolAsync(
+    private async Task<ToolResult> ExecuteToolAsync(
         LlmToolCall toolCall,
         CancellationToken cancellationToken)
     {
         var tool = _tools.FirstOrDefault(t => t.Name == toolCall.Name);
         if (tool is null)
         {
-            return ResultSanitizer.Sanitize(toolCall.Name, $"Tool '{toolCall.Name}' not found.");
+            var message = $"Tool '{toolCall.Name}' not found.";
+            var output = ResultSanitizer.Sanitize(toolCall.Name, message);
+            return new ToolResult(toolCall.Id, toolCall.Name, null, output, false, message);
         }
 
         var toolNode = _parentContext.Workflow.Nodes
             .FirstOrDefault(n => n.Id == tool.TargetNodeDefinitionId);
         if (toolNode is null)
         {
-            return ResultSanitizer.Sanitize(toolCall.Name, $"Tool node '{tool.TargetNodeDefinitionId}' not found.");
+            var message = $"Tool node '{tool.TargetNodeDefinitionId}' not found.";
+            var output = ResultSanitizer.Sanitize(toolCall.Name, message);
+            return new ToolResult(toolCall.Id, toolCall.Name, null, output, false, message);
         }
 
         if (_parentContext.NodeRegistry?.TryGet(toolNode.TypeName, out var nodeType) != true
             || nodeType is null)
         {
-            return ResultSanitizer.Sanitize(toolCall.Name, $"Node type '{toolNode.TypeName}' not found.");
+            var message = $"Node type '{toolNode.TypeName}' not found.";
+            var output = ResultSanitizer.Sanitize(toolCall.Name, message);
+            return new ToolResult(toolCall.Id, toolCall.Name, null, output, false, message);
         }
 
         JsonNode? args;
@@ -288,7 +323,9 @@ public sealed class InlineResolver
 
         if (toolNodeInstance is null)
         {
-            return ResultSanitizer.Sanitize(toolCall.Name, $"Failed to create instance for node type '{toolNode.TypeName}'.");
+            var message = $"Failed to create instance for node type '{toolNode.TypeName}'.";
+            var output = ResultSanitizer.Sanitize(toolCall.Name, message);
+            return new ToolResult(toolCall.Id, toolCall.Name, args, output, false, message);
         }
 
         try
@@ -312,23 +349,44 @@ public sealed class InlineResolver
 
             if (!result.Success)
             {
-                return ResultSanitizer.Sanitize(toolCall.Name, $"Tool execution failed: {result.Error?.Message ?? "Unknown error"}");
+                var message = $"Tool execution failed: {result.Error?.Message ?? "Unknown error"}";
+                var errorOutput = ResultSanitizer.Sanitize(toolCall.Name, message);
+                return new ToolResult(toolCall.Id, toolCall.Name, args, errorOutput, false, message);
             }
 
+            object? output;
             if (result.Output.Items.Count > 0)
             {
                 var data = result.Output.Items[0].Data;
                 if (data is not null)
                 {
-                    return ResultSanitizer.Sanitize(toolCall.Name, data.ToJsonString());
+                    output = data.ToJsonString();
+                }
+                else
+                {
+                    output = "Tool executed successfully.";
                 }
             }
+            else
+            {
+                output = "Tool executed successfully.";
+            }
 
-            return ResultSanitizer.Sanitize(toolCall.Name, "Tool executed successfully.");
+            return new ToolResult(toolCall.Id, toolCall.Name, args, output, true, null);
         }
         catch (Exception ex)
         {
-            return ResultSanitizer.Sanitize(toolCall.Name, $"Tool execution error: {ex.Message}");
+            var message = $"Tool execution error: {ex.Message}";
+            var output = ResultSanitizer.Sanitize(toolCall.Name, message);
+            return new ToolResult(toolCall.Id, toolCall.Name, args, output, false, message);
         }
     }
+
+    private sealed record ToolResult(
+        string ToolCallId,
+        string ToolName,
+        object? Input,
+        object? Output,
+        bool Success,
+        string? Error);
 }

@@ -41,7 +41,7 @@ public class InlineResolverTests
 
         Assert.Equal(InlineResolverStopReason.Completed, result.StoppedReason);
         Assert.Equal("Done", result.Content);
-        Assert.Equal(1, result.Iterations);
+        Assert.Single(result.Iterations);
     }
 
     [Fact]
@@ -83,7 +83,7 @@ public class InlineResolverTests
         // Tool not found in empty list, so it gets an error message and LLM responds with final answer
         Assert.Equal(InlineResolverStopReason.Completed, result.StoppedReason);
         Assert.Equal("Final answer", result.Content);
-        Assert.Equal(2, result.Iterations);
+        Assert.Equal(2, result.Iterations.Count);
     }
 
     [Fact]
@@ -119,7 +119,7 @@ public class InlineResolverTests
         var result = await resolver.RunAsync(messages);
 
         Assert.Equal(InlineResolverStopReason.MaxIterationsReached, result.StoppedReason);
-        Assert.Equal(3, result.Iterations);
+        Assert.Equal(3, result.Iterations.Count);
     }
 
     [Fact]

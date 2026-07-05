@@ -1,3 +1,5 @@
+using FlowEngine.Core.Dtos;
+
 namespace FlowEngine.Runtime.Agent;
 
 /// <summary>
@@ -11,9 +13,9 @@ public sealed class InlineResolverResult
     public string Content { get; set; } = string.Empty;
 
     /// <summary>
-    /// 实际执行的迭代次数。
+    /// 实际执行的迭代记录列表。
     /// </summary>
-    public int Iterations { get; set; }
+    public List<AgentIterationDto> Iterations { get; set; } = new();
 
     /// <summary>
     /// 停止原因。
