@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Dtos;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Runtime.Agent;
@@ -116,7 +117,7 @@ public sealed class AgentNode : INodeType
             switch (result.StoppedReason)
             {
                 case InlineResolverStopReason.Completed:
-                    return CreateSuccessResult(result.Content, context);
+                    return CreateSuccessResult(result, context);
 
                 case InlineResolverStopReason.MaxIterationsReached:
                     return CreateTimeoutResult($"Maximum iterations ({maxIterations}) reached.", context);
@@ -250,8 +251,25 @@ public sealed class AgentNode : INodeType
         return firstItem.Data.ToJsonString();
     }
 
-    private static NodeExecutionResult CreateSuccessResult(string content, NodeExecutionContext context)
+    private static NodeExecutionResult CreateSuccessResult(InlineResolverResult result, NodeExecutionContext context)
     {
+        var dto = new AgentExecutionResultDto
+        {
+            AgentInfo = new AgentExecutionInfoDto
+            {
+                Model = context.LlmClient?.GetType().Name ?? "unknown",
+                IterationCount = result.Iterations.Count,
+                Status = "Completed",
+                StartedAt = null,
+                CompletedAt = DateTime.UtcNow,
+                ErrorMessage = null,
+                TokenUsage = null,
+            },
+            Iterations = result.Iterations,
+            SubRecords = new List<SubRecordDto>(),
+            SystemPrompt = null,
+        };
+
         return new NodeExecutionResult
         {
             Success = true,
@@ -261,9 +279,9 @@ public sealed class AgentNode : INodeType
                 [
                     new DataItem
                     {
-                        Data = content,
+                        Data = JsonSerializer.SerializeToNode(dto, JsonDefaults.Options),
                         Success = true,
-                        SourceIndex = 0
+                        SourceIndex = 0,
                     }
                 ]
             }

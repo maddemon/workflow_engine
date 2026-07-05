@@ -18,77 +18,7 @@ interface NodeOutputListProps {
 function isAgentOutput(output: unknown): boolean {
   if (!output || typeof output !== 'object') return false;
   const obj = output as Record<string, unknown>;
-  return (
-    typeof obj.model === 'string' &&
-    typeof obj.iterations === 'object' &&
-    Array.isArray(obj.iterations)
-  );
-}
-
-/**
- * Extract agent execution data from node output.
- */
-function extractAgentData(output: unknown, record: NodeExecutionRecordDto): AgentExecutionData | null {
-  if (!output || typeof output !== 'object') return null;
-  const obj = output as Record<string, unknown>;
-
-  const model = typeof obj.model === 'string' ? obj.model : 'unknown';
-  const iterations = Array.isArray(obj.iterations) ? obj.iterations : [];
-  const systemPrompt = typeof obj.systemPrompt === 'string' ? obj.systemPrompt : null;
-
-  const agentIterations: AgentIteration[] = iterations.map((iter: unknown, index: number) => {
-    const iterObj = iter as Record<string, unknown>;
-    const llmChunks = Array.isArray(iterObj.llmChunks)
-      ? iterObj.llmChunks.map((chunk: unknown) => {
-          const chunkObj = chunk as Record<string, unknown>;
-          return {
-            content: typeof chunkObj.content === 'string' ? chunkObj.content : '',
-            role: (chunkObj.role as 'assistant' | 'system' | 'user') || 'assistant',
-            timestamp: typeof chunkObj.timestamp === 'string' ? chunkObj.timestamp : new Date().toISOString(),
-          };
-        })
-      : [];
-
-    const toolCalls = Array.isArray(iterObj.toolCalls)
-      ? iterObj.toolCalls.map((tc: unknown) => {
-          const tcObj = tc as Record<string, unknown>;
-          return {
-            id: typeof tcObj.id === 'string' ? tcObj.id : `tc-${Math.random()}`,
-            toolName: typeof tcObj.toolName === 'string' ? tcObj.toolName : 'unknown',
-            input: tcObj.input ?? null,
-            output: tcObj.output ?? null,
-            status: (tcObj.status as ExecutionStatus) || 'Completed',
-            duration: typeof tcObj.duration === 'number' ? tcObj.duration : null,
-            error: typeof tcObj.error === 'string' ? tcObj.error : null,
-          } as ToolCallRecord;
-        })
-      : [];
-
-    return {
-      index,
-      llmChunks,
-      toolCalls,
-      startedAt: typeof iterObj.startedAt === 'string' ? iterObj.startedAt : record.startedAt,
-      completedAt: typeof iterObj.completedAt === 'string' ? iterObj.completedAt : record.completedAt,
-    };
-  });
-
-  return {
-    agentInfo: {
-      model,
-      iterationCount: agentIterations.length,
-      status: record.status,
-      startedAt: record.startedAt,
-      completedAt: record.completedAt,
-      errorMessage: typeof obj.errorMessage === 'string' ? obj.errorMessage : null,
-      tokenUsage: typeof obj.tokenUsage === 'object' && obj.tokenUsage !== null
-        ? obj.tokenUsage as { promptTokens: number; completionTokens: number; totalTokens: number }
-        : null,
-    },
-    iterations: agentIterations,
-    subRecords: [],
-    systemPrompt,
-  };
+  return typeof obj.agentInfo === 'object' && obj.agentInfo !== null;
 }
 
 const statusConfig: Record<ExecutionStatus, { icon: React.ReactNode; shade: string; label: string }> = {
@@ -182,7 +112,7 @@ function StepItem({
     ? formatOutputSummary(record.output)
     : null;
 
-  const agentData = isAgent ? extractAgentData(record.output, record) : null;
+  const agentData = isAgent ? (record.output as AgentExecutionData) : null;
 
   const statusBg =
     record.status === 'Completed' ? 'var(--exec-success-bg)'
