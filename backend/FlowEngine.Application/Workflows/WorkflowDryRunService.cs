@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
@@ -32,6 +33,7 @@ public sealed class WorkflowDryRunService(
 
         var workflow = BuildWorkflow(request);
         var credentialAccessor = BuildCredentialAccessor(request.Credentials);
+        var sensitiveValues = ExtractSensitiveValues(request.Credentials);
         await PreResolveCredentialParameters(workflow, credentialAccessor, cancellationToken).ConfigureAwait(false);
         var executionRecord = new ExecutionRecord
         {
@@ -123,7 +125,7 @@ public sealed class WorkflowDryRunService(
                 };
             }
 
-            var record = BuildNodeExecutionRecord(node.Id, 0, inputs, result, context);
+            var record = BuildNodeExecutionRecord(node.Id, 0, inputs, result, context, sensitiveValues);
             executionRecord.NodeRecords.Add(record);
 
             nodeOutputs[nodeId] = result.Output;
@@ -342,7 +344,8 @@ public sealed class WorkflowDryRunService(
         int runIndex,
         IReadOnlyDictionary<string, DataBatch> inputs,
         NodeExecutionResult output,
-        NodeExecutionContext context)
+        NodeExecutionContext context,
+        IReadOnlySet<string> sensitiveValues)
     {
         return new NodeExecutionRecord
         {
@@ -351,28 +354,182 @@ public sealed class WorkflowDryRunService(
             RunIndex = runIndex,
             StartedAt = DateTime.UtcNow,
             CompletedAt = DateTime.UtcNow,
-            Inputs = inputs.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
-            Output = output,
-            RawParameters = SanitizeParameters(context.RawParameters),
-            ResolvedParameters = SanitizeParameters(context.ResolvedParameters)
+            Inputs = inputs.ToDictionary(kv => kv.Key, kv => SanitizeDataBatch(kv.Value, sensitiveValues), StringComparer.OrdinalIgnoreCase),
+            Output = SanitizeOutput(output, sensitiveValues),
+            RawParameters = SanitizeParameters(context.RawParameters, sensitiveValues),
+            ResolvedParameters = SanitizeParameters(context.ResolvedParameters, sensitiveValues)
         };
     }
 
-    private static Dictionary<string, object> SanitizeParameters(IReadOnlyDictionary<string, object> parameters)
+    private static HashSet<string> ExtractSensitiveValues(IReadOnlyCollection<DryRunCredentialDto>? credentials)
+    {
+        var values = new HashSet<string>();
+        if (credentials is null)
+        {
+            return values;
+        }
+
+        foreach (var credential in credentials)
+        {
+            foreach (var fieldValue in credential.Fields.Values)
+            {
+                values.Add(fieldValue);
+            }
+        }
+
+        return values;
+    }
+
+    private static NodeExecutionResult SanitizeOutput(NodeExecutionResult result, IReadOnlySet<string> sensitiveValues)
+    {
+        return new NodeExecutionResult
+        {
+            Success = result.Success,
+            Output = SanitizeDataBatch(result.Output, sensitiveValues),
+            Error = result.Error,
+            BranchIndex = result.BranchIndex
+        };
+    }
+
+    private static DataBatch SanitizeDataBatch(DataBatch batch, IReadOnlySet<string> sensitiveValues)
+    {
+        if (sensitiveValues.Count == 0)
+        {
+            return batch;
+        }
+
+        var sanitizedBatch = new DataBatch { Items = [] };
+        foreach (var item in batch.Items)
+        {
+            sanitizedBatch.Items.Add(new DataItem
+            {
+                Data = item.Data is null ? null : SanitizeJsonNode(item.Data.DeepClone(), sensitiveValues),
+                Success = item.Success,
+                Error = item.Error,
+                SourceIndex = item.SourceIndex,
+                AttachmentId = item.AttachmentId
+            });
+        }
+
+        return sanitizedBatch;
+    }
+
+    private static JsonNode? SanitizeJsonNode(JsonNode? node, IReadOnlySet<string> sensitiveValues)
+    {
+        if (node is null)
+        {
+            return null;
+        }
+
+        if (node is JsonObject jsonObject)
+        {
+            foreach (var property in jsonObject.ToList())
+            {
+                var sanitizedProperty = SanitizeJsonNode(property.Value, sensitiveValues);
+                if (!ReferenceEquals(property.Value, sanitizedProperty))
+                {
+                    jsonObject[property.Key] = sanitizedProperty;
+                }
+            }
+
+            return jsonObject;
+        }
+
+        if (node is JsonArray jsonArray)
+        {
+            for (var i = 0; i < jsonArray.Count; i++)
+            {
+                var original = jsonArray[i];
+                var sanitizedItem = SanitizeJsonNode(original, sensitiveValues);
+                if (!ReferenceEquals(original, sanitizedItem))
+                {
+                    jsonArray[i] = sanitizedItem;
+                }
+            }
+
+            return jsonArray;
+        }
+
+        if (node is JsonValue jsonValue && jsonValue.TryGetValue<string>(out var text) && sensitiveValues.Contains(text))
+        {
+            return JsonValue.Create("***");
+        }
+
+        return node;
+    }
+
+    private static Dictionary<string, object> SanitizeParameters(IReadOnlyDictionary<string, object> parameters, IReadOnlySet<string> sensitiveValues)
     {
         var sanitized = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
         foreach (var (key, value) in parameters)
         {
-            sanitized[key] = value is CredentialValue credential
-                ? new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
-                {
-                    ["name"] = credential.Name,
-                    ["type"] = credential.Type
-                }
-                : value;
+            sanitized[key] = SanitizeValue(value, sensitiveValues)!;
         }
 
         return sanitized;
+    }
+
+    private static object? SanitizeValue(object? value, IReadOnlySet<string> sensitiveValues)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+
+        if (value is CredentialValue credential)
+        {
+            return new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["name"] = credential.Name,
+                ["type"] = credential.Type
+            };
+        }
+
+        if (value is string text && sensitiveValues.Contains(text))
+        {
+            return "***";
+        }
+
+        if (value is JsonNode jsonNode)
+        {
+            return SanitizeJsonNode(jsonNode.DeepClone(), sensitiveValues);
+        }
+
+        if (value is IDictionary<string, object> genericDict)
+        {
+            var sanitizedDict = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (key, item) in genericDict)
+            {
+                sanitizedDict[key] = SanitizeValue(item, sensitiveValues);
+            }
+
+            return sanitizedDict;
+        }
+
+        if (value is IDictionary nonGenericDict)
+        {
+            var sanitizedDict = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+            foreach (DictionaryEntry entry in nonGenericDict)
+            {
+                var entryKey = entry.Key?.ToString() ?? string.Empty;
+                sanitizedDict[entryKey] = SanitizeValue(entry.Value, sensitiveValues);
+            }
+
+            return sanitizedDict;
+        }
+
+        if (value is IEnumerable enumerable && value is not string)
+        {
+            var sanitizedList = new List<object?>();
+            foreach (var item in enumerable)
+            {
+                sanitizedList.Add(SanitizeValue(item, sensitiveValues));
+            }
+
+            return sanitizedList;
+        }
+
+        return value;
     }
 
     private static DataBatch CreateDataBatch(object? payload)

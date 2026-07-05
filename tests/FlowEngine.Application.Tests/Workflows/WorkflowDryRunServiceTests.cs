@@ -42,6 +42,7 @@ public sealed class WorkflowDryRunServiceTests : IDisposable
                 new FlowEngine.Plugins.Standard.LimitNode(),
                 new FlowEngine.Plugins.Standard.AggregateNode(),
                 new CredentialTestNode(),
+                new NestedCredentialTestNode(),
                 new FailingTestNode(),
             },
             NullLogger<NodeRegistry>.Instance);
@@ -100,17 +101,72 @@ public sealed class WorkflowDryRunServiceTests : IDisposable
         Assert.Equal(nameof(ExecutionStatus.DryRunCompleted), result.Status);
         Assert.Single(result.NodeRecords);
         var nodeRecord = result.NodeRecords[0];
+        Assert.Equal("Completed", nodeRecord.Status);
         var output = (JsonNode?)nodeRecord.Output;
         Assert.NotNull(output);
         var token = output["output"]?["items"]?[0]?["data"]?["token"];
         Assert.NotNull(token);
-        Assert.Equal("secret-token", token.GetValue<string>());
+        Assert.Equal("***", token.GetValue<string>());
 
         var rawParametersJson = JsonSerializer.Serialize(nodeRecord.RawParameters, JsonDefaults.Options);
         var resolvedParametersJson = JsonSerializer.Serialize(nodeRecord.ResolvedParameters, JsonDefaults.Options);
         Assert.DoesNotContain("secret-token", rawParametersJson);
         Assert.DoesNotContain("secret-token", resolvedParametersJson);
         Assert.Contains("my-api-key", rawParametersJson);
+    }
+
+    [Fact]
+    public async Task DryRunAsync_WithTemporaryCredentials_OutputContainsMaskedValuesRecursively()
+    {
+        var request = CreateNestedCredentialNodeRequest();
+
+        var service = CreateService();
+        var result = await service.DryRunAsync(request, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(result);
+        Assert.Equal(nameof(ExecutionStatus.DryRunCompleted), result.Status);
+        Assert.Single(result.NodeRecords);
+        var output = (JsonNode?)result.NodeRecords[0].Output;
+        Assert.NotNull(output);
+        var data = output["output"]?["items"]?[0]?["data"];
+        Assert.NotNull(data);
+        Assert.Equal("***", data!["items"]![0]!["token"]!.GetValue<string>());
+        Assert.Equal("***", data["tags"]![0]!.GetValue<string>());
+        Assert.Equal("***", data["metadata"]!["nested"]!["secret"]!.GetValue<string>());
+
+        var outputJson = JsonSerializer.Serialize(output, JsonDefaults.Options);
+        Assert.DoesNotContain("secret-token", outputJson);
+    }
+
+    [Fact]
+    public void SanitizeParameters_ReplacesCredentialValuesRecursively()
+    {
+        var credential = new CredentialValue
+        {
+            Name = "my-api-key",
+            Type = "apiKey",
+            Fields = new Dictionary<string, string> { ["token"] = "secret-token" }
+        };
+        var parameters = new Dictionary<string, object>
+        {
+            ["top"] = credential,
+            ["list"] = new List<object> { credential, "visible" },
+            ["dict"] = new Dictionary<string, object> { ["inner"] = credential },
+            ["json"] = JsonNode.Parse("{\"token\":\"secret-token\"}")!
+        };
+        var sensitiveValues = new HashSet<string> { "secret-token" };
+
+        var method = typeof(WorkflowDryRunService).GetMethod(
+            "SanitizeParameters",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static,
+            [typeof(IReadOnlyDictionary<string, object>), typeof(IReadOnlySet<string>)]);
+        Assert.NotNull(method);
+        var result = method.Invoke(null, [parameters, sensitiveValues]);
+        Assert.IsType<Dictionary<string, object>>(result);
+
+        var json = JsonSerializer.Serialize(result, JsonDefaults.Options);
+        Assert.DoesNotContain("secret-token", json);
+        Assert.Contains("my-api-key", json);
     }
 
     [Fact]
@@ -270,6 +326,42 @@ public sealed class WorkflowDryRunServiceTests : IDisposable
         };
     }
 
+    private static DryRunWorkflowRequestDto CreateNestedCredentialNodeRequest()
+    {
+        return new DryRunWorkflowRequestDto
+        {
+            Nodes =
+            [
+                new NodeDefinitionDto
+                {
+                    Id = "nested-cred-1",
+                    TypeName = "nestedCredentialTest",
+                    Name = "NestedCredentialTest",
+                    IsEntry = true,
+                    Parameters = new Dictionary<string, object>
+                    {
+                        ["credential"] = "my-api-key"
+                    },
+                    Ports =
+                    [
+                        new PortInstance { Name = "input", Direction = PortDirection.Input, Type = PortType.Main },
+                        new PortInstance { Name = "output", Direction = PortDirection.Output, Type = PortType.Main }
+                    ]
+                }
+            ],
+            Connections = [],
+            Credentials =
+            [
+                new DryRunCredentialDto
+                {
+                    Name = "my-api-key",
+                    Type = "apiKey",
+                    Fields = new Dictionary<string, string> { ["token"] = "secret-token" }
+                }
+            ]
+        };
+    }
+
     private static DryRunWorkflowRequestDto CreateFailingNodeRequest()
     {
         return new DryRunWorkflowRequestDto
@@ -326,6 +418,48 @@ public sealed class WorkflowDryRunServiceTests : IDisposable
         {
             var token = Credential?.Fields.GetValueOrDefault("token") ?? string.Empty;
             var output = new JsonObject { ["token"] = token };
+            return Task.FromResult(new NodeExecutionResult
+            {
+                Success = true,
+                Output = new DataBatch
+                {
+                    Items = [new DataItem { Data = output, Success = true, SourceIndex = 0 }]
+                }
+            });
+        }
+    }
+
+    private sealed class NestedCredentialTestNode : INodeType
+    {
+        public string TypeName => "nestedCredentialTest";
+        public string DisplayName => "Nested Credential Test";
+        public string Category => "Test";
+        public string Icon => "test";
+        public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
+
+        public IReadOnlyList<PortDefinition> Ports { get; } =
+        [
+            new PortDefinition { Name = "input", DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
+            new PortDefinition { Name = "output", DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
+        ];
+
+        public bool DefaultIsEntry => false;
+
+        [Credential("apiKey")]
+        public CredentialValue? Credential { get; set; }
+
+        public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+        {
+            var token = Credential?.Fields.GetValueOrDefault("token") ?? string.Empty;
+            var output = new JsonObject
+            {
+                ["items"] = new JsonArray(new JsonObject { ["token"] = token }),
+                ["tags"] = new JsonArray(token, "public"),
+                ["metadata"] = new JsonObject
+                {
+                    ["nested"] = new JsonObject { ["secret"] = token }
+                }
+            };
             return Task.FromResult(new NodeExecutionResult
             {
                 Success = true,
