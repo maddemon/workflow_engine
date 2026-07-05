@@ -80,8 +80,8 @@ public class WorkflowDryRunEndpointTests : IClassFixture<WebApplicationFactory<P
         var result = await response.Content.ReadFromJsonAsync<ExecutionDto>(TestJsonOptions, ct);
         Assert.NotNull(result);
         Assert.Equal(nameof(ExecutionStatus.DryRunCompleted), result!.Status);
-        Assert.Single(result.NodeRecords);
-        Assert.Equal("Completed", result.NodeRecords[0].Status);
+        Assert.Equal(2, result.NodeRecords.Count);
+        Assert.All(result.NodeRecords, r => Assert.Equal("Completed", r.Status));
     }
 
     [Fact]
@@ -138,6 +138,20 @@ public class WorkflowDryRunEndpointTests : IClassFixture<WebApplicationFactory<P
         var response = await client.PostAsJsonAsync(
             "/api/v1/workflows/dry-run",
             new DryRunWorkflowRequestDto { Nodes = [new NodeDefinitionDto { Id = "n1", TypeName = "set", Name = "Set" }], Connections = null! },
+            ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task DryRun_EmptyConnections_ReturnsBadRequest()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = await CreateAuthenticatedClientAsync("jwt-dryrun-empty-connections@example.com", roles: [], ct);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/v1/workflows/dry-run",
+            new DryRunWorkflowRequestDto { Nodes = [new NodeDefinitionDto { Id = "n1", TypeName = "set", Name = "Set" }], Connections = [] },
             ct);
 
         Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
@@ -214,9 +228,34 @@ public class WorkflowDryRunEndpointTests : IClassFixture<WebApplicationFactory<P
                         new PortInstance { Name = "input", Direction = PortDirection.Input, Type = PortType.Main },
                         new PortInstance { Name = "output", Direction = PortDirection.Output, Type = PortType.Main }
                     ]
+                },
+                new NodeDefinitionDto
+                {
+                    Id = "filter-1",
+                    TypeName = "filter",
+                    Name = "Filter",
+                    Parameters = new Dictionary<string, object>
+                    {
+                        ["condition"] = "true"
+                    },
+                    Ports =
+                    [
+                        new PortInstance { Name = "input", Direction = PortDirection.Input, Type = PortType.Main },
+                        new PortInstance { Name = "kept", Direction = PortDirection.Output, Type = PortType.Main }
+                    ]
                 }
             ],
-            Connections = []
+            Connections =
+            [
+                new ConnectionDto
+                {
+                    Id = "conn-1",
+                    SourceNodeId = "set-1",
+                    SourcePortName = "output",
+                    TargetNodeId = "filter-1",
+                    TargetPortName = "input"
+                }
+            ]
         };
     }
 

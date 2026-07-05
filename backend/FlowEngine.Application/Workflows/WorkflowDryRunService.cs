@@ -32,7 +32,7 @@ public sealed class WorkflowDryRunService(
 
         var workflow = BuildWorkflow(request);
         var credentialAccessor = BuildCredentialAccessor(request.Credentials);
-        PreResolveCredentialParameters(workflow, credentialAccessor);
+        await PreResolveCredentialParameters(workflow, credentialAccessor, cancellationToken).ConfigureAwait(false);
         var executionRecord = new ExecutionRecord
         {
             Id = Guid.NewGuid(),
@@ -193,7 +193,7 @@ public sealed class WorkflowDryRunService(
         return new TemporaryCredentialAccessor(values);
     }
 
-    private void PreResolveCredentialParameters(Workflow workflow, TemporaryCredentialAccessor credentialAccessor)
+    private async Task PreResolveCredentialParameters(Workflow workflow, TemporaryCredentialAccessor credentialAccessor, CancellationToken cancellationToken)
     {
         foreach (var node in workflow.Nodes)
         {
@@ -213,8 +213,7 @@ public sealed class WorkflowDryRunService(
                 var value = node.Parameters[key];
                 if (value is string credentialName)
                 {
-                    var credential = credentialAccessor.GetCredentialByNameAsync(credentialName, CancellationToken.None)
-                        .ConfigureAwait(false).GetAwaiter().GetResult();
+                    var credential = await credentialAccessor.GetCredentialByNameAsync(credentialName, cancellationToken).ConfigureAwait(false);
                     if (credential is not null)
                     {
                         node.Parameters[key] = credential;
@@ -354,9 +353,26 @@ public sealed class WorkflowDryRunService(
             CompletedAt = DateTime.UtcNow,
             Inputs = inputs.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
             Output = output,
-            RawParameters = context.RawParameters.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
-            ResolvedParameters = context.ResolvedParameters.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase)
+            RawParameters = SanitizeParameters(context.RawParameters),
+            ResolvedParameters = SanitizeParameters(context.ResolvedParameters)
         };
+    }
+
+    private static Dictionary<string, object> SanitizeParameters(IReadOnlyDictionary<string, object> parameters)
+    {
+        var sanitized = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (key, value) in parameters)
+        {
+            sanitized[key] = value is CredentialValue credential
+                ? new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+                {
+                    ["name"] = credential.Name,
+                    ["type"] = credential.Type
+                }
+                : value;
+        }
+
+        return sanitized;
     }
 
     private static DataBatch CreateDataBatch(object? payload)
@@ -499,13 +515,7 @@ public sealed class WorkflowDryRunService(
 
         public Task<CredentialValue> GetCredentialAsync(Guid credentialId, CancellationToken cancellationToken = default)
         {
-            return Task.FromResult(new CredentialValue
-            {
-                Name = string.Empty,
-                Type = string.Empty,
-                Fields = new Dictionary<string, string> { ["__error"] = $"凭据 {credentialId} 不存在" },
-                BinaryFields = []
-            });
+            throw new InvalidOperationException($"Dry-run 仅支持按名称引用临时凭据，不支持 GUID '{credentialId}'。");
         }
 
         public Task<CredentialValue?> GetCredentialByNameAsync(string name, CancellationToken cancellationToken = default)

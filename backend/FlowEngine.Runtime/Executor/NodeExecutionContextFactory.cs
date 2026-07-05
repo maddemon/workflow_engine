@@ -86,7 +86,7 @@ public sealed class NodeExecutionContextFactory(
             Inputs = inputs,
             RawParameters = rawParameters,
             ResolvedParameters = resolvedParameters,
-            Credentials = credentialAccessor,
+            Credentials = credentialAccessorOverride ?? credentialAccessor,
             Logger = NullExecutionLogger.Instance,
             CancellationToken = cancellationToken,
             LlmClient = llmClient,

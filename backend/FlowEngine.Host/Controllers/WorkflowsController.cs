@@ -111,7 +111,7 @@ public class WorkflowsController(
             return BadRequest(new { error = "BadRequest", message = "Nodes 不能为空。" });
         }
 
-        if (request.Connections is null)
+        if (request.Connections is null || request.Connections.Count == 0)
         {
             return BadRequest(new { error = "BadRequest", message = "Connections 不能为空。" });
         }

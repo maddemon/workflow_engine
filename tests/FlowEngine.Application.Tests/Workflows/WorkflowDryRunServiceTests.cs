@@ -99,11 +99,18 @@ public sealed class WorkflowDryRunServiceTests : IDisposable
         Assert.NotNull(result);
         Assert.Equal(nameof(ExecutionStatus.DryRunCompleted), result.Status);
         Assert.Single(result.NodeRecords);
-        var output = (JsonNode?)result.NodeRecords[0].Output;
+        var nodeRecord = result.NodeRecords[0];
+        var output = (JsonNode?)nodeRecord.Output;
         Assert.NotNull(output);
         var token = output["output"]?["items"]?[0]?["data"]?["token"];
         Assert.NotNull(token);
         Assert.Equal("secret-token", token.GetValue<string>());
+
+        var rawParametersJson = JsonSerializer.Serialize(nodeRecord.RawParameters, JsonDefaults.Options);
+        var resolvedParametersJson = JsonSerializer.Serialize(nodeRecord.ResolvedParameters, JsonDefaults.Options);
+        Assert.DoesNotContain("secret-token", rawParametersJson);
+        Assert.DoesNotContain("secret-token", resolvedParametersJson);
+        Assert.Contains("my-api-key", rawParametersJson);
     }
 
     [Fact]
