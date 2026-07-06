@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using FlowEngine.Core;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Plugins.Standard;
@@ -103,7 +104,7 @@ public class CodeSnippetToolNodeTests
             ExecutionId = Guid.NewGuid(),
             Inputs = new Dictionary<string, DataBatch>
             {
-                ["input"] = new()
+                [FlowConstants.PortNames.Input] = new()
                 {
                     Items =
                     [

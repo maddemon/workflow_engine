@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using FlowEngine.Core;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Plugins.Standard;
@@ -55,8 +56,8 @@ public class HttpToolNodeTests
     {
         var node = new HttpToolNode();
         Assert.Equal(3, node.Ports.Count);
-        Assert.Contains(node.Ports, p => p.Name == "input" && p.Direction == PortDirection.Input);
-        Assert.Contains(node.Ports, p => p.Name == "output" && p.Direction == PortDirection.Output);
+        Assert.Contains(node.Ports, p => p.Name == FlowConstants.PortNames.Input && p.Direction == PortDirection.Input);
+        Assert.Contains(node.Ports, p => p.Name == FlowConstants.PortNames.Output && p.Direction == PortDirection.Output);
     }
 
     private static NodeExecutionContext CreateContext(JsonObject inputPayload)
@@ -75,7 +76,7 @@ public class HttpToolNodeTests
             ExecutionId = Guid.NewGuid(),
             Inputs = new Dictionary<string, DataBatch>
             {
-                ["input"] = new()
+                [FlowConstants.PortNames.Input] = new()
                 {
                     Items =
                     [

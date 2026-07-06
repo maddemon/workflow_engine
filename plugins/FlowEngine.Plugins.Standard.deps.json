@@ -10,7 +10,7 @@
         "dependencies": {
           "FlowEngine.Core": "1.0.0",
           "FlowEngine.Runtime": "1.0.0",
-          "Jint": "4.10.1",
+          "Jint": "4.11.0",
           "OpenAI": "2.11.0"
         },
         "runtime": {
@@ -25,13 +25,13 @@
           }
         }
       },
-      "Jint/4.10.1": {
+      "Jint/4.11.0": {
         "dependencies": {
           "Acornima": "1.6.2"
         },
         "runtime": {
           "lib/net10.0/Jint.dll": {
-            "assemblyVersion": "4.10.1.0",
+            "assemblyVersion": "4.11.0.0",
             "fileVersion": "4.5.0.0"
           }
         }
@@ -326,7 +326,7 @@
       "FlowEngine.Runtime/1.0.0": {
         "dependencies": {
           "FlowEngine.Core": "1.0.0",
-          "Jint": "4.10.1",
+          "Jint": "4.11.0",
           "Microsoft.Extensions.Caching.Memory": "10.0.9",
           "Microsoft.Extensions.Http": "10.0.9",
           "Microsoft.Extensions.Logging.Abstractions": "10.0.9"
@@ -353,12 +353,12 @@
       "path": "acornima/1.6.2",
       "hashPath": "acornima.1.6.2.nupkg.sha512"
     },
-    "Jint/4.10.1": {
+    "Jint/4.11.0": {
       "type": "package",
       "serviceable": true,
-      "sha512": "sha512-tGi7HTWrIWUS9AguJPNvFQous2HK3Sp3uYo85EuEeUUokjwcjjeZ5kS+C6qgVvOZgJe52b4bSfalexScU0z/sg==",
-      "path": "jint/4.10.1",
-      "hashPath": "jint.4.10.1.nupkg.sha512"
+      "sha512": "sha512-xiVBgaCG6qXjpBMyPzfqwEB3578dmeoICGmexc8XD1K17wsACeQiplS67iKVGFYmhCiuOY2ZbBG9k/t4HcG4qg==",
+      "path": "jint/4.11.0",
+      "hashPath": "jint.4.11.0.nupkg.sha512"
     },
     "Microsoft.EntityFrameworkCore/10.0.9": {
       "type": "package",

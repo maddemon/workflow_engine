@@ -1,3 +1,4 @@
+using FlowEngine.Core;
 using System.ComponentModel;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
@@ -40,9 +41,9 @@ public sealed class IfNode : INodeType
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
     [
-        new PortDefinition { Name = "input", DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = "true", DisplayName = "True", Direction = PortDirection.Output, Type = PortType.Main },
-        new PortDefinition { Name = "false", DisplayName = "False", Direction = PortDirection.Output, Type = PortType.Main }
+        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
+        new PortDefinition { Name = FlowConstants.PortNames.True, DisplayName = "True", Direction = PortDirection.Output, Type = PortType.Main },
+        new PortDefinition { Name = FlowConstants.PortNames.False, DisplayName = "False", Direction = PortDirection.Output, Type = PortType.Main }
     ];
 
     /// <inheritdoc />
@@ -60,7 +61,7 @@ public sealed class IfNode : INodeType
 
             var conditionResult = ToBoolean(Condition);
 
-            var inputBatch = context.Inputs.TryGetValue("input", out var batch)
+            var inputBatch = context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch)
                 ? batch
                 : new DataBatch();
 

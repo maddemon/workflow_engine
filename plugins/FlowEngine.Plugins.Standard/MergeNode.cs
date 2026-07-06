@@ -1,3 +1,4 @@
+using FlowEngine.Core;
 using System.ComponentModel;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
@@ -46,9 +47,9 @@ public sealed class MergeNode : INodeType
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
     [
-        new PortDefinition { Name = "input1", DisplayName = "Input 1", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = "input2", DisplayName = "Input 2", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = "output", DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
+        new PortDefinition { Name = FlowConstants.PortNames.Input1, DisplayName = "Input 1", Direction = PortDirection.Input, Type = PortType.Main },
+        new PortDefinition { Name = FlowConstants.PortNames.Input2, DisplayName = "Input 2", Direction = PortDirection.Input, Type = PortType.Main },
+        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
     ];
 
     /// <inheritdoc />
@@ -57,8 +58,8 @@ public sealed class MergeNode : INodeType
     /// <inheritdoc />
     public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
-        var batch1 = context.Inputs.TryGetValue("input1", out var b1) ? b1 : new DataBatch();
-        var batch2 = context.Inputs.TryGetValue("input2", out var b2) ? b2 : new DataBatch();
+        var batch1 = context.Inputs.TryGetValue(FlowConstants.PortNames.Input1, out var b1) ? b1 : new DataBatch();
+        var batch2 = context.Inputs.TryGetValue(FlowConstants.PortNames.Input2, out var b2) ? b2 : new DataBatch();
 
         var result = Mode switch
         {

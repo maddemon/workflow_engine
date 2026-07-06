@@ -1,3 +1,4 @@
+using FlowEngine.Core;
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -39,8 +40,8 @@ public sealed class DataQualityNode : INodeType
 
     public IReadOnlyList<PortDefinition> Ports { get; } =
     [
-        new PortDefinition { Name = "input", DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = "output", DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
+        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
+        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
     ];
 
     public bool DefaultIsEntry => false;
@@ -48,7 +49,7 @@ public sealed class DataQualityNode : INodeType
     public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
         // 1. Get input data
-        var inputBatch = context.Inputs.TryGetValue("input", out var batch)
+        var inputBatch = context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch)
             ? batch
             : new DataBatch();
 

@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { CLIError, ErrorCode, ExitCode } from './errors.js';
 
-export const DEFAULT_BASE_URL = 'http://localhost:5000';
+export const DEFAULT_BASE_URL = 'http://localhost:8001';
 export const DEFAULT_PROFILE_NAME = 'default';
 export const CONFIG_DIR_NAME = '.flowengine';
 export const CONFIG_FILE_NAME = 'config.json';

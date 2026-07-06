@@ -1,3 +1,4 @@
+using FlowEngine.Core;
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
@@ -41,8 +42,8 @@ public sealed class SetNode : INodeType
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
     [
-        new PortDefinition { Name = "input", DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = "output", DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
+        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
+        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main },
     ];
 
     /// <inheritdoc />
@@ -51,7 +52,7 @@ public sealed class SetNode : INodeType
     /// <inheritdoc />
     public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
-        var inputBatch = context.Inputs.TryGetValue("input", out var batch)
+        var inputBatch = context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch)
             ? batch
             : new DataBatch();
 
@@ -186,11 +187,13 @@ public sealed class SetField
     /// <summary>
     /// 字段名称（支持点号分隔的嵌套路径）。
     /// </summary>
+    [System.Text.Json.Serialization.JsonPropertyName("name")]
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
     /// 字段值（字符串形式，会自动转换类型）。
     /// </summary>
+    [System.Text.Json.Serialization.JsonPropertyName("value")]
     public string Value { get; set; } = string.Empty;
 }
 

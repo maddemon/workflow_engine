@@ -40,10 +40,10 @@ public class AgentNodeTests
         var node = new AgentNode();
 
         Assert.Equal(4, node.Ports.Count);
-        Assert.Contains(node.Ports, p => p.Name == "input" && p.Type == PortType.Main && p.Direction == PortDirection.Input);
-        Assert.Contains(node.Ports, p => p.Name == "output" && p.Type == PortType.Main && p.Direction == PortDirection.Output);
-        Assert.Contains(node.Ports, p => p.Name == "tools" && p.Type == PortType.AgentTool && p.Direction == PortDirection.Input);
-        Assert.Contains(node.Ports, p => p.Name == "llm" && p.Type == PortType.LLM && p.Direction == PortDirection.Input);
+        Assert.Contains(node.Ports, p => p.Name == FlowConstants.PortNames.Input && p.Type == PortType.Main && p.Direction == PortDirection.Input);
+        Assert.Contains(node.Ports, p => p.Name == FlowConstants.PortNames.Output && p.Type == PortType.Main && p.Direction == PortDirection.Output);
+        Assert.Contains(node.Ports, p => p.Name == FlowConstants.PortNames.Tools && p.Type == PortType.AgentTool && p.Direction == PortDirection.Input);
+        Assert.Contains(node.Ports, p => p.Name == FlowConstants.PortNames.Llm && p.Type == PortType.LLM && p.Direction == PortDirection.Input);
     }
 
     [Fact]
@@ -99,9 +99,9 @@ public class AgentNodeTests
                 {
                     Id = Guid.NewGuid(),
                     SourceNodeId = toolNode.Id,
-                    SourcePortName = "output",
+                    SourcePortName = FlowConstants.PortNames.Output,
                     TargetNodeId = agentNode.Id,
-                    TargetPortName = "tools"
+                    TargetPortName = FlowConstants.PortNames.Tools
                 }
             ]
         };
@@ -172,9 +172,9 @@ public class AgentNodeTests
                 {
                     Id = Guid.NewGuid(),
                     SourceNodeId = toolNode.Id,
-                    SourcePortName = "output",
+                    SourcePortName = FlowConstants.PortNames.Output,
                     TargetNodeId = agentNode.Id,
-                    TargetPortName = "tools"
+                    TargetPortName = FlowConstants.PortNames.Tools
                 }
             ]
         };
@@ -360,7 +360,7 @@ public class AgentNodeTests
             workflow: workflow,
             llmClient: llmClient,
             currentNodeId: agentNode.Id,
-            inputs: new Dictionary<string, DataBatch> { ["input"] = inputBatch });
+            inputs: new Dictionary<string, DataBatch> { [FlowConstants.PortNames.Input] = inputBatch });
 
         var agent = new AgentNode();
         await agent.ExecuteAsync(context);
@@ -419,9 +419,9 @@ public class AgentNodeTests
                 {
                     Id = Guid.NewGuid(),
                     SourceNodeId = toolNode.Id,
-                    SourcePortName = "output",
+                    SourcePortName = FlowConstants.PortNames.Output,
                     TargetNodeId = agentNode.Id,
-                    TargetPortName = "tools"
+                    TargetPortName = FlowConstants.PortNames.Tools
                 }
             ]
         };
@@ -522,9 +522,9 @@ public class AgentNodeTests
                 {
                     Id = Guid.NewGuid(),
                     SourceNodeId = toolNode.Id,
-                    SourcePortName = "output",
+                    SourcePortName = FlowConstants.PortNames.Output,
                     TargetNodeId = agentNode.Id,
-                    TargetPortName = "tools"
+                    TargetPortName = FlowConstants.PortNames.Tools
                 }
             ]
         };

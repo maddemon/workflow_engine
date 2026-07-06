@@ -56,30 +56,39 @@ function groupByCategory(nodeTypes: NodeTypeDescriptorDto[]): Record<string, Nod
 
 const workflowSchema = {
   topLevel: {
-    Name: 'string (required)',
-    ProjectId: 'string (optional)',
-    Nodes: 'NodeDefinition[] (required)',
-    Connections: 'ConnectionDefinition[] (required)',
-    StyleSettings: {
+    name: 'string (required)',
+    projectId: 'string (optional)',
+    nodes: 'NodeDefinition[] (required)',
+    connections: 'ConnectionDefinition[] (required)',
+    styleSettings: {
       layoutDirection: "'vertical' | 'horizontal'",
     },
   },
   node: {
-    Id: 'string (required)',
-    TypeName: 'string (required)',
-    Name: 'string (required)',
-    Parameters: 'Record<string, unknown> (required)',
-    IsEntry: 'boolean (optional)',
-    Position: {
-      x: 'number',
-      y: 'number',
-    },
+    id: 'string (required)',
+    typeName: 'string (required) — use "node-types list" to get available types',
+    name: 'string (required)',
+    parameters: 'Record<string, unknown> (required)',
+    ports: 'PortInstance[] (required) — must match node type port definitions',
+    positionX: 'number (required)',
+    positionY: 'number (required)',
+    isEntry: 'boolean (only one node should be true, typically the trigger)',
+    errorStrategy: "'Terminate' | 'Continue' | 'Retry' (optional, default: Terminate)",
+    retryPolicy: 'RetryPolicy (optional)',
+    timeout: 'string — ISO 8601 duration (optional)',
+  },
+  port: {
+    name: 'string (required) — must match a port defined by the node type',
+    direction: "'Input' | 'Output' (required, string enum)",
+    type: "'Main' | 'AgentTool' | 'LLM' | 'Memory' (required, string enum)",
   },
   connection: {
-    SourceNodeId: 'string (required)',
-    SourcePortName: 'string (required)',
-    TargetNodeId: 'string (required)',
-    TargetPortName: 'string (required)',
+    id: 'string (required)',
+    sourceNodeId: 'string (required)',
+    sourcePortName: 'string (required) — must be an Output port on the source node',
+    targetNodeId: 'string (required)',
+    targetPortName: 'string (required) — must be an Input port on the target node',
+    condition: 'string (optional) — expression for conditional connections',
   },
 };
 
@@ -105,7 +114,7 @@ const commonErrors = [
   {
     error: 'DisconnectedGraph',
     message: '工作流中存在孤立的节点或缺少入口节点。',
-    resolution: '至少设置一个 IsEntry=true 的节点，并确保所有节点都在连接图中可达。',
+    resolution: '至少设置一个 isEntry=true 的节点，并确保所有节点都在连接图中可达。',
   },
 ];
 
@@ -115,33 +124,43 @@ function buildExamples(): unknown[] {
       name: '基础 HTTP 请求工作流',
       description: '手动触发后执行一次 HTTP GET 请求。',
       workflow: {
-        Name: 'HelloHttp',
-        Nodes: [
+        name: 'HelloHttp',
+        nodes: [
           {
-            Id: 'start',
-            TypeName: 'ManualTrigger',
-            Name: '开始',
-            Parameters: {},
-            IsEntry: true,
-            Position: { x: 100, y: 100 },
+            id: 'start',
+            typeName: 'manualTrigger',
+            name: '开始',
+            parameters: {},
+            ports: [
+              { name: 'Output', direction: 'Output', type: 'Main' },
+            ],
+            positionX: 100,
+            positionY: 100,
+            isEntry: true,
           },
           {
-            Id: 'http',
-            TypeName: 'HttpRequest',
-            Name: '请求示例接口',
-            Parameters: {
+            id: 'http',
+            typeName: 'httpRequest',
+            name: '请求示例接口',
+            parameters: {
               method: 'GET',
               url: 'https://api.example.com/items',
             },
-            Position: { x: 300, y: 100 },
+            ports: [
+              { name: 'Input', direction: 'Input', type: 'Main' },
+              { name: 'Output', direction: 'Output', type: 'Main' },
+            ],
+            positionX: 300,
+            positionY: 100,
           },
         ],
-        Connections: [
+        connections: [
           {
-            SourceNodeId: 'start',
-            SourcePortName: 'Output',
-            TargetNodeId: 'http',
-            TargetPortName: 'Input',
+            id: 'conn-1',
+            sourceNodeId: 'start',
+            sourcePortName: 'Output',
+            targetNodeId: 'http',
+            targetPortName: 'Input',
           },
         ],
       },
@@ -150,58 +169,87 @@ function buildExamples(): unknown[] {
       name: '条件分支工作流',
       description: '根据输入数据选择不同分支。',
       workflow: {
-        Name: 'ConditionalFlow',
-        Nodes: [
+        name: 'ConditionalFlow',
+        nodes: [
           {
-            Id: 'trigger',
-            TypeName: 'ManualTrigger',
-            Name: '触发器',
-            Parameters: {},
-            IsEntry: true,
+            id: 'trigger',
+            typeName: 'manualTrigger',
+            name: '触发器',
+            parameters: {},
+            ports: [
+              { name: 'Output', direction: 'Output', type: 'Main' },
+            ],
+            positionX: 100,
+            positionY: 100,
+            isEntry: true,
           },
           {
-            Id: 'condition',
-            TypeName: 'If',
-            Name: '判断',
-            Parameters: {
-              expression: '${trigger.output.value} > 10',
+            id: 'condition',
+            typeName: 'if',
+            name: '判断',
+            parameters: {
+              condition: '={{ $json.value > 10 }}',
             },
+            ports: [
+              { name: 'Input', direction: 'Input', type: 'Main' },
+              { name: 'True', direction: 'Output', type: 'Main' },
+              { name: 'False', direction: 'Output', type: 'Main' },
+            ],
+            positionX: 300,
+            positionY: 100,
           },
           {
-            Id: 'success',
-            TypeName: 'Set',
-            Name: '成功处理',
-            Parameters: {
-              value: 'high',
+            id: 'success',
+            typeName: 'set',
+            name: '成功处理',
+            parameters: {
+              fields: { result: 'high' },
+              include: 'All',
             },
+            ports: [
+              { name: 'Input', direction: 'Input', type: 'Main' },
+              { name: 'Output', direction: 'Output', type: 'Main' },
+            ],
+            positionX: 500,
+            positionY: 0,
           },
           {
-            Id: 'failure',
-            TypeName: 'Set',
-            Name: '失败处理',
-            Parameters: {
-              value: 'low',
+            id: 'failure',
+            typeName: 'set',
+            name: '失败处理',
+            parameters: {
+              fields: { result: 'low' },
+              include: 'All',
             },
+            ports: [
+              { name: 'Input', direction: 'Input', type: 'Main' },
+              { name: 'Output', direction: 'Output', type: 'Main' },
+            ],
+            positionX: 500,
+            positionY: 200,
           },
         ],
-        Connections: [
+        connections: [
           {
-            SourceNodeId: 'trigger',
-            SourcePortName: 'Output',
-            TargetNodeId: 'condition',
-            TargetPortName: 'Input',
+            id: 'conn-1',
+            sourceNodeId: 'trigger',
+            sourcePortName: 'Output',
+            targetNodeId: 'condition',
+            targetPortName: 'Input',
           },
           {
-            SourceNodeId: 'condition',
-            SourcePortName: 'True',
-            TargetNodeId: 'success',
-            TargetPortName: 'Input',
+            id: 'conn-2',
+            sourceNodeId: 'condition',
+            sourcePortName: 'True',
+            targetNodeId: 'success',
+            targetPortName: 'Input',
           },
           {
-            SourceNodeId: 'condition',
-            SourcePortName: 'False',
-            TargetNodeId: 'failure',
-            TargetPortName: 'Input',
+            id: 'conn-3',
+            sourceNodeId: 'condition',
+            sourcePortName: 'False',
+            targetNodeId: 'failure',
+            targetPortName: 'Input',
           },
         ],
       },

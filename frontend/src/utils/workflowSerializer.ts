@@ -34,9 +34,9 @@ export function serializeWorkflow(
   const connections: Connection[] = edges.map((edge) => ({
     id: edge.id,
     sourceNodeId: edge.source,
-    sourcePortName: (edge.sourceHandle ?? 'out').replace(/^port-/, ''),
+    sourcePortName: (edge.sourceHandle ?? 'port-Output').replace(/^port-/, ''),
     targetNodeId: edge.target,
-    targetPortName: (edge.targetHandle ?? 'in').replace(/^port-/, ''),
+    targetPortName: (edge.targetHandle ?? 'port-Input').replace(/^port-/, ''),
   }));
 
   return { nodeDefinitions, connections };

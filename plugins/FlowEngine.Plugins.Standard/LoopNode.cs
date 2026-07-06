@@ -1,3 +1,4 @@
+using FlowEngine.Core;
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
@@ -41,9 +42,9 @@ public sealed class LoopNode : INodeType
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
     [
-        new PortDefinition { Name = "input", DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = "loop", DisplayName = "Loop", Direction = PortDirection.Output, Type = PortType.Main },
-        new PortDefinition { Name = "done", DisplayName = "Done", Direction = PortDirection.Output, Type = PortType.Main }
+        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
+        new PortDefinition { Name = FlowConstants.PortNames.Loop, DisplayName = "Loop", Direction = PortDirection.Output, Type = PortType.Main },
+        new PortDefinition { Name = FlowConstants.PortNames.Done, DisplayName = "Done", Direction = PortDirection.Output, Type = PortType.Main }
     ];
 
     /// <inheritdoc />
@@ -52,7 +53,7 @@ public sealed class LoopNode : INodeType
     /// <inheritdoc />
     public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
-        var inputBatch = context.Inputs.TryGetValue("input", out var batch)
+        var inputBatch = context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch)
             ? batch
             : new DataBatch();
 

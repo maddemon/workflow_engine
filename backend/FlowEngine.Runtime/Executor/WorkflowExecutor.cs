@@ -78,6 +78,8 @@ public sealed class WorkflowExecutor : IEngine
             new WorkflowExecutionWorkItem(executionRecord.Id, workflowDefinitionId, triggerPayload),
             cancellationToken).ConfigureAwait(false);
 
+        _logger.LogInformation("执行 {ExecutionId} 已加入队列。", executionRecord.Id);
+
         return ExecutionId.From(executionRecord.Id);
     }
 
@@ -259,7 +261,17 @@ public sealed class WorkflowExecutor : IEngine
             session.SuccessfulOutputs[node.Name] = finalResult.Output;
         }
 
+        _logger.LogInformation(
+            "ProcessNodeAsync: 节点 {NodeId} ({NodeType}) 执行完成，准备路由输出。",
+            node.Id,
+            node.TypeName);
+
         await RouteOutputsAsync(node, nodeType, finalResult, session, cancellationToken).ConfigureAwait(false);
+
+        _logger.LogInformation(
+            "ProcessNodeAsync: 节点 {NodeId} ({NodeType}) 输出路由完成。",
+            node.Id,
+            node.TypeName);
 
         return false;
     }
@@ -419,17 +431,36 @@ public sealed class WorkflowExecutor : IEngine
     {
         var sourcePortName = ResolveSourcePortName(nodeType, result);
         var connections = session.ConnectionsBySource[(node.Id, sourcePortName)];
+        var connectionList = connections.ToList();
 
-        foreach (var connection in connections)
+        _logger.LogInformation(
+            "RouteOutputsAsync: 节点 {NodeId} ({NodeType}) 从端口 {PortName} 路由，找到 {ConnectionCount} 条下游连接。",
+            node.Id,
+            node.TypeName,
+            sourcePortName,
+            connectionList.Count);
+
+        foreach (var connection in connectionList)
         {
             if (!session.NodeMap.TryGetValue(connection.TargetNodeId, out var targetNode))
             {
+                _logger.LogWarning(
+                    "RouteOutputsAsync: 目标节点 {TargetNodeId} 不存在，跳过连接 {ConnectionId}。",
+                    connection.TargetNodeId,
+                    connection.Id);
                 continue;
             }
 
             var targetNodeType = _nodeRegistry.Get(targetNode.TypeName);
             var targetInputPorts = GetInputPortNames(targetNodeType);
             var outputBatch = result.Output;
+
+            _logger.LogInformation(
+                "RouteOutputsAsync: 将节点 {NodeId} 的输出路由到 {TargetNodeId} ({TargetNodeType})，目标端口 {TargetPortName}。",
+                node.Id,
+                targetNode.Id,
+                targetNode.TypeName,
+                connection.TargetPortName);
 
             if (targetInputPorts.Count <= 1)
             {
@@ -441,6 +472,10 @@ public sealed class WorkflowExecutor : IEngine
                 await session.Queue.EnqueueAsync(
                     new NodeWorkItem(session.Execution.Id, targetNode.Id, inputs),
                     cancellationToken).ConfigureAwait(false);
+
+                _logger.LogInformation(
+                    "RouteOutputsAsync: 节点 {TargetNodeId} 已入队。",
+                    targetNode.Id);
             }
             else
             {
@@ -453,6 +488,10 @@ public sealed class WorkflowExecutor : IEngine
                         await session.Queue.EnqueueAsync(
                             new NodeWorkItem(session.Execution.Id, targetNode.Id, readyInputs),
                             cancellationToken).ConfigureAwait(false);
+
+                        _logger.LogInformation(
+                            "RouteOutputsAsync: 多输入节点 {TargetNodeId} 已入队。",
+                            targetNode.Id);
                     }
                 }
             }

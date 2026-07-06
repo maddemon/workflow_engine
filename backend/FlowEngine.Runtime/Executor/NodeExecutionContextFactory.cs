@@ -140,7 +140,7 @@ public sealed class NodeExecutionContextFactory(
 
     private static object? GetCurrentInput(IReadOnlyDictionary<string, DataBatch> inputs, int runIndex)
     {
-        if (!inputs.TryGetValue("input", out var batch) || batch.Items.Count == 0)
+        if (!inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch) || batch.Items.Count == 0)
         {
             return null;
         }

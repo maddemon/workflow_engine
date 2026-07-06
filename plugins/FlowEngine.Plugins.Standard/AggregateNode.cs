@@ -1,3 +1,4 @@
+using FlowEngine.Core;
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
@@ -47,8 +48,8 @@ public sealed class AggregateNode : INodeType
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
     [
-        new PortDefinition { Name = "input", DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = "output", DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
+        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = nameof(FlowConstants.PortNames.Input), Direction = PortDirection.Input, Type = PortType.Main },
+        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = nameof(FlowConstants.PortNames.Output), Direction = PortDirection.Output, Type = PortType.Main }
     ];
 
     /// <inheritdoc />
@@ -57,7 +58,7 @@ public sealed class AggregateNode : INodeType
     /// <inheritdoc />
     public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
-        var inputBatch = context.Inputs.TryGetValue("input", out var batch)
+        var inputBatch = context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch)
             ? batch
             : new DataBatch();
 

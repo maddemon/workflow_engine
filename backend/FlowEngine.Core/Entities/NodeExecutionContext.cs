@@ -148,7 +148,7 @@ public class NodeExecutionContext
     {
         get
         {
-            if (!Inputs.TryGetValue("input", out var batch) || batch.Items.Count == 0)
+            if (!Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch) || batch.Items.Count == 0)
             {
                 return null;
             }

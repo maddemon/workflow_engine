@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -227,9 +228,9 @@ public class InlineResolverTests
                     {
                         Id = Guid.NewGuid(),
                         SourceNodeId = nodes[0].Id,
-                        SourcePortName = "output",
+                        SourcePortName = FlowConstants.PortNames.Output,
                         TargetNodeId = nodes[1].Id,
-                        TargetPortName = "tools"
+                        TargetPortName = FlowConstants.PortNames.Tools
                     }
                 ]
                 : []
@@ -393,10 +394,10 @@ public class SubAgentToolNodeTests
         var node = new SubAgentToolNode();
 
         Assert.Equal(4, node.Ports.Count);
-        Assert.Contains(node.Ports, p => p.Name == "input" && p.Type == PortType.Main && p.Direction == PortDirection.Input);
-        Assert.Contains(node.Ports, p => p.Name == "output" && p.Type == PortType.Main && p.Direction == PortDirection.Output);
-        Assert.Contains(node.Ports, p => p.Name == "tools" && p.Type == PortType.AgentTool && p.Direction == PortDirection.Input);
-        Assert.Contains(node.Ports, p => p.Name == "llm" && p.Type == PortType.LLM && p.Direction == PortDirection.Input);
+        Assert.Contains(node.Ports, p => p.Name == FlowConstants.PortNames.Input && p.Type == PortType.Main && p.Direction == PortDirection.Input);
+        Assert.Contains(node.Ports, p => p.Name == FlowConstants.PortNames.Output && p.Type == PortType.Main && p.Direction == PortDirection.Output);
+        Assert.Contains(node.Ports, p => p.Name == FlowConstants.PortNames.Tools && p.Type == PortType.AgentTool && p.Direction == PortDirection.Input);
+        Assert.Contains(node.Ports, p => p.Name == FlowConstants.PortNames.Llm && p.Type == PortType.LLM && p.Direction == PortDirection.Input);
     }
 
     [Fact]
@@ -457,7 +458,7 @@ public class SubAgentToolNodeTests
 
         var context = CreateContext(
             llmClient: llmClient,
-            inputs: new Dictionary<string, DataBatch> { ["input"] = inputBatch });
+            inputs: new Dictionary<string, DataBatch> { [FlowConstants.PortNames.Input] = inputBatch });
 
         var result = await node.ExecuteAsync(context);
 

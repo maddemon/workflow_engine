@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -103,7 +104,7 @@ public class SubWorkflowToolNodeTests
             ExecutionId = Guid.NewGuid(),
             Inputs = new Dictionary<string, DataBatch>
             {
-                ["input"] = new()
+                [FlowConstants.PortNames.Input] = new()
                 {
                     Items =
                     [

@@ -29,6 +29,8 @@ public sealed class WorkflowExecutionWorker : BackgroundService
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        _logger.LogInformation("工作流执行后台服务已启动。");
+
         using var scope = _scopeFactory.CreateScope();
         var queue = scope.ServiceProvider.GetRequiredService<WorkflowExecutionQueue>();
         var executor = scope.ServiceProvider.GetRequiredService<WorkflowExecutor>();
@@ -39,6 +41,7 @@ public sealed class WorkflowExecutionWorker : BackgroundService
             try
             {
                 item = await queue.DequeueAsync(stoppingToken).ConfigureAwait(false);
+                _logger.LogInformation("收到执行工作项 {ExecutionId}。", item.ExecutionRecordId);
             }
             catch (OperationCanceledException)
             {

@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -53,7 +54,7 @@ public class LlmNodeTests
 
         Assert.Single(node.Ports);
         Assert.Contains(node.Ports, p =>
-            p.Name == "llm"
+            p.Name == FlowConstants.PortNames.Llm
             && p.Type == PortType.LLM
             && p.Direction == PortDirection.Output);
     }

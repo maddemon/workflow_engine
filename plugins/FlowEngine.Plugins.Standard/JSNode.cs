@@ -1,3 +1,4 @@
+using FlowEngine.Core;
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -49,8 +50,8 @@ public sealed class JSNode : INodeType
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
     [
-        new PortDefinition { Name = "input", DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = "output", DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
+        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
+        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
     ];
 
     /// <inheritdoc />
@@ -66,7 +67,7 @@ public sealed class JSNode : INodeType
                 return Task.FromResult(context.ErrorResult("MissingCode", "Code parameter is required."));
             }
 
-            var inputBatch = context.Inputs.TryGetValue("input", out var batch)
+            var inputBatch = context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch)
                 ? batch
                 : new DataBatch();
 
@@ -157,29 +158,29 @@ public sealed class InputHelper
     /// <summary>
     /// All input items.
     /// </summary>
-    public List<object?> All => _allItems;
+    public List<object?> All() => _allItems;
 
     /// <summary>
     /// First input item.
     /// </summary>
-    public object? First => _allItems.FirstOrDefault();
+    public object? First() => _allItems.FirstOrDefault();
 
     /// <summary>
     /// Current item (in RunOnceForEachItem mode).
     /// </summary>
-    public object? Item => _currentItem;
+    public object? Item() => _currentItem;
 
     /// <summary>
     /// Item count.
     /// </summary>
-    public int Count => _allItems.Count;
+    public int Count() => _allItems.Count;
 
     /// <summary>
     /// Create InputHelper with all items.
     /// </summary>
     public InputHelper(List<object?> allItems)
     {
-        _allItems = allItems;
+        _allItems = allItems.Select(ConvertToClr).ToList();
         _currentItem = null;
     }
 
@@ -188,8 +189,20 @@ public sealed class InputHelper
     /// </summary>
     public InputHelper(List<object?> allItems, object? currentItem)
     {
-        _allItems = allItems;
-        _currentItem = currentItem;
+        _allItems = allItems.Select(ConvertToClr).ToList();
+        _currentItem = ConvertToClr(currentItem);
+    }
+
+    private static object? ConvertToClr(object? value)
+    {
+        return value switch
+        {
+            JsonObject obj => obj.ToDictionary(p => p.Key, p => ConvertToClr(p.Value)),
+            JsonArray arr => arr.Select(ConvertToClr).ToList(),
+            JsonValue val => val.GetValue<object?>(),
+            JsonNode node => node.ToJsonString(),
+            _ => value
+        };
     }
 }
 

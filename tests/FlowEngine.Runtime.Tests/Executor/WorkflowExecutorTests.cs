@@ -1,3 +1,4 @@
+using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
@@ -97,9 +98,9 @@ public class WorkflowExecutorTests
                 {
                     Id = Guid.NewGuid(),
                     SourceNodeId = nodeA.Id,
-                    SourcePortName = "output",
+                    SourcePortName = FlowConstants.PortNames.Output,
                     TargetNodeId = nodeB.Id,
-                    TargetPortName = "input"
+                    TargetPortName = FlowConstants.PortNames.Input
                 }
             ]
         };
@@ -133,25 +134,25 @@ public class WorkflowExecutorTests
                 {
                     Id = Guid.NewGuid(),
                     SourceNodeId = nodeA.Id,
-                    SourcePortName = "output",
+                    SourcePortName = FlowConstants.PortNames.Output,
                     TargetNodeId = nodeB.Id,
-                    TargetPortName = "input"
+                    TargetPortName = FlowConstants.PortNames.Input
                 },
                 new Connection
                 {
                     Id = Guid.NewGuid(),
                     SourceNodeId = nodeB.Id,
-                    SourcePortName = "true",
+                    SourcePortName = FlowConstants.PortNames.True,
                     TargetNodeId = nodeC.Id,
-                    TargetPortName = "input"
+                    TargetPortName = FlowConstants.PortNames.Input
                 },
                 new Connection
                 {
                     Id = Guid.NewGuid(),
                     SourceNodeId = nodeB.Id,
-                    SourcePortName = "false",
+                    SourcePortName = FlowConstants.PortNames.False,
                     TargetNodeId = nodeD.Id,
-                    TargetPortName = "input"
+                    TargetPortName = FlowConstants.PortNames.Input
                 }
             ]
         };
@@ -185,7 +186,7 @@ public class WorkflowExecutorTests
                 {
                     Id = Guid.NewGuid(),
                     SourceNodeId = nodeA.Id,
-                    SourcePortName = "output",
+                    SourcePortName = FlowConstants.PortNames.Output,
                     TargetNodeId = nodeC.Id,
                     TargetPortName = "a"
                 },
@@ -193,7 +194,7 @@ public class WorkflowExecutorTests
                 {
                     Id = Guid.NewGuid(),
                     SourceNodeId = nodeB.Id,
-                    SourcePortName = "output",
+                    SourcePortName = FlowConstants.PortNames.Output,
                     TargetNodeId = nodeC.Id,
                     TargetPortName = "b"
                 }
@@ -352,9 +353,9 @@ public class WorkflowExecutorTests
                 {
                     Id = Guid.NewGuid(),
                     SourceNodeId = nodeA.Id,
-                    SourcePortName = "output",
+                    SourcePortName = FlowConstants.PortNames.Output,
                     TargetNodeId = nodeB.Id,
-                    TargetPortName = "input"
+                    TargetPortName = FlowConstants.PortNames.Input
                 }
             ]
         };

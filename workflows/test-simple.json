@@ -1,0 +1,67 @@
+{
+  "name": "Simple Test",
+  "nodes": [
+    {
+      "id": "trigger-1",
+      "typeName": "manualTrigger",
+      "name": "手动触发",
+      "parameters": {},
+      "ports": [
+        { "name": "Output", "direction": "Output", "type": "Main" }
+      ],
+      "positionX": 100,
+      "positionY": 200,
+      "isEntry": true
+    },
+    {
+      "id": "set-1",
+      "typeName": "set",
+      "name": "设置消息",
+      "parameters": {
+        "fields": [
+          { "name": "greeting", "value": "Hello from Flow Engine!" }
+        ],
+        "include": "All"
+      },
+      "ports": [
+        { "name": "Input", "direction": "Input", "type": "Main" },
+        { "name": "Output", "direction": "Output", "type": "Main" }
+      ],
+      "positionX": 300,
+      "positionY": 200,
+      "isEntry": false
+    },
+    {
+      "id": "script-1",
+      "typeName": "script",
+      "name": "格式化输出",
+      "parameters": {
+        "codeMode": "RunOnceForAllItems",
+        "code": "return 'hello';"
+      },
+      "ports": [
+        { "name": "Input", "direction": "Input", "type": "Main" },
+        { "name": "Output", "direction": "Output", "type": "Main" }
+      ],
+      "positionX": 500,
+      "positionY": 200,
+      "isEntry": false
+    }
+  ],
+  "connections": [
+    {
+      "id": "conn-1",
+      "sourceNodeId": "trigger-1",
+      "sourcePortName": "Output",
+      "targetNodeId": "set-1",
+      "targetPortName": "Input"
+    },
+    {
+      "id": "conn-2",
+      "sourceNodeId": "set-1",
+      "sourcePortName": "Output",
+      "targetNodeId": "script-1",
+      "targetPortName": "Input"
+    }
+  ]
+}

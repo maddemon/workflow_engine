@@ -10,10 +10,19 @@ public static class FlowConstants
     /// </summary>
     public static class PortNames
     {
-        public const string Input = "input";
-        public const string Output = "output";
-        public const string Tools = "tools";
-        public const string Llm = "llm";
+        public const string Input = "Input";
+        public const string Output = "Output";
+        public const string Tools = "Tools";
+        public const string Llm = "LLM";
+        public const string Loop = "Loop";
+        public const string Done = "Done";
+        public const string Default = "Default";
+        public const string Kept = "Kept";
+        public const string Discarded = "Discarded";
+        public const string Input1 = "Input 1";
+        public const string Input2 = "Input 2";
+        public const string True = "True";
+        public const string False = "False";
     }
 
     /// <summary>

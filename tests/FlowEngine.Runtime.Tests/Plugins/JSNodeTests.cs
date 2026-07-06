@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using FlowEngine.Core;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Plugins.Standard;
@@ -27,6 +28,27 @@ public class JSNodeTests
         Assert.Contains("\"statusCode\":200", json);
     }
 
+    [Fact]
+    public async Task Execute_Reads_Input_First_As_Object()
+    {
+        var inputData = new JsonObject
+        {
+            ["greeting"] = "Hello from Flow Engine!"
+        };
+        var (node, context) = CreateContext(
+            code: "const first = $input.first();\nreturn { message: first.greeting, status: 'success' };",
+            inputData: inputData);
+
+        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success, result.Error?.Message ?? "Unknown error");
+        var data = result.Output.Items[0].Data;
+        Assert.NotNull(data);
+        var json = data!.ToJsonString();
+        Assert.Contains("\"message\":\"Hello from Flow Engine!\"", json);
+        Assert.Contains("\"status\":\"success\"", json);
+    }
+
     private static (JSNode Node, NodeExecutionContext Context) CreateContext(
         string code,
         JsonObject? inputData = null)
@@ -46,7 +68,7 @@ public class JSNodeTests
             ExecutionId = Guid.NewGuid(),
             Inputs = new Dictionary<string, DataBatch>
             {
-                ["input"] = new()
+                [FlowConstants.PortNames.Input] = new()
                 {
                     Items =
                     [

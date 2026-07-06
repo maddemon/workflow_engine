@@ -1,3 +1,4 @@
+using FlowEngine.Core;
 using System.ComponentModel;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
@@ -45,7 +46,7 @@ public sealed class SwitchNode : INodeType
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports =>
     [
-        new PortDefinition { Name = "input", DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
+        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
         .. Cases.Select(c => new PortDefinition
         {
             Name = c.Name,
@@ -53,7 +54,7 @@ public sealed class SwitchNode : INodeType
             Direction = PortDirection.Output,
             Type = PortType.Main
         }),
-        new PortDefinition { Name = "default", DisplayName = "Default", Direction = PortDirection.Output, Type = PortType.Main }
+        new PortDefinition { Name = FlowConstants.PortNames.Default, DisplayName = "Default", Direction = PortDirection.Output, Type = PortType.Main }
     ];
 
     /// <inheritdoc />

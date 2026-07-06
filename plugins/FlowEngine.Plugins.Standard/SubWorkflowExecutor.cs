@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -87,7 +88,7 @@ internal sealed class SubWorkflowExecutor
             }
             else if (entryNodes.Any(n => n.Id == nodeId) && triggerPayload is not null)
             {
-                inputs["input"] = new DataBatch
+                inputs[FlowConstants.PortNames.Input] = new DataBatch
                 {
                     Items =
                     [
@@ -182,7 +183,7 @@ internal sealed class SubWorkflowExecutor
             }
         }
 
-        return "output";
+        return FlowConstants.PortNames.Output;
     }
 
     private static NodeExecutionResult CreateErrorResult(string code, string message)
