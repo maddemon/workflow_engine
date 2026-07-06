@@ -282,7 +282,10 @@ export function useWebSocketExecution() {
     }
 
     if (wsRef.current) {
-      wsRef.current.close();
+      // 只有连接已打开或正在打开时才关闭
+      if (wsRef.current.readyState === WebSocket.OPEN || wsRef.current.readyState === WebSocket.CONNECTING) {
+        wsRef.current.close(1000, 'Component unmounting');
+      }
       wsRef.current = null;
     }
 

@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useRef } from 'react';
 import { executeWorkflow, getWorkflowExecutions, getExecution, cancelExecution as apiCancelExecution } from '../services/api.ts';
 import { useWorkflowStore } from '../stores/workflowStore.ts';
 import { useWebSocketExecution } from './useWebSocketExecution.ts';
@@ -20,16 +20,52 @@ function applyNodeStatuses(records: NodeExecutionRecordDto[]) {
   }
 }
 
+const TERMINAL_STATUSES = new Set(['Completed', 'Failed', 'Cancelled']);
+
 export function useExecution() {
   const [executionMeta, setExecutionMeta] = useState<ExecutionDto | null>(null);
   const [status, setStatus] = useState<ExecutionHookStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const { subscribe, unsubscribe, connect, disconnect } = useWebSocketExecution();
+  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
     connect();
     return () => disconnect();
   }, [connect, disconnect]);
+
+  // 轮询执行状态（WebSocket 的兜底方案）
+  const startPolling = useCallback((executionId: string) => {
+    stopPolling();
+    pollingRef.current = setInterval(async () => {
+      try {
+        const latest = await getExecution(executionId);
+        if (TERMINAL_STATUSES.has(latest.status)) {
+          stopPolling();
+          setExecutionMeta(latest);
+          if (latest.nodeRecords && latest.nodeRecords.length > 0) {
+            useWorkflowStore.getState().upsertNodeExecutionRecords(latest.nodeRecords);
+            applyNodeStatuses(latest.nodeRecords);
+          }
+          setStatus(latest.status === 'Completed' ? 'completed' : 'failed');
+          useWorkflowStore.getState().setIsExecuting(false);
+        }
+      } catch {
+        // 忽略轮询错误
+      }
+    }, 2000);
+  }, []);
+
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    return () => stopPolling();
+  }, [stopPolling]);
 
   // 页面加载时检查是否有正在运行的执行，并自动订阅
   useEffect(() => {
@@ -53,6 +89,8 @@ export function useExecution() {
 
           // 订阅该执行的 WebSocket 事件
           subscribe(runningExecution.id);
+          // 启动轮询作为兜底
+          startPolling(runningExecution.id);
 
           // 如果有节点执行记录，应用它们
           if (detailedExecution.nodeRecords && detailedExecution.nodeRecords.length > 0) {
@@ -66,7 +104,7 @@ export function useExecution() {
     };
 
     checkRunningExecutions();
-  }, [subscribe]);
+  }, [subscribe, startPolling]);
 
   const execute = useCallback(
     async (workflowId: string) => {
@@ -95,6 +133,8 @@ export function useExecution() {
           store.setIsExecuting(false);
         } else {
           setStatus('running');
+          // 启动轮询作为兜底
+          startPolling(result.id);
         }
       } catch (err) {
         setStatus('failed');
@@ -103,10 +143,11 @@ export function useExecution() {
         setError(message);
       }
     },
-    [subscribe],
+    [subscribe, startPolling],
   );
 
   const clearExecution = useCallback(() => {
+    stopPolling();
     if (executionMeta) {
       unsubscribe(executionMeta.id);
     }
@@ -116,7 +157,7 @@ export function useExecution() {
     useWorkflowStore.getState().setIsExecuting(false);
     useWorkflowStore.getState().clearExecutionStatuses();
     useWorkflowStore.getState().clearNodeExecutionRecords();
-  }, [executionMeta, unsubscribe]);
+  }, [executionMeta, unsubscribe, stopPolling]);
 
   const cancelExecution = useCallback(async () => {
     if (!executionMeta) return;
@@ -124,10 +165,28 @@ export function useExecution() {
       await apiCancelExecution(executionMeta.id);
       setStatus('failed');
       useWorkflowStore.getState().setIsExecuting(false);
-    } catch (err) {
-      console.error('Failed to cancel execution:', err);
+      stopPolling();
+    } catch (err: any) {
+      // 409 = 执行已结束，获取最新状态
+      if (err?.response?.status === 409) {
+        stopPolling();
+        try {
+          const latest = await getExecution(executionMeta.id);
+          setExecutionMeta(latest);
+          if (latest.nodeRecords && latest.nodeRecords.length > 0) {
+            useWorkflowStore.getState().upsertNodeExecutionRecords(latest.nodeRecords);
+            applyNodeStatuses(latest.nodeRecords);
+          }
+          setStatus(latest.status === 'Completed' ? 'completed' : 'failed');
+        } catch {
+          setStatus('completed');
+        }
+        useWorkflowStore.getState().setIsExecuting(false);
+      } else {
+        console.error('Failed to cancel execution:', err);
+      }
     }
-  }, [executionMeta]);
+  }, [executionMeta, stopPolling]);
 
   return { execution: executionMeta, status, error, execute, clearExecution, cancelExecution };
 }
