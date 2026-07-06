@@ -6,6 +6,7 @@ import {
 import { notifications } from '@mantine/notifications';
 import { ChevronDown, ChevronRight, Plus, Trash, Edit, Clock, Webhook } from 'lucide-react';
 import { InfoTooltip } from './fields/InfoTooltip.tsx';
+import { CronBuilder } from './fields/CronBuilder.tsx';
 import type { TriggerDto, TriggerSettingsDto } from '../../types/workflow.ts';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
 import * as api from '../../services/api.ts';
@@ -229,12 +230,10 @@ export function TriggerConfig({ workflowId, isExecuting }: TriggerConfigProps) {
 
           {type === 'Schedule' && (
             <>
-              <TextInput
-                label="Cron Expression"
+              <CronBuilder
                 value={cronExpression}
-                onChange={(e) => setCronExpression(e.target.value)}
-                placeholder="*/5 * * * *"
-                description="Standard cron format: sec min hour day mon dow"
+                onChange={setCronExpression}
+                disabled={isExecuting}
               />
               <Select
                 label="Time Zone"
@@ -246,6 +245,7 @@ export function TriggerConfig({ workflowId, isExecuting }: TriggerConfigProps) {
                   { label: 'America/New_York', value: 'America/New_York' },
                   { label: 'Europe/London', value: 'Europe/London' },
                 ]}
+                disabled={isExecuting}
               />
             </>
           )}

@@ -39,6 +39,7 @@ public sealed class WebSocketEventPushService : IDisposable
     private void SubscribeToEvents()
     {
         _subscriptions.Add(_eventBus.Subscribe<WorkflowStartedEvent>(OnWorkflowStartedAsync));
+        _subscriptions.Add(_eventBus.Subscribe<NodeStartedEvent>(OnNodeStartedAsync));
         _subscriptions.Add(_eventBus.Subscribe<NodeExecutedEvent>(OnNodeExecutedAsync));
         _subscriptions.Add(_eventBus.Subscribe<NodeErrorEvent>(OnNodeErrorAsync));
         _subscriptions.Add(_eventBus.Subscribe<WorkflowCompletedEvent>(OnWorkflowCompletedAsync));
@@ -58,6 +59,24 @@ public sealed class WebSocketEventPushService : IDisposable
             Payload = new
             {
                 workflowDefinitionId = evt.WorkflowDefinitionId,
+                eventType = evt.EventType,
+            },
+        };
+        await BroadcastAndRecordAsync(evt.ExecutionId, message, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task OnNodeStartedAsync(NodeStartedEvent evt, CancellationToken cancellationToken)
+    {
+        var message = new WebSocketPushMessage
+        {
+            Type = "node_started",
+            ExecutionId = evt.ExecutionId,
+            Timestamp = evt.OccurredAt,
+            Sequence = Interlocked.Increment(ref _sequenceCounter),
+            Payload = new
+            {
+                nodeDefinitionId = evt.NodeDefinitionId,
+                runIndex = evt.RunIndex,
                 eventType = evt.EventType,
             },
         };

@@ -126,6 +126,25 @@ public class SseController(
             }
             return Task.CompletedTask;
         });
+        yield return eventBus.Subscribe<NodeStartedEvent>((evt, _) =>
+        {
+            if (evt.ExecutionId == executionId)
+            {
+                writer.TryWrite(new WebSocketPushMessage
+                {
+                    Type = "node_started",
+                    ExecutionId = evt.ExecutionId,
+                    Timestamp = evt.OccurredAt,
+                    Payload = new
+                    {
+                        nodeDefinitionId = evt.NodeDefinitionId,
+                        runIndex = evt.RunIndex,
+                        eventType = evt.EventType,
+                    },
+                });
+            }
+            return Task.CompletedTask;
+        });
         yield return eventBus.Subscribe<NodeExecutedEvent>((evt, _) =>
         {
             if (evt.ExecutionId == executionId)

@@ -140,7 +140,31 @@ public sealed class WorkflowExecutor : IEngine
         }
 
         session.Execution.Status = session.StateMachine.Status;
+        if (session.StateMachine.Status is ExecutionStatus.Completed or ExecutionStatus.Failed or ExecutionStatus.Cancelled)
+        {
+            session.Execution.CompletedAt = DateTime.UtcNow;
+        }
         await executionStore.SaveChangesAsync(default).ConfigureAwait(false);
+
+        // 发布完成事件，触发 WebSocket 推送
+        if (_eventBus is not null)
+        {
+            AuditEvent? completedEvent = session.StateMachine.Status switch
+            {
+                ExecutionStatus.Completed => new WorkflowCompletedEvent(
+                    session.Execution.Id, session.Workflow.Id, ExecutionStatus.Completed),
+                ExecutionStatus.Failed => new WorkflowFailedEvent(
+                    session.Execution.Id, session.Workflow.Id,
+                    new NodeError { Code = "ExecutionFailed", Message = "工作流执行失败" }),
+                ExecutionStatus.Cancelled => new WorkflowCancelledEvent(
+                    session.Execution.Id, session.Workflow.Id),
+                _ => null,
+            };
+            if (completedEvent is not null)
+            {
+                await _eventBus.PublishAsync(completedEvent, CancellationToken.None).ConfigureAwait(false);
+            }
+        }
     }
 
     private async Task EnqueueEntryNodesAsync(
@@ -219,6 +243,16 @@ public sealed class WorkflowExecutor : IEngine
 
             context.OnLlmStreamChunk = CreateLlmStreamCallback(session.Execution.Id, node.Id, runIndex);
 
+            // 发布节点开始执行事件
+            if (_eventBus is not null)
+            {
+                var nodeStartedEvent = new NodeStartedEvent(
+                    session.Execution.Id,
+                    node.Id,
+                    runIndex);
+                await _eventBus.PublishAsync(nodeStartedEvent, cancellationToken).ConfigureAwait(false);
+            }
+
             var result = await ExecuteNodeWithRetryAsync(node, nodeType, context, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -244,6 +278,7 @@ public sealed class WorkflowExecutor : IEngine
             if (!result.Success && node.ErrorStrategy != ErrorStrategy.Continue)
             {
                 session.Execution.Status = ExecutionStatus.Failed;
+                session.Execution.CompletedAt = DateTime.UtcNow;
                 await session.DbContext.SaveChangesAsync(CancellationToken.None).ConfigureAwait(false);
                 session.WaitingArea.CleanupExecution(session.Execution.Id);
                 return true;
@@ -544,6 +579,7 @@ public sealed class WorkflowExecutor : IEngine
             if (node.ErrorStrategy != ErrorStrategy.Continue)
             {
                 session.Execution.Status = ExecutionStatus.Failed;
+                session.Execution.CompletedAt = DateTime.UtcNow;
                 await session.DbContext.SaveChangesAsync(CancellationToken.None).ConfigureAwait(false);
                 session.WaitingArea.CleanupExecution(session.Execution.Id);
                 return;

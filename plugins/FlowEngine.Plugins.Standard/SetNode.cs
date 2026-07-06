@@ -79,7 +79,7 @@ public sealed class SetNode : INodeType
                     : new JsonObject();
             }
 
-            foreach (var field in Fields)
+            foreach (var field in Fields ?? [])
             {
                 var value = ParseValue(field.Value);
 

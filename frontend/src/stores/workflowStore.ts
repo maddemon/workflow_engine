@@ -300,6 +300,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           selectedNodeId: null,
           isDirty: false,
           validationErrors: {},
+          isExecuting: false,
+          nodeExecutionRecords: {},
           canUndo: false,
           canRedo: false,
         });
@@ -359,6 +361,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         selectedNodeId: null,
         isDirty: false,
         validationErrors: {},
+        isExecuting: false,
+        nodeExecutionRecords: {},
         canUndo: false,
         canRedo: false,
       });

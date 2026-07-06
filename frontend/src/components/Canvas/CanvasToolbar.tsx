@@ -1,16 +1,17 @@
 import { memo, useCallback, useMemo } from 'react';
 import { Group, ActionIcon, Tooltip, Divider, Button } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
-import { Undo2, Redo2, ZoomIn, ZoomOut, Maximize, Save, Play } from 'lucide-react';
+import { Undo2, Redo2, ZoomIn, ZoomOut, Maximize, Save, Play, Square } from 'lucide-react';
 import { useReactFlow } from '@xyflow/react';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
 import { validateParameters } from '../../utils/validateParameters.ts';
 
 interface ICanvasToolbarProps {
   onExecute: (workflowId: string) => void;
+  onCancel?: () => void;
 }
 
-export const CanvasToolbar = memo(function CanvasToolbar({ onExecute }: ICanvasToolbarProps) {
+export const CanvasToolbar = memo(function CanvasToolbar({ onExecute, onCancel }: ICanvasToolbarProps) {
   const { fitView, zoomIn, zoomOut } = useReactFlow();
   const canUndo = useWorkflowStore((s) => s.canUndo);
   const canRedo = useWorkflowStore((s) => s.canRedo);
@@ -98,17 +99,28 @@ export const CanvasToolbar = memo(function CanvasToolbar({ onExecute }: ICanvasT
         <Button leftSection={<Save size={12} />} onClick={saveWorkflow} loading={saving} disabled={isExecuting} size="compact-xs" variant="filled">
           Save
         </Button>
-        <Button
-          leftSection={<Play size={12} />}
-          variant={canExecute && allValid ? "filled" : "default"}
-          color="green"
-          size="compact-xs"
-          onClick={handleExecute}
-          disabled={!canExecute}
-          loading={isExecuting}
-        >
-          {isExecuting ? 'Running...' : 'Test Run'}
-        </Button>
+        {isExecuting ? (
+          <Button
+            leftSection={<Square size={12} />}
+            variant="filled"
+            color="red"
+            size="compact-xs"
+            onClick={onCancel}
+          >
+            Stop
+          </Button>
+        ) : (
+          <Button
+            leftSection={<Play size={12} />}
+            variant={canExecute && allValid ? "filled" : "default"}
+            color="green"
+            size="compact-xs"
+            onClick={handleExecute}
+            disabled={!canExecute}
+          >
+            Test Run
+          </Button>
+        )}
       </Group>
     </div>
   );

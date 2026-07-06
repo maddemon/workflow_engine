@@ -62,7 +62,8 @@ function formatDuration(startedAt: string | null, completedAt: string | null): s
   const start = new Date(startedAt).getTime();
   const end = completedAt ? new Date(completedAt).getTime() : Date.now();
   const ms = end - start;
-  if (ms < 0) return null;
+  // 如果开始和结束时间相同（后端未提供真实开始时间），不显示时长
+  if (ms <= 0) return null;
   if (ms < 1000) return `${ms}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
 }
@@ -72,22 +73,50 @@ function formatOutputSummary(output: unknown): string {
   if (typeof output === 'string') return output.length > 100 ? `${output.slice(0, 100)}...` : output;
   if (typeof output === 'number' || typeof output === 'boolean') return String(output);
 
-  const str = JSON.stringify(output, null, 2);
-  if (str.length > 200) {
-    try {
-      const parsed = JSON.parse(str);
-      if (Array.isArray(parsed)) {
-        return `Array(${parsed.length} items)`;
+  try {
+    const obj = typeof output === 'string' ? JSON.parse(output) : output;
+
+    // Handle execution result format { success, output, error }
+    if (typeof obj === 'object' && obj !== null && 'success' in obj) {
+      const success = obj.success as boolean;
+      const innerOutput = obj.output;
+      const error = obj.error;
+
+      if (!success && error) {
+        const errorMsg = typeof error === 'object' ? (error as Record<string, unknown>).message : error;
+        return `Error: ${String(errorMsg).slice(0, 80)}`;
       }
-      if (typeof parsed === 'object' && parsed !== null) {
-        const keys = Object.keys(parsed);
-        return `Object{${keys.slice(0, 3).join(', ')}${keys.length > 3 ? ', ...' : ''}}`;
+
+      if (innerOutput !== undefined && innerOutput !== null) {
+        if (typeof innerOutput === 'string') {
+          return innerOutput.length > 100 ? `${innerOutput.slice(0, 100)}...` : innerOutput;
+        }
+        if (typeof innerOutput === 'object') {
+          const str = JSON.stringify(innerOutput);
+          return str.length > 100 ? `${str.slice(0, 100)}...` : str;
+        }
+        return String(innerOutput);
       }
-    } catch {
-      return `${str.slice(0, 200)}...`;
+
+      return success ? 'Success' : 'Failed';
     }
+
+    // Handle array
+    if (Array.isArray(obj)) {
+      return obj.length === 0 ? 'Empty array' : `Array(${obj.length} items)`;
+    }
+
+    // Handle object
+    if (typeof obj === 'object' && obj !== null) {
+      const str = JSON.stringify(obj);
+      return str.length > 100 ? `${str.slice(0, 100)}...` : str;
+    }
+
+    return String(obj);
+  } catch {
+    const str = JSON.stringify(output);
+    return str.length > 100 ? `${str.slice(0, 100)}...` : str;
   }
-  return str;
 }
 
 function StepItem({

@@ -16,28 +16,17 @@ interface WorkflowEditorPageProps {
 export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) {
   const { id } = useParams<{ id: string }>()
   useNodeTypes()
-  const { execution, clearExecution, execute, error } = useExecution()
+  const { execution, clearExecution, execute, cancelExecution, error } = useExecution()
   const loadWorkflow = useWorkflowStore((s) => s.loadWorkflow)
   const newWorkflow = useWorkflowStore((s) => s.newWorkflow)
-  const nodes = useWorkflowStore((s) => s.nodes)
 
-  const nodeNames = useMemo(() => {
-    const map: Record<string, string> = {}
-    for (const node of nodes) {
-      map[node.id] = node.data.name
-    }
-    return map
-  }, [nodes])
-
-  const nodeTypeNames = useMemo(() => {
-    const map: Record<string, string> = {}
-    for (const node of nodes) {
-      map[node.id] = node.data.typeName
-    }
-    return map
-  }, [nodes])
+  // 使用 useRef 存储 clearExecution，避免依赖变化触发 useEffect
+  const clearExecutionRef = useRef(clearExecution)
+  clearExecutionRef.current = clearExecution
 
   useEffect(() => {
+    // 切换工作流时清除旧的执行状态
+    clearExecutionRef.current()
     if (id && id !== "new") {
       loadWorkflow(id)
     } else {
@@ -49,10 +38,10 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
 
   const aside = useMemo(() => {
     if (execution || error) {
-      return <ExecutionPanel execution={execution} onClose={clearExecution} error={error} nodeNames={nodeNames} nodeTypeNames={nodeTypeNames} />
+      return <ExecutionPanel execution={execution} onClose={clearExecution} onCancel={cancelExecution} error={error} />
     }
     return <ParameterPanel />
-  }, [execution, clearExecution, error, nodeNames, nodeTypeNames])
+  }, [execution, clearExecution, cancelExecution, error])
 
   const asideKey = execution ? `${execution.id}-${execution.status}-${execution.completedAt ?? ''}` : (error ? "error" : "default")
   const prevKeyRef = useRef<string>(asideKey)
@@ -72,7 +61,7 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
 
   return (
     <ReactFlowProvider>
-      <WorkflowCanvas onExecute={execute} />
+      <WorkflowCanvas onExecute={execute} onCancel={cancelExecution} />
     </ReactFlowProvider>
   )
 }

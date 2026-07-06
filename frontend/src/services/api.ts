@@ -6,6 +6,7 @@ import type {
   CreateWorkflowDto,
   UpdateWorkflowDto,
   ExecutionDto,
+  ExecutionSummaryDto,
   CredentialDto,
   CreateCredentialDto,
   UpdateCredentialDto,
@@ -96,8 +97,13 @@ export async function getExecution(executionId: string): Promise<ExecutionDto> {
   return res.data;
 }
 
-export async function getWorkflowExecutions(workflowId: string): Promise<ExecutionDto[]> {
-  const res = await api.get<ExecutionDto[]>(`/workflows/${workflowId}/executions`);
+export async function getWorkflowExecutions(workflowId: string): Promise<ExecutionSummaryDto[]> {
+  const res = await api.get<ExecutionSummaryDto[]>(`/workflows/${workflowId}/executions`);
+  return res.data;
+}
+
+export async function cancelExecution(executionId: string): Promise<ExecutionDto> {
+  const res = await api.post<ExecutionDto>(`/executions/${executionId}/cancel`);
   return res.data;
 }
 

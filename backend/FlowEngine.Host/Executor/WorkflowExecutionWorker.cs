@@ -1,4 +1,5 @@
 using FlowEngine.Core.Data;
+using FlowEngine.Core.Enums;
 using FlowEngine.Runtime.Executor;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -78,6 +79,25 @@ public sealed class WorkflowExecutionWorker : BackgroundService
             catch (Exception ex)
             {
                 _logger.LogError(ex, "执行 {ExecutionId} 发生未处理异常。", item.ExecutionRecordId);
+
+                try
+                {
+                    using var errorScope = _scopeFactory.CreateScope();
+                    var dbContext = errorScope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
+                    var record = await dbContext.ExecutionRecords
+                        .FirstOrDefaultAsync(e => e.Id == item.ExecutionRecordId, stoppingToken)
+                        .ConfigureAwait(false);
+                    if (record is { Status: ExecutionStatus.Running or ExecutionStatus.Pending })
+                    {
+                        record.Status = ExecutionStatus.Failed;
+                        record.CompletedAt = DateTime.UtcNow;
+                        await dbContext.SaveChangesAsync(stoppingToken).ConfigureAwait(false);
+                    }
+                }
+                catch (Exception updateEx)
+                {
+                    _logger.LogError(updateEx, "更新执行 {ExecutionId} 状态为 Failed 失败。", item.ExecutionRecordId);
+                }
             }
         }
     }

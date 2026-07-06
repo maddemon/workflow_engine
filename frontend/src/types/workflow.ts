@@ -195,6 +195,14 @@ export interface ExecutionDto {
   nodeRecords: NodeExecutionRecordDto[];
 }
 
+export interface ExecutionSummaryDto {
+  id: string;
+  workflowDefinitionId: string;
+  status: ExecutionStatus;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
 export interface CredentialDto {
   id: string;
   projectId: string | null;

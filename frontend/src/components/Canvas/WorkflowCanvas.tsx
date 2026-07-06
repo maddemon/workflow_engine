@@ -17,9 +17,10 @@ const defaultEdgeOptions = {
 
 interface IWorkflowCanvasProps {
   onExecute: (workflowId: string) => void
+  onCancel?: () => void
 }
 
-export function WorkflowCanvas({ onExecute }: IWorkflowCanvasProps) {
+export function WorkflowCanvas({ onExecute, onCancel }: IWorkflowCanvasProps) {
   const reactFlowWrapper = useRef<HTMLDivElement>(null)
   const { screenToFlowPosition } = useReactFlow()
   const nodesData = useWorkflowStore((s) => s.nodes)
@@ -189,7 +190,7 @@ export function WorkflowCanvas({ onExecute }: IWorkflowCanvasProps) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <CanvasToolbar onExecute={onExecute} />
+      <CanvasToolbar onExecute={onExecute} onCancel={onCancel} />
       <div ref={reactFlowWrapper} className="workflow-canvas">
         <ReactFlow
           nodes={nodes}

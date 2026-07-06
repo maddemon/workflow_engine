@@ -1,15 +1,16 @@
-import { Stack, Text, Group, ActionIcon, Divider, Box, Loader, Badge } from '@mantine/core';
-import { X, AlertCircle, Check, Clock, Loader as LoaderIcon } from 'lucide-react';
+import { useState, useEffect, useMemo } from 'react';
+import { Stack, Text, Group, ActionIcon, Divider, Box, Loader, Badge, Button } from '@mantine/core';
+import { X, AlertCircle, Check, Clock, Loader as LoaderIcon, Square } from 'lucide-react';
 import type { ExecutionDto } from '../../types/workflow.ts';
 import { NodeOutputList } from './NodeOutputList.tsx';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
+import { cancelExecution } from '../../services/api.ts';
 
 interface ExecutionPanelProps {
   execution: ExecutionDto | null;
   onClose: () => void;
+  onCancel?: () => void;
   error?: string | null;
-  nodeNames?: Record<string, string>;
-  nodeTypeNames?: Record<string, string>;
 }
 
 const statusConfig: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
@@ -33,9 +34,54 @@ function formatDuration(startedAt: string | null, completedAt: string | null): s
   return `${minutes}m ${seconds}s`;
 }
 
-export function ExecutionPanel({ execution, onClose, error, nodeNames, nodeTypeNames }: ExecutionPanelProps) {
+function useLiveDuration(startedAt: string | null, completedAt: string | null): string | null {
+  const [, setTick] = useState(0);
+  const isRunning = startedAt && !completedAt;
+
+  useEffect(() => {
+    if (!isRunning) return;
+    const interval = setInterval(() => setTick((t) => t + 1), 1000);
+    return () => clearInterval(interval);
+  }, [isRunning]);
+
+  return formatDuration(startedAt, completedAt);
+}
+
+export function ExecutionPanel({ execution, onClose, onCancel, error }: ExecutionPanelProps) {
   const nodeExecutionRecords = useWorkflowStore((s) => s.nodeExecutionRecords);
+  const nodes = useWorkflowStore((s) => s.nodes);
   const records = Object.values(nodeExecutionRecords);
+  const [cancelling, setCancelling] = useState(false);
+
+  const handleCancel = async () => {
+    if (!execution) return;
+    setCancelling(true);
+    try {
+      await cancelExecution(execution.id);
+      onCancel?.();
+    } catch (err) {
+      console.error('Failed to cancel execution:', err);
+    } finally {
+      setCancelling(false);
+    }
+  };
+
+  // 直接从 store 的 nodes 计算 nodeNames，确保 nodes 加载后自动更新
+  const nodeNames = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const node of nodes) {
+      map[node.id] = node.data.name;
+    }
+    return map;
+  }, [nodes]);
+
+  const nodeTypeNames = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const node of nodes) {
+      map[node.id] = node.data.typeName;
+    }
+    return map;
+  }, [nodes]);
 
   if (!execution) {
     return error ? (
@@ -66,7 +112,7 @@ export function ExecutionPanel({ execution, onClose, error, nodeNames, nodeTypeN
 
   const isRunning = execution.status === 'Pending' || execution.status === 'Running';
   const statusInfo = statusConfig[execution.status] ?? statusConfig.Pending;
-  const duration = formatDuration(execution.startedAt, execution.completedAt);
+  const duration = useLiveDuration(execution.startedAt, execution.completedAt);
 
   return (
     <Stack gap="sm" p="sm">
@@ -74,9 +120,22 @@ export function ExecutionPanel({ execution, onClose, error, nodeNames, nodeTypeN
         <Text fw={600} size="md">Execution Result</Text>
         <Group gap="xs" align="center" wrap="nowrap">
           {isRunning && <Loader size={14} />}
-          <ActionIcon variant="subtle" onClick={onClose} aria-label="Close">
-            <X size={16} />
-          </ActionIcon>
+          {isRunning ? (
+            <Button
+              variant="subtle"
+              size="compact-xs"
+              color="red"
+              leftSection={<Square size={12} />}
+              onClick={handleCancel}
+              loading={cancelling}
+            >
+              Stop
+            </Button>
+          ) : (
+            <ActionIcon variant="subtle" onClick={onClose} aria-label="Close">
+              <X size={16} />
+            </ActionIcon>
+          )}
         </Group>
       </Group>
 
@@ -121,6 +180,20 @@ export function ExecutionPanel({ execution, onClose, error, nodeNames, nodeTypeN
       )}
 
       <NodeOutputList records={records} nodeNames={nodeNames} nodeTypeNames={nodeTypeNames} />
+
+      {isRunning && (
+        <Button
+          variant="outline"
+          size="sm"
+          color="red"
+          leftSection={<Square size={14} />}
+          onClick={handleCancel}
+          loading={cancelling}
+          fullWidth
+        >
+          Stop Execution
+        </Button>
+      )}
     </Stack>
   );
 }

@@ -47,6 +47,28 @@ public sealed class NodeExecutionContextFactory(
         var rawParameters = MergeParameters(nodeDefinition, descriptor);
         var cacheKey = BuildCacheKey(descriptor);
 
+        // CodeEditor/Script 参数由节点自己执行，跳过表达式求值
+        var codeParamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in descriptor.Parameters)
+        {
+            if (p.Hint is PresentationHint.CodeEditor or PresentationHint.Script)
+            {
+                codeParamNames.Add(p.Name);
+            }
+        }
+
+        var rawCodeParams = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+        if (codeParamNames.Count > 0)
+        {
+            foreach (var name in codeParamNames)
+            {
+                if (rawParameters.Remove(name, out var val))
+                {
+                    rawCodeParams[name] = val;
+                }
+            }
+        }
+
         using var js = JsEngine.Create(options: jsEngineOptions, logger: jsLogger);
         js.SetValue("input", GetCurrentInput(inputs, runIndex));
         js.SetValue("inputs", inputs);
@@ -71,6 +93,12 @@ public sealed class NodeExecutionContextFactory(
         js.SetValue("now", DateTime.UtcNow);
 
         var resolvedParameters = parameterResolver.Resolve(rawParameters, js, cacheKey);
+
+        // 将 CodeEditor/Script 参数原样放回
+        foreach (var (name, val) in rawCodeParams)
+        {
+            resolvedParameters[name] = val;
+        }
 
         var hydrator = credentialAccessorOverride is null
             ? ParameterHydrator

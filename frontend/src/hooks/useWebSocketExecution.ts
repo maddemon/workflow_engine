@@ -41,7 +41,9 @@ export function useWebSocketExecution() {
   const getWebSocketUrl = useCallback(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    return `${protocol}//${host}/ws/execution`;
+    const token = localStorage.getItem('auth_token');
+    const baseUrl = `${protocol}//${host}/ws/execution`;
+    return token ? `${baseUrl}?access_token=${encodeURIComponent(token)}` : baseUrl;
   }, []);
 
   const getSseUrl = useCallback((executionId: string) => {
@@ -60,18 +62,53 @@ export function useWebSocketExecution() {
         }
         break;
 
+      case 'node_started':
+        if (message.payload?.nodeDefinitionId) {
+          const nodeDefId = message.payload.nodeDefinitionId;
+          store.updateNodeExecutionStatus(nodeDefId, 'running');
+
+          // 更新节点的 startedAt 时间
+          const existingRecord = store.nodeExecutionRecords[nodeDefId];
+          if (existingRecord) {
+            store.upsertNodeExecutionRecords([{
+              ...existingRecord,
+              startedAt: message.timestamp,
+            }]);
+          } else {
+            // 创建临时记录，等 node_executed 事件补充完整信息
+            const tempRecord: NodeExecutionRecordDto = {
+              id: `${nodeDefId}-${message.payload.runIndex ?? 0}`,
+              nodeDefinitionId: nodeDefId,
+              runIndex: message.payload.runIndex ?? 0,
+              status: 'Running',
+              startedAt: message.timestamp,
+              completedAt: null,
+              inputs: null,
+              output: null,
+              rawParameters: null,
+              resolvedParameters: null,
+            };
+            store.upsertNodeExecutionRecords([tempRecord]);
+          }
+        }
+        break;
+
       case 'node_executed':
         if (message.payload?.nodeDefinitionId && message.payload?.result) {
           const { nodeDefinitionId, result } = message.payload;
           const status = result.success ? 'success' : 'error';
           store.updateNodeExecutionStatus(nodeDefinitionId, status);
 
+          // 使用已有的 startedAt（来自 node_started 事件），如果不存在则使用 message.timestamp
+          const existingRecord = store.nodeExecutionRecords[nodeDefinitionId];
+          const startedAt = existingRecord?.startedAt ?? message.timestamp;
+
           const record: NodeExecutionRecordDto = {
             id: `${nodeDefinitionId}-${message.payload.runIndex ?? 0}`,
             nodeDefinitionId,
             runIndex: message.payload.runIndex ?? 0,
             status: result.success ? 'Completed' : 'Failed',
-            startedAt: message.timestamp,
+            startedAt,
             completedAt: message.timestamp,
             inputs: null,
             output: result,
@@ -87,12 +124,16 @@ export function useWebSocketExecution() {
           const { nodeDefinitionId, error } = message.payload;
           store.updateNodeExecutionStatus(nodeDefinitionId, 'error');
 
+          // 使用已有的 startedAt（来自 node_started 事件），如果不存在则使用 message.timestamp
+          const existingRecord = store.nodeExecutionRecords[nodeDefinitionId];
+          const startedAt = existingRecord?.startedAt ?? message.timestamp;
+
           const record: NodeExecutionRecordDto = {
             id: `${nodeDefinitionId}-${message.payload.runIndex ?? 0}`,
             nodeDefinitionId,
             runIndex: message.payload.runIndex ?? 0,
             status: 'Failed',
-            startedAt: message.timestamp,
+            startedAt,
             completedAt: message.timestamp,
             inputs: null,
             output: { error },

@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
-import { executeWorkflow } from '../services/api.ts';
+import { executeWorkflow, getWorkflowExecutions, getExecution, cancelExecution as apiCancelExecution } from '../services/api.ts';
 import { useWorkflowStore } from '../stores/workflowStore.ts';
 import { useWebSocketExecution } from './useWebSocketExecution.ts';
 import type { ExecutionDto, NodeExecutionRecordDto } from '../types/workflow.ts';
@@ -30,6 +30,43 @@ export function useExecution() {
     connect();
     return () => disconnect();
   }, [connect, disconnect]);
+
+  // 页面加载时检查是否有正在运行的执行，并自动订阅
+  useEffect(() => {
+    const workflowId = useWorkflowStore.getState().workflowId;
+    if (!workflowId) return;
+
+    const checkRunningExecutions = async () => {
+      try {
+        const executions = await getWorkflowExecutions(workflowId);
+        // 找到正在运行的执行（Pending 或 Running 状态）
+        const runningExecution = executions.find(
+          (e) => e.status === 'Pending' || e.status === 'Running'
+        );
+
+        if (runningExecution) {
+          // 获取完整的执行详情（包含 nodeRecords）
+          const detailedExecution = await getExecution(runningExecution.id);
+          setExecutionMeta(detailedExecution);
+          setStatus('running');
+          useWorkflowStore.getState().setIsExecuting(true);
+
+          // 订阅该执行的 WebSocket 事件
+          subscribe(runningExecution.id);
+
+          // 如果有节点执行记录，应用它们
+          if (detailedExecution.nodeRecords && detailedExecution.nodeRecords.length > 0) {
+            useWorkflowStore.getState().upsertNodeExecutionRecords(detailedExecution.nodeRecords);
+            applyNodeStatuses(detailedExecution.nodeRecords);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to check running executions:', err);
+      }
+    };
+
+    checkRunningExecutions();
+  }, [subscribe]);
 
   const execute = useCallback(
     async (workflowId: string) => {
@@ -81,7 +118,18 @@ export function useExecution() {
     useWorkflowStore.getState().clearNodeExecutionRecords();
   }, [executionMeta, unsubscribe]);
 
-  return { execution: executionMeta, status, error, execute, clearExecution };
+  const cancelExecution = useCallback(async () => {
+    if (!executionMeta) return;
+    try {
+      await apiCancelExecution(executionMeta.id);
+      setStatus('failed');
+      useWorkflowStore.getState().setIsExecuting(false);
+    } catch (err) {
+      console.error('Failed to cancel execution:', err);
+    }
+  }, [executionMeta]);
+
+  return { execution: executionMeta, status, error, execute, clearExecution, cancelExecution };
 }
 
 export type { ExecutionHookStatus };

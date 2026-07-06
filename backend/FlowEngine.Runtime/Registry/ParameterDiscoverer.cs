@@ -146,6 +146,20 @@ public sealed class ParameterDiscoverer(ILogger? logger = null)
                 }
             }
 
+            // 未显式指定 itemType 时，对 List<T>/T[] 的复杂类型子项自动推断
+            if (definition.Type == ParameterType.Array && definition.ItemDefinition is null)
+            {
+                var itemType = GetArrayElementType(property.PropertyType);
+                if (itemType is not null && ShouldBuildItemDefinition(itemType))
+                {
+                    var itemDef = BuildItemDefinition(itemType);
+                    if (itemDef.Fields.Count > 0)
+                    {
+                        definition.ItemDefinition = itemDef;
+                    }
+                }
+            }
+
             parameters.Add(definition);
         }
 
@@ -400,6 +414,48 @@ public sealed class ParameterDiscoverer(ILogger? logger = null)
             Type = ParameterType.Json,
             Fields = fieldDefs
         };
+    }
+
+    private static Type? GetArrayElementType(Type propertyType)
+    {
+        var effectiveType = Nullable.GetUnderlyingType(propertyType) ?? propertyType;
+
+        if (effectiveType.IsArray)
+        {
+            return effectiveType.GetElementType();
+        }
+
+        if (effectiveType.IsGenericType)
+        {
+            var genericDef = effectiveType.GetGenericTypeDefinition();
+            if (genericDef == typeof(List<>) || genericDef == typeof(IList<>) || genericDef == typeof(IReadOnlyList<>) || genericDef == typeof(ICollection<>) || genericDef == typeof(IEnumerable<>))
+            {
+                return effectiveType.GetGenericArguments()[0];
+            }
+        }
+
+        return null;
+    }
+
+    private static bool ShouldBuildItemDefinition(Type itemType)
+    {
+        if (!itemType.IsClass || itemType == typeof(string))
+        {
+            return false;
+        }
+
+        if (itemType.IsAbstract || itemType.IsInterface)
+        {
+            return false;
+        }
+        
+        if (typeof(JsonNode).IsAssignableFrom(itemType))
+        {
+            return false;
+        }
+
+        return itemType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Any(p => p.GetMethod is not null && p.SetMethod is not null);
     }
 
     internal static string ToCamelCase(string name)

@@ -35,6 +35,9 @@ public static class AuditEventTypes
     /// <summary>执行删除。</summary>
     public const string ExecutionDeleted = "Execution.Deleted";
 
+    /// <summary>节点开始执行。</summary>
+    public const string NodeStarted = "Node.Started";
+
     /// <summary>节点执行完成。</summary>
     public const string NodeExecuted = "Node.Executed";
 
