@@ -230,7 +230,7 @@ program
   .command('skill')
   .description('生成 Skill 内容')
   .option('--format <format>', '输出格式：claude、cursor、mcp、json', 'claude')
-  .option('--output <file>', '输出到文件')
+  .option('--output <file>', '输出到文件（默认：claude → .agents/skills/flow-engine/SKILL.md，cursor → CURSOR.md）')
   .action(async function () {
     const command = this;
     const opts = command.optsWithGlobals<{

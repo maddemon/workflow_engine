@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import axios, { type AxiosInstance } from 'axios';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { skill } from '../commands/skill.js';
@@ -40,6 +40,7 @@ function captureStdout(callback: () => Promise<void>): Promise<string> {
 
 describe('commands/skill', () => {
   let tempDir: string;
+  let originalCwd: string;
   let options: ConfigOptions;
   let mockInstance: {
     interceptors: {
@@ -50,7 +51,9 @@ describe('commands/skill', () => {
   };
 
   beforeEach(() => {
+    originalCwd = process.cwd();
     tempDir = mkdtempSync(join(tmpdir(), 'flowengine-cli-skill-test-'));
+    process.chdir(tempDir);
     options = { configDir: tempDir };
     setOutputOptions({ json: false, verbose: false });
 
@@ -74,6 +77,7 @@ describe('commands/skill', () => {
   });
 
   afterEach(() => {
+    process.chdir(originalCwd);
     rmSync(tempDir, { recursive: true, force: true });
     vi.restoreAllMocks();
   });
@@ -107,13 +111,19 @@ describe('commands/skill', () => {
     spy.mockRestore();
   });
 
-  it('claude format outputs markdown by default', async () => {
+  it('claude format writes SKILL.md by default', async () => {
     mockInstance.get.mockResolvedValue({ data: [] });
 
-    const output = await captureStdout(() => skill({ configOptions: options }));
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await skill({ configOptions: options });
 
-    expect(output).toContain('# Flow Engine AI Agent Skill');
-    expect(output).toContain('CLI 命令参考');
+    const expectedPath = join(tempDir, '.agents/skills/flow-engine/SKILL.md');
+    expect(existsSync(expectedPath)).toBe(true);
+    const content = readFileSync(expectedPath, 'utf-8');
+    expect(content).toContain('# Flow Engine AI Agent Skill');
+    expect(content).toContain('CLI 命令参考');
+    expect(spy).toHaveBeenCalledWith(`Skill 已写入：.agents/skills/flow-engine/SKILL.md`);
+    spy.mockRestore();
   });
 
   it('marks incomplete when backend is unavailable', async () => {

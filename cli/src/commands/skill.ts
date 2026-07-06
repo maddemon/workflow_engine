@@ -1,4 +1,5 @@
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import { createClient, type ApiClientOptions } from '../api/client.js';
 import { getConfig, type ConfigOptions } from '../config.js';
 import { CLIError, ErrorCode, ExitCode } from '../errors.js';
@@ -271,16 +272,24 @@ export async function skill(options: SkillOptions): Promise<void> {
 
   const result = generateSkillContent(format, nodeTypes, incomplete);
 
-  if (isJsonMode() || format === 'json') {
+  if (isJsonMode() || format === 'json' || format === 'mcp') {
     writeJson(result);
     return;
   }
 
   const content = result.content as string;
+  const defaultOutput =
+    format === 'claude'
+      ? '.agents/skills/flow-engine/SKILL.md'
+      : format === 'cursor'
+        ? '.agents/skills/flow-engine/CURSOR.md'
+        : undefined;
+  const outputPath = options.output ?? defaultOutput;
 
-  if (options.output) {
-    writeFileSync(options.output, content, 'utf-8');
-    log(`Skill 已写入：${options.output}`);
+  if (outputPath) {
+    mkdirSync(dirname(outputPath), { recursive: true });
+    writeFileSync(outputPath, content, 'utf-8');
+    log(`Skill 已写入：${outputPath}`);
     return;
   }
 
