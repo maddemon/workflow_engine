@@ -29,10 +29,12 @@ export function useExecution() {
   const { subscribe, unsubscribe, connect, disconnect } = useWebSocketExecution();
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => {
-    connect();
-    return () => disconnect();
-  }, [connect, disconnect]);
+  const stopPolling = useCallback(() => {
+    if (pollingRef.current) {
+      clearInterval(pollingRef.current);
+      pollingRef.current = null;
+    }
+  }, []);
 
   // 轮询执行状态（WebSocket 的兜底方案）
   const startPolling = useCallback((executionId: string) => {
@@ -54,14 +56,12 @@ export function useExecution() {
         // 忽略轮询错误
       }
     }, 2000);
-  }, []);
+  }, [stopPolling]);
 
-  const stopPolling = useCallback(() => {
-    if (pollingRef.current) {
-      clearInterval(pollingRef.current);
-      pollingRef.current = null;
-    }
-  }, []);
+  useEffect(() => {
+    connect();
+    return () => disconnect();
+  }, [connect, disconnect]);
 
   useEffect(() => {
     return () => stopPolling();
@@ -166,9 +166,10 @@ export function useExecution() {
       setStatus('failed');
       useWorkflowStore.getState().setIsExecuting(false);
       stopPolling();
-    } catch (err: any) {
+    } catch (err: unknown) {
       // 409 = 执行已结束，获取最新状态
-      if (err?.response?.status === 409) {
+      const axiosErr = err as { response?: { status?: number } } | undefined;
+      if (axiosErr?.response?.status === 409) {
         stopPolling();
         try {
           const latest = await getExecution(executionMeta.id);

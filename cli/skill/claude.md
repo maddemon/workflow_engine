@@ -37,6 +37,12 @@ flowengine node-types list --json
 
 所有命令支持 `--json` 输出结构化数据，支持 `--verbose` 查看请求详情。
 
+**重要**：所有需要 ID 的命令都支持两种格式：
+- 位置参数：`workflow get <id>`
+- 选项形式：`workflow get --id <id>`
+
+两种格式等价，选择你习惯的方式即可。
+
 - `login [--url <url>] [--email <email>] [--password <password>] [--api-key <key>]`：登录并保存认证信息
 - `logout`：登出当前会话
 - `me`：获取当前用户信息

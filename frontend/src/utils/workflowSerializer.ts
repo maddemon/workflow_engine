@@ -31,13 +31,34 @@ export function serializeWorkflow(
     };
   });
 
-  const connections: Connection[] = edges.map((edge) => ({
-    id: edge.id,
-    sourceNodeId: edge.source,
-    sourcePortName: (edge.sourceHandle ?? 'port-Output').replace(/^port-/, ''),
-    targetNodeId: edge.target,
-    targetPortName: (edge.targetHandle ?? 'port-Input').replace(/^port-/, ''),
-  }));
+  // 构建节点端口索引，用于保存时清理无效连接
+  const nodePortMap = new Map<string, Set<string>>();
+  for (const node of nodes) {
+    const ports = new Set<string>();
+    for (const port of node.data.descriptor.ports) {
+      ports.add(port.name);
+    }
+    nodePortMap.set(node.id, ports);
+  }
+
+  const connections: Connection[] = edges
+    .filter((edge) => {
+      const sourcePorts = nodePortMap.get(edge.source);
+      const targetPorts = nodePortMap.get(edge.target);
+      if (!sourcePorts || !targetPorts) return false;
+      const sourcePortName = (edge.sourceHandle ?? '').replace(/^port-/, '');
+      const targetPortName = (edge.targetHandle ?? '').replace(/^port-/, '');
+      if (!sourcePorts.has(sourcePortName)) return false;
+      if (!targetPorts.has(targetPortName)) return false;
+      return true;
+    })
+    .map((edge) => ({
+      id: edge.id,
+      sourceNodeId: edge.source,
+      sourcePortName: (edge.sourceHandle ?? 'port-Output').replace(/^port-/, ''),
+      targetNodeId: edge.target,
+      targetPortName: (edge.targetHandle ?? 'port-Input').replace(/^port-/, ''),
+    }));
 
   return { nodeDefinitions, connections };
 }
@@ -71,35 +92,15 @@ export function deserializeWorkflow(
     };
   });
 
-  // 构建节点端口索引，用于验证边的有效性
-  const nodePortMap = new Map<string, Set<string>>();
-  for (const node of nodes) {
-    const ports = new Set<string>();
-    for (const port of node.data.descriptor.ports) {
-      ports.add(port.name);
-    }
-    nodePortMap.set(node.id, ports);
-  }
-
-  const edges: Edge[] = workflow.connections
-    .filter((conn) => {
-      const sourcePorts = nodePortMap.get(conn.sourceNodeId);
-      const targetPorts = nodePortMap.get(conn.targetNodeId);
-      // 过滤掉引用不存在节点或端口的边
-      if (!sourcePorts || !targetPorts) return false;
-      if (!sourcePorts.has(conn.sourcePortName)) return false;
-      if (!targetPorts.has(conn.targetPortName)) return false;
-      return true;
-    })
-    .map((conn) => ({
-      id: conn.id,
-      source: conn.sourceNodeId,
-      target: conn.targetNodeId,
-      sourceHandle: `port-${conn.sourcePortName}`,
-      targetHandle: `port-${conn.targetPortName}`,
-      type: 'workflow',
-      animated: false,
-    }));
+  const edges: Edge[] = workflow.connections.map((conn) => ({
+    id: conn.id,
+    source: conn.sourceNodeId,
+    target: conn.targetNodeId,
+    sourceHandle: `port-${conn.sourcePortName}`,
+    targetHandle: `port-${conn.targetPortName}`,
+    type: 'workflow',
+    animated: false,
+  }));
 
   return { nodes, edges };
 }

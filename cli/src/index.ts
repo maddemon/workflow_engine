@@ -205,12 +205,17 @@ projectCmd
   });
 
 projectCmd
-  .command('get <id>')
+  .command('get [id]')
   .description('查看项目详情')
+  .option('--id <id>', '项目 ID')
   .action(async function (id: string) {
     const command = this;
-    const opts = command.optsWithGlobals<{ profile?: string }>();
-    await projectGet({ id, profile: opts.profile });
+    const opts = command.optsWithGlobals<{ id?: string; profile?: string }>();
+    const projectId = opts.id || id;
+    if (!projectId) {
+      throw new Error('请提供项目 ID');
+    }
+    await projectGet({ id: projectId, profile: opts.profile });
   });
 
 program
@@ -298,8 +303,9 @@ program
   .addCommand(apiKeysRevokeCmd);
 
 program
-  .command('execute <workflow-id>')
+  .command('execute [workflow-id]')
   .description('执行工作流')
+  .option('--workflow-id <id>', '工作流 ID（可作为位置参数的替代）')
   .option('--wait', '等待执行到终态')
   .option('--test', '执行测试（等价于 --wait + 断言）')
   .option('--timeout <seconds>', '等待超时时间（秒）', parseInt)
@@ -310,6 +316,7 @@ program
   .action(async function (workflowId: string) {
     const command = this;
     const opts = command.optsWithGlobals<{
+      workflowId?: string;
       wait?: boolean;
       test?: boolean;
       timeout?: number;
@@ -319,8 +326,12 @@ program
       expect?: string;
       profile?: string;
     }>();
+    const id = opts.workflowId || workflowId;
+    if (!id) {
+      throw new Error('请提供工作流 ID');
+    }
     await execute({
-      workflowId,
+      workflowId: id,
       wait: opts.wait,
       test: opts.test,
       timeout: opts.timeout,
@@ -335,12 +346,17 @@ program
 const executionCmd = program.command('execution').description('执行记录管理');
 
 executionCmd
-  .command('get <id>')
+  .command('get [id]')
   .description('查看执行详情')
+  .option('--id <id>', '执行 ID')
   .action(async function (id: string) {
     const command = this;
-    const opts = command.optsWithGlobals<{ profile?: string }>();
-    await executionGet({ id, profile: opts.profile });
+    const opts = command.optsWithGlobals<{ id?: string; profile?: string }>();
+    const executionId = opts.id || id;
+    if (!executionId) {
+      throw new Error('请提供执行 ID');
+    }
+    await executionGet({ id: executionId, profile: opts.profile });
   });
 
 executionCmd
@@ -366,12 +382,17 @@ executionCmd
   });
 
 executionCmd
-  .command('cancel <id>')
+  .command('cancel [id]')
   .description('取消执行')
+  .option('--id <id>', '执行 ID')
   .action(async function (id: string) {
     const command = this;
-    const opts = command.optsWithGlobals<{ profile?: string }>();
-    await executionCancel({ id, profile: opts.profile });
+    const opts = command.optsWithGlobals<{ id?: string; profile?: string }>();
+    const executionId = opts.id || id;
+    if (!executionId) {
+      throw new Error('请提供执行 ID');
+    }
+    await executionCancel({ id: executionId, profile: opts.profile });
   });
 
 program
@@ -426,12 +447,17 @@ credentialCmd
   });
 
 credentialCmd
-  .command('get <id>')
+  .command('get [id]')
   .description('查看凭据详情')
+  .option('--id <id>', '凭据 ID')
   .action(async function (id: string) {
     const command = this;
-    const opts = command.optsWithGlobals<{ profile?: string }>();
-    await credentialGet({ id, profile: opts.profile });
+    const opts = command.optsWithGlobals<{ id?: string; profile?: string }>();
+    const credentialId = opts.id || id;
+    if (!credentialId) {
+      throw new Error('请提供凭据 ID');
+    }
+    await credentialGet({ id: credentialId, profile: opts.profile });
   });
 
 credentialCmd
@@ -485,19 +511,25 @@ credentialCmd
   });
 
 credentialCmd
-  .command('update <id>')
+  .command('update [id]')
   .description('更新凭据')
+  .option('--id <id>', '凭据 ID')
   .requiredOption('--name <name>', '凭据名称')
   .requiredOption('--fields <json>', '凭据字段 JSON')
   .action(async function (id: string) {
     const command = this;
     const opts = command.optsWithGlobals<{
+      id?: string;
       name: string;
       fields: string;
       profile?: string;
     }>();
+    const credentialId = opts.id || id;
+    if (!credentialId) {
+      throw new Error('请提供凭据 ID');
+    }
     await credentialUpdate({
-      id,
+      id: credentialId,
       name: opts.name,
       fields: opts.fields,
       profile: opts.profile,
@@ -505,17 +537,23 @@ credentialCmd
   });
 
 credentialCmd
-  .command('delete <id>')
+  .command('delete [id]')
   .description('删除凭据')
+  .option('--id <id>', '凭据 ID')
   .option('--confirm', '跳过确认提示')
   .action(async function (id: string) {
     const command = this;
     const opts = command.optsWithGlobals<{
+      id?: string;
       confirm?: boolean;
       profile?: string;
     }>();
+    const credentialId = opts.id || id;
+    if (!credentialId) {
+      throw new Error('请提供凭据 ID');
+    }
     await credentialDelete({
-      id,
+      id: credentialId,
       confirm: opts.confirm,
       profile: opts.profile,
     });
@@ -546,25 +584,39 @@ workflowCmd
   });
 
 workflowCmd
-  .command('get <id>')
+  .command('get [id]')
   .description('查看工作流详情')
+  .option('--id <id>', '工作流 ID（可作为位置参数的替代）')
   .option('--version <N>', '查看指定版本', parseInt)
   .action(async function (id: string) {
     const command = this;
     const opts = command.optsWithGlobals<{
+      id?: string;
       version?: number;
       profile?: string;
     }>();
-    await workflowGet({ id, version: opts.version, profile: opts.profile });
+    const workflowId = opts.id || id;
+    if (!workflowId) {
+      throw new Error('请提供工作流 ID：使用位置参数或 --id 选项');
+    }
+    await workflowGet({ id: workflowId, version: opts.version, profile: opts.profile });
   });
 
 workflowCmd
-  .command('versions <id>')
+  .command('versions [id]')
   .description('查看工作流版本历史')
+  .option('--id <id>', '工作流 ID（可作为位置参数的替代）')
   .action(async function (id: string) {
     const command = this;
-    const opts = command.optsWithGlobals<{ profile?: string }>();
-    await workflowVersions({ id, profile: opts.profile });
+    const opts = command.optsWithGlobals<{
+      id?: string;
+      profile?: string;
+    }>();
+    const workflowId = opts.id || id;
+    if (!workflowId) {
+      throw new Error('请提供工作流 ID：使用位置参数或 --id 选项');
+    }
+    await workflowVersions({ id: workflowId, profile: opts.profile });
   });
 
 workflowCmd
@@ -593,21 +645,27 @@ workflowCmd
   });
 
 workflowCmd
-  .command('update <id>')
+  .command('update [id]')
   .description('更新工作流')
+  .option('--id <id>', '工作流 ID（可作为位置参数的替代）')
   .option('--file <file>', '工作流 JSON 文件')
   .option('--name <name>', '工作流名称')
   .option('--active <bool>', '是否激活')
   .action(async function (id: string) {
     const command = this;
     const opts = command.optsWithGlobals<{
+      id?: string;
       file?: string;
       name?: string;
       active?: string;
       profile?: string;
     }>();
+    const workflowId = opts.id || id;
+    if (!workflowId) {
+      throw new Error('请提供工作流 ID：使用位置参数或 --id 选项');
+    }
     await workflowUpdate({
-      id,
+      id: workflowId,
       file: opts.file,
       name: opts.name,
       active: opts.active,
@@ -616,29 +674,41 @@ workflowCmd
   });
 
 workflowCmd
-  .command('delete <id>')
+  .command('delete [id]')
   .description('删除工作流')
+  .option('--id <id>', '工作流 ID')
   .option('--confirm', '跳过确认提示')
   .action(async function (id: string) {
     const command = this;
     const opts = command.optsWithGlobals<{
+      id?: string;
       confirm?: boolean;
       profile?: string;
     }>();
-    await workflowDelete({ id, confirm: opts.confirm, profile: opts.profile });
+    const workflowId = opts.id || id;
+    if (!workflowId) {
+      throw new Error('请提供工作流 ID');
+    }
+    await workflowDelete({ id: workflowId, confirm: opts.confirm, profile: opts.profile });
   });
 
 workflowCmd
-  .command('export <id>')
+  .command('export [id]')
   .description('导出工作流')
+  .option('--id <id>', '工作流 ID')
   .option('--output <file>', '输出到文件')
   .action(async function (id: string) {
     const command = this;
     const opts = command.optsWithGlobals<{
+      id?: string;
       output?: string;
       profile?: string;
     }>();
-    await workflowExport({ id, output: opts.output, profile: opts.profile });
+    const workflowId = opts.id || id;
+    if (!workflowId) {
+      throw new Error('请提供工作流 ID');
+    }
+    await workflowExport({ id: workflowId, output: opts.output, profile: opts.profile });
   });
 
 workflowCmd
@@ -683,12 +753,17 @@ triggerCmd
   });
 
 triggerCmd
-  .command('get <id>')
+  .command('get [id]')
   .description('查看触发器详情')
+  .option('--id <id>', '触发器 ID')
   .action(async function (id: string) {
     const command = this;
-    const opts = command.optsWithGlobals<{ profile?: string }>();
-    await triggerGet({ id, profile: opts.profile });
+    const opts = command.optsWithGlobals<{ id?: string; profile?: string }>();
+    const triggerId = opts.id || id;
+    if (!triggerId) {
+      throw new Error('请提供触发器 ID');
+    }
+    await triggerGet({ id: triggerId, profile: opts.profile });
   });
 
 triggerCmd
@@ -720,21 +795,27 @@ triggerCmd
   });
 
 triggerCmd
-  .command('update <id>')
+  .command('update [id]')
   .description('更新触发器')
+  .option('--id <id>', '触发器 ID')
   .option('--name <name>', '触发器名称')
   .option('--active <bool>', '是否激活')
   .option('--settings <json>', '触发器设置 JSON')
   .action(async function (id: string) {
     const command = this;
     const opts = command.optsWithGlobals<{
+      id?: string;
       name?: string;
       active?: string;
       settings?: string;
       profile?: string;
     }>();
+    const triggerId = opts.id || id;
+    if (!triggerId) {
+      throw new Error('请提供触发器 ID');
+    }
     await triggerUpdate({
-      id,
+      id: triggerId,
       name: opts.name,
       active: opts.active,
       settings: opts.settings,
@@ -743,16 +824,22 @@ triggerCmd
   });
 
 triggerCmd
-  .command('delete <id>')
+  .command('delete [id]')
   .description('删除触发器')
+  .option('--id <id>', '触发器 ID')
   .option('--confirm', '跳过确认提示')
   .action(async function (id: string) {
     const command = this;
     const opts = command.optsWithGlobals<{
+      id?: string;
       confirm?: boolean;
       profile?: string;
     }>();
-    await triggerDelete({ id, confirm: opts.confirm, profile: opts.profile });
+    const triggerId = opts.id || id;
+    if (!triggerId) {
+      throw new Error('请提供触发器 ID');
+    }
+    await triggerDelete({ id: triggerId, confirm: opts.confirm, profile: opts.profile });
   });
 
 async function main(): Promise<void> {
