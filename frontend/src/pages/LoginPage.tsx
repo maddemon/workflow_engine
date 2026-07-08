@@ -60,9 +60,6 @@ export function LoginPage() {
             <Button type="submit" loading={loading} fullWidth>
               Sign In
             </Button>
-            <Text size="xs" ta="center" c="dimmed">
-              Default: admin@flowengine.local / admin123
-            </Text>
             <Text size="xs" ta="center">
               Don't have an account?{' '}
               <Anchor component={Link} to="/register">Sign up</Anchor>

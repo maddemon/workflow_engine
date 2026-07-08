@@ -5,8 +5,8 @@
   "defaultServerUrl": "http://localhost:8001",
   "defaultAdmin": {
     "email": "admin@flowengine.local",
-    "password": "admin123",
-    "note": "开发环境种子用户，首次登录后请创建 API Key 用于 AI 调用"
+    "password": "<通过 FLOWENGINE_ADMIN_PASSWORD 或 Setup:AdminPassword 设置>",
+    "note": "管理员密码需在服务首次启动前通过环境变量 FLOWENGINE_ADMIN_PASSWORD 或配置 Setup:AdminPassword 设置（至少 12 位，含大小写、数字及特殊字符）。首次登录后请创建 API Key 用于 AI 调用。"
   },
   "authGuide": {
     "recommended": "API Key（长期有效，无需刷新）",

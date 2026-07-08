@@ -17,7 +17,7 @@
 
   <Target Name="CopyPluginsOnPublish" AfterTargets="Publish">
     <ItemGroup>
-      <PluginAssemblies Include="..\..\plugins\FlowEngine.Plugins.Standard\bin\$(Configuration)\$(TargetFramework)\*.dll" />
+      <PluginAssemblies Include="..\..\plugins\**\bin\$(Configuration)\$(TargetFramework)\FlowEngine.Plugins.*.dll" />
     </ItemGroup>
     <MakeDir Directories="$(PublishDir)plugins" />
     <Copy SourceFiles="@(PluginAssemblies)" DestinationFolder="$(PublishDir)plugins\" SkipUnchangedFiles="true" />

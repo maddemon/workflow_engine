@@ -18,7 +18,7 @@ flowengine login --url <server-url> --api-key <key> --json
 flowengine login --url <server-url> --email <email> --password <password> --json
 ```
 
-开发环境默认管理员：`admin@flowengine.local` / `admin123`（首次登录后请立即创建 API Key）
+管理员账号 `admin@flowengine.local` 的密码需在服务首次启动前通过 `FLOWENGINE_ADMIN_PASSWORD` 环境变量或 `Setup:AdminPassword` 配置项设置（至少 12 位，含大小写、数字及特殊字符）。登录后请立即创建 API Key 用于 AI 调用。
 
 创建 API Key：
 
