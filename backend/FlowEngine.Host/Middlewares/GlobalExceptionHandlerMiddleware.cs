@@ -47,9 +47,13 @@ public class GlobalExceptionHandlerMiddleware(
         }
 
         // 5xx 异常隐藏内部细节，仅返回通用提示，避免泄露敏感信息。
+        // 4xx 业务异常默认返回通用提示，避免泄露内部实现细节（如 KeyNotFoundException 等）；
+        // 仅显式面向用户的业务异常（BusinessException / ArgumentException）保留原始消息。
         var detail = status >= StatusCodes.Status500InternalServerError
             ? "服务器内部错误，请联系管理员或稍后重试。"
-            : exception.Message;
+            : exception is BusinessException or ArgumentException
+                ? exception.Message
+                : "请求无法处理，请检查输入或稍后重试。";
 
         context.Response.StatusCode = status;
         context.Response.ContentType = "application/json; charset=utf-8";

@@ -131,9 +131,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
   }
 
   function snapshot(): HistorySnapshot {
+    // P11：避免 JSON 序列化深拷贝（丢失 Date/undefined 等），改用结构化克隆。
     return {
-      nodes: JSON.parse(JSON.stringify(get().nodes)) as WorkflowNode[],
-      edges: JSON.parse(JSON.stringify(get().edges)) as WorkflowEdge[],
+      nodes: structuredClone(get().nodes),
+      edges: structuredClone(get().edges),
     };
   }
 

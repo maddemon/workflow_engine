@@ -1,4 +1,5 @@
 import axios from 'axios';
+import { tokenStore } from '../utils/tokenStore.ts';
 import type {
   NodeTypeDescriptor,
   Workflow,
@@ -35,25 +36,53 @@ import type {
 const api = axios.create({
   baseURL: '/api/v1',
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true,
 });
 
 api.interceptors.request.use((config) => {
-  const token = localStorage.getItem('auth_token');
+  const token = tokenStore.getToken();
   if (token && config.headers) {
     config.headers.Authorization = `Bearer ${token}`;
   }
   return config;
 });
 
+/** 结构化 API 错误，统一前端错误处理（R10）。 */
+export class ApiError extends Error {
+  status: number;
+  code?: string;
+  details?: unknown;
+
+  constructor(status: number, message: string, code?: string, details?: unknown) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.code = code;
+    this.details = details;
+  }
+}
+
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
-      localStorage.removeItem('auth_token');
-      localStorage.removeItem('auth_user');
-      window.location.href = '/login';
+    if (error.response) {
+      const { status, data } = error.response;
+      const message =
+        (data && (data.message ?? data.title)) ??
+        error.message ??
+        'Request failed';
+      const code = data?.code ?? data?.type;
+
+      if (status === 401) {
+        tokenStore.clear();
+        localStorage.removeItem('auth_user');
+        window.location.href = '/login';
+      }
+
+      return Promise.reject(new ApiError(status, message, code, data));
     }
-    return Promise.reject(error);
+
+    return Promise.reject(new ApiError(0, error?.message ?? 'Network error'));
   },
 );
 

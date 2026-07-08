@@ -123,10 +123,10 @@ public sealed class WebSearchToolNode : INodeType
 
             // Get HTTP client from connection pool
             var client = context.HttpClientPool?.GetClient();
-            var ownedClient = client is null;
-            try
+            if (client is null)
             {
-                client ??= new HttpClient();
+                return context.ErrorResult("HttpClientUnavailable", "HTTP client pool is not configured.");
+            }
 
             // Execute search based on engine type
             var results = SearchEngine switch
@@ -158,11 +158,6 @@ public sealed class WebSearchToolNode : INodeType
                 Success = true,
                 Output = outputBatch
             };
-            }
-            finally
-            {
-                if (ownedClient) client?.Dispose();
-            }
         }
         catch (OperationCanceledException)
         {
@@ -245,7 +240,7 @@ public sealed class WebSearchToolNode : INodeType
         // Google Custom Search API
         var url = $"https://www.googleapis.com/customsearch/v1?key={apiKey}&cx={apiKey}&q={Uri.EscapeDataString(query)}&num={MaxResults}&hl={Language}";
 
-        var request = new HttpRequestMessage(HttpMethod.Get, url);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
         var response = await HttpExecutionHelper.SendAndBuildResultAsync(client, request, Guid.Empty, cancellationToken)
             .ConfigureAwait(false);
 
@@ -257,7 +252,7 @@ public sealed class WebSearchToolNode : INodeType
         // Bing Web Search API
         var url = $"https://api.bing.microsoft.com/v7.0/search?q={Uri.EscapeDataString(query)}&count={MaxResults}&setLang={Language}";
 
-        var request = new HttpRequestMessage(HttpMethod.Get, url);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
         if (!string.IsNullOrEmpty(apiKey))
         {
             request.Headers.TryAddWithoutValidation("Ocp-Apim-Subscription-Key", apiKey);
@@ -274,7 +269,7 @@ public sealed class WebSearchToolNode : INodeType
         // DuckDuckGo Instant Answer API (no API key required)
         var url = $"https://api.duckduckgo.com/?q={Uri.EscapeDataString(query)}&format=json&no_html=1&skip_disambig=1";
 
-        var request = new HttpRequestMessage(HttpMethod.Get, url);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
         var response = await HttpExecutionHelper.SendAndBuildResultAsync(client, request, Guid.Empty, cancellationToken)
             .ConfigureAwait(false);
 
@@ -286,7 +281,7 @@ public sealed class WebSearchToolNode : INodeType
         // SerpAPI (Google Search)
         var url = $"https://serpapi.com/search.json?q={Uri.EscapeDataString(query)}&api_key={apiKey}&hl={Language}&num={MaxResults}";
 
-        var request = new HttpRequestMessage(HttpMethod.Get, url);
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
         var response = await HttpExecutionHelper.SendAndBuildResultAsync(client, request, Guid.Empty, cancellationToken)
             .ConfigureAwait(false);
 
@@ -304,7 +299,12 @@ public sealed class WebSearchToolNode : INodeType
                                 .Replace("{language}", Language)
                                 .Replace("{maxResults}", MaxResults.ToString());
 
-        var request = new HttpRequestMessage(HttpMethod.Get, url);
+        if (SsrfGuard.IsInternalTarget(url))
+        {
+            throw new InvalidOperationException("CustomEndpoint points to a blocked internal/loopback address.");
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
 
         if (CustomHeaders is { Count: > 0 })
         {

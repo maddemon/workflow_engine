@@ -2,6 +2,7 @@ using System.Threading.Channels;
 using System.Text.Json;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Events;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Infrastructure.Audit;
@@ -9,8 +10,9 @@ namespace FlowEngine.Infrastructure.Audit;
 /// <summary>
 /// 审计日志文件 Sink，订阅 EventBus 事件并写入 NDJSON 文件。
 /// 所有事件先入队，再由后台任务批量刷盘，避免阻塞发布线程。
+/// 作为托管服务（IHostedService）随宿主启动/停止，避免“为副作用而解析”。
 /// </summary>
-public sealed class AuditLogFileSink : IDisposable
+public sealed class AuditLogFileSink : IHostedService, IDisposable
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -54,6 +56,48 @@ public sealed class AuditLogFileSink : IDisposable
         eventBus.Subscribe<AuditEvent>(OnEventAsync);
         _processor = Task.Run(ProcessLoopAsync);
         _flushTimer = new Timer(_ => Flush(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
+    }
+
+    /// <summary>
+    /// 托管服务启动入口。后台刷盘循环已在构造函数中启动，此处无需额外操作。
+    /// </summary>
+    public Task StartAsync(CancellationToken cancellationToken) => Task.CompletedTask;
+
+    /// <summary>
+    /// 优雅停止审计刷盘任务并释放资源（托管服务停止时由宿主调用）。
+    /// </summary>
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        if (_disposed)
+        {
+            return Task.CompletedTask;
+        }
+
+        _disposed = true;
+        _channel.Writer.Complete();
+        _cts.Cancel();
+        _flushTimer?.Dispose();
+        _flushTimer = null;
+
+        try
+        {
+            _processor.Wait(TimeSpan.FromSeconds(5));
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "审计日志后台任务停止时发生异常");
+        }
+
+        _cts.Dispose();
+
+        lock (_writerLock)
+        {
+            _writer?.Flush();
+            _writer?.Dispose();
+            _writer = null;
+        }
+
+        return Task.CompletedTask;
     }
 
     /// <summary>

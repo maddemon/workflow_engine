@@ -61,6 +61,14 @@ public sealed class ShellToolNode : INodeType
     public ShellType Shell { get; set; } = ShellType.Bash;
 
     /// <summary>
+    /// 是否通过指定 shell 解释器执行命令（高危）。
+    /// 默认 <c>false</c>，命令将以「参数数组」方式直接执行（去 shell 化），
+    /// 避免命令注入逃逸；置为 <c>true</c> 时回退到 shell 解释器（管道/重定向等语法生效，但存在命令注入风险）。
+    /// </summary>
+    [Description("Run the command through a shell interpreter (e.g. bash -c / powershell -Command). Default false (de-shelled, safe against command injection). Set true only when shell features like pipes are required.")]
+    public bool RunInShell { get; set; } = false;
+
+    /// <summary>
     /// 工作目录。
     /// </summary>
     [Description("Working directory for command execution. Leave empty for current directory.")]
@@ -125,23 +133,58 @@ public sealed class ShellToolNode : INodeType
 
     private async Task<CommandResult> ExecuteCommandAsync(string command, CancellationToken cancellationToken)
     {
-        var (fileName, arguments) = Shell switch
-        {
-            ShellType.Bash => ("bash", $"-c \"{command}\""),
-            ShellType.PowerShell => ("powershell", $"-Command \"{command}\""),
-            ShellType.Cmd => ("cmd", $"/c \"{command}\""),
-            _ => throw new InvalidOperationException($"Unsupported shell: {Shell}")
-        };
-
         var psi = new ProcessStartInfo
         {
-            FileName = fileName,
-            Arguments = arguments,
             RedirectStandardOutput = true,
             RedirectStandardError = true,
             UseShellExecute = false,
             CreateNoWindow = true
         };
+
+        // 去 shell 化：默认直接以参数数组执行，避免命令注入逃逸。
+        // 仅当显式 RunInShell=true 时回退到 shell 解释器（高危，需用户知晓）。
+        if (RunInShell)
+        {
+            switch (Shell)
+            {
+                case ShellType.PowerShell:
+                    psi.FileName = "powershell";
+                    psi.ArgumentList.Add("-NoProfile");
+                    psi.ArgumentList.Add("-NonInteractive");
+                    psi.ArgumentList.Add("-Command");
+                    psi.ArgumentList.Add(command);
+                    break;
+                case ShellType.Cmd:
+                    psi.FileName = "cmd";
+                    psi.ArgumentList.Add("/c");
+                    psi.ArgumentList.Add(command);
+                    break;
+                default:
+                    psi.FileName = "bash";
+                    psi.ArgumentList.Add("-c");
+                    psi.ArgumentList.Add(command);
+                    break;
+            }
+        }
+        else
+        {
+            var tokens = TokenizeCommand(command);
+            if (tokens.Count == 0)
+            {
+                return new CommandResult
+                {
+                    Stdout = string.Empty,
+                    Stderr = "Command is empty or could not be parsed.",
+                    ExitCode = -1
+                };
+            }
+
+            psi.FileName = tokens[0];
+            for (var i = 1; i < tokens.Count; i++)
+            {
+                psi.ArgumentList.Add(tokens[i]);
+            }
+        }
 
         if (!string.IsNullOrEmpty(WorkingDirectory))
         {
@@ -190,6 +233,87 @@ public sealed class ShellToolNode : INodeType
                 ExitCode = -1
             };
         }
+    }
+
+    /// <summary>
+    /// 将命令字符串拆分为程序与参数数组（支持单/双引号与反斜杠转义），用于去 shell 化直接执行。
+    /// </summary>
+    private static List<string> TokenizeCommand(string command)
+    {
+        var tokens = new List<string>();
+        if (string.IsNullOrWhiteSpace(command))
+        {
+            return tokens;
+        }
+
+        var current = new System.Text.StringBuilder();
+        var inToken = false;
+        char quote = '\0';
+        var hasContent = false;
+
+        for (var i = 0; i < command.Length; i++)
+        {
+            var c = command[i];
+
+            if (quote != '\0')
+            {
+                if (c == '\\' && quote == '"' && i + 1 < command.Length)
+                {
+                    current.Append(command[++i]);
+                }
+                else if (c == quote)
+                {
+                    quote = '\0';
+                }
+                else
+                {
+                    current.Append(c);
+                }
+
+                hasContent = true;
+                continue;
+            }
+
+            if (c is '"' or '\'')
+            {
+                quote = c;
+                inToken = true;
+                hasContent = true;
+                continue;
+            }
+
+            if (char.IsWhiteSpace(c))
+            {
+                if (inToken)
+                {
+                    tokens.Add(current.ToString());
+                    current.Clear();
+                    inToken = false;
+                    hasContent = false;
+                }
+
+                continue;
+            }
+
+            if (c == '\\' && i + 1 < command.Length)
+            {
+                current.Append(command[++i]);
+            }
+            else
+            {
+                current.Append(c);
+            }
+
+            inToken = true;
+            hasContent = true;
+        }
+
+        if (inToken && hasContent)
+        {
+            tokens.Add(current.ToString());
+        }
+
+        return tokens;
     }
 }
 

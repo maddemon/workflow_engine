@@ -715,20 +715,32 @@ public sealed class WorkflowExecutor : IEngine
         return delay;
     }
 
+    /// <summary>
+    /// 输入端口名缓存：按节点类型名缓存，避免热路径反复 LINQ（P3）。
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, IReadOnlyList<string>> InputPortCache = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 输出端口名缓存：按节点类型名缓存，避免热路径反复 LINQ（P3）。
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, IReadOnlyList<string>> OutputPortCache = new(StringComparer.OrdinalIgnoreCase);
+
     private static IReadOnlyList<string> GetInputPortNames(INodeType nodeType)
     {
-        return nodeType.Ports
-            .Where(p => p.Direction == PortDirection.Input)
-            .Select(p => p.Name)
-            .ToList();
+        return InputPortCache.GetOrAdd(nodeType.TypeName, _ =>
+            nodeType.Ports
+                .Where(p => p.Direction == PortDirection.Input)
+                .Select(p => p.Name)
+                .ToList());
     }
 
     private static IReadOnlyList<string> GetOutputPortNames(INodeType nodeType)
     {
-        return nodeType.Ports
-            .Where(p => p.Direction == PortDirection.Output)
-            .Select(p => p.Name)
-            .ToList();
+        return OutputPortCache.GetOrAdd(nodeType.TypeName, _ =>
+            nodeType.Ports
+                .Where(p => p.Direction == PortDirection.Output)
+                .Select(p => p.Name)
+                .ToList());
     }
 
     private Func<LlmStreamChunk, CancellationToken, Task> CreateLlmStreamCallback(

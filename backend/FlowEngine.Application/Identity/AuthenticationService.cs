@@ -23,6 +23,7 @@ public partial class AuthenticationService(
     private const int MaxFailedAttempts = 5;
     private static readonly TimeSpan AttemptWindow = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
+    private string? _clientIp;
 
     /// <summary>
     /// 用户注册。
@@ -93,8 +94,9 @@ public partial class AuthenticationService(
     /// <param name="request">登录请求。</param>
     /// <param name="ct">取消令牌。</param>
     /// <returns>登录结果（含 JWT 令牌）。</returns>
-    public async Task<LoginResult> LoginAsync(LoginRequest request, CancellationToken ct = default)
+    public async Task<LoginResult> LoginAsync(LoginRequest request, CancellationToken ct = default, string? clientIp = null)
     {
+        _clientIp = clientIp;
         if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
         {
             return new LoginResult
@@ -167,7 +169,11 @@ public partial class AuthenticationService(
         };
     }
 
-    private string GetAttemptCacheKey(string email) => $"login-attempts:{email.ToLowerInvariant()}";
+    private string GetAttemptCacheKey(string email)
+    {
+        var ip = string.IsNullOrEmpty(_clientIp) ? "unknown" : _clientIp;
+        return $"login-attempts:{email.ToLowerInvariant()}:{ip}";
+    }
 
     private bool IsLockedOut(string email)
     {

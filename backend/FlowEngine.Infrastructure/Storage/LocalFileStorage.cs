@@ -26,7 +26,7 @@ public sealed class LocalFileStorage : IFileStorage
         ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
         ArgumentNullException.ThrowIfNull(content);
         ArgumentException.ThrowIfNullOrWhiteSpace(projectId);
-        ValidatePath(projectId);
+        ValidateProjectId(projectId);
 
         var fileId = Guid.NewGuid().ToString("N");
         var projectDir = Path.Combine(_basePath, projectId);
@@ -88,11 +88,12 @@ public sealed class LocalFileStorage : IFileStorage
         return Task.FromResult(FindFile(fileId) is not null);
     }
 
-    private static void ValidatePath(string path)
+    private static void ValidateProjectId(string projectId)
     {
-        if (path.Contains("..", StringComparison.Ordinal))
+        // projectId 直接作为目录名参与路径拼接，必须限定为合法 GUID，防止路径遍历（L4）。
+        if (!Guid.TryParse(projectId, out _))
         {
-            throw new ArgumentException("路径包含非法字符序列。");
+            throw new ArgumentException("projectId 必须为合法 GUID。");
         }
     }
 

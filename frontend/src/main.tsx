@@ -11,6 +11,9 @@ import 'highlight.js/styles/github.css'
 import { theme } from './theme.ts'
 import './index.css'
 import App from './App.tsx'
+import { setupGlobalErrorHandlers } from './utils/globalErrorHandler.ts'
+
+setupGlobalErrorHandlers()
 
 const highlightAdapter = createHighlightJsAdapter(hljs)
 

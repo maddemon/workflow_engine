@@ -45,6 +45,7 @@ public sealed class JsEngine : IDisposable
             o.RegexTimeoutInterval(TimeSpan.FromMilliseconds(opts.RegexTimeoutMs));
             o.MaxArraySize((uint)opts.ArraySizeLimit);
             o.DisableStringCompilation();
+            // M1：默认不调用 AllowClr()，脚本无法访问 CLR 类型/对象，从而封死借 constructor 逃逸执行 .NET 代码。
             configure?.Invoke(o);
         });
 

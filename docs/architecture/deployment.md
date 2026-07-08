@@ -113,13 +113,40 @@ sudo systemctl start flowengine
 
 ### 4.4 Docker
 
+仓库根已提供多阶段 `Dockerfile`（前端构建 + 后端发布 + 插件拷贝 + `aspnet:10.0` 运行时），目标框架与 `FlowEngine.Host` 的 `net10.0` 一致（原示例误用 `aspnet:8.0`）。典型用法：
+
 ```dockerfile
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
+# 后端多阶段构建（含插件发布拷贝，见 Host.csproj 的 CopyPluginsOnPublish）
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS backend-build
+WORKDIR /src
+COPY backend/ ./backend/
+COPY plugins/ ./plugins/
+RUN dotnet publish backend/FlowEngine.Host/FlowEngine.Host.csproj -c Release -o /app/publish
+
+# 前端构建
+FROM node:20-alpine AS frontend-build
+WORKDIR /web
+COPY frontend/package*.json ./
+RUN npm ci
+COPY frontend/ ./
+RUN npm run build
+
+# 运行时（镜像版本须与应用目标框架一致）
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
 WORKDIR /app
-COPY ./publish .
+COPY --from=backend-build /app/publish ./
+COPY --from=frontend-build /web/dist ./wwwroot
 EXPOSE 8080
 ENTRYPOINT ["dotnet", "FlowEngine.dll"]
 ```
+
+**首次初始化引导（对应审查 H1）**：容器启动前必须通过环境变量/密钥注入以下配置，禁止保留默认值：
+
+- `Jwt__Secret`：JWT 签名密钥，至少 32 字节（生产强制，缺失启动失败）。
+- `FLOWENGINE_ADMIN_PASSWORD`（或 `Setup__AdminPassword`）：首个管理员口令，至少 12 位，库为空时创建 `admin@flowengine.local`；缺失则启动失败。
+- `ConnectionStrings__Default`：数据库连接串。
+- `Cors__AllowedOrigins`：跨域白名单（缺省仅同源，全开放已禁用）。
+- 若部署在反向代理后：通过 `ForwardedHeaders__KnownProxies` / `ForwardedHeaders__KnownNetworks` 声明可信代理，防止伪造 `X-Forwarded-For`。
 
 ## 5. 横向扩展预留
 

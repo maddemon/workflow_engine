@@ -1,5 +1,7 @@
+using System.Collections.Concurrent;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using Acornima.Ast;
 using FlowEngine.Core.Enums;
 using Jint;
 using Jint.Native;
@@ -13,13 +15,19 @@ namespace FlowEngine.Runtime.Scripting;
 public static class ScriptEngine
 {
     /// <summary>
+    /// 表达式预编译缓存：按表达式字符串缓存 AST，避免每次求值都重新解析（P2）。
+    /// 预编译产物可在多个独立沙箱引擎间复用。
+    /// </summary>
+    private static readonly ConcurrentDictionary<string, Jint.Prepared<Script>> ExpressionCache = new(StringComparer.Ordinal);
+
+    /// <summary>
     /// 执行脚本并返回指定类型的结果。
     /// </summary>
-    /// <typeparam name="T">返回类型</typeparam>
-    /// <param name="expression">JS 表达式</param>
-    /// <param name="input">输入数据（绑定到 input 变量）</param>
-    /// <param name="language">脚本语言</param>
-    /// <returns>执行结果</returns>
+    /// <typeparam name="T">返回类型。</typeparam>
+    /// <param name="expression">JS 表达式。</param>
+    /// <param name="input">输入数据（绑定到 input 变量）。</param>
+    /// <param name="language">脚本语言。</param>
+    /// <returns>执行结果。</returns>
     public static T? Evaluate<T>(string? expression, object? input, ScriptLanguage language = ScriptLanguage.JavaScript)
     {
         if (string.IsNullOrWhiteSpace(expression))
@@ -34,13 +42,13 @@ public static class ScriptEngine
 
         try
         {
-            using var js = JsEngine.Create();
-            js.SetValue("input", input);
-            var result = js.Evaluate(expression);
+            var result = EvaluateExpression(expression, input);
             return ConvertResult<T>(result);
         }
-        catch
+        catch (Exception ex)
         {
+            // 取消信号必须向上传播，不应被静默吞掉（R3）。
+            if (ex is OperationCanceledException) throw;
             return default;
         }
     }
@@ -65,9 +73,7 @@ public static class ScriptEngine
 
         try
         {
-            using var js = JsEngine.Create();
-            js.SetValue("input", input);
-            var result = js.Evaluate(expression);
+            var result = EvaluateExpression(expression, input);
 
             var json = JsonSerializer.SerializeToNode(result.ToObject());
             if (json is JsonObject obj)
@@ -77,13 +83,15 @@ public static class ScriptEngine
                 {
                     dict[prop.Key] = prop.Value?.ToString() ?? string.Empty;
                 }
+
                 return dict;
             }
 
             return null;
         }
-        catch
+        catch (Exception ex)
         {
+            if (ex is OperationCanceledException) throw;
             return null;
         }
     }
@@ -100,15 +108,14 @@ public static class ScriptEngine
 
         try
         {
-            using var js = JsEngine.Create();
-            js.SetValue("input", input);
-            var result = js.Evaluate(expression);
+            var result = EvaluateExpression(expression, input);
 
             var json = JsonSerializer.SerializeToNode(result.ToObject());
             return json as JsonObject;
         }
-        catch
+        catch (Exception ex)
         {
+            if (ex is OperationCanceledException) throw;
             return null;
         }
     }
@@ -119,6 +126,17 @@ public static class ScriptEngine
     public static bool EvaluateAsBool(string? expression, object? input, ScriptLanguage language = ScriptLanguage.JavaScript)
     {
         return Evaluate<bool>(expression, input, language);
+    }
+
+    /// <summary>
+    /// 创建独立沙箱引擎，复用预编译 AST 求值（P2）。
+    /// </summary>
+    private static JsValue EvaluateExpression(string expression, object? input)
+    {
+        using var js = JsEngine.Create();
+        js.SetValue("input", input);
+        var prepared = ExpressionCache.GetOrAdd(expression, JsEngine.PrepareExpression);
+        return js.EvaluatePrepared(prepared);
     }
 
     private static T? ConvertResult<T>(JsValue result)

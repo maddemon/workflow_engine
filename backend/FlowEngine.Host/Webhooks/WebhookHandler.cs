@@ -197,6 +197,18 @@ public sealed class WebhookHandler
 
     private async Task<bool> ValidateRequestAsync(HttpContext context, WebhookRoute route)
     {
+        // H3：未配置密钥时，必须显式配置 IP 白名单作为替代防护，否则拒绝匿名触发。
+        // 避免空 Secret 使任意匿名 POST 直接触发工作流执行。
+        if (string.IsNullOrEmpty(route.Secret) && (route.AllowedIps is not { Count: > 0 }))
+        {
+            _logger.LogWarning("Webhook 未配置密钥且无 IP 白名单，拒绝匿名触发: Path={Path}", route.Path);
+            context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+            await context.Response.WriteAsJsonAsync(
+                new { error = "Webhook requires a secret or IP allowlist" },
+                context.RequestAborted).ConfigureAwait(false);
+            return false;
+        }
+
         if (!string.IsNullOrEmpty(route.Secret))
         {
             if (!context.Request.Headers.TryGetValue("X-Hub-Signature-256", out var signatureValues))

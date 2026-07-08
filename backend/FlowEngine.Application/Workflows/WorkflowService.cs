@@ -317,6 +317,18 @@ public sealed class WorkflowService(
         int version,
         CancellationToken cancellationToken = default)
     {
+        var userId = userContext.UserId;
+        if (userId is null)
+        {
+            throw new PermissionDeniedException("当前用户未认证。");
+        }
+
+        // M6：历史版本接口同样需要资源归属校验，防止越权读取。
+        if (!await resourceAuthorization.CanAccessWorkflowAsync(userId.Value, id, Operation.Read, cancellationToken).ConfigureAwait(false))
+        {
+            throw new PermissionDeniedException("当前用户没有读取该工作流历史版本的权限。");
+        }
+
         var workflow = await dbContext.Workflows
             .FirstOrDefaultAsync(w => w.Id == id && w.Version == version, cancellationToken)
             .ConfigureAwait(false);
@@ -328,6 +340,18 @@ public sealed class WorkflowService(
     /// </summary>
     public async Task<IReadOnlyCollection<int>> GetVersionsAsync(Guid id, CancellationToken cancellationToken = default)
     {
+        var userId = userContext.UserId;
+        if (userId is null)
+        {
+            throw new PermissionDeniedException("当前用户未认证。");
+        }
+
+        // M6：历史版本列表接口同样需要资源归属校验。
+        if (!await resourceAuthorization.CanAccessWorkflowAsync(userId.Value, id, Operation.Read, cancellationToken).ConfigureAwait(false))
+        {
+            throw new PermissionDeniedException("当前用户没有读取该工作流历史版本的权限。");
+        }
+
         return await dbContext.Workflows
             .Where(w => w.Id == id)
             .Select(w => w.Version)
@@ -437,6 +461,10 @@ public sealed class WorkflowService(
     {
         var reverseNodeIdMap = nodeIdMap.ToDictionary(kv => kv.Value, kv => kv.Key);
 
+        // P5：预构建 (Source, Target) → ConnectionDto 映射，避免 O(N×M) 嵌套查找。
+        var connectionByEndpoints = originalConnectionDtos.ToDictionary(
+            cd => (cd.SourceNodeId, cd.TargetNodeId), cd => cd);
+
         var nodeDtos = workflow.Nodes.Select(n =>
         {
             var originalId = reverseNodeIdMap.TryGetValue(n.Id, out var origId) ? origId : n.Id.ToString();
@@ -447,8 +475,7 @@ public sealed class WorkflowService(
         {
             var origSource = reverseNodeIdMap.TryGetValue(c.SourceNodeId, out var sId) ? sId : c.SourceNodeId.ToString();
             var origTarget = reverseNodeIdMap.TryGetValue(c.TargetNodeId, out var tId) ? tId : c.TargetNodeId.ToString();
-            var origConn = originalConnectionDtos.FirstOrDefault(cd =>
-                cd.SourceNodeId == origSource && cd.TargetNodeId == origTarget);
+            connectionByEndpoints.TryGetValue((origSource, origTarget), out var origConn);
 
             return WorkflowMapper.ToDto(c, origConn?.Id ?? c.Id.ToString(), origSource, origTarget);
         }).ToList();

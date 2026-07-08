@@ -146,7 +146,8 @@ public sealed class InMemoryEventBus : IEventBus, IDisposable
         {
             try
             {
-                await handler(@event, CancellationToken.None).ConfigureAwait(false);
+                // 使用总线关闭令牌而非 None，使处理器在应用停止时可被取消（M5）。
+                await handler(@event, _cts.Token).ConfigureAwait(false);
             }
             catch (Exception ex)
             {

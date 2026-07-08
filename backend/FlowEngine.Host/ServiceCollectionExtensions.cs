@@ -30,6 +30,8 @@ using FlowEngine.Runtime.Http;
 using FlowEngine.Runtime.Registry;
 using FlowEngine.Runtime.Scripting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.HttpOverrides;
+using System.Net;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using Quartz;
@@ -60,6 +62,42 @@ public static class ServiceCollectionExtensions
             });
         services.AddMemoryCache();
 
+        // ── Forwarded Headers（反向代理信任）─────────────────
+        // 仅在配置了 KnownProxies/KnownNetworks 时，X-Forwarded-For 等才会生效，
+        // 防止客户端伪造 X-Forwarded-For 绕过基于 IP 的限流（L2）。
+        services.Configure<ForwardedHeadersOptions>(options =>
+        {
+            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor
+                | ForwardedHeaders.XForwardedProto
+                | ForwardedHeaders.XForwardedHost;
+            var proxies = configuration.GetSection("ForwardedHeaders:KnownProxies").Get<string[]>();
+            if (proxies is not null)
+            {
+                foreach (var p in proxies)
+                {
+                    if (IPAddress.TryParse(p, out var ip))
+                    {
+                        options.KnownProxies.Add(ip);
+                    }
+                }
+            }
+
+            var networks = configuration.GetSection("ForwardedHeaders:KnownNetworks").Get<string[]>();
+            if (networks is not null)
+            {
+                foreach (var n in networks)
+                {
+                    var parts = n.Split('/');
+                    if (parts.Length == 2
+                        && IPAddress.TryParse(parts[0], out var addr)
+                        && int.TryParse(parts[1], out var prefix))
+                    {
+                        options.KnownIPNetworks.Add(System.Net.IPNetwork.Parse($"{parts[0]}/{parts[1]}"));
+                    }
+                }
+            }
+        });
+
         // ── Rate Limiting ───────────────────────────────────────────
         services.Configure<RateLimitOptions>(configuration.GetSection(RateLimitOptions.SectionName));
         services.AddTransient<RateLimitMiddleware>();
@@ -85,7 +123,7 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IEventBus, InMemoryEventBus>();
         services.AddScoped<ParameterResolver>();
 
-        services.AddSingleton<AuditLogFileSink>(sp =>
+        services.AddHostedService(sp =>
         {
             var logPath = configuration["Audit:LogPath"] ?? "./storage/audit";
             return new AuditLogFileSink(
@@ -113,6 +151,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITokenService, JwtTokenService>();
         services.AddScoped<IUserStore, UserStore>();
         services.AddScoped<IUserContext, HttpContextUserContext>();
+        services.AddScoped<IUserRoleService, UserRoleService>();
         services.AddScoped<AuthenticationService>();
         services.AddScoped<ApiKeyService>();
         services.AddSingleton<ITokenBlacklist, TokenBlacklistService>();
@@ -160,20 +199,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ExecutionService>();
         services.AddScoped<IExecutionIdempotencyService, ExecutionIdempotencyService>();
         services.AddScoped<IWorkflowLoader, WorkflowLoader>();
-        services.AddScoped<NodeExecutionContextFactory>(provider =>
-        {
-            var whitelist = configuration.GetSection("Expression:EnvironmentWhitelist").Get<string[]>() ?? [];
-            return new NodeExecutionContextFactory(
-                provider.GetRequiredService<INodeRegistry>(),
-                provider.GetRequiredService<ParameterResolver>(),
-                provider.GetRequiredService<ICredentialAccessor>(),
-                new HashSet<string>(whitelist, StringComparer.OrdinalIgnoreCase),
-                hydratorLogger: provider.GetService<ILogger<ParameterHydrator>>(),
-                jsLogger: provider.GetService<ILogger<JsEngine>>(),
-                jsEngineOptions: provider.GetService<JsEngineOptions>(),
-                workflowLoader: provider.GetService<IWorkflowLoader>(),
-                httpClientPool: provider.GetService<IHttpClientPool>());
-        });
+        services.AddNodeExecutionContextFactory(configuration);
 
         // ── WebSocket ───────────────────────────────────────────────
         services.AddSingleton<WebSocketConnectionManager>();
@@ -196,7 +222,8 @@ public static class ServiceCollectionExtensions
                 }
                 else
                 {
-                    policy.AllowAnyOrigin()
+                    // 未配置允许的跨域源时，默认拒绝所有跨域请求（仅同源可访问），避免 CORS 全开放（H4）。
+                    policy.WithOrigins()
                           .AllowAnyHeader()
                           .AllowAnyMethod();
                 }
@@ -228,6 +255,27 @@ public static class ServiceCollectionExtensions
         });
 
         return services;
+    }
+
+    /// <summary>
+    /// 注册节点执行上下文工厂，集中组合执行节点所需的依赖（A8）。
+    /// </summary>
+    private static void AddNodeExecutionContextFactory(this IServiceCollection services, IConfiguration configuration)
+    {
+        services.AddScoped<NodeExecutionContextFactory>(provider =>
+        {
+            var whitelist = configuration.GetSection("Expression:EnvironmentWhitelist").Get<string[]>() ?? [];
+            return new NodeExecutionContextFactory(
+                provider.GetRequiredService<INodeRegistry>(),
+                provider.GetRequiredService<ParameterResolver>(),
+                provider.GetRequiredService<ICredentialAccessor>(),
+                new HashSet<string>(whitelist, StringComparer.OrdinalIgnoreCase),
+                hydratorLogger: provider.GetService<ILogger<ParameterHydrator>>(),
+                jsLogger: provider.GetService<ILogger<JsEngine>>(),
+                jsEngineOptions: provider.GetService<JsEngineOptions>(),
+                workflowLoader: provider.GetService<IWorkflowLoader>(),
+                httpClientPool: provider.GetService<IHttpClientPool>());
+        });
     }
 
     private static void AddAuthentication(IServiceCollection services, IConfiguration configuration)
@@ -291,6 +339,16 @@ public static class ServiceCollectionExtensions
                         if (!string.IsNullOrEmpty(accessToken))
                         {
                             context.Token = accessToken;
+                        }
+                        else
+                        {
+                            // L1/H5：同源浏览器请求（含 WS/SSE）自动携带 HttpOnly Cookie，
+                            // 从中读取 JWT，避免令牌经 URL 暴露。
+                            var cookie = context.Request.Cookies["fe_auth"];
+                            if (!string.IsNullOrEmpty(cookie))
+                            {
+                                context.Token = cookie;
+                            }
                         }
 
                         return Task.CompletedTask;

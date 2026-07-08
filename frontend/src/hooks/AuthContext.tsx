@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useCallback, useEffect, type React
 import { notifications } from '@mantine/notifications';
 import type { UserDto, RegisterRequest, LoginRequest, RegisterResult } from '../types/workflow.ts';
 import * as api from '../services/api.ts';
+import { tokenStore } from '../utils/tokenStore.ts';
 
 interface AuthContextValue {
   user: UserDto | null;
@@ -26,7 +27,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const stored = localStorage.getItem('auth_user');
     return stored ? JSON.parse(stored) : null;
   });
-  const [token, setToken] = useState<string | null>(() => localStorage.getItem('auth_token'));
+  const [token, setToken] = useState<string | null>(() => tokenStore.getToken());
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -45,7 +46,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (cancelled) return;
         setToken(null);
         setUser(null);
-        localStorage.removeItem('auth_token');
+        tokenStore.clear();
         localStorage.removeItem('auth_user');
       })
       .finally(() => {
@@ -63,9 +64,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const result = await api.login(data);
       if (result.success && result.token && result.user) {
+        tokenStore.setToken(result.token);
         setToken(result.token);
         setUser(result.user);
-        localStorage.setItem('auth_token', result.token);
         localStorage.setItem('auth_user', JSON.stringify(result.user));
         return { success: true };
       }
@@ -88,9 +89,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await api.logout();
     } catch { /* ignore */ }
+    tokenStore.clear();
     setToken(null);
     setUser(null);
-    localStorage.removeItem('auth_token');
     localStorage.removeItem('auth_user');
     notifications.show({ title: 'Logged out', message: 'You have been logged out', color: 'blue' });
   }, []);

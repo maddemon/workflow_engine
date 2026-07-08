@@ -5,6 +5,7 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Runtime.Http;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -85,6 +86,11 @@ public sealed class LlmNode : INodeType
         Uri? endpoint = null;
         if (!string.IsNullOrWhiteSpace(BaseEndpoint) && Uri.TryCreate(BaseEndpoint, UriKind.Absolute, out var uri))
         {
+            if (SsrfGuard.IsInternalTarget(BaseEndpoint))
+            {
+                return context.ErrorResult("SsrfBlocked", "LLM BaseEndpoint points to a blocked internal/loopback address.");
+            }
+
             endpoint = uri;
         }
 

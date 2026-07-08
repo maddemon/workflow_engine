@@ -8,6 +8,7 @@ using FlowEngine.Host.Webhooks;
 using FlowEngine.Host.WebSocketHandlers;
 using FlowEngine.Infrastructure.Audit;
 using FlowEngine.Migrations;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Host;
@@ -119,24 +120,26 @@ public static class ApplicationBuilderExtensions
 
     private static void UseMiddlewares(WebApplication app)
     {
+        // 在读取客户端 IP 之前应用转发头（反向代理场景），防止 X-Forwarded-For 伪造绕过基于 IP 的限流（L2）。
+        app.UseForwardedHeaders();
         // 全局异常处理放在管道最外层，确保能捕获后续所有中间件与端点抛出的异常（GAP-26）
         app.UseMiddleware<GlobalExceptionHandlerMiddleware>();
         // 显式启用路由匹配，确保后续中间件可读取路由值（GAP-12）
         app.UseRouting();
         app.UseMiddleware<SecurityHeadersMiddleware>();
+        // L7：SPA 静态资源（index.html、js、css）匿名可访问，置于认证/授权前，
+        // 避免登录页等公共资源被强制要求先登录；安全响应头仍作用于静态响应。
+        app.UseStaticFiles();
         app.UseMiddleware<RateLimitMiddleware>();
         app.UseCors();
         app.UseAuthentication();
         app.UseMiddleware<CurrentUserMiddleware>();
         app.UseAuthorization();
         app.UseMiddleware<RbacAuthorizationMiddleware>();
-        app.UseStaticFiles();
     }
 
     private static async Task UseInitialization(WebApplication app)
     {
-        app.Services.GetRequiredService<AuditLogFileSink>();
-
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
         var scheduleManager = scope.ServiceProvider.GetRequiredService<IScheduleManager>();

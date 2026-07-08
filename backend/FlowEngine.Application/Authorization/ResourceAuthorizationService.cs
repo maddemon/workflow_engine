@@ -11,6 +11,9 @@ namespace FlowEngine.Application.Authorization;
 /// </summary>
 public sealed class ResourceAuthorizationService(FlowEngineDbContext dbContext, IAuthorizationService authorizationService) : IResourceAuthorizationService
 {
+    // P4：请求级角色缓存（服务为 Scoped，等价于请求级），避免同一请求内反复查库。
+    private readonly Dictionary<Guid, IReadOnlyList<string>> _roleCache = new();
+
     /// <inheritdoc />
     public async Task<bool> CanAccessWorkflowAsync(Guid userId, Guid workflowId, Operation operation, CancellationToken ct = default)
     {
@@ -115,6 +118,11 @@ public sealed class ResourceAuthorizationService(FlowEngineDbContext dbContext, 
 
     private async Task<IReadOnlyList<string>> GetUserRolesAsync(Guid userId, CancellationToken ct)
     {
+        if (_roleCache.TryGetValue(userId, out var cached))
+        {
+            return cached;
+        }
+
         var userRoles = await dbContext.UserRoles
             .AsNoTracking()
             .Where(ur => ur.UserId == userId && !ur.Deleted)
@@ -122,6 +130,7 @@ public sealed class ResourceAuthorizationService(FlowEngineDbContext dbContext, 
             .ToListAsync(ct)
             .ConfigureAwait(false);
 
+        _roleCache[userId] = userRoles;
         return userRoles;
     }
 

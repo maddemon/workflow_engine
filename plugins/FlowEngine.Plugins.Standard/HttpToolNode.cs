@@ -119,8 +119,13 @@ public sealed class HttpToolNode : INodeType
                 return context.ErrorResult("MissingUrl", "URL is required.");
             }
 
+            if (SsrfGuard.IsInternalTarget(resolvedUrl))
+            {
+                return context.ErrorResult("SsrfBlocked", "Target URL points to a blocked internal/loopback address.");
+            }
+
             var methodStr = Method.ToString().ToUpperInvariant();
-            var request = new HttpRequestMessage(new HttpMethod(methodStr), resolvedUrl);
+            using var request = new HttpRequestMessage(new HttpMethod(methodStr), resolvedUrl);
 
             // Add authentication
             if (Authentication != HttpRequestAuthMode.None && !string.IsNullOrEmpty(CredentialId))
@@ -166,17 +171,13 @@ public sealed class HttpToolNode : INodeType
             }
 
             var client = context.HttpClientPool?.GetClient();
-            var ownedClient = client is null;
-            try
+            if (client is null)
             {
-                client ??= new HttpClient();
-                return await HttpExecutionHelper.SendAndBuildResultAsync(client, request, context.Node.Id, cancellationToken)
-                    .ConfigureAwait(false);
+                return context.ErrorResult("HttpClientUnavailable", "HTTP client pool is not configured.");
             }
-            finally
-            {
-                if (ownedClient) client?.Dispose();
-            }
+
+            return await HttpExecutionHelper.SendAndBuildResultAsync(client, request, context.Node.Id, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {

@@ -30,27 +30,39 @@ export function validateParameters(
 
       if (ruleLower.startsWith('minlength:')) {
         const min = parseInt(rule.split(':')[1], 10);
+        if (Number.isNaN(min)) continue;
         if (typeof value === 'string' && value.length < min) {
           errors[def.name] = `${def.displayName} must be at least ${min} characters`;
         }
       } else if (ruleLower.startsWith('maxlength:')) {
         const max = parseInt(rule.split(':')[1], 10);
+        if (Number.isNaN(max)) continue;
         if (typeof value === 'string' && value.length > max) {
           errors[def.name] = `${def.displayName} must be at most ${max} characters`;
         }
       } else if (ruleLower.startsWith('min:')) {
         const min = parseFloat(rule.split(':')[1]);
+        if (Number.isNaN(min)) continue;
         if (typeof value === 'number' && value < min) {
           errors[def.name] = `${def.displayName} must be at least ${min}`;
         }
       } else if (ruleLower.startsWith('max:')) {
         const max = parseFloat(rule.split(':')[1]);
+        if (Number.isNaN(max)) continue;
         if (typeof value === 'number' && value > max) {
           errors[def.name] = `${def.displayName} must be at most ${max}`;
         }
       } else if (ruleLower.startsWith('pattern:')) {
         const pattern = rule.split(':').slice(1).join(':');
-        if (typeof value === 'string' && !new RegExp(pattern).test(value)) {
+        // 空正则或非法正则直接跳过，避免校验失效或抛异常（R11）。
+        if (!pattern) continue;
+        let regex: RegExp;
+        try {
+          regex = new RegExp(pattern);
+        } catch {
+          continue;
+        }
+        if (typeof value === 'string' && !regex.test(value)) {
           errors[def.name] = `${def.displayName} format is invalid`;
         }
       }

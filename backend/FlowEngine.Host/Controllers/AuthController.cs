@@ -6,6 +6,7 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Events;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -25,6 +26,7 @@ public class AuthController(
     IEventBus eventBus,
     AuditEventFactory auditFactory,
     ITokenBlacklist tokenBlacklist,
+    IWebHostEnvironment environment,
     ILogger<AuthController> logger) : ControllerBase
 {
     /// <summary>
@@ -49,13 +51,25 @@ public class AuthController(
         [FromBody] LoginRequest request,
         CancellationToken cancellationToken)
     {
-        var result = await authenticationService.LoginAsync(request, cancellationToken)
+        var clientIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+        var result = await authenticationService.LoginAsync(request, cancellationToken, clientIp)
             .ConfigureAwait(false);
 
         if (!result.Success)
         {
             return Unauthorized(result);
         }
+
+        // L1/H5：登录成功后下发 HttpOnly Cookie 承载 JWT，前端不再经 URL/JS 暴露令牌。
+        var token = result.Token ?? throw new InvalidOperationException("登录成功但未生成令牌。");
+        Response.Cookies.Append("fe_auth", token, new CookieOptions
+        {
+            HttpOnly = true,
+            // 本地开发为 http，Secure Cookie 不会被发送；仅在生产（https）启用 Secure。
+            Secure = !environment.IsDevelopment(),
+            SameSite = SameSiteMode.Lax,
+            Expires = DateTime.UtcNow.AddDays(7),
+        });
 
         return Ok(result);
     }
@@ -93,6 +107,12 @@ public class AuthController(
             {
                 logger.LogWarning(ex, "Failed to invalidate token during logout");
             }
+        }
+
+        // L1/H5：登出时清除 HttpOnly Cookie，使前端不再携带已失效令牌。
+        if (Request.Cookies.ContainsKey("fe_auth"))
+        {
+            Response.Cookies.Delete("fe_auth");
         }
 
         return Ok();

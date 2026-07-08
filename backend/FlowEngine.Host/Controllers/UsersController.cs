@@ -1,10 +1,8 @@
 using FlowEngine.Application.Dtos;
+using FlowEngine.Application.Identity;
 using FlowEngine.Core.Authorization;
-using FlowEngine.Core.Data;
-using FlowEngine.Core.Identity;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Host.Controllers;
 
@@ -14,7 +12,7 @@ namespace FlowEngine.Host.Controllers;
 [ApiController]
 [Route("api/v1/users")]
 [Authorize(Roles = "Admin")]
-public class UsersController(FlowEngineDbContext dbContext) : ControllerBase
+public class UsersController(IUserRoleService userRoleService) : ControllerBase
 {
     /// <summary>
     /// 查询用户角色列表。
@@ -24,12 +22,7 @@ public class UsersController(FlowEngineDbContext dbContext) : ControllerBase
         Guid userId,
         CancellationToken cancellationToken)
     {
-        var roles = await dbContext.UserRoles
-            .Where(ur => ur.UserId == userId && !ur.Deleted)
-            .Select(ur => ur.Role)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-
+        var roles = await userRoleService.GetRolesAsync(userId, cancellationToken).ConfigureAwait(false);
         return Ok(roles);
     }
 
@@ -42,30 +35,13 @@ public class UsersController(FlowEngineDbContext dbContext) : ControllerBase
         [FromBody] AssignRoleRequest request,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(request?.Role)
-            || !Enum.TryParse<Role>(request.Role, ignoreCase: true, out var parsedRole))
+        var (success, error) = await userRoleService.AssignRoleAsync(userId, request, cancellationToken).ConfigureAwait(false);
+        if (!success)
         {
-            return BadRequest(new { error = "BadRequest", message = "无效的角色。" });
+            return BadRequest(new { error = "BadRequest", message = error });
         }
 
-        var normalizedRole = parsedRole.ToString();
-
-        var exists = await dbContext.UserRoles
-            .AnyAsync(ur => ur.UserId == userId && ur.Role == normalizedRole && !ur.Deleted, cancellationToken)
-            .ConfigureAwait(false);
-        if (exists)
-        {
-            return Conflict(new { error = "Conflict", message = $"用户已拥有角色 '{normalizedRole}'。" });
-        }
-
-        dbContext.UserRoles.Add(new UserRole
-        {
-            UserId = userId,
-            Role = normalizedRole,
-        });
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
-        return Ok(new { userId, role = normalizedRole });
+        return Ok(new { userId, role = request.Role });
     }
 
     /// <summary>
@@ -77,25 +53,11 @@ public class UsersController(FlowEngineDbContext dbContext) : ControllerBase
         string role,
         CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(role)
-            || !Enum.TryParse<Role>(role, ignoreCase: true, out var parsedRole))
+        var (success, error) = await userRoleService.RevokeRoleAsync(userId, role, cancellationToken).ConfigureAwait(false);
+        if (!success)
         {
-            return BadRequest(new { error = "BadRequest", message = "无效的角色。" });
+            return BadRequest(new { error = "BadRequest", message = error });
         }
-
-        var normalizedRole = parsedRole.ToString();
-
-        var userRole = await dbContext.UserRoles
-            .FirstOrDefaultAsync(ur => ur.UserId == userId && ur.Role == normalizedRole && !ur.Deleted, cancellationToken)
-            .ConfigureAwait(false);
-        if (userRole is null)
-        {
-            return NotFound(new { error = "NotFound", message = $"用户未拥有角色 '{normalizedRole}'。" });
-        }
-
-        userRole.Deleted = true;
-        userRole.UpdatedAt = DateTime.UtcNow;
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         return NoContent();
     }

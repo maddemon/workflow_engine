@@ -219,7 +219,15 @@ internal sealed class SubWorkflowExecutor
                 continue;
             }
 
-            var camelName = char.ToLowerInvariant(property.Name[0]) + property.Name[1..];
+            // R12：属性名可能为空或单字符，避免 Name[0]/Name[1..] 越界（如编译生成的占位属性）。
+            if (property.Name.Length == 0)
+            {
+                continue;
+            }
+
+            var camelName = string.Concat(
+                char.ToLowerInvariant(property.Name[0]),
+                property.Name.Length > 1 ? property.Name[1..] : string.Empty);
             if (!parameters.TryGetValue(camelName, out var value))
             {
                 continue;

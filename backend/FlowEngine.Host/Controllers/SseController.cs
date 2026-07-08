@@ -113,163 +113,129 @@ public class SseController(
 
     /// <summary>
     /// 订阅与指定执行相关的事件，过滤非本执行的事件后写入通道。
+    /// A5：事件 → 映射工厂 表驱动订阅，消除 8 段重复的「判断归属 + 写入」样板。
     /// </summary>
     private IEnumerable<IDisposable> SubscribeExecutionEvents(Guid executionId, ChannelWriter<WebSocketPushMessage> writer)
     {
-        yield return eventBus.Subscribe<WorkflowStartedEvent>((evt, _) =>
+        yield return SubscribeOne(executionId, writer, (WorkflowStartedEvent evt) => evt.ExecutionId, evt => new WebSocketPushMessage
         {
-            if (evt.ExecutionId == executionId)
+            Type = "execution_started",
+            ExecutionId = evt.ExecutionId,
+            Timestamp = evt.OccurredAt,
+            Payload = new
             {
-                writer.TryWrite(new WebSocketPushMessage
-                {
-                    Type = "execution_started",
-                    ExecutionId = evt.ExecutionId,
-                    Timestamp = evt.OccurredAt,
-                    Payload = new
-                    {
-                        workflowDefinitionId = evt.WorkflowDefinitionId,
-                        eventType = evt.EventType,
-                    },
-                });
-            }
-            return Task.CompletedTask;
+                workflowDefinitionId = evt.WorkflowDefinitionId,
+                eventType = evt.EventType,
+            },
         });
-        yield return eventBus.Subscribe<NodeStartedEvent>((evt, _) =>
+        yield return SubscribeOne(executionId, writer, (NodeStartedEvent evt) => evt.ExecutionId, evt => new WebSocketPushMessage
         {
-            if (evt.ExecutionId == executionId)
+            Type = "node_started",
+            ExecutionId = evt.ExecutionId,
+            Timestamp = evt.OccurredAt,
+            Payload = new
             {
-                writer.TryWrite(new WebSocketPushMessage
-                {
-                    Type = "node_started",
-                    ExecutionId = evt.ExecutionId,
-                    Timestamp = evt.OccurredAt,
-                    Payload = new
-                    {
-                        nodeDefinitionId = evt.NodeDefinitionId,
-                        runIndex = evt.RunIndex,
-                        eventType = evt.EventType,
-                    },
-                });
-            }
-            return Task.CompletedTask;
+                nodeDefinitionId = evt.NodeDefinitionId,
+                runIndex = evt.RunIndex,
+                eventType = evt.EventType,
+            },
         });
-        yield return eventBus.Subscribe<NodeExecutedEvent>((evt, _) =>
+        yield return SubscribeOne(executionId, writer, (NodeExecutedEvent evt) => evt.ExecutionId, evt => new WebSocketPushMessage
         {
-            if (evt.ExecutionId == executionId)
-            {
-                writer.TryWrite(new WebSocketPushMessage
-                {
-                    Type = "node_executed",
-                    ExecutionId = evt.ExecutionId,
-                    Timestamp = evt.OccurredAt,
-                    Payload = BuildNodeExecutedPayload(evt),
-                });
-            }
-            return Task.CompletedTask;
+            Type = "node_executed",
+            ExecutionId = evt.ExecutionId,
+            Timestamp = evt.OccurredAt,
+            Payload = BuildNodeExecutedPayload(evt),
         });
-        yield return eventBus.Subscribe<NodeErrorEvent>((evt, _) =>
+        yield return SubscribeOne(executionId, writer, (NodeErrorEvent evt) => evt.ExecutionId, evt => new WebSocketPushMessage
         {
-            if (evt.ExecutionId == executionId)
+            Type = "node_error",
+            ExecutionId = evt.ExecutionId,
+            Timestamp = evt.OccurredAt,
+            Payload = new
             {
-                writer.TryWrite(new WebSocketPushMessage
+                nodeDefinitionId = evt.NodeDefinitionId,
+                runIndex = evt.RunIndex,
+                error = new
                 {
-                    Type = "node_error",
-                    ExecutionId = evt.ExecutionId,
-                    Timestamp = evt.OccurredAt,
-                    Payload = new
-                    {
-                        nodeDefinitionId = evt.NodeDefinitionId,
-                        runIndex = evt.RunIndex,
-                        error = new
-                        {
-                            code = evt.Error.Code,
-                            message = evt.Error.Message,
-                        },
-                        eventType = evt.EventType,
-                    },
-                });
-            }
-            return Task.CompletedTask;
+                    code = evt.Error.Code,
+                    message = evt.Error.Message,
+                },
+                eventType = evt.EventType,
+            },
         });
-        yield return eventBus.Subscribe<WorkflowCompletedEvent>((evt, _) =>
+        yield return SubscribeOne(executionId, writer, (WorkflowCompletedEvent evt) => evt.ExecutionId, evt => new WebSocketPushMessage
         {
-            if (evt.ExecutionId == executionId)
+            Type = "execution_completed",
+            ExecutionId = evt.ExecutionId,
+            Timestamp = evt.OccurredAt,
+            Payload = new
             {
-                writer.TryWrite(new WebSocketPushMessage
-                {
-                    Type = "execution_completed",
-                    ExecutionId = evt.ExecutionId,
-                    Timestamp = evt.OccurredAt,
-                    Payload = new
-                    {
-                        workflowDefinitionId = evt.WorkflowDefinitionId,
-                        finalStatus = evt.FinalStatus.ToString(),
-                        eventType = evt.EventType,
-                    },
-                });
-            }
-            return Task.CompletedTask;
+                workflowDefinitionId = evt.WorkflowDefinitionId,
+                finalStatus = evt.FinalStatus.ToString(),
+                eventType = evt.EventType,
+            },
         });
-        yield return eventBus.Subscribe<WorkflowFailedEvent>((evt, _) =>
+        yield return SubscribeOne(executionId, writer, (WorkflowFailedEvent evt) => evt.ExecutionId, evt => new WebSocketPushMessage
         {
-            if (evt.ExecutionId == executionId)
+            Type = "execution_failed",
+            ExecutionId = evt.ExecutionId,
+            Timestamp = evt.OccurredAt,
+            Payload = new
             {
-                writer.TryWrite(new WebSocketPushMessage
+                workflowDefinitionId = evt.WorkflowDefinitionId,
+                error = new
                 {
-                    Type = "execution_failed",
-                    ExecutionId = evt.ExecutionId,
-                    Timestamp = evt.OccurredAt,
-                    Payload = new
-                    {
-                        workflowDefinitionId = evt.WorkflowDefinitionId,
-                        error = new
-                        {
-                            code = evt.Error.Code,
-                            message = evt.Error.Message,
-                        },
-                        eventType = evt.EventType,
-                    },
-                });
-            }
-            return Task.CompletedTask;
+                    code = evt.Error.Code,
+                    message = evt.Error.Message,
+                },
+                eventType = evt.EventType,
+            },
         });
-        yield return eventBus.Subscribe<WorkflowCancelledEvent>((evt, _) =>
+        yield return SubscribeOne(executionId, writer, (WorkflowCancelledEvent evt) => evt.ExecutionId, evt => new WebSocketPushMessage
         {
-            if (evt.ExecutionId == executionId)
+            Type = "execution_cancelled",
+            ExecutionId = evt.ExecutionId,
+            Timestamp = evt.OccurredAt,
+            Payload = new
             {
-                writer.TryWrite(new WebSocketPushMessage
-                {
-                    Type = "execution_cancelled",
-                    ExecutionId = evt.ExecutionId,
-                    Timestamp = evt.OccurredAt,
-                    Payload = new
-                    {
-                        workflowDefinitionId = evt.WorkflowDefinitionId,
-                        eventType = evt.EventType,
-                    },
-                });
-            }
-            return Task.CompletedTask;
+                workflowDefinitionId = evt.WorkflowDefinitionId,
+                eventType = evt.EventType,
+            },
         });
-        yield return eventBus.Subscribe<LlmTokenStreamEvent>((evt, _) =>
+        yield return SubscribeOne(executionId, writer, (LlmTokenStreamEvent evt) => evt.ExecutionId, evt => new WebSocketPushMessage
         {
-            if (evt.ExecutionId == executionId)
+            Type = "llm_token",
+            ExecutionId = evt.ExecutionId,
+            Timestamp = evt.OccurredAt,
+            Payload = new
             {
-                writer.TryWrite(new WebSocketPushMessage
-                {
-                    Type = "llm_token",
-                    ExecutionId = evt.ExecutionId,
-                    Timestamp = evt.OccurredAt,
-                    Payload = new
-                    {
-                        nodeDefinitionId = evt.NodeDefinitionId,
-                        runIndex = evt.RunIndex,
-                        delta = evt.Delta,
-                        isFinal = evt.IsFinal,
-                        eventType = evt.EventType,
-                    },
-                });
+                nodeDefinitionId = evt.NodeDefinitionId,
+                runIndex = evt.RunIndex,
+                delta = evt.Delta,
+                isFinal = evt.IsFinal,
+                eventType = evt.EventType,
+            },
+        });
+    }
+
+    /// <summary>
+    /// 通用订阅辅助：仅当事件归属指定执行时，经映射工厂构建消息并写入通道（A5）。
+    /// </summary>
+    private IDisposable SubscribeOne<T>(
+        Guid executionId,
+        ChannelWriter<WebSocketPushMessage> writer,
+        Func<T, Guid> executionIdSelector,
+        Func<T, WebSocketPushMessage> mapper) where T : IDomainEvent
+    {
+        return eventBus.Subscribe<T>((evt, _) =>
+        {
+            if (executionIdSelector(evt) != executionId)
+            {
+                return Task.CompletedTask;
             }
+
+            writer.TryWrite(mapper(evt));
             return Task.CompletedTask;
         });
     }

@@ -16,6 +16,7 @@ namespace FlowEngine.Application.Workflows;
 public sealed class WorkflowImportService(
     FlowEngineDbContext dbContext,
     INodeRegistry nodeRegistry,
+    WorkflowValidator validator,
     IEventBus eventBus,
     AuditEventFactory auditFactory)
 {
@@ -24,8 +25,8 @@ public sealed class WorkflowImportService(
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
-    // 导入校验器，复用已注入的节点注册中心（GAP-15）。
-    private readonly WorkflowValidator _validator = new(nodeRegistry);
+    // A6：校验器通过 DI 注入，与 WorkflowService 保持一致，避免自行 new 实例。
+    private readonly WorkflowValidator _validator = validator;
 
     /// <summary>
     /// 导入单个工作流。

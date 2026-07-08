@@ -59,9 +59,10 @@ export function ExecutionPanel({ execution, onClose, onCancel, error }: Executio
     try {
       await cancelExecution(execution.id);
       onCancel?.();
-    } catch (err: any) {
+    } catch (err: unknown) {
       // 409 = 执行已结束，无需取消
-      if (err?.response?.status !== 409) {
+      const axiosErr = err as { response?: { status?: number } } | undefined;
+      if (axiosErr?.response?.status !== 409) {
         console.error('Failed to cancel execution:', err);
       }
       onCancel?.();

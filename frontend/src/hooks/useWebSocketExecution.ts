@@ -41,15 +41,15 @@ export function useWebSocketExecution() {
   const getWebSocketUrl = useCallback(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    const token = localStorage.getItem('auth_token');
-    const baseUrl = `${protocol}//${host}/ws/execution`;
-    return token ? `${baseUrl}?access_token=${encodeURIComponent(token)}` : baseUrl;
+    // H5：JWT 不再经 URL query 暴露；同源 WS 自动携带后端下发的 HttpOnly Cookie（fe_auth），
+    // 由后端 JwtBearer.OnMessageReceived 读取，无需在 URL 中拼接令牌。
+    return `${protocol}//${host}/ws/execution`;
   }, []);
 
   const getSseUrl = useCallback((executionId: string) => {
-    const token = localStorage.getItem('auth_token');
-    const baseUrl = `/api/v1/executions/${executionId}/stream`;
-    return token ? `${baseUrl}?access_token=${encodeURIComponent(token)}` : baseUrl;
+    // H5：SSE 受 EventSource 限制无法自定义头；同源请求自动携带 HttpOnly Cookie（fe_auth），
+    // 由后端 JwtBearer.OnMessageReceived 读取，移除 query 方式暴露令牌。
+    return `/api/v1/executions/${executionId}/stream`;
   }, []);
 
   const processMessage = useCallback((message: WebSocketPushMessage) => {

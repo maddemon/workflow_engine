@@ -11,6 +11,7 @@ namespace FlowEngine.Runtime.Registry;
 public sealed class NodeRegistry : INodeRegistry
 {
     private readonly ConcurrentDictionary<string, Type> _nodeTypes = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, INodeType> _instances = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, NodeTypeDescriptor> _descriptors = new(StringComparer.OrdinalIgnoreCase);
     private readonly ParameterDiscoverer _parameterDiscoverer;
     private readonly ILogger<NodeRegistry> _logger;
@@ -45,6 +46,8 @@ public sealed class NodeRegistry : INodeRegistry
             return;
         }
 
+        // 缓存无状态节点实例，避免每次获取都反射创建（L5）。
+        _instances[normalizedName] = nodeType;
         _descriptors[normalizedName] = CreateDescriptor(nodeType);
         _logger.LogDebug("已注册节点类型 {TypeName}", nodeType.TypeName);
     }
@@ -66,9 +69,17 @@ public sealed class NodeRegistry : INodeRegistry
         ArgumentException.ThrowIfNullOrEmpty(typeName);
 
         var normalizedName = typeName.ToLowerInvariant();
+        if (_instances.TryGetValue(normalizedName, out var cached))
+        {
+            nodeType = cached;
+            return true;
+        }
+
+        // 兜底：按类型创建并缓存（极少数未预注册实例的场景）。
         if (_nodeTypes.TryGetValue(normalizedName, out var type))
         {
             nodeType = (INodeType?)Activator.CreateInstance(type);
+            if (nodeType is not null) _instances[normalizedName] = nodeType;
             return nodeType is not null;
         }
 
@@ -79,11 +90,7 @@ public sealed class NodeRegistry : INodeRegistry
     /// <inheritdoc />
     public IReadOnlyCollection<INodeType> GetAll()
     {
-        return _nodeTypes.Values
-            .Select(t => (INodeType?)Activator.CreateInstance(t))
-            .Where(n => n is not null)
-            .Cast<INodeType>()
-            .ToList();
+        return _instances.Values.ToList();
     }
 
     /// <inheritdoc />

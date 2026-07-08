@@ -86,7 +86,7 @@ public sealed class ImportExportAuditTests : IDisposable
                 new PortDefinition { Name = "output", Direction = PortDirection.Output, Type = PortType.Main },
             ]),
         ]);
-        var importService = new WorkflowImportService(_dbContext, registry, _eventBus, _auditFactory);
+        var importService = new WorkflowImportService(_dbContext, registry, new WorkflowValidator(registry), _eventBus, _auditFactory);
 
         var export = new WorkflowExportResult
         {
@@ -125,7 +125,7 @@ public sealed class ImportExportAuditTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
         var registry = new StubNodeRegistry([]);
-        var importService = new WorkflowImportService(_dbContext, registry, _eventBus, _auditFactory);
+        var importService = new WorkflowImportService(_dbContext, registry, new WorkflowValidator(registry), _eventBus, _auditFactory);
 
         var export = new WorkflowExportResult
         {

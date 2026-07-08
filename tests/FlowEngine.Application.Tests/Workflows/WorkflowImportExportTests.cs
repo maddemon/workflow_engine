@@ -256,6 +256,7 @@ public sealed class WorkflowImportExportTests
         return new WorkflowImportService(
             dbContext,
             registry,
+            new WorkflowValidator(registry),
             new FakeEventBus(),
             new AuditEventFactory(new FakeUserContext()));
     }
