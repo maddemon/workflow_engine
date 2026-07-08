@@ -22,6 +22,10 @@ public class RateLimitMiddleware(
     AuditEventFactory auditFactory) : IMiddleware
 {
     private static readonly TimeSpan CleanupInterval = TimeSpan.FromMinutes(5);
+    private static readonly JsonSerializerOptions RateLimitJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
 
     /// <summary>
     /// 处理请求并执行速率限制检查。
@@ -49,24 +53,19 @@ public class RateLimitMiddleware(
 
         var counter = GetOrCreateCounter(key, now, window);
 
-        lock (counter)
-        {
-            counter.CleanupExpiredEntries(now, window);
-            counter.Increment(now);
-        }
+        var count = counter.RecordRequest(now, window);
 
-        logger.LogDebug("速率限制检查: key={Key}, count={Count}/{Limit}", key, counter.Count, rule.PermitLimit);
+        logger.LogDebug("速率限制检查: key={Key}, count={Count}/{Limit}", key, count, rule.PermitLimit);
 
-        if (counter.Count > rule.PermitLimit)
+        if (count > rule.PermitLimit)
         {
-            var identifier = GetRateLimitKey(context, path);
             await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
                 AuditEventTypes.RateLimited,
                 "Security",
                 Guid.Empty,
                 new Dictionary<string, object>
                 {
-                    ["identifier"] = identifier,
+                    ["identifier"] = key,
                     ["rule"] = rule.Key,
                 }),
                 CancellationToken.None);
@@ -83,10 +82,7 @@ public class RateLimitMiddleware(
                 retryAfter,
             };
 
-            await context.Response.WriteAsync(JsonSerializer.Serialize(response, new JsonSerializerOptions
-            {
-                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-            }));
+            await context.Response.WriteAsync(JsonSerializer.Serialize(response, RateLimitJsonOptions));
             return;
         }
 
@@ -156,31 +152,21 @@ public class RateLimitMiddleware(
 /// </summary>
 internal sealed class SlidingWindowCounter
 {
+    private readonly object _lock = new();
     private readonly List<DateTimeOffset> _timestamps = [];
-    private long _totalInWindow;
 
     /// <summary>
-    /// 当前窗口内的请求总数。
+    /// 原子地清理过期时间戳并记录当前请求，返回当前窗口内的请求总数。
     /// </summary>
-    public long Count => _totalInWindow;
-
-    /// <summary>
-    /// 清理过期的时间戳记录。
-    /// </summary>
-    public void CleanupExpiredEntries(DateTimeOffset now, TimeSpan window)
+    public long RecordRequest(DateTimeOffset now, TimeSpan window)
     {
-        var cutoff = now - window;
-        var removed = _timestamps.RemoveAll(ts => ts <= cutoff);
-        _totalInWindow -= removed;
-    }
-
-    /// <summary>
-    /// 记录一次新请求。
-    /// </summary>
-    public void Increment(DateTimeOffset now)
-    {
-        _timestamps.Add(now);
-        _totalInWindow++;
+        lock (_lock)
+        {
+            var cutoff = now - window;
+            _timestamps.RemoveAll(ts => ts <= cutoff);
+            _timestamps.Add(now);
+            return _timestamps.Count;
+        }
     }
 
     /// <summary>
@@ -188,12 +174,18 @@ internal sealed class SlidingWindowCounter
     /// </summary>
     public int GetRetryAfterSeconds(DateTimeOffset now, TimeSpan window)
     {
-        if (_timestamps.Count == 0)
-            return (int)window.TotalSeconds;
+        lock (_lock)
+        {
+            var cutoff = now - window;
+            _timestamps.RemoveAll(ts => ts <= cutoff);
 
-        var oldest = _timestamps[0];
-        var expiresAt = oldest + window;
-        var retryAfter = (int)Math.Ceiling((expiresAt - now).TotalSeconds);
-        return Math.Max(retryAfter, 1);
+            if (_timestamps.Count == 0)
+                return (int)window.TotalSeconds;
+
+            var oldest = _timestamps[0];
+            var expiresAt = oldest + window;
+            var retryAfter = (int)Math.Ceiling((expiresAt - now).TotalSeconds);
+            return Math.Max(retryAfter, 1);
+        }
     }
 }

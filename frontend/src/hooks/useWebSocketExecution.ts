@@ -269,7 +269,7 @@ export function useWebSocketExecution() {
 
   useEffect(() => {
     connectFnRef.current = doConnect;
-  });
+  }, [doConnect]);
 
   const connect = useCallback(() => {
     doConnect();

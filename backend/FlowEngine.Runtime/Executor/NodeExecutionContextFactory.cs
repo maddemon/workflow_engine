@@ -1,3 +1,4 @@
+using System;
 using System.Security.Cryptography;
 using System.Text.Json;
 using FlowEngine.Core;
@@ -128,7 +129,7 @@ public sealed class NodeExecutionContextFactory(
     private static ExpressionCacheKey? BuildCacheKey(NodeTypeDescriptor descriptor)
     {
         var inputPort = descriptor.Ports.FirstOrDefault(p =>
-            p.Name == FlowConstants.PortNames.Input
+            p.Name.Equals(FlowConstants.PortNames.Input, StringComparison.OrdinalIgnoreCase)
             && p.Direction == PortDirection.Input
             && p.Type == PortType.Main);
 

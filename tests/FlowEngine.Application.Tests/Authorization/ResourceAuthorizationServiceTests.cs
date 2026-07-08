@@ -1,6 +1,8 @@
 using FlowEngine.Application.Authorization;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
+using FlowEngine.Core.Entities;
+using FlowEngine.Core.Enums;
 using FlowEngine.Core.Identity;
 using Microsoft.EntityFrameworkCore;
 
@@ -43,11 +45,13 @@ public sealed class ResourceAuthorizationServiceTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
         var userId = await SeedUserWithRoleAsync("Editor", ct);
+        var projectId = await SeedProjectAsync(userId, ct);
+        var workflowId = await SeedWorkflowAsync(projectId, ct);
 
-        Assert.True(await _sut.CanAccessWorkflowAsync(userId, Guid.NewGuid(), Operation.Read, ct));
-        Assert.True(await _sut.CanAccessWorkflowAsync(userId, Guid.NewGuid(), Operation.Write, ct));
-        Assert.True(await _sut.CanAccessWorkflowAsync(userId, Guid.NewGuid(), Operation.Execute, ct));
-        Assert.False(await _sut.CanAccessWorkflowAsync(userId, Guid.NewGuid(), Operation.Delete, ct));
+        Assert.True(await _sut.CanAccessWorkflowAsync(userId, workflowId, Operation.Read, ct));
+        Assert.True(await _sut.CanAccessWorkflowAsync(userId, workflowId, Operation.Write, ct));
+        Assert.True(await _sut.CanAccessWorkflowAsync(userId, workflowId, Operation.Execute, ct));
+        Assert.False(await _sut.CanAccessWorkflowAsync(userId, workflowId, Operation.Delete, ct));
     }
 
     [Fact]
@@ -55,11 +59,13 @@ public sealed class ResourceAuthorizationServiceTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
         var userId = await SeedUserWithRoleAsync("Viewer", ct);
+        var projectId = await SeedProjectAsync(userId, ct);
+        var workflowId = await SeedWorkflowAsync(projectId, ct);
 
-        Assert.True(await _sut.CanAccessWorkflowAsync(userId, Guid.NewGuid(), Operation.Read, ct));
-        Assert.False(await _sut.CanAccessWorkflowAsync(userId, Guid.NewGuid(), Operation.Write, ct));
-        Assert.False(await _sut.CanAccessWorkflowAsync(userId, Guid.NewGuid(), Operation.Execute, ct));
-        Assert.False(await _sut.CanAccessWorkflowAsync(userId, Guid.NewGuid(), Operation.Delete, ct));
+        Assert.True(await _sut.CanAccessWorkflowAsync(userId, workflowId, Operation.Read, ct));
+        Assert.False(await _sut.CanAccessWorkflowAsync(userId, workflowId, Operation.Write, ct));
+        Assert.False(await _sut.CanAccessWorkflowAsync(userId, workflowId, Operation.Execute, ct));
+        Assert.False(await _sut.CanAccessWorkflowAsync(userId, workflowId, Operation.Delete, ct));
     }
 
     [Fact]
@@ -78,10 +84,12 @@ public sealed class ResourceAuthorizationServiceTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
         var userId = await SeedUserWithRoleAsync("Editor", ct);
+        var projectId = await SeedProjectAsync(userId, ct);
+        var credentialId = await SeedCredentialAsync(projectId, ct);
 
-        Assert.True(await _sut.CanAccessCredentialAsync(userId, Guid.NewGuid(), Operation.Read, ct));
-        Assert.True(await _sut.CanAccessCredentialAsync(userId, Guid.NewGuid(), Operation.Write, ct));
-        Assert.False(await _sut.CanAccessCredentialAsync(userId, Guid.NewGuid(), Operation.Delete, ct));
+        Assert.True(await _sut.CanAccessCredentialAsync(userId, credentialId, Operation.Read, ct));
+        Assert.True(await _sut.CanAccessCredentialAsync(userId, credentialId, Operation.Write, ct));
+        Assert.False(await _sut.CanAccessCredentialAsync(userId, credentialId, Operation.Delete, ct));
     }
 
     [Fact]
@@ -89,10 +97,12 @@ public sealed class ResourceAuthorizationServiceTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
         var userId = await SeedUserWithRoleAsync("Viewer", ct);
+        var projectId = await SeedProjectAsync(userId, ct);
+        var credentialId = await SeedCredentialAsync(projectId, ct);
 
-        Assert.True(await _sut.CanAccessCredentialAsync(userId, Guid.NewGuid(), Operation.Read, ct));
-        Assert.False(await _sut.CanAccessCredentialAsync(userId, Guid.NewGuid(), Operation.Write, ct));
-        Assert.False(await _sut.CanAccessCredentialAsync(userId, Guid.NewGuid(), Operation.Delete, ct));
+        Assert.True(await _sut.CanAccessCredentialAsync(userId, credentialId, Operation.Read, ct));
+        Assert.False(await _sut.CanAccessCredentialAsync(userId, credentialId, Operation.Write, ct));
+        Assert.False(await _sut.CanAccessCredentialAsync(userId, credentialId, Operation.Delete, ct));
     }
 
     [Fact]
@@ -100,10 +110,12 @@ public sealed class ResourceAuthorizationServiceTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
         var userId = await SeedUserWithRoleAsync("Editor", ct);
+        var projectId = await SeedProjectAsync(userId, ct);
+        var executionId = await SeedExecutionAsync(projectId, ct);
 
-        Assert.True(await _sut.CanAccessExecutionAsync(userId, Guid.NewGuid(), Operation.Read, ct));
-        Assert.True(await _sut.CanAccessExecutionAsync(userId, Guid.NewGuid(), Operation.Execute, ct));
-        Assert.False(await _sut.CanAccessExecutionAsync(userId, Guid.NewGuid(), Operation.Delete, ct));
+        Assert.True(await _sut.CanAccessExecutionAsync(userId, executionId, Operation.Read, ct));
+        Assert.True(await _sut.CanAccessExecutionAsync(userId, executionId, Operation.Execute, ct));
+        Assert.False(await _sut.CanAccessExecutionAsync(userId, executionId, Operation.Delete, ct));
     }
 
     [Fact]
@@ -111,10 +123,12 @@ public sealed class ResourceAuthorizationServiceTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
         var userId = await SeedUserWithRoleAsync("Editor", ct);
+        var projectId = await SeedProjectAsync(userId, ct);
+        var triggerId = await SeedTriggerAsync(projectId, ct);
 
-        Assert.True(await _sut.CanAccessTriggerAsync(userId, Guid.NewGuid(), Operation.Read, ct));
-        Assert.True(await _sut.CanAccessTriggerAsync(userId, Guid.NewGuid(), Operation.Write, ct));
-        Assert.False(await _sut.CanAccessTriggerAsync(userId, Guid.NewGuid(), Operation.Delete, ct));
+        Assert.True(await _sut.CanAccessTriggerAsync(userId, triggerId, Operation.Read, ct));
+        Assert.True(await _sut.CanAccessTriggerAsync(userId, triggerId, Operation.Write, ct));
+        Assert.False(await _sut.CanAccessTriggerAsync(userId, triggerId, Operation.Delete, ct));
     }
 
     [Fact]
@@ -132,6 +146,68 @@ public sealed class ResourceAuthorizationServiceTests : IDisposable
         await _dbContext.SaveChangesAsync(ct);
 
         Assert.False(await _sut.CanAccessWorkflowAsync(user.Id, Guid.NewGuid(), Operation.Read, ct));
+    }
+
+    [Fact]
+    public async Task CanAccessWorkflowAsync_OtherUsersProject_ReturnsFalse()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var ownerId = await SeedUserWithRoleAsync("Editor", ct);
+        var otherUserId = await SeedUserWithRoleAsync("Editor", ct);
+        var projectId = await SeedProjectAsync(ownerId, ct);
+        var workflowId = await SeedWorkflowAsync(projectId, ct);
+
+        Assert.False(await _sut.CanAccessWorkflowAsync(otherUserId, workflowId, Operation.Read, ct));
+    }
+
+    [Fact]
+    public async Task CanAccessResourcesAsync_NullProjectId_NonAdmin_ReturnsFalse()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var userId = await SeedUserWithRoleAsync("Editor", ct);
+
+        var workflowId = await SeedWorkflowAsync(null, ct);
+        var credentialId = await SeedCredentialAsync(null, ct);
+        var executionId = await SeedExecutionAsync(null, ct);
+        var triggerId = await SeedTriggerAsync(null, ct);
+
+        Assert.False(await _sut.CanAccessWorkflowAsync(userId, workflowId, Operation.Read, ct));
+        Assert.False(await _sut.CanAccessCredentialAsync(userId, credentialId, Operation.Read, ct));
+        Assert.False(await _sut.CanAccessExecutionAsync(userId, executionId, Operation.Read, ct));
+        Assert.False(await _sut.CanAccessTriggerAsync(userId, triggerId, Operation.Read, ct));
+    }
+
+    [Fact]
+    public async Task CanAccessProjectAsync_ViewerOwner_ReadOnly()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var userId = await SeedUserWithRoleAsync("Viewer", ct);
+        var projectId = await SeedProjectAsync(userId, ct);
+
+        Assert.True(await _sut.CanAccessProjectAsync(userId, projectId, Operation.Read, ct));
+        Assert.False(await _sut.CanAccessProjectAsync(userId, projectId, Operation.Write, ct));
+    }
+
+    [Fact]
+    public async Task CanAccessProjectAsync_EditorOwner_ReadWrite()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var userId = await SeedUserWithRoleAsync("Editor", ct);
+        var projectId = await SeedProjectAsync(userId, ct);
+
+        Assert.True(await _sut.CanAccessProjectAsync(userId, projectId, Operation.Read, ct));
+        Assert.True(await _sut.CanAccessProjectAsync(userId, projectId, Operation.Write, ct));
+    }
+
+    [Fact]
+    public async Task CanAccessProjectAsync_OtherUser_ReturnsFalse()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var ownerId = await SeedUserWithRoleAsync("Editor", ct);
+        var otherUserId = await SeedUserWithRoleAsync("Editor", ct);
+        var projectId = await SeedProjectAsync(ownerId, ct);
+
+        Assert.False(await _sut.CanAccessProjectAsync(otherUserId, projectId, Operation.Read, ct));
     }
 
     [Fact]
@@ -190,5 +266,82 @@ public sealed class ResourceAuthorizationServiceTests : IDisposable
         await _dbContext.SaveChangesAsync(ct);
 
         return user.Id;
+    }
+
+    private async Task<Guid> SeedProjectAsync(Guid createdBy, CancellationToken ct)
+    {
+        var project = new Project
+        {
+            Name = "Test Project",
+            CreatedBy = createdBy,
+        };
+        _dbContext.Projects.Add(project);
+        await _dbContext.SaveChangesAsync(ct);
+        return project.Id;
+    }
+
+    private async Task<Guid> SeedWorkflowAsync(Guid? projectId, CancellationToken ct)
+    {
+        var workflow = new Workflow
+        {
+            Name = "Test Workflow",
+            ProjectId = projectId,
+            CreatedBy = "tester",
+            Version = 1,
+            IsActive = true,
+            Nodes = [],
+            Connections = [],
+        };
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(ct);
+        return workflow.Id;
+    }
+
+    private async Task<Guid> SeedCredentialAsync(Guid? projectId, CancellationToken ct)
+    {
+        var credential = new Credential
+        {
+            Name = "Test Credential",
+            Type = "apiKey",
+            ProjectId = projectId,
+            KeyVersion = "v1",
+            Data = new Dictionary<string, EncryptedField>
+            {
+                ["key"] = new() { CipherText = "cipher", Nonce = "nonce", Tag = "tag" },
+            },
+        };
+        _dbContext.Credentials.Add(credential);
+        await _dbContext.SaveChangesAsync(ct);
+        return credential.Id;
+    }
+
+    private async Task<Guid> SeedExecutionAsync(Guid? projectId, CancellationToken ct)
+    {
+        var execution = new ExecutionRecord
+        {
+            WorkflowDefinitionId = Guid.NewGuid(),
+            ProjectId = projectId,
+            Status = ExecutionStatus.Running,
+            StartedAt = DateTime.UtcNow,
+            NodeRecords = [],
+        };
+        _dbContext.ExecutionRecords.Add(execution);
+        await _dbContext.SaveChangesAsync(ct);
+        return execution.Id;
+    }
+
+    private async Task<Guid> SeedTriggerAsync(Guid? projectId, CancellationToken ct)
+    {
+        var trigger = new Trigger
+        {
+            Name = "Test Trigger",
+            WorkflowDefinitionId = Guid.NewGuid(),
+            ProjectId = projectId,
+            Type = TriggerType.Webhook,
+            Settings = new TriggerSettings(),
+        };
+        _dbContext.Triggers.Add(trigger);
+        await _dbContext.SaveChangesAsync(ct);
+        return trigger.Id;
     }
 }

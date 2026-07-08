@@ -1,6 +1,8 @@
+using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Exceptions;
@@ -16,12 +18,15 @@ public sealed class FileService(
     FlowEngineDbContext dbContext,
     IFileStorage fileStorage,
     IUserContext userContext,
+    IResourceAuthorizationService resourceAuthorization,
     IOptions<FileStorageOptions> options)
 {
     /// <summary>
-    /// 上传文件并创建元数据记录。ProjectId 仅用于分类，不做隔离校验。
+    /// 上传文件并创建元数据记录。会校验用户对目标项目的写权限。
     /// </summary>
-    /// <exception cref="InvalidOperationException">文件大小或类型未通过校验（GAP-07）。</exception>
+    /// <exception cref="InvalidOperationException">用户未认证。</exception>
+    /// <exception cref="PermissionDeniedException">用户无权写入目标项目。</exception>
+    /// <exception cref="BusinessException">文件大小或类型未通过校验（GAP-07）。</exception>
     public async Task<UploadFileResult> UploadAsync(
         string fileName,
         Stream content,
@@ -31,6 +36,12 @@ public sealed class FileService(
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileName);
         ArgumentNullException.ThrowIfNull(content);
+
+        var userId = userContext.UserId
+            ?? throw new InvalidOperationException("用户未认证。");
+
+        await EnsureCanAccessProjectAsync(projectId, Operation.Write, cancellationToken)
+            .ConfigureAwait(false);
 
         var opts = options.Value;
 
@@ -51,9 +62,6 @@ public sealed class FileService(
                     $"文件类型 '{contentType ?? "<空>"}' 不在允许列表内。");
             }
         }
-
-        var userId = userContext.UserId
-            ?? throw new InvalidOperationException("用户未认证。");
 
         var storagePath = await fileStorage.SaveAsync(fileName, content, projectId.ToString(), cancellationToken)
             .ConfigureAwait(false);
@@ -80,7 +88,7 @@ public sealed class FileService(
     }
 
     /// <summary>
-    /// 获取文件元数据。
+    /// 获取文件元数据。会校验用户对该文件所属项目的读取权限。
     /// </summary>
     public async Task<StoredFileDto?> GetAsync(Guid fileId, CancellationToken cancellationToken = default)
     {
@@ -93,11 +101,13 @@ public sealed class FileService(
             return null;
         }
 
+        await EnsureCanAccessFileAsync(file, requireWrite: false, cancellationToken).ConfigureAwait(false);
+
         return MapToDto(file);
     }
 
     /// <summary>
-    /// 获取文件下载流。
+    /// 获取文件下载流。会校验用户对该文件所属项目的读取权限。
     /// </summary>
     public async Task<Stream?> DownloadAsync(Guid fileId, CancellationToken cancellationToken = default)
     {
@@ -110,11 +120,13 @@ public sealed class FileService(
             return null;
         }
 
+        await EnsureCanAccessFileAsync(file, requireWrite: false, cancellationToken).ConfigureAwait(false);
+
         return await fileStorage.ReadAsync(file.StoragePath, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
-    /// 删除文件及元数据记录。
+    /// 删除文件及元数据记录。会校验用户对该文件所属项目的写权限。
     /// </summary>
     public async Task<bool> DeleteAsync(Guid fileId, CancellationToken cancellationToken = default)
     {
@@ -127,6 +139,8 @@ public sealed class FileService(
             return false;
         }
 
+        await EnsureCanAccessFileAsync(file, requireWrite: true, cancellationToken).ConfigureAwait(false);
+
         await fileStorage.DeleteAsync(file.StoragePath, cancellationToken).ConfigureAwait(false);
 
         file.Deleted = true;
@@ -137,12 +151,15 @@ public sealed class FileService(
     }
 
     /// <summary>
-    /// 获取项目下的所有文件。ProjectId 仅用于分类筛选，不做隔离。
+    /// 获取项目下的所有文件。会校验用户对项目的读取权限。
     /// </summary>
     public async Task<IReadOnlyList<StoredFileDto>> GetAllByProjectAsync(
         Guid projectId,
         CancellationToken cancellationToken = default)
     {
+        await EnsureCanAccessProjectAsync(projectId, Operation.Read, cancellationToken)
+            .ConfigureAwait(false);
+
         var files = await dbContext.StoredFiles
             .Where(f => f.ProjectId == projectId && !f.Deleted)
             .OrderByDescending(f => f.CreatedAt)
@@ -150,6 +167,27 @@ public sealed class FileService(
             .ConfigureAwait(false);
 
         return files.Select(MapToDto).ToList();
+    }
+
+    private async Task EnsureCanAccessFileAsync(StoredFile file, bool requireWrite, CancellationToken cancellationToken)
+    {
+        var operation = requireWrite ? Operation.Write : Operation.Read;
+        await EnsureCanAccessProjectAsync(file.ProjectId, operation, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task EnsureCanAccessProjectAsync(Guid projectId, Operation operation, CancellationToken cancellationToken)
+    {
+        var userId = userContext.UserId
+            ?? throw new InvalidOperationException("用户未认证。");
+
+        var allowed = await resourceAuthorization.CanAccessProjectAsync(userId, projectId, operation, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!allowed)
+        {
+            throw new PermissionDeniedException("无权访问该资源。");
+        }
     }
 
     private static StoredFileDto MapToDto(StoredFile file)

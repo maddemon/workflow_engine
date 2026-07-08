@@ -2,7 +2,9 @@ using System.Net.WebSockets;
 using System.Security.Claims;
 using System.Text;
 using System.Text.Json;
+using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Identity;
+using FlowEngine.Core.Authorization;
 using Microsoft.AspNetCore.Http;
 
 namespace FlowEngine.Host.WebSocketHandlers;
@@ -15,6 +17,7 @@ public sealed class ExecutionWebSocketHandler
     private readonly WebSocketConnectionManager _connectionManager;
     private readonly WebSocketReplayService _replayService;
     private readonly IUserContext _userContext;
+    private readonly IResourceAuthorizationService _resourceAuthorization;
     private readonly ILogger<ExecutionWebSocketHandler> _logger;
 
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(30);
@@ -31,11 +34,13 @@ public sealed class ExecutionWebSocketHandler
         WebSocketConnectionManager connectionManager,
         WebSocketReplayService replayService,
         IUserContext userContext,
+        IResourceAuthorizationService resourceAuthorization,
         ILogger<ExecutionWebSocketHandler> logger)
     {
         _connectionManager = connectionManager;
         _replayService = replayService;
         _userContext = userContext;
+        _resourceAuthorization = resourceAuthorization;
         _logger = logger;
     }
 
@@ -151,6 +156,22 @@ public sealed class ExecutionWebSocketHandler
                     var subscribeMsg = JsonSerializer.Deserialize<WebSocketSubscribeMessage>(message);
                     if (subscribeMsg is { ExecutionId: var executionId })
                     {
+                        if (!_userContext.IsAuthenticated || _userContext.UserId is not { } userId)
+                        {
+                            _logger.LogWarning(
+                                "Connection {ConnectionId} attempted to subscribe without authentication",
+                                connection.ConnectionId);
+                            break;
+                        }
+
+                        if (!await _resourceAuthorization.CanAccessExecutionAsync(userId, executionId, Operation.Read, cancellationToken).ConfigureAwait(false))
+                        {
+                            _logger.LogWarning(
+                                "Connection {ConnectionId} denied subscription to execution {ExecutionId}",
+                                connection.ConnectionId, executionId);
+                            break;
+                        }
+
                         _connectionManager.Subscribe(executionId, connection);
                         _logger.LogInformation(
                             "Connection {ConnectionId} subscribed to execution {ExecutionId}",

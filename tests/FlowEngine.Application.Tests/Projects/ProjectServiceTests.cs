@@ -1,4 +1,5 @@
 using FlowEngine.Application.Audit;
+using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
 using FlowEngine.Application.Projects;
@@ -29,7 +30,7 @@ public sealed class ProjectServiceTests : IDisposable
         _eventBus = new InMemoryEventBus();
         _userContext = new FakeUserContext();
         var auditFactory = new AuditEventFactory(_userContext);
-        _service = new ProjectService(_dbContext, _userContext, _eventBus, auditFactory);
+        _service = new ProjectService(_dbContext, _userContext, new FakeResourceAuthorizationService(_dbContext, _userContext), _eventBus, auditFactory);
     }
 
     public void Dispose()
@@ -75,9 +76,10 @@ public sealed class ProjectServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task GetAllAsync_ReturnsAllProjects()
+    public async Task GetAllAsync_SystemAdmin_ReturnsAllProjects()
     {
         var ct = TestContext.Current.CancellationToken;
+        _userContext.Roles = ["Admin"];
         var userId = _userContext.UserId!.Value;
 
         var project1 = new Project { Name = "Project 1", CreatedBy = userId };
@@ -94,7 +96,8 @@ public sealed class ProjectServiceTests : IDisposable
     public async Task GetByIdAsync_ExistingProject_ReturnsDto()
     {
         var ct = TestContext.Current.CancellationToken;
-        var project = new Project { Name = "Test", CreatedBy = Guid.NewGuid() };
+        _userContext.Roles = ["Editor"];
+        var project = new Project { Name = "Test", CreatedBy = _userContext.UserId!.Value };
         _dbContext.Projects.Add(project);
         await _dbContext.SaveChangesAsync(ct);
 
@@ -114,10 +117,23 @@ public sealed class ProjectServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetByIdAsync_OtherUsersProject_ThrowsPermissionDenied()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        _userContext.Roles = ["Editor"];
+        var project = new Project { Name = "Test", CreatedBy = Guid.NewGuid() };
+        _dbContext.Projects.Add(project);
+        await _dbContext.SaveChangesAsync(ct);
+
+        await Assert.ThrowsAsync<PermissionDeniedException>(() => _service.GetByIdAsync(project.Id, ct));
+    }
+
+    [Fact]
     public async Task UpdateAsync_ExistingProject_UpdatesFields()
     {
         var ct = TestContext.Current.CancellationToken;
-        var project = new Project { Name = "Original", CreatedBy = Guid.NewGuid() };
+        _userContext.Roles = ["Editor"];
+        var project = new Project { Name = "Original", CreatedBy = _userContext.UserId!.Value };
         _dbContext.Projects.Add(project);
         await _dbContext.SaveChangesAsync(ct);
 
@@ -182,6 +198,7 @@ public sealed class ProjectServiceTests : IDisposable
     public async Task AddMemberAsync_ValidMember_AddsMember()
     {
         var ct = TestContext.Current.CancellationToken;
+        _userContext.Roles = ["Admin"];
         var project = new Project { Name = "Test", CreatedBy = Guid.NewGuid() };
         _dbContext.Projects.Add(project);
         await _dbContext.SaveChangesAsync(ct);
@@ -199,6 +216,7 @@ public sealed class ProjectServiceTests : IDisposable
     public async Task AddMemberAsync_DuplicateMember_Throws()
     {
         var ct = TestContext.Current.CancellationToken;
+        _userContext.Roles = ["Admin"];
         var userId = Guid.NewGuid();
         var project = new Project { Name = "Test", CreatedBy = Guid.NewGuid() };
         _dbContext.Projects.Add(project);
@@ -219,6 +237,7 @@ public sealed class ProjectServiceTests : IDisposable
     public async Task AddMemberAsync_NonExistingProject_ReturnsNull()
     {
         var ct = TestContext.Current.CancellationToken;
+        _userContext.Roles = ["Admin"];
         var dto = new AddProjectMemberDto { UserId = Guid.NewGuid(), Role = "Viewer" };
         var result = await _service.AddMemberAsync(Guid.NewGuid(), dto, ct);
         Assert.Null(result);
@@ -291,6 +310,7 @@ public sealed class ProjectServiceTests : IDisposable
     public async Task GetMembersAsync_ReturnsProjectMembers()
     {
         var ct = TestContext.Current.CancellationToken;
+        _userContext.Roles = ["Admin"];
         var project = new Project { Name = "Test", CreatedBy = Guid.NewGuid() };
         _dbContext.Projects.Add(project);
         _dbContext.ProjectMembers.AddRange(
@@ -331,6 +351,42 @@ public sealed class ProjectServiceTests : IDisposable
         public Guid? UserId => _userId;
         public string? Email => "test@test.com";
         public IReadOnlyList<string> Roles { get; set; } = [];
+    }
+
+    private sealed class FakeResourceAuthorizationService(FlowEngineDbContext dbContext, FakeUserContext userContext) : IResourceAuthorizationService
+    {
+        public Task<bool> CanAccessProjectAsync(Guid userId, Guid projectId, Operation operation, CancellationToken ct = default)
+        {
+            if (userContext.Roles.Contains(RoleConstants.Admin))
+            {
+                return Task.FromResult(true);
+            }
+
+            if (!userContext.Roles.Any())
+            {
+                return Task.FromResult(false);
+            }
+
+            var project = dbContext.Projects
+                .AsNoTracking()
+                .FirstOrDefault(p => p.Id == projectId && !p.Deleted);
+
+            return Task.FromResult(project is not null && project.CreatedBy == userId);
+        }
+
+        public Task<bool> CanAccessWorkflowAsync(Guid userId, Guid workflowId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public Task<bool> CanAccessCredentialAsync(Guid userId, Guid credentialId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public Task<bool> CanAccessExecutionAsync(Guid userId, Guid executionId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public Task<bool> CanAccessTriggerAsync(Guid userId, Guid triggerId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public bool ShouldMaskCredentialValues(IReadOnlyList<string> roles) => false;
     }
 }
 #pragma warning restore CS0618

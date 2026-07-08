@@ -23,12 +23,12 @@ namespace FlowEngine.Host.Tests.Workflows;
 /// <summary>
 /// Dry-Run 端点集成测试：验证直接传入 DSL 执行，仅 [Authorize] 即可访问。
 /// </summary>
-public class WorkflowDryRunEndpointTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
+public class WorkflowDryRunEndpointTests : IClassFixture<FlowEngineWebApplicationFactory>, IDisposable
 {
     private readonly WebApplicationFactory<Program> _factory;
     private readonly string _tempRoot;
 
-    public WorkflowDryRunEndpointTests(WebApplicationFactory<Program> factory)
+    public WorkflowDryRunEndpointTests(FlowEngineWebApplicationFactory factory)
     {
         _tempRoot = Path.Combine(Path.GetTempPath(), "flowengine-tests", Guid.NewGuid().ToString());
         var dbDirectory = Path.Combine(_tempRoot, "db");

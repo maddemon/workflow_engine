@@ -17,12 +17,12 @@ using Microsoft.Extensions.Hosting;
 
 namespace FlowEngine.Host.Tests.Credentials;
 
-public class CredentialEnsureTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
+public class CredentialEnsureTests : IClassFixture<FlowEngineWebApplicationFactory>, IDisposable
 {
     private readonly WebApplicationFactory<Program> _factory;
     private readonly string _tempRoot;
 
-    public CredentialEnsureTests(WebApplicationFactory<Program> factory)
+    public CredentialEnsureTests(FlowEngineWebApplicationFactory factory)
     {
         _tempRoot = Path.Combine(Path.GetTempPath(), "flowengine-tests", Guid.NewGuid().ToString());
         var dbDirectory = Path.Combine(_tempRoot, "db");
@@ -39,6 +39,7 @@ public class CredentialEnsureTests : IClassFixture<WebApplicationFactory<Program
             builder.ConfigureServices(services =>
             {
                 services.Replace(ServiceDescriptor.Singleton<IScheduleManager, NoOpScheduleManager>());
+                services.Replace(ServiceDescriptor.Singleton<ICryptoKeyProvider, TestCryptoKeyProvider>());
                 services.RemoveAll<IHostedService>();
             });
         });
@@ -204,4 +205,10 @@ public class CredentialEnsureTests : IClassFixture<WebApplicationFactory<Program
     }
 
     private static System.Text.Json.JsonSerializerOptions TestJsonOptions => new(System.Text.Json.JsonSerializerDefaults.Web);
+
+    private sealed class TestCryptoKeyProvider : ICryptoKeyProvider
+    {
+        public byte[] GetKey() =>
+            Convert.FromHexString("000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F");
+    }
 }

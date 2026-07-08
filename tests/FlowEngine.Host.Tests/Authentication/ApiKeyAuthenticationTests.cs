@@ -20,7 +20,7 @@ namespace FlowEngine.Host.Tests.Authentication;
 /// <summary>
 /// API Key 认证集成测试。
 /// </summary>
-public class ApiKeyAuthenticationTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
+public class ApiKeyAuthenticationTests : IClassFixture<FlowEngineWebApplicationFactory>, IDisposable
 {
     private readonly WebApplicationFactory<Program> _factory;
     private readonly string _tempRoot;
@@ -28,7 +28,7 @@ public class ApiKeyAuthenticationTests : IClassFixture<WebApplicationFactory<Pro
     /// <summary>
     /// 初始化集成测试工厂，使用临时 SQLite 数据库与独立的审计日志目录。
     /// </summary>
-    public ApiKeyAuthenticationTests(WebApplicationFactory<Program> factory)
+    public ApiKeyAuthenticationTests(FlowEngineWebApplicationFactory factory)
     {
         _tempRoot = Path.Combine(Path.GetTempPath(), "flowengine-tests", Guid.NewGuid().ToString());
         var dbDirectory = Path.Combine(_tempRoot, "db");
@@ -113,12 +113,17 @@ public class ApiKeyAuthenticationTests : IClassFixture<WebApplicationFactory<Pro
     public async Task GetMe_WithExpiredApiKey_ReturnsUnauthorized()
     {
         var ct = TestContext.Current.CancellationToken;
-        var (client, key, _) = await CreateClientWithApiKeyAsync(
+        var (client, key, userId) = await CreateClientWithApiKeyAsync(
             "expiredkey@example.com",
-            expiresAt: DateTime.UtcNow.AddSeconds(1),
             ct: ct);
 
-        await Task.Delay(TimeSpan.FromSeconds(2), ct);
+        using (var scope = _factory.Services.CreateScope())
+        {
+            var dbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
+            var apiKey = await dbContext.Set<ApiKey>().FirstAsync(x => x.UserId == userId, ct);
+            apiKey.ExpiresAt = DateTime.UtcNow.AddHours(-1);
+            await dbContext.SaveChangesAsync(ct);
+        }
 
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", key);
         var response = await client.GetAsync("/api/v1/auth/me", ct);

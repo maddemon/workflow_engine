@@ -34,18 +34,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
       return;
     }
+    let cancelled = false;
     api.getCurrentUser()
       .then((u) => {
+        if (cancelled) return;
         setUser(u);
         localStorage.setItem('auth_user', JSON.stringify(u));
       })
       .catch(() => {
+        if (cancelled) return;
         setToken(null);
         setUser(null);
         localStorage.removeItem('auth_token');
         localStorage.removeItem('auth_user');
       })
-      .finally(() => setIsLoading(false));
+      .finally(() => {
+        if (!cancelled) {
+          setIsLoading(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, [token]);
 
   const login = useCallback(async (data: LoginRequest) => {

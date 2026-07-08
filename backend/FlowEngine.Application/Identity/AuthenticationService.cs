@@ -162,6 +162,7 @@ public partial class AuthenticationService(
                 IsActive = user.IsActive,
                 CreatedAt = user.CreatedAt,
                 UpdatedAt = user.UpdatedAt,
+                Roles = roleNames,
             },
         };
     }

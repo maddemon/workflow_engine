@@ -23,9 +23,7 @@ public static class ApplicationBuilderExtensions
     public static async Task<WebApplication> UseFlowEngineAsync(this WebApplication app)
     {
         // ── Migrations ──────────────────────────────────────────────
-        var dbProvider = app.Configuration["Database:Provider"] ?? "sqlite";
         await app.Services.ApplyFlowEngineMigrationsAsync(
-            dbProvider,
             app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("FlowEngine.Migrations"));
 
         // ── Seed Default Admin ─────────────────────────────────────
@@ -52,10 +50,10 @@ public static class ApplicationBuilderExtensions
         app.Map("/ws/execution", async (HttpContext context) =>
         {
             var handler = context.RequestServices.GetRequiredService<ExecutionWebSocketHandler>();
-            await handler.HandleAsync(context, async () => { });
+            await handler.HandleAsync(context,  () => Task.CompletedTask);
         });
 
-        app.MapFallbackToFile("index.html");
+        app.MapFallbackToFile("{*path:regex(^(?!api(?:/|$)).*$)}", "index.html");
 
         return app;
     }
@@ -64,11 +62,38 @@ public static class ApplicationBuilderExtensions
     {
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
-        var webhookRoutes = await dbContext.WebhookRoutes.ToListAsync();
+        var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("FlowEngine.Webhook");
+        var webhookRoutes = await dbContext.WebhookRoutes.AsNoTracking().ToListAsync();
+
+        var reservedPrefixes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "/api/",
+            "/health",
+            "/ws/",
+        };
+        var registeredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var route in webhookRoutes)
         {
             var capturedPath = route.Path;
+            if (string.IsNullOrWhiteSpace(capturedPath) || !capturedPath.StartsWith('/'))
+            {
+                logger.LogWarning("Webhook 路由路径不合法，已跳过注册。RouteId={RouteId}, Path={Path}", route.Id, capturedPath);
+                continue;
+            }
+
+            if (reservedPrefixes.Any(prefix => capturedPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
+            {
+                logger.LogWarning("Webhook 路由路径与保留前缀冲突，已跳过注册。RouteId={RouteId}, Path={Path}", route.Id, capturedPath);
+                continue;
+            }
+
+            if (!registeredPaths.Add(capturedPath))
+            {
+                logger.LogWarning("Webhook 路由路径重复，已跳过注册。RouteId={RouteId}, Path={Path}", route.Id, capturedPath);
+                continue;
+            }
+
             var method = route.Method?.ToUpperInvariant() ?? "POST";
 
             app.MapMethods(capturedPath, new[] { method }, async (HttpContext context) =>
@@ -77,7 +102,7 @@ public static class ApplicationBuilderExtensions
                 await handler.HandleAsync(context, capturedPath);
             })
             .WithName($"webhook_{route.Id}")
-            .WithMetadata(new { IsWebhook = true });
+            .WithMetadata(new WebhookEndpointMetadata(route.Id));
         }
     }
 
@@ -116,8 +141,8 @@ public static class ApplicationBuilderExtensions
         var dbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
         var scheduleManager = scope.ServiceProvider.GetRequiredService<IScheduleManager>();
 
-        await scheduleManager.StartAsync();
-
+        // Quartz 托管服务（AddQuartzHostedService）会在应用启动时自动启动调度器，
+        // 此处不再重复调用 StartAsync，避免双重启动与生命周期边界混乱。
         var activeTriggers = await dbContext.Triggers.Where(t => t.IsActive).ToListAsync();
         foreach (var trigger in activeTriggers)
         {
@@ -155,18 +180,19 @@ public static class ApplicationBuilderExtensions
         using var scope = app.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
         var passwordHasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
-
         if (await dbContext.Set<User>().AnyAsync())
         {
             return;
         }
+
+        var password = ResolveDefaultAdminPassword(app);
 
         var admin = new User
         {
             Email = "admin@flowengine.local",
             UserName = "admin",
             DisplayName = "Administrator",
-            PasswordHash = passwordHasher.HashPassword("admin123"),
+            PasswordHash = passwordHasher.HashPassword(password),
             IsActive = true,
         };
 
@@ -180,5 +206,29 @@ public static class ApplicationBuilderExtensions
             Role = FlowEngine.Core.Authorization.Role.Admin.ToString()
         });
         await dbContext.SaveChangesAsync();
+    }
+
+    private static string ResolveDefaultAdminPassword(WebApplication app)
+    {
+        const string EnvVarName = "FLOWENGINE_ADMIN_PASSWORD";
+        var password = app.Configuration["Setup:AdminPassword"]
+            ?? Environment.GetEnvironmentVariable(EnvVarName);
+
+        if (string.IsNullOrWhiteSpace(password))
+        {
+            throw new InvalidOperationException(
+                $"首次启动必须设置管理员密码。请设置配置项 Setup:AdminPassword 或环境变量 {EnvVarName} 后重新启动。");
+        }
+
+        // 管理员密码要求至少 12 位，高于普通用户密码策略。
+        var passwordValidator = new PasswordValidator(minLength: 12);
+        var (isValid, errorMessage) = passwordValidator.Validate(password);
+        if (!isValid)
+        {
+            throw new InvalidOperationException(
+                $"管理员密码不符合强度要求：{errorMessage}");
+        }
+
+        return password;
     }
 }

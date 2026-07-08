@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Concurrent;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
@@ -9,6 +10,7 @@ using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.ValueObjects;
 using FlowEngine.Runtime.WaitingArea;
 using Microsoft.EntityFrameworkCore;
@@ -59,7 +61,7 @@ public sealed class WorkflowExecutor : IEngine
 
         if (workflow is null)
         {
-            throw new InvalidOperationException($"工作流 '{workflowDefinitionId}' 不存在。");
+            throw new NotFoundException($"工作流 '{workflowDefinitionId}' 不存在。");
         }
 
         var executionRecord = new ExecutionRecord
@@ -214,7 +216,7 @@ public sealed class WorkflowExecutor : IEngine
         var nodeType = _nodeRegistry.Get(node.TypeName);
         var executionMode = nodeType.ExecutionMode;
         var runCount = executionMode == ExecutionMode.OncePerItem
-            ? Math.Max(1, item.Inputs.Values.Max(b => b.Items.Count))
+            ? Math.Max(1, item.Inputs.Values.DefaultIfEmpty(new DataBatch()).Max(b => b.Items.Count))
             : 1;
 
         NodeExecutionResult? finalResult = null;
@@ -263,7 +265,8 @@ public sealed class WorkflowExecutor : IEngine
 
             var record = BuildNodeExecutionRecord(node.Id, runIndex, runInputs, result, context);
 
-            session.Execution.NodeRecords = [.. session.Execution.NodeRecords, record];
+            session.Execution.NodeRecords.Add(record);
+            session.DbContext.Entry(session.Execution).Property(e => e.NodeRecords).IsModified = true;
             try
             {
                 await session.DbContext.SaveChangesAsync(cancellationToken)
@@ -271,6 +274,7 @@ public sealed class WorkflowExecutor : IEngine
             }
             catch (OperationCanceledException)
             {
+                _logger.LogWarning("节点 {NodeId} 执行记录保存被取消。", node.Id);
             }
 
             finalResult = result;
@@ -396,7 +400,7 @@ public sealed class WorkflowExecutor : IEngine
                 _logger.LogError(ex, "节点 {NodeName} ({NodeId}) 执行时发生异常。", node.Name, node.Id);
                 var nodeError = new NodeError
                 {
-                    Code = ex.GetType().Name,
+                    Code = "NodeExecutionFailed",
                     Message = ex.Message,
                     NodeDefinitionId = node.Id,
                     StackTrace = ex.StackTrace
@@ -465,7 +469,10 @@ public sealed class WorkflowExecutor : IEngine
         CancellationToken cancellationToken)
     {
         var sourcePortName = ResolveSourcePortName(nodeType, result);
-        var connections = session.ConnectionsBySource[(node.Id, sourcePortName)];
+        var sourceKey = (node.Id, sourcePortName.ToLowerInvariant());
+        var connections = session.ConnectionsBySource.Contains(sourceKey)
+            ? session.ConnectionsBySource[sourceKey]
+            : Enumerable.Empty<Connection>();
         var connectionList = connections.ToList();
 
         _logger.LogInformation(
@@ -566,7 +573,8 @@ public sealed class WorkflowExecutor : IEngine
                 rawParameters: new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase),
                 resolvedParameters: new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase));
 
-            session.Execution.NodeRecords = [.. session.Execution.NodeRecords, record];
+            session.Execution.NodeRecords.Add(record);
+            session.DbContext.Entry(session.Execution).Property(e => e.NodeRecords).IsModified = true;
             try
             {
                 await session.DbContext.SaveChangesAsync(cancellationToken)
@@ -574,6 +582,7 @@ public sealed class WorkflowExecutor : IEngine
             }
             catch (OperationCanceledException)
             {
+                _logger.LogWarning("节点 {NodeId} 超时记录保存被取消。", node.Id);
             }
 
             if (node.ErrorStrategy != ErrorStrategy.Continue)
@@ -779,7 +788,7 @@ public sealed class WorkflowExecutor : IEngine
             var incomingConnections = connectionsBySource
                 .Where(g => g.Key.SourceNodeId != node.Id)
                 .SelectMany(g => g)
-                .Where(c => c.TargetNodeId == node.Id && c.TargetPortName == port.Name)
+                .Where(c => c.TargetNodeId == node.Id && c.TargetPortName.Equals(port.Name, StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
             foreach (var connection in incomingConnections)

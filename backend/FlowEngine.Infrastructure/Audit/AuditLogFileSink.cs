@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using System.Text.Json;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Events;
@@ -7,7 +8,7 @@ namespace FlowEngine.Infrastructure.Audit;
 
 /// <summary>
 /// 审计日志文件 Sink，订阅 EventBus 事件并写入 NDJSON 文件。
-/// 普通事件异步入队，后台每秒批量刷盘；关键事件同步刷盘。
+/// 所有事件先入队，再由后台任务批量刷盘，避免阻塞发布线程。
 /// </summary>
 public sealed class AuditLogFileSink : IDisposable
 {
@@ -19,6 +20,9 @@ public sealed class AuditLogFileSink : IDisposable
     private readonly string _logDirectory;
     private readonly ILogger<AuditLogFileSink>? _logger;
     private readonly Lock _writerLock = new();
+    private readonly Channel<AuditEvent> _channel;
+    private readonly CancellationTokenSource _cts;
+    private readonly Task _processor;
     private StreamWriter? _writer;
     private string _currentDate = string.Empty;
     private Timer? _flushTimer;
@@ -37,46 +41,39 @@ public sealed class AuditLogFileSink : IDisposable
     {
         _logDirectory = logDirectory;
         _logger = logger;
+        _channel = Channel.CreateUnbounded<AuditEvent>(new UnboundedChannelOptions
+        {
+            SingleReader = true,
+            SingleWriter = false,
+        });
+        _cts = new CancellationTokenSource();
 
         Directory.CreateDirectory(logDirectory);
         EnsureWriter();
 
+        eventBus.Subscribe<AuditEvent>(OnEventAsync);
+        _processor = Task.Run(ProcessLoopAsync);
         _flushTimer = new Timer(_ => Flush(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
-
-        eventBus.Subscribe<AuditEvent>((e, _) =>
-        {
-            OnEvent(e);
-            return Task.CompletedTask;
-        });
     }
 
     /// <summary>
-    /// 处理审计事件：写入 NDJSON 行，关键事件同步刷盘。
+    /// 异步处理审计事件：写入队列，立即返回，不阻塞发布线程。
     /// </summary>
     /// <param name="auditEvent">审计事件。</param>
-    public void OnEvent(AuditEvent auditEvent)
+    /// <param name="cancellationToken">取消令牌。</param>
+    public Task OnEventAsync(AuditEvent auditEvent, CancellationToken cancellationToken)
     {
         if (_disposed)
         {
-            return;
+            return Task.CompletedTask;
         }
 
-        var line = SerializeEvent(auditEvent);
-        if (line is null)
+        if (!_channel.Writer.TryWrite(auditEvent))
         {
-            return;
+            _logger?.LogError("审计事件入队失败，事件可能丢失: {EventType}", auditEvent.EventType);
         }
 
-        lock (_writerLock)
-        {
-            EnsureWriter();
-            _writer?.WriteLine(line);
-
-            if (IsCriticalEvent(auditEvent))
-            {
-                _writer?.Flush();
-            }
-        }
+        return Task.CompletedTask;
     }
 
     /// <inheritdoc />
@@ -88,8 +85,21 @@ public sealed class AuditLogFileSink : IDisposable
         }
 
         _disposed = true;
+        _channel.Writer.Complete();
+        _cts.Cancel();
         _flushTimer?.Dispose();
         _flushTimer = null;
+
+        try
+        {
+            _processor.Wait(TimeSpan.FromSeconds(5));
+        }
+        catch (Exception ex)
+        {
+            _logger?.LogError(ex, "审计日志后台任务等待时发生异常");
+        }
+
+        _cts.Dispose();
 
         lock (_writerLock)
         {
@@ -99,20 +109,53 @@ public sealed class AuditLogFileSink : IDisposable
         }
     }
 
-    private void EnsureWriter()
+    private async Task ProcessLoopAsync()
     {
-        var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
-        if (today == _currentDate && _writer is not null)
+        await foreach (var auditEvent in _channel.Reader.ReadAllAsync(_cts.Token).ConfigureAwait(false))
+        {
+            try
+            {
+                await WriteEventAsync(auditEvent, _cts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogError(ex, "写入审计事件失败: {EventType}", auditEvent.EventType);
+            }
+        }
+    }
+
+    private async Task WriteEventAsync(AuditEvent auditEvent, CancellationToken cancellationToken)
+    {
+        var line = SerializeEvent(auditEvent);
+        if (line is null)
         {
             return;
         }
 
-        _writer?.Flush();
-        _writer?.Dispose();
+        lock (_writerLock)
+        {
+            EnsureWriter();
+            _writer?.WriteLine(line);
+        }
 
-        var filePath = Path.Combine(_logDirectory, $"audit-{today}.ndjson");
-        _writer = new StreamWriter(filePath, append: true) { AutoFlush = false };
-        _currentDate = today;
+        if (IsCriticalEvent(auditEvent))
+        {
+            lock (_writerLock)
+            {
+                _writer?.Flush();
+            }
+        }
+        else
+        {
+            // 非关键事件批量刷盘：每 1 秒或队列空闲时由操作系统/StreamWriter 缓冲。
+            // 取消时立即 flush，由 Dispose 处理。
+        }
+
+        await Task.CompletedTask;
     }
 
     private void Flush()
@@ -133,6 +176,22 @@ public sealed class AuditLogFileSink : IDisposable
                 _logger?.LogError(ex, "Failed to flush audit log");
             }
         }
+    }
+
+    private void EnsureWriter()
+    {
+        var today = DateTime.UtcNow.ToString("yyyy-MM-dd");
+        if (today == _currentDate && _writer is not null)
+        {
+            return;
+        }
+
+        _writer?.Flush();
+        _writer?.Dispose();
+
+        var filePath = Path.Combine(_logDirectory, $"audit-{today}.ndjson");
+        _writer = new StreamWriter(filePath, append: true) { AutoFlush = false };
+        _currentDate = today;
     }
 
     private static string? SerializeEvent(AuditEvent audit)

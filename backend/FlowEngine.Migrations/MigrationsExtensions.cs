@@ -9,7 +9,6 @@ public static class MigrationsExtensions
 {
     public static async Task ApplyFlowEngineMigrationsAsync(
         this IServiceProvider serviceProvider,
-        string provider,
         ILogger? logger = null)
     {
         using var scope = serviceProvider.CreateScope();
@@ -34,11 +33,7 @@ public static class MigrationsExtensions
                 logger?.LogInformation("数据库已是最新状态，无需迁移");
             }
 
-            if (provider.Equals("sqlite", StringComparison.OrdinalIgnoreCase))
-            {
-                await dbContext.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;");
-                logger?.LogDebug("SQLite WAL 模式已启用");
-            }
+
         }
         catch (Exception ex)
         {

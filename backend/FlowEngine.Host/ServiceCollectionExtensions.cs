@@ -232,8 +232,19 @@ public static class ServiceCollectionExtensions
 
     private static void AddAuthentication(IServiceCollection services, IConfiguration configuration)
     {
-        var jwtSecret = configuration["Jwt:Secret"]
-            ?? throw new InvalidOperationException("JWT Secret is not configured.");
+        var jwtSecret = configuration["Jwt:Secret"];
+        if (string.IsNullOrWhiteSpace(jwtSecret))
+        {
+            throw new InvalidOperationException(
+                "JWT Secret 未配置。请在环境变量或配置中设置 Jwt:Secret，长度至少 32 字节。");
+        }
+
+        var jwtSecretBytes = Encoding.UTF8.GetBytes(jwtSecret);
+        if (jwtSecretBytes.Length < 32)
+        {
+            throw new InvalidOperationException(
+                $"JWT Secret 长度不足：当前 {jwtSecretBytes.Length} 字节（UTF-8），至少需要 32 字节。请使用强随机密钥。");
+        }
 
         services.AddAuthentication(options =>
             {

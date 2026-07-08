@@ -1,5 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
+using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Identity;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
@@ -24,6 +25,7 @@ namespace FlowEngine.Host.Controllers;
 public class SseController(
     IEventBus eventBus,
     IUserContext userContext,
+    IResourceAuthorizationService resourceAuthorization,
     ILogger<SseController> logger) : ControllerBase
 {
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(30);
@@ -35,11 +37,17 @@ public class SseController(
     /// <param name="cancellationToken">客户端断开时触发的取消令牌。</param>
     [HttpGet("executions/{executionId:guid}/stream")]
     [AuthorizePermission(Scope.Execution, Operation.Read)]
-    public IResult Stream(Guid executionId, CancellationToken cancellationToken)
+    public async Task<IResult> Stream(Guid executionId, CancellationToken cancellationToken)
     {
         if (!userContext.IsAuthenticated)
         {
             return TypedResults.StatusCode(StatusCodes.Status401Unauthorized);
+        }
+
+        if (userContext.UserId is not { } userId ||
+            !await resourceAuthorization.CanAccessExecutionAsync(userId, executionId, Operation.Read, cancellationToken).ConfigureAwait(false))
+        {
+            return TypedResults.StatusCode(StatusCodes.Status403Forbidden);
         }
 
         // 禁用 nginx 反向代理缓冲，确保事件实时推送

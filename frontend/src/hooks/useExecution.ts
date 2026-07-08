@@ -39,9 +39,11 @@ export function useExecution() {
   // 轮询执行状态（WebSocket 的兜底方案）
   const startPolling = useCallback((executionId: string) => {
     stopPolling();
+    let cancelled = false;
     pollingRef.current = setInterval(async () => {
       try {
         const latest = await getExecution(executionId);
+        if (cancelled) return;
         if (TERMINAL_STATUSES.has(latest.status)) {
           stopPolling();
           setExecutionMeta(latest);
@@ -56,6 +58,11 @@ export function useExecution() {
         // 忽略轮询错误
       }
     }, 2000);
+
+    return () => {
+      cancelled = true;
+      stopPolling();
+    };
   }, [stopPolling]);
 
   useEffect(() => {
@@ -72,9 +79,14 @@ export function useExecution() {
     const workflowId = useWorkflowStore.getState().workflowId;
     if (!workflowId) return;
 
+    let cancelled = false;
+    let cleanupPolling: (() => void) | null = null;
+
     const checkRunningExecutions = async () => {
       try {
         const executions = await getWorkflowExecutions(workflowId);
+        if (cancelled) return;
+
         // 找到正在运行的执行（Pending 或 Running 状态）
         const runningExecution = executions.find(
           (e) => e.status === 'Pending' || e.status === 'Running'
@@ -83,6 +95,8 @@ export function useExecution() {
         if (runningExecution) {
           // 获取完整的执行详情（包含 nodeRecords）
           const detailedExecution = await getExecution(runningExecution.id);
+          if (cancelled) return;
+
           setExecutionMeta(detailedExecution);
           setStatus('running');
           useWorkflowStore.getState().setIsExecuting(true);
@@ -90,7 +104,7 @@ export function useExecution() {
           // 订阅该执行的 WebSocket 事件
           subscribe(runningExecution.id);
           // 启动轮询作为兜底
-          startPolling(runningExecution.id);
+          cleanupPolling = startPolling(runningExecution.id);
 
           // 如果有节点执行记录，应用它们
           if (detailedExecution.nodeRecords && detailedExecution.nodeRecords.length > 0) {
@@ -104,6 +118,11 @@ export function useExecution() {
     };
 
     checkRunningExecutions();
+
+    return () => {
+      cancelled = true;
+      cleanupPolling?.();
+    };
   }, [subscribe, startPolling]);
 
   const execute = useCallback(
@@ -118,7 +137,7 @@ export function useExecution() {
       try {
         const result = await executeWorkflow(workflowId);
         setExecutionMeta(result);
-        if (result.nodeRecords.length > 0) {
+        if (result.nodeRecords && result.nodeRecords.length > 0) {
           store.upsertNodeExecutionRecords(result.nodeRecords);
           applyNodeStatuses(result.nodeRecords);
         }

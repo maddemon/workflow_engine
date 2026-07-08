@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace FlowEngine.Application.Dtos;
 
 /// <summary>
@@ -13,16 +15,22 @@ public sealed record CreateCredentialDto
     /// <summary>
     /// 凭据名称。
     /// </summary>
+    [Required]
+    [StringLength(256)]
     public string Name { get; init; } = string.Empty;
 
     /// <summary>
     /// 凭据类型。
     /// </summary>
+    [Required]
+    [StringLength(128)]
     public string Type { get; init; } = string.Empty;
 
     /// <summary>
     /// 明文字段映射（将被加密存储）。
     /// </summary>
+    [Required]
+    [MinLength(1)]
     public Dictionary<string, string> Fields { get; init; } = [];
 }
 
@@ -34,11 +42,15 @@ public sealed record UpdateCredentialDto
     /// <summary>
     /// 凭据名称。
     /// </summary>
+    [Required]
+    [StringLength(256)]
     public string Name { get; init; } = string.Empty;
 
     /// <summary>
     /// 明文字段映射（将被加密存储）。
     /// </summary>
+    [Required]
+    [MinLength(1)]
     public Dictionary<string, string> Fields { get; init; } = [];
 }
 

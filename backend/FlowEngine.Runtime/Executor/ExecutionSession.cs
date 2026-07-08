@@ -45,7 +45,7 @@ public sealed class ExecutionSession
 
         NodeMap = workflow.Nodes.ToDictionary(n => n.Id);
         ConnectionsBySource = workflow.Connections
-            .ToLookup(c => (c.SourceNodeId, c.SourcePortName));
+            .ToLookup(c => (c.SourceNodeId, c.SourcePortName.ToLowerInvariant()));
 
         Queue = new ExecutionQueue();
         WaitingArea = new WaitingArea.WaitingArea();

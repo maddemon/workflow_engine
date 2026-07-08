@@ -144,6 +144,11 @@ public sealed record UserDto
     /// 最后更新时间。
     /// </summary>
     public DateTime? UpdatedAt { get; init; }
+
+    /// <summary>
+    /// 用户角色列表。
+    /// </summary>
+    public IReadOnlyList<string> Roles { get; init; } = [];
 }
 
 /// <summary>

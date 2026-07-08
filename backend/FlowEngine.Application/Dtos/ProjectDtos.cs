@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace FlowEngine.Application.Dtos;
 
 /// <summary>
@@ -44,11 +46,14 @@ public sealed record CreateProjectDto
     /// <summary>
     /// 项目名称。
     /// </summary>
+    [Required]
+    [StringLength(256)]
     public string Name { get; init; } = string.Empty;
 
     /// <summary>
     /// 项目描述。
     /// </summary>
+    [StringLength(2000)]
     public string? Description { get; init; }
 }
 
@@ -60,11 +65,14 @@ public sealed record UpdateProjectDto
     /// <summary>
     /// 项目名称。
     /// </summary>
+    [Required]
+    [StringLength(256)]
     public string Name { get; init; } = string.Empty;
 
     /// <summary>
     /// 项目描述。
     /// </summary>
+    [StringLength(2000)]
     public string? Description { get; init; }
 }
 
@@ -107,11 +115,14 @@ public sealed record AddProjectMemberDto
     /// <summary>
     /// 用户 ID。
     /// </summary>
+    [Required]
     public Guid UserId { get; init; }
 
     /// <summary>
     /// 成员角色（Admin/Editor/Viewer）。
     /// </summary>
+    [Required]
+    [StringLength(64)]
     public string Role { get; init; } = string.Empty;
 }
 
@@ -123,5 +134,7 @@ public sealed record UpdateProjectMemberDto
     /// <summary>
     /// 新的成员角色。
     /// </summary>
+    [Required]
+    [StringLength(64)]
     public string Role { get; init; } = string.Empty;
 }

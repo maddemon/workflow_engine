@@ -10,6 +10,7 @@ import { isJsonMode, log, writeJson } from '../output.js';
 import type { LoginResult, UserDto } from '../types.js';
 import { decodeJwt } from 'jose';
 import { createInterface } from 'node:readline/promises';
+import { Writable } from 'node:stream';
 
 export interface LoginOptions {
   url?: string;
@@ -84,12 +85,22 @@ async function readPasswordFromStdin(): Promise<string> {
 }
 
 async function promptPassword(): Promise<string> {
+  const mutedOutput = new Writable({
+    write(_chunk, _encoding, callback) {
+      callback();
+    },
+  });
+
   const rl = createInterface({
     input: process.stdin,
-    output: process.stderr,
+    output: mutedOutput,
+    terminal: true,
   });
+
   try {
-    const answer = await rl.question('请输入密码: ');
+    process.stderr.write('请输入密码: ');
+    const answer = await rl.question('');
+    process.stderr.write('\n');
     return answer;
   } finally {
     rl.close();

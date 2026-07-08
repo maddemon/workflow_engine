@@ -253,18 +253,25 @@ public sealed class WebhookHandler
 
         if (route.AllowedOrigins?.Count > 0)
         {
-            if (context.Request.Headers.TryGetValue("Origin", out var originValues))
+            if (!context.Request.Headers.TryGetValue("Origin", out var originValues))
             {
-                var origin = originValues.FirstOrDefault();
-                if (string.IsNullOrEmpty(origin) || !route.AllowedOrigins.Contains(origin))
-                {
-                    _logger.LogWarning("Webhook 来源域拒绝: Path={Path}, Origin={Origin}", route.Path, origin);
-                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
-                    await context.Response.WriteAsJsonAsync(
-                        new { error = "Origin not allowed" },
-                        context.RequestAborted).ConfigureAwait(false);
-                    return false;
-                }
+                _logger.LogWarning("Webhook 来源域拒绝: Path={Path}, Origin=<缺失>", route.Path);
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(
+                    new { error = "Origin header required" },
+                    context.RequestAborted).ConfigureAwait(false);
+                return false;
+            }
+
+            var origin = originValues.FirstOrDefault();
+            if (string.IsNullOrEmpty(origin) || !route.AllowedOrigins.Contains(origin))
+            {
+                _logger.LogWarning("Webhook 来源域拒绝: Path={Path}, Origin={Origin}", route.Path, origin);
+                context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                await context.Response.WriteAsJsonAsync(
+                    new { error = "Origin not allowed" },
+                    context.RequestAborted).ConfigureAwait(false);
+                return false;
             }
         }
 

@@ -31,4 +31,12 @@ public interface IResourceAuthorizationService
     /// 判断给定角色集合是否应对凭据敏感字段进行脱敏。
     /// </summary>
     bool ShouldMaskCredentialValues(IReadOnlyList<string> roles);
+
+    /// <summary>
+    /// 检查指定用户是否有权访问目标项目。
+    /// </summary>
+    Task<bool> CanAccessProjectAsync(Guid userId, Guid projectId, Operation operation, CancellationToken ct = default)
+    {
+        return Task.FromResult(false);
+    }
 }

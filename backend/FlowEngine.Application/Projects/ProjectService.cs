@@ -1,4 +1,5 @@
 using FlowEngine.Application.Audit;
+using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
 using FlowEngine.Core.Abstractions;
@@ -17,6 +18,7 @@ namespace FlowEngine.Application.Projects;
 public sealed class ProjectService(
     FlowEngineDbContext dbContext,
     IUserContext userContext,
+    IResourceAuthorizationService resourceAuthorization,
     IEventBus eventBus,
     AuditEventFactory auditFactory)
 {
@@ -51,12 +53,21 @@ public sealed class ProjectService(
     }
 
     /// <summary>
-    /// 获取所有项目。项目仅用于分类，不再按成员隔离。
+    /// 获取当前用户可访问的所有项目。管理员可查看全部项目，其他用户仅可查看自己创建的项目。
     /// </summary>
     public async Task<IReadOnlyList<ProjectDto>> GetAllAsync(CancellationToken cancellationToken = default)
     {
-        var projects = await dbContext.Projects
-            .Where(p => !p.Deleted)
+        var userId = userContext.UserId
+            ?? throw new InvalidOperationException("用户未认证。");
+
+        var query = dbContext.Projects.Where(p => !p.Deleted);
+
+        if (!IsSystemAdmin())
+        {
+            query = query.Where(p => p.CreatedBy == userId);
+        }
+
+        var projects = await query
             .OrderBy(p => p.CreatedAt)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -73,7 +84,14 @@ public sealed class ProjectService(
             .FirstOrDefaultAsync(p => p.Id == id && !p.Deleted, cancellationToken)
             .ConfigureAwait(false);
 
-        return project is null ? null : MapToDto(project);
+        if (project is null)
+        {
+            return null;
+        }
+
+        await EnsureCanAccessProjectAsync(id, Operation.Read, cancellationToken).ConfigureAwait(false);
+
+        return MapToDto(project);
     }
 
     /// <summary>
@@ -90,6 +108,8 @@ public sealed class ProjectService(
         {
             return null;
         }
+
+        await EnsureCanAccessProjectAsync(id, Operation.Write, cancellationToken).ConfigureAwait(false);
 
         project.Name = dto.Name;
         project.Description = dto.Description;
@@ -175,6 +195,8 @@ public sealed class ProjectService(
     [Obsolete("项目成员功能已废弃，仅保留兼容历史数据。")]
     public async Task<IReadOnlyList<ProjectMemberDto>> GetMembersAsync(Guid projectId, CancellationToken cancellationToken = default)
     {
+        await EnsureCanAccessProjectAsync(projectId, Operation.Read, cancellationToken).ConfigureAwait(false);
+
         var members = await dbContext.ProjectMembers
             .Where(m => m.ProjectId == projectId && !m.Deleted)
             .OrderBy(m => m.CreatedAt)
@@ -192,6 +214,8 @@ public sealed class ProjectService(
     public async Task<ProjectMemberDto?> AddMemberAsync(Guid projectId, AddProjectMemberDto dto, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dto);
+
+        await EnsureCanAccessProjectAsync(projectId, Operation.Write, cancellationToken).ConfigureAwait(false);
 
         var projectExists = await dbContext.Projects
             .AnyAsync(p => p.Id == projectId && !p.Deleted, cancellationToken)
@@ -218,6 +242,18 @@ public sealed class ProjectService(
 
         dbContext.ProjectMembers.Add(member);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+            AuditEventTypes.MemberAdded,
+            "ProjectMember",
+            member.Id,
+            new Dictionary<string, object>
+            {
+                ["projectId"] = member.ProjectId,
+                ["userId"] = member.UserId,
+                ["role"] = member.Role,
+            }),
+            cancellationToken).ConfigureAwait(false);
 
         return MapToMemberDto(member);
     }
@@ -295,6 +331,20 @@ public sealed class ProjectService(
             cancellationToken).ConfigureAwait(false);
 
         return MapToMemberDto(member);
+    }
+
+    private async Task EnsureCanAccessProjectAsync(Guid projectId, Operation operation, CancellationToken cancellationToken)
+    {
+        var userId = userContext.UserId
+            ?? throw new InvalidOperationException("用户未认证。");
+
+        var allowed = await resourceAuthorization.CanAccessProjectAsync(userId, projectId, operation, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (!allowed)
+        {
+            throw new PermissionDeniedException("无权访问该项目。");
+        }
     }
 
     private bool IsSystemAdmin()

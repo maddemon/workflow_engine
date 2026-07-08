@@ -2,6 +2,7 @@ using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Files;
 using FlowEngine.Application.Identity;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Exceptions;
@@ -27,7 +28,7 @@ public sealed class FileServiceTests : IDisposable
         _fileStorage = new FakeFileStorage();
         _userContext = new FakeUserContext();
         _options = new FileStorageOptions();
-        _service = new FileService(_dbContext, _fileStorage, _userContext, Options.Create(_options));
+        _service = new FileService(_dbContext, _fileStorage, _userContext, new FakeResourceAuthorizationService(), Options.Create(_options));
     }
 
     public void Dispose()
@@ -308,7 +309,27 @@ public sealed class FileServiceTests : IDisposable
         public bool IsAuthenticated => true;
         public Guid? UserId => _userId;
         public string? Email => "test@test.com";
-        public IReadOnlyList<string> Roles => [];
+        public IReadOnlyList<string> Roles => [RoleConstants.Admin];
+    }
+
+    private sealed class FakeResourceAuthorizationService : IResourceAuthorizationService
+    {
+        public Task<bool> CanAccessWorkflowAsync(Guid userId, Guid workflowId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public Task<bool> CanAccessCredentialAsync(Guid userId, Guid credentialId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public Task<bool> CanAccessExecutionAsync(Guid userId, Guid executionId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public Task<bool> CanAccessTriggerAsync(Guid userId, Guid triggerId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public Task<bool> CanAccessProjectAsync(Guid userId, Guid projectId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public bool ShouldMaskCredentialValues(IReadOnlyList<string> roles) => false;
     }
 
 }

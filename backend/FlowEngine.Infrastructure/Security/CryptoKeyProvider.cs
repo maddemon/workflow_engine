@@ -30,7 +30,22 @@ public sealed class CryptoKeyProvider : ICryptoKeyProvider
             return ParseHexKey(envKey, "环境变量 FLOWENGINE_CRYPTO_KEY");
         }
 
+        if (IsNonDevelopmentEnvironment())
+        {
+            throw new InvalidOperationException(
+                "生产环境必须设置环境变量 FLOWENGINE_CRYPTO_KEY（64 位十六进制字符串，32 字节 AES-256 密钥）。" +
+                "禁止在文件系统中自动生成并明文保存加密密钥。");
+        }
+
         return LoadOrGenerateKey(_keyFilePath);
+    }
+
+    private static bool IsNonDevelopmentEnvironment()
+    {
+        var env = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT")
+            ?? Environment.GetEnvironmentVariable("DOTNET_ENVIRONMENT")
+            ?? "Production";
+        return !string.Equals(env, "Development", StringComparison.OrdinalIgnoreCase);
     }
 
     private static byte[] ParseHexKey(string hexKey, string source)

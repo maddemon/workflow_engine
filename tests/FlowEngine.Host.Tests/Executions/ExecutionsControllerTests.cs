@@ -19,12 +19,12 @@ using Microsoft.Extensions.Hosting;
 
 namespace FlowEngine.Host.Tests.Executions;
 
-public class ExecutionsControllerTests : IClassFixture<WebApplicationFactory<Program>>, IDisposable
+public class ExecutionsControllerTests : IClassFixture<FlowEngineWebApplicationFactory>, IDisposable
 {
     private readonly WebApplicationFactory<Program> _factory;
     private readonly string _tempRoot;
 
-    public ExecutionsControllerTests(WebApplicationFactory<Program> factory)
+    public ExecutionsControllerTests(FlowEngineWebApplicationFactory factory)
     {
         _tempRoot = Path.Combine(Path.GetTempPath(), "flowengine-tests", Guid.NewGuid().ToString());
         var dbDirectory = Path.Combine(_tempRoot, "db");

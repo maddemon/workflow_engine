@@ -118,6 +118,9 @@ public class AuthController(
             return NotFound();
         }
 
+        var roles = await userStore.GetRolesAsync(user.Id, cancellationToken)
+            .ConfigureAwait(false);
+
         return Ok(new UserDto
         {
             Id = user.Id,
@@ -127,6 +130,7 @@ public class AuthController(
             IsActive = user.IsActive,
             CreatedAt = user.CreatedAt,
             UpdatedAt = user.UpdatedAt,
+            Roles = roles.Select(r => r.Role).ToList(),
         });
     }
 
