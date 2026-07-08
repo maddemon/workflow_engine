@@ -16,65 +16,83 @@ globs: ["**/*.cs", "**/*.csproj"]
 
 ## 2. 目录结构
 
-后端源码统一放在 `src/backend/` 下：
+后端源码统一放在仓库根的 `backend/` 下，插件放在仓库根的 `plugins/`，测试放在仓库根的 `tests/`。
+
+> 说明（A12 对齐）：早期规范曾设想 `src/backend/FlowEngine.{Api,Domain,Contracts,Plugins}` 的分层布局。实际落地时采用了更扁平的 `backend/FlowEngine.*` 命名（`FlowEngine.Host` 即入口/组合根，对应设想中的 `FlowEngine.Api`；`FlowEngine.Core` 合并了设想中的 `Domain` + `Contracts`，并承载脚本/HTTP/Agent/Tools 等下沉类型；插件放在独立的 `plugins/` 目录而非 `FlowEngine.Plugins` 项目）。以下为**当前真实结构**，作为后续开发的权威依据。
 
 ```
-src/backend/
-├── FlowEngine.Api/                   # Web API 入口
-│   ├── Controllers/                  # 控制器，只负责接收请求、调用 Service、返回 DTO/ActionResult
-│   ├── Middlewares/                  # 自定义中间件
-│   ├── Program.cs
-│   └── appsettings.json
-├── FlowEngine.Application/           # 应用层：业务用例编排
-│   ├── Services/                     # 业务服务，按领域模块分子目录
-│   │   ├── Nodes/
-│   │   ├── Workflows/
-│   │   └── Executions/
-│   ├── Dtos/                         # 请求/响应 DTO
-│   ├── Validators/                   # 输入校验（FluentValidation 或原生）
-│   └── Mappings/                     # 对象映射配置
-├── FlowEngine.Domain/                # 领域层：核心业务模型
-│   ├── Entities/                     # 领域实体（POCO，无 EF 依赖）
-│   ├── ValueObjects/                 # 值对象
-│   ├── Events/                       # 领域事件
-│   └── Exceptions/                   # 领域异常
-├── FlowEngine.Infrastructure/        # 基础设施层：具体实现
-│   ├── Data/                         # DbContext、迁移、查询、EF 配置
-│   ├── Plugins/                      # 节点插件加载器
-│   ├── Credentials/                  # 凭据存储与加密
-│   ├── ExpressionEngine/             # 表达式求值实现
-│   └── ExternalServices/             # 外部 API 封装
-├── FlowEngine.Plugins/               # 内置节点插件
-│   ├── Http/
-│   ├── Logic/
-│   └── Database/                     # 数据库节点：对接各种数据库读取和写入
-├── FlowEngine.Contracts/             # 前后端共享契约（DTO、枚举）
-│   ├── NodeTypes/
-│   ├── Workflows/
-│   └── Common/
-└── FlowEngine.Tests/                 # 测试项目
-    ├── Unit/
-    ├── Integration/
-    └── Plugins/
+backend/
+├── FlowEngine.Core/                  # 最内层：实体、抽象契约、领域事件、值对象，以及下沉的脚本/HTTP/Agent/Tools 类型
+│   ├── Abstractions/                 # INode, IEngine, IContext, IEventBus 等接口
+│   ├── Entities/                     # WorkflowDefinition, NodeDefinition, DataItem 等实体
+│   ├── Events/                       # WorkflowStarted, NodeExecuted 等事件
+│   ├── ValueObjects/                 # NodeDefinitionId, ExecutionId, CredentialKey
+│   ├── Scripting/                    # ScriptEngine / JsEngine（Jint 封装）
+│   ├── Http/                         # HttpExecutionHelper / SsrfGuard
+│   ├── Agent/                        # InlineResolver / AgentMemory
+│   └── Tools/                        # SchemaDerivation / ResultSanitizer
+│   ⚠️ 仅依赖 Jint 等基础库；所有插件只引用此项目。
+├── FlowEngine.Runtime/               # 执行引擎核心
+│   ├── Executor/                     # 执行器主循环、执行队列、worker
+│   ├── Expressions/                  # 表达式解析器与安全沙箱（ParameterResolver）
+│   └── Registry/                     # PluginLoader / PluginLoadContext
+│   ⚠️ 依赖：Core + Microsoft.Extensions.Logging。
+├── FlowEngine.Application/           # 用例编排层
+│   ├── Workflows/                    # 工作流 CRUD、版本控制、激活/停用
+│   ├── Executions/                   # 启动执行、取消执行、查询状态
+│   ├── Services/                     # 业务服务（用户、凭据、RBAC 等）
+│   ├── Dtos/                         # 前端通信专用 DTO
+│   └── Validators/                   # 输入校验
+│   ⚠️ 依赖：Core + Runtime。
+├── FlowEngine.Infrastructure/        # 基础设施适配器
+│   ├── Persistence/                  # DbContext、迁移、EF 配置
+│   ├── Scheduling/                   # Quartz.NET 适配器
+│   ├── Security/                     # 凭据加密（AES-GCM）+ Vault 适配器
+│   ├── FileStorage/                  # 本地/S3 文件适配器
+│   └── Audit/                        # 审计日志落地
+│   ⚠️ 依赖：Core + Application（实现其接口）。
+├── FlowEngine.Migrations/            # EF Core 迁移程序集
+│   ⚠️ 依赖：Core + Infrastructure。
+└── FlowEngine.Host/                  # 启动项与组合根（对应规范中的 FlowEngine.Api）
+    ├── Controllers/                  # REST API
+    ├── Webhooks/                     # Webhook 动态路由
+    ├── WebSocketHandlers/            # 实时执行进度推送
+    ├── Middlewares/                  # 限流、认证、异常处理
+    ├── Scheduling/                   # 后台托管服务
+    ├── Program.cs
+    ├── appsettings.json
+    └── wwwroot/                      # 前端 React 构建产物
+    ⚠️ 职责：注册 DI，组装一切。
+
+plugins/                              # 热插拔节点，独立类库（对应规范中的 FlowEngine.Plugins）
+└── FlowEngine.Plugins.Standard/      # HTTP, Code, If, Loop, Merge, Agent, LLM 等标准节点
+    ⚠️ 只引用 FlowEngine.Core，绝不允许引用 Application 或 Runtime。
+
+tests/                               # 测试项目（与 backend 平级）
+├── FlowEngine.Core.Tests/           # 核心实体、值对象、领域事件
+├── FlowEngine.Application.Tests/    # DTO 转换、业务服务
+├── FlowEngine.Runtime.Tests/        # 表达式引擎、参数解析、插件加载、节点插件
+├── FlowEngine.Host.Tests/           # 集成测试（WebApplicationFactory）
+└── FlowEngine.TestPlugin/           # 测试用虚拟节点插件
 ```
 
 ### 2.1 各目录职责
 
 | 目录 | 放什么 | 不放什么 |
 |------|--------|----------|
-| `Controllers/` | 接收 HTTP 请求、参数绑定、调用 Service、返回 DTO/ActionResult | 业务逻辑、DbContext 调用 |
-| `Services/` | 业务用例编排、领域对象调用、通过 DbContext 读写数据、事务控制 | 直接操作 HTTP 上下文 |
-| `Domain/Entities/` | 纯领域模型、业务规则方法、Data Annotations 元数据 | 导航属性依赖 DbContext |
-| `Infrastructure/Data/` | DbContext、迁移、EF 配置、复杂查询封装 | 业务逻辑 |
-| `FlowEngine.Plugins/Database/` | 数据库节点实现（SQL 执行、读取、写入） | 核心引擎逻辑 |
-| `Contracts/` | 前后端共享的 DTO、枚举 | 业务逻辑、EF 实体 |
+| `FlowEngine.Host/Controllers/` | 接收 HTTP 请求、参数绑定、调用 Service、返回 DTO/ActionResult | 业务逻辑、DbContext 调用 |
+| `FlowEngine.Application/Services/` | 业务用例编排、领域对象调用、通过 DbContext 读写数据、事务控制 | 直接操作 HTTP 上下文 |
+| `FlowEngine.Core/Entities/` | 纯领域模型、业务规则方法、Data Annotations 元数据 | 导航属性依赖 DbContext |
+| `FlowEngine.Infrastructure/Persistence/` | DbContext、迁移、EF 配置、复杂查询封装 | 业务逻辑 |
+| `plugins/FlowEngine.Plugins.Standard/`（数据库节点） | 数据库节点实现（SQL 执行、读取、写入） | 核心引擎逻辑 |
+| `FlowEngine.Application/Dtos/` | 前后端共享的 DTO、枚举 | 业务逻辑、EF 实体 |
 
 ### 2.2 领域层与数据访问边界
 
-- 领域实体放在 `Domain/Entities/`，使用 Data Annotations 声明表名、索引、列注释等元数据。
-- EF 配置统一通过 Data Annotations 在实体类上完成，禁止在 `Infrastructure/Data/Configurations/` 中使用 Fluent API。
+- 领域实体放在 `FlowEngine.Core/Entities/`，使用 Data Annotations 声明表名、索引、列注释等元数据。
+- EF 配置统一通过 Data Annotations 在实体类上完成，禁止在 `FlowEngine.Infrastructure/Persistence/Configurations/` 中使用 Fluent API。
 - Service 层直接使用 `DbContext` 进行数据读写，不强制定义 `IRepository` 接口。
-- 只有跨多个 Service 复用的复杂查询，才考虑封装到 `Infrastructure/Data/Queries/` 中。
+- 只有跨多个 Service 复用的复杂查询，才考虑封装到 `FlowEngine.Infrastructure/Persistence/Queries/` 中。
 
 ## 3. 命名规范
 
@@ -199,8 +217,8 @@ Service 可以直接使用 DbContext，但不直接写特定数据库的 SQL 方
 ### 6.1 使用 EF Core 作为统一抽象
 
 - EF Core 是本系统统一的数据访问层，通过不同 Provider 对接 SQL Server、PostgreSQL、MySQL、SQLite 等。
-- `DbContext` 定义在 `Infrastructure/Data/`，Service 通过构造函数注入使用。
-- 复杂查询可封装在 `Infrastructure/Data/Queries/` 中，以静态方法或查询类形式存在。
+- `DbContext` 定义在 `FlowEngine.Infrastructure/Persistence/`，Service 通过构造函数注入使用。
+- 复杂查询可封装在 `FlowEngine.Infrastructure/Persistence/Queries/` 中，以静态方法或查询类形式存在。
 
 ### 6.2 不要写特定数据库的 SQL 方言
 
@@ -270,7 +288,7 @@ public class WorkflowConfiguration : IEntityTypeConfiguration<Workflow>  // 禁�
 ### 7.1 Database 节点
 
 - 系统需要提供数据库节点，支持流程节点对各种数据库进行读取和写入。
-- 数据库节点放在 `FlowEngine.Plugins/Database/` 下，每个具体数据库类型可作为一个子节点或参数化配置。
+- 数据库节点放在 `plugins/` 下对应的插件项目中（如 `FlowEngine.Plugins.Database/`），每个具体数据库类型可作为一个子节点或参数化配置；当前标准插件 `FlowEngine.Plugins.Standard` 已内置部分数据库/HTTP 类节点。
 - 数据库节点通过 DbContext、ADO.NET 或专用数据库驱动执行 SQL，返回数据批次供下游节点使用。
 
 ### 7.2 数据库节点规范
@@ -368,10 +386,11 @@ public class WorkflowConfiguration : IEntityTypeConfiguration<Workflow>  // 禁�
 tests/
 ├── FlowEngine.Core.Tests/          # 核心实体、值对象、领域事件
 ├── FlowEngine.Application.Tests/   # DTO 转换、业务服务
-├── FlowEngine.Runtime.Tests/       # 表达式引擎、参数解析、节点插件
+├── FlowEngine.Runtime.Tests/       # 表达式引擎、参数解析、插件加载、节点插件
 │   ├── Expressions/                # 表达式求值器测试
 │   ├── Registry/                   # 参数解析器、注入器测试
 │   └── Plugins/                    # 节点插件测试
+├── FlowEngine.Host.Tests/          # 集成测试（WebApplicationFactory + 插件动态加载）
 └── FlowEngine.TestPlugin/          # 测试用虚拟节点插件
 ```
 

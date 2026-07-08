@@ -4,7 +4,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Core.Expressions;
 using FlowEngine.Runtime.Expressions;
 using FlowEngine.Runtime.Expressions.Exceptions;
-using FlowEngine.Runtime.Scripting;
+using FlowEngine.Core.Scripting;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
 

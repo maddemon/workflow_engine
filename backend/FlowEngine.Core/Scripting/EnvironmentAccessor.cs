@@ -1,4 +1,4 @@
-namespace FlowEngine.Runtime.Scripting;
+namespace FlowEngine.Core.Scripting;
 
 /// <summary>
 /// 环境变量访问器，只暴露白名单中的环境变量。

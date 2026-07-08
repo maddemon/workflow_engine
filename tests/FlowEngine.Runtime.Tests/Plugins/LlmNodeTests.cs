@@ -163,7 +163,7 @@ public class LlmNodeTests
         {
             Model = "gpt-4",
             CredentialId = Guid.NewGuid().ToString(),
-            BaseEndpoint = "https://custom-openai.example.com/v1"
+            BaseEndpoint = "https://1.2.3.4/v1"
         };
         var context = CreateContext(apiKey: "test-api-key");
 

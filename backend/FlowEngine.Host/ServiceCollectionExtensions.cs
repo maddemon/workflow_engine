@@ -28,7 +28,7 @@ using FlowEngine.Runtime.Executor;
 using FlowEngine.Runtime.Expressions;
 using FlowEngine.Runtime.Http;
 using FlowEngine.Runtime.Registry;
-using FlowEngine.Runtime.Scripting;
+using FlowEngine.Core.Scripting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using System.Net;
@@ -171,7 +171,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ProjectService>();
         services.AddScoped<TriggerService>();
         services.AddScoped<WebhookRouteService>();
-        services.AddScoped<WebhookHandler>();
+        services.AddScoped<IWebhookHandler, WebhookHandler>();
         services.AddScoped<ErrorStrategyHandler>();
         services.AddSingleton<WorkflowExecutionQueue>();
 

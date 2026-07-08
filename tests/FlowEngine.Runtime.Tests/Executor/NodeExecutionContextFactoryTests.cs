@@ -4,7 +4,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Runtime.Executor;
 using FlowEngine.Runtime.Expressions;
-using FlowEngine.Runtime.Scripting;
+using FlowEngine.Core.Scripting;
 using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FlowEngine.Runtime.Tests.Executor;

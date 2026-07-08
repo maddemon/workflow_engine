@@ -59,52 +59,13 @@ public static class ApplicationBuilderExtensions
         return app;
     }
 
-    private static async Task UseWebhook(WebApplication app)
+    private static Task UseWebhook(WebApplication app)
     {
-        using var scope = app.Services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
-        var logger = app.Services.GetRequiredService<ILoggerFactory>().CreateLogger("FlowEngine.Webhook");
-        var webhookRoutes = await dbContext.WebhookRoutes.AsNoTracking().ToListAsync();
-
-        var reservedPrefixes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-        {
-            "/api/",
-            "/health",
-            "/ws/",
-        };
-        var registeredPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var route in webhookRoutes)
-        {
-            var capturedPath = route.Path;
-            if (string.IsNullOrWhiteSpace(capturedPath) || !capturedPath.StartsWith('/'))
-            {
-                logger.LogWarning("Webhook 路由路径不合法，已跳过注册。RouteId={RouteId}, Path={Path}", route.Id, capturedPath);
-                continue;
-            }
-
-            if (reservedPrefixes.Any(prefix => capturedPath.StartsWith(prefix, StringComparison.OrdinalIgnoreCase)))
-            {
-                logger.LogWarning("Webhook 路由路径与保留前缀冲突，已跳过注册。RouteId={RouteId}, Path={Path}", route.Id, capturedPath);
-                continue;
-            }
-
-            if (!registeredPaths.Add(capturedPath))
-            {
-                logger.LogWarning("Webhook 路由路径重复，已跳过注册。RouteId={RouteId}, Path={Path}", route.Id, capturedPath);
-                continue;
-            }
-
-            var method = route.Method?.ToUpperInvariant() ?? "POST";
-
-            app.MapMethods(capturedPath, new[] { method }, async (HttpContext context) =>
-            {
-                var handler = context.RequestServices.GetRequiredService<WebhookHandler>();
-                await handler.HandleAsync(context, capturedPath);
-            })
-            .WithName($"webhook_{route.Id}")
-            .WithMetadata(new WebhookEndpointMetadata(route.Id));
-        }
+        // A14：不再于启动期逐条静态映射 Webhook 端点。
+        // 改为注册动态路由中间件，请求时按路径实时派发到 IWebhookHandler，
+        // 支持运行时新增/删除路由立即生效，无需重启。
+        app.UseMiddleware<WebhookRoutingMiddleware>();
+        return Task.CompletedTask;
     }
 
     private static void UseRoutes(WebApplication app)

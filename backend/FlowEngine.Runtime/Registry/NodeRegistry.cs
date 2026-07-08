@@ -94,7 +94,16 @@ public sealed class NodeRegistry : INodeRegistry
     }
 
     /// <inheritdoc />
-    public INodeType CreateInstance(string typeName) => Get(typeName);
+    public INodeType CreateInstance(string typeName)
+    {
+        var normalizedName = typeName.ToLowerInvariant();
+        if (_nodeTypes.TryGetValue(normalizedName, out var type))
+        {
+            return (INodeType)Activator.CreateInstance(type)!;
+        }
+
+        throw new InvalidOperationException($"节点类型 '{typeName}' 未注册。");
+    }
 
     /// <inheritdoc />
     public IReadOnlyCollection<NodeTypeDescriptor> GetDescriptors()

@@ -84,7 +84,7 @@ public sealed class SubAgentToolNode : INodeType
             ? context.NodeExecutionRecordId
             : context.ExecutionId;
 
-        var resolver = new Runtime.Agent.InlineResolver(
+        var resolver = new Core.Agent.InlineResolver(
             llmClient,
             tools,
             context,
@@ -205,7 +205,7 @@ public sealed class SubAgentToolNode : INodeType
                 // Descriptor not found, skip
             }
 
-            var parametersSchema = Runtime.Tools.SchemaDerivation.DeriveSchema(descriptor?.Parameters);
+            var parametersSchema = Core.Tools.SchemaDerivation.DeriveSchema(descriptor?.Parameters);
 
             tools.Add(new ToolDefinition
             {

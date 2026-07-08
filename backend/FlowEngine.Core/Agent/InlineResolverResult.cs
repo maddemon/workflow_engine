@@ -1,6 +1,6 @@
 using FlowEngine.Core.Dtos;
 
-namespace FlowEngine.Runtime.Agent;
+namespace FlowEngine.Core.Agent;
 
 /// <summary>
 /// InlineResolver 执行结果。

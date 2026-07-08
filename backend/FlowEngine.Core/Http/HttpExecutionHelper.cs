@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Entities;
 
-namespace FlowEngine.Runtime.Http;
+namespace FlowEngine.Core.Http;
 
 /// <summary>
 /// HTTP 节点共享的请求执行与响应解析逻辑，消除 HttpRequestNode 与 HttpToolNode 之间的重复代码。

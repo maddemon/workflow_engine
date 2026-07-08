@@ -6,7 +6,7 @@ using FlowEngine.Core.Enums;
 using Jint;
 using Jint.Native;
 
-namespace FlowEngine.Runtime.Scripting;
+namespace FlowEngine.Core.Scripting;
 
 /// <summary>
 /// 脚本执行引擎，统一处理 JS 表达式求值。

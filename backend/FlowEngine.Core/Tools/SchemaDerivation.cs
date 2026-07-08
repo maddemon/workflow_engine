@@ -3,7 +3,7 @@ using System.Text.Json.Nodes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 
-namespace FlowEngine.Runtime.Tools;
+namespace FlowEngine.Core.Tools;
 
 /// <summary>
 /// 从 ParameterDefinition 推导 JSON Schema。

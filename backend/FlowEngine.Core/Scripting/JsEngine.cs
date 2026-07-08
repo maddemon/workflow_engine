@@ -5,7 +5,7 @@ using Jint;
 using Jint.Native;
 using Microsoft.Extensions.Logging;
 
-namespace FlowEngine.Runtime.Scripting;
+namespace FlowEngine.Core.Scripting;
 
 using PreparedScript = Jint.Prepared<Acornima.Ast.Script>;
 

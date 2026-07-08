@@ -1,7 +1,7 @@
 using System.Net;
 using System.Net.Sockets;
 
-namespace FlowEngine.Runtime.Http;
+namespace FlowEngine.Core.Http;
 
 /// <summary>
 /// SSRF 防护：拦截指向内网/保留地址的 HTTP 请求目标，防止工作流访问云元数据服务或内部网络。

@@ -5,10 +5,10 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Dtos;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
-using FlowEngine.Runtime.Tools;
+using FlowEngine.Core.Tools;
 using Microsoft.Extensions.Logging;
 
-namespace FlowEngine.Runtime.Agent;
+namespace FlowEngine.Core.Agent;
 
 /// <summary>
 /// 内联工具调用解析器，处理 Agent 节点的工具调用循环。

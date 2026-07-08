@@ -3,7 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 
-namespace FlowEngine.Runtime.Tools;
+namespace FlowEngine.Core.Tools;
 
 /// <summary>
 /// 工具结果消毒器，对工具执行结果进行安全处理。

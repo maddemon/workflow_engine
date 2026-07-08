@@ -1,6 +1,6 @@
 using FlowEngine.Core.Entities;
 
-namespace FlowEngine.Runtime.Agent;
+namespace FlowEngine.Core.Agent;
 
 /// <summary>
 /// Agent 对话记忆管理器，维护滑动窗口消息历史。

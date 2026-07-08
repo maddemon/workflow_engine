@@ -10,7 +10,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Runtime.Executor;
 using FlowEngine.Runtime.Registry;
-using FlowEngine.Runtime.Scripting;
+using FlowEngine.Core.Scripting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 

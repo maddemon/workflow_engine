@@ -164,17 +164,21 @@ flowchart TD
 
 ## 7. 代码组织与项目结构
 
-后端采用**分层项目结构**，在 MVP 阶段保持 5 个核心项目 + 独立插件项目，既避免过度拆分，又保证依赖方向清晰。
+后端采用**分层项目结构**，当前包含 6 个后端项目（Core、Runtime、Application、Infrastructure、Migrations、Host）+ 独立插件项目，既避免过度拆分，又保证依赖方向清晰。
 
 ```text
 FlowEngine.sln
 │
-├── src/
-│   ├── FlowEngine.Core/              # 最内层：实体、抽象契约、领域事件、值对象
+├── backend/
+│   ├── FlowEngine.Core/              # 最内层：实体、抽象契约、领域事件、值对象，以及下沉的脚本/HTTP/Agent/Tools 类型
 │   │   ├── Abstractions/             # INode, IEngine, IContext, IEventBus 等接口
 │   │   ├── Entities/                 # WorkflowDefinition, NodeDefinition, DataItem
 │   │   ├── Events/                   # WorkflowStarted, NodeExecuted
-│   │   └── ValueObjects/             # NodeDefinitionId, ExecutionId, CredentialKey
+│   │   ├── ValueObjects/             # NodeDefinitionId, ExecutionId, CredentialKey
+│   │   ├── Scripting/                # ScriptEngine / JsEngine（Jint 封装）
+│   │   ├── Http/                     # HttpExecutionHelper / SsrfGuard
+│   │   ├── Agent/                    # InlineResolver / AgentMemory
+│   │   └── Tools/                    # SchemaDerivation / ResultSanitizer
 │   │   ⚠️ 零外部依赖，只有 POCO 和委托。
 │   │
 │   ├── FlowEngine.Runtime/           # 执行引擎核心
@@ -201,6 +205,8 @@ FlowEngine.sln
 │   │   └── FileStorage/              # 本地/S3 文件适配器
 │   │   ⚠️ 依赖：Core + Application（实现其接口）。
 │   │
+│   ├── FlowEngine.Migrations/        # EF Core 迁移程序集（依赖 Core + Infrastructure）
+│   │
 │   └── FlowEngine.Host/              # 启动项与组合根
 │       ├── Controllers/              # REST API
 │       ├── WebSocketHandlers/        # 实时执行进度推送
@@ -210,10 +216,7 @@ FlowEngine.sln
 │       ⚠️ 职责：注册 DI，组装一切。
 │
 └── plugins/                          # 热插拔节点，独立类库
-    ├── FlowEngine.Plugins.Standard/  # HTTP, Code, If, Loop, Merge
-    ├── FlowEngine.Plugins.Database/  # Postgres, MySQL, Redis
-    ├── FlowEngine.Plugins.AI/        # LLM 供应节点、Agent 节点实现
-    └── FlowEngine.Plugins.Triggers/  # ScheduleTrigger, WebhookTrigger
+    └── FlowEngine.Plugins.Standard/  # HTTP, Code, If, Loop, Merge, Agent, LLM 等标准节点（已落地）
     ⚠️ 只引用 FlowEngine.Core，绝不允许引用 Application 或 Runtime。
 ```
 
@@ -241,7 +244,7 @@ flowchart TD
 ### 7.2 关键约束
 
 - **Plugins 只引用 Core**：插件是被引擎调用的执行单元，若引用 Application/Runtime 会导致循环依赖和执行死锁。
-- **命名空间与文件夹一致**：`src/FlowEngine.Runtime/WaitingArea/MultiInputBarrier.cs` 对应 `namespace FlowEngine.Runtime.WaitingArea;`。
+- **命名空间与文件夹一致**：`backend/FlowEngine.Runtime/WaitingArea/MultiInputBarrier.cs` 对应 `namespace FlowEngine.Runtime.WaitingArea;`。
 - **接口定义在 Core/Application**：所有 Infrastructure 实现类必须实现 Core 或 Application 中定义的接口。
 
 ## 8. 安全边界

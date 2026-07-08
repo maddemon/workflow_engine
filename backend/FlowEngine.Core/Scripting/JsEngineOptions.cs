@@ -1,4 +1,4 @@
-namespace FlowEngine.Runtime.Scripting;
+namespace FlowEngine.Core.Scripting;
 
 /// <summary>
 /// JS 脚本引擎安全限制配置。

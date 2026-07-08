@@ -13,6 +13,14 @@
 
   <Target Name="BuildPlugins" BeforeTargets="BeforeBuild">
     <MSBuild Projects="..\..\plugins\FlowEngine.Plugins.Standard\FlowEngine.Plugins.Standard.csproj" Targets="Build" />
+    <!-- 将插件构建产物同步到插件扫描目录（../../plugins），保证本地运行与集成测试加载到的始终是当前源码编译的 DLL。
+         插件仅引用 Core，其依赖（Jint 等）由宿主默认加载上下文提供，无需随插件一并拷贝。 -->
+    <ItemGroup>
+      <PluginOutputFiles Include="..\..\plugins\FlowEngine.Plugins.Standard\bin\$(Configuration)\$(TargetFramework)\FlowEngine.Plugins.Standard.dll" />
+      <PluginOutputFiles Include="..\..\plugins\FlowEngine.Plugins.Standard\bin\$(Configuration)\$(TargetFramework)\FlowEngine.Plugins.Standard.pdb" />
+      <PluginOutputFiles Include="..\..\plugins\FlowEngine.Plugins.Standard\bin\$(Configuration)\$(TargetFramework)\FlowEngine.Plugins.Standard.deps.json" />
+    </ItemGroup>
+    <Copy SourceFiles="@(PluginOutputFiles)" DestinationFolder="..\..\plugins" SkipUnchangedFiles="true" />
   </Target>
 
   <Target Name="CopyPluginsOnPublish" AfterTargets="Publish">

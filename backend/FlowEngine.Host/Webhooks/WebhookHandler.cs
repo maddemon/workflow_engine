@@ -19,7 +19,7 @@ namespace FlowEngine.Host.Webhooks;
 /// <summary>
 /// Webhook 请求处理器。
 /// </summary>
-public sealed class WebhookHandler
+public sealed class WebhookHandler : IWebhookHandler
 {
     private readonly FlowEngineDbContext _dbContext;
     private readonly IEngine _engine;
