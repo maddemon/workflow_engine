@@ -167,6 +167,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<CredentialService>();
         services.AddScoped<WorkflowRepository>();
         services.AddScoped<ICredentialAccessor, CredentialAccessor>();
+        services.AddScoped<IOAuth2TokenService, OAuth2TokenService>();
         services.AddScoped<WorkflowValidator>();
         services.AddScoped<WorkflowService>();
         services.AddScoped<WorkflowExportService>();
@@ -279,7 +280,8 @@ public static class ServiceCollectionExtensions
                 jsLogger: provider.GetService<ILogger<JsEngine>>(),
                 jsEngineOptions: provider.GetService<JsEngineOptions>(),
                 workflowLoader: provider.GetService<IWorkflowLoader>(),
-                httpClientPool: provider.GetService<IHttpClientPool>());
+                httpClientPool: provider.GetService<IHttpClientPool>(),
+                tokenService: provider.GetRequiredService<IOAuth2TokenService>());
         });
     }
 

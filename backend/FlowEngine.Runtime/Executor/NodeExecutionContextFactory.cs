@@ -7,6 +7,7 @@ using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Expressions;
+using FlowEngine.Runtime.Credentials;
 using FlowEngine.Runtime.Expressions;
 using FlowEngine.Runtime.Registry;
 using FlowEngine.Core.Scripting;
@@ -27,9 +28,10 @@ public sealed class NodeExecutionContextFactory(
     JsEngineOptions? jsEngineOptions = null,
     ILlmClient? llmClient = null,
     IWorkflowLoader? workflowLoader = null,
-    IHttpClientPool? httpClientPool = null) : Core.Abstractions.INodeExecutionContextFactory
+    IHttpClientPool? httpClientPool = null,
+    IOAuth2TokenService? tokenService = null) : Core.Abstractions.INodeExecutionContextFactory
 {
-    private readonly ParameterHydrator ParameterHydrator = new(credentialAccessor, hydratorLogger);
+    private readonly IOAuth2TokenService? _tokenService = tokenService;
 
     public async Task<NodeExecutionContext> CreateAsync(
         Workflow workflow,
@@ -41,7 +43,8 @@ public sealed class NodeExecutionContextFactory(
         IReadOnlyDictionary<string, DataBatch> latestBatches,
         int runIndex,
         CancellationToken cancellationToken,
-        ICredentialAccessor? credentialAccessorOverride = null)
+        ICredentialAccessor? credentialAccessorOverride = null,
+        IReadOnlyDictionary<string, object?>? extraGlobals = null)
     {
         var nodeDefinition = node;
         var descriptor = registry.GetDescriptor(node.TypeName);
@@ -71,7 +74,10 @@ public sealed class NodeExecutionContextFactory(
         }
 
         using var js = JsEngine.Create(options: jsEngineOptions, logger: jsLogger);
-        js.SetValue("input", GetCurrentInput(inputs, runIndex));
+
+        // --- 旧式裸名全局（plan-004 迁移期向后兼容） ---
+        var currentInput = GetCurrentInput(inputs, runIndex);
+        js.SetValue("input", currentInput);
         js.SetValue("inputs", inputs);
         js.SetValue("parameter", rawParameters);
         js.SetValue("nodes", successfulOutputs);
@@ -93,6 +99,106 @@ public sealed class NodeExecutionContextFactory(
         js.SetValue("env", new EnvironmentAccessor(environmentWhitelist));
         js.SetValue("now", DateTime.UtcNow);
 
+        // --- $ 前缀内建变量（plan-004 评审5：$ 前缀 = 引擎内建，裸名 = 用户数据） ---
+
+        // $json：当前 item 数据（等价于旧 input，但带 $ 前缀避免与用户字段冲突）
+        js.SetValue("$json", currentInput);
+
+        // $input：n8n 式输入容器
+        var inputItems = GetInputItemList(inputs);
+        var inputContext = new Dictionary<string, object?>
+        {
+            ["executionId"] = execution.Id,
+            ["runIndex"] = runIndex,
+            ["nodeName"] = node.Name,
+            ["nodeType"] = node.TypeName,
+            ["workflowId"] = workflow.Id,
+        };
+        var inputContainer = new InputContainer(inputItems, currentInput, rawParameters, inputContext);
+        js.SetValue("$input", inputContainer);
+
+        // $items(name?)：获取指定节点全部 item；无参时等价 $input.All()
+        js.SetValue("$items", new Func<string?, object?>(nodeName =>
+        {
+            if (string.IsNullOrEmpty(nodeName))
+                return inputItems;
+            if (latestBatches.TryGetValue(nodeName, out var batch))
+                return batch.Items.Select(i => (object?)i.Data).ToList();
+            return null;
+        }));
+
+        // $node['Name']：指定节点输出（含 .json / .params / .context / .runIndex）
+        // 注：successfulOutputs 仅有 DataBatch，params/context 需跨节点存储扩展字段；当前只填 .json
+        var nodeDict = new Dictionary<string, NodeOutput>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, batch) in successfulOutputs)
+        {
+            nodeDict[name] = new NodeOutput(
+                batch.Items.Select(i => (object?)i.Data).ToList());
+        }
+        js.SetValue("$node", nodeDict);
+
+        // $workflow / $execution（复用旧式对象，加 $ 前缀注入）
+        js.SetValue("$workflow", new Dictionary<string, object?>
+        {
+            ["id"] = workflow.Id,
+            ["name"] = workflow.Name,
+            ["projectId"] = workflow.ProjectId,
+            ["version"] = workflow.Version,
+            ["isActive"] = workflow.IsActive,
+        });
+        js.SetValue("$execution", new Dictionary<string, object?>
+        {
+            ["id"] = execution.Id,
+        });
+
+        // $env / $vars（vars = 可写工作流级状态，暂为空对象）
+        js.SetValue("$env", new EnvironmentAccessor(environmentWhitelist));
+        js.SetValue("$vars", new Dictionary<string, object?>());
+
+        // $now / $today
+        js.SetValue("$now", DateTime.UtcNow);
+        js.SetValue("$today", DateTime.UtcNow.Date);
+
+        // $runIndex / $itemIndex（itemIndex 与 runIndex 在当前上下文中一致）
+        js.SetValue("$runIndex", runIndex);
+        js.SetValue("$itemIndex", runIndex);
+
+        // $credentials：多字段凭据容器，支持属性式访问 $credentials.<name>.<field>
+        var credsAccessor = credentialAccessorOverride ?? credentialAccessor;
+        if (_tokenService is not null)
+        {
+            credsAccessor = new OAuth2CredentialAccessor(credsAccessor, _tokenService);
+        }
+        var credentialsDict = await PreloadCredentialsAsync(rawParameters, credsAccessor, cancellationToken)
+            .ConfigureAwait(false);
+        js.SetValue("$credentials", credentialsDict);
+
+        // $ctx：上下文 bundle 自身（与函数式 ctx => 的 ctx 参数等价）。
+        // 各字段已单独设为 $ 全局，此处作为集合容器注入。函数式：function(ctx){ return ctx.$json; }
+        js.SetValue("$ctx", new Dictionary<string, object?>
+        {
+            ["$json"] = currentInput,
+            ["$input"] = inputContainer,
+            ["$node"] = nodeDict,
+            ["$runIndex"] = runIndex,
+            ["$itemIndex"] = runIndex,
+            ["$credentials"] = credentialsDict,
+            ["parameter"] = rawParameters,
+        });
+
+        // 节点私有全局（plan-004：由各自节点本地注入，工厂不感知具体变量名，避免顶层全局膨胀）。
+        // 例如 PaginateNode 每轮迭代注入 $cursor/$nextCursor/$page/$response。
+        if (extraGlobals is not null)
+        {
+            foreach (var (key, value) in extraGlobals)
+            {
+                if (!string.IsNullOrEmpty(key))
+                {
+                    js.SetValue(key, value);
+                }
+            }
+        }
+
         var resolvedParameters = parameterResolver.Resolve(rawParameters, js, cacheKey);
 
         // 将 CodeEditor/Script 参数原样放回
@@ -101,9 +207,7 @@ public sealed class NodeExecutionContextFactory(
             resolvedParameters[name] = val;
         }
 
-        var hydrator = credentialAccessorOverride is null
-            ? ParameterHydrator
-            : new ParameterHydrator(credentialAccessorOverride, hydratorLogger);
+        var hydrator = new ParameterHydrator(credsAccessor, hydratorLogger);
         await hydrator.HydrateAsync(nodeInstance, resolvedParameters).ConfigureAwait(false);
 
         return new NodeExecutionContext
@@ -115,7 +219,7 @@ public sealed class NodeExecutionContextFactory(
             Inputs = inputs,
             RawParameters = rawParameters,
             ResolvedParameters = resolvedParameters,
-            Credentials = credentialAccessorOverride ?? credentialAccessor,
+            Credentials = credsAccessor,
             Logger = NullExecutionLogger.Instance,
             CancellationToken = cancellationToken,
             LlmClient = llmClient,
@@ -176,6 +280,85 @@ public sealed class NodeExecutionContextFactory(
 
         var index = runIndex >= 0 && runIndex < batch.Items.Count ? runIndex : 0;
         return batch.Items[index].Data;
+    }
+
+    /// <summary>
+    /// 获取所有输入 item 的 Data 列表。用于 <c>$input.All()</c> 和 <c>$items()</c>。
+    /// </summary>
+    private static List<object?> GetInputItemList(IReadOnlyDictionary<string, DataBatch> inputs)
+    {
+        if (!inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch) || batch.Items.Count == 0)
+        {
+            return [];
+        }
+
+        return batch.Items.Select(i => (object?)i.Data).ToList();
+    }
+
+    /// <summary>
+    /// 从节点参数字符串值中提取 <c>$credentials.&lt;name&gt;</c> 引用中的凭据名称。
+    /// </summary>
+    private static HashSet<string> ExtractCredentialNames(IReadOnlyDictionary<string, object> parameters)
+    {
+        var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var value in parameters.Values)
+        {
+            if (value is string str)
+            {
+                var span = str.AsSpan();
+                var dollarIdx = span.IndexOf("$credentials.", StringComparison.OrdinalIgnoreCase);
+                while (dollarIdx >= 0)
+                {
+                    var after = dollarIdx + "$credentials.".Length;
+                    var end = after;
+                    while (end < span.Length && (char.IsLetterOrDigit(span[end]) || span[end] == '_'))
+                        end++;
+                    if (end > after)
+                    {
+                        names.Add(span[after..end].ToString());
+                    }
+                    var remaining = span[end..];
+                    dollarIdx = remaining.IndexOf("$credentials.", StringComparison.OrdinalIgnoreCase);
+                    if (dollarIdx >= 0)
+                        dollarIdx += end;
+                    else
+                        dollarIdx = -1;
+                }
+            }
+        }
+        return names;
+    }
+
+    /// <summary>
+    /// 预加载参数字典中引用的凭据，返回凭据名称 → 字段字典的映射。
+    /// </summary>
+    private static async Task<Dictionary<string, object?>> PreloadCredentialsAsync(
+        IReadOnlyDictionary<string, object> rawParameters,
+        ICredentialAccessor credsAccessor,
+        CancellationToken ct)
+    {
+        var result = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        var names = ExtractCredentialNames(rawParameters);
+        if (names.Count == 0) return result;
+
+        foreach (var name in names)
+        {
+            try
+            {
+                var cv = await credsAccessor.GetCredentialByNameAsync(name, ct).ConfigureAwait(false);
+                if (cv is not null && cv.Fields.Count > 0)
+                {
+                    // 转为 Dictionary<string, object?> 以在 Jint 中支持属性式访问
+                    result[name] = cv.Fields.ToDictionary(
+                        kv => kv.Key, kv => (object?)kv.Value);
+                }
+            }
+            catch
+            {
+                // 凭据加载失败时不阻断执行，跳过该凭据
+            }
+        }
+        return result;
     }
 
     private static Dictionary<string, object> MergeParameters(

@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Runtime.Credentials;
 using FlowEngine.Runtime.Executor;
 using FlowEngine.Runtime.Expressions;
 using FlowEngine.Core.Scripting;
@@ -26,6 +27,7 @@ public sealed class NodeExecutionContextFactoryTests
                 [
                     new ParameterDefinition { Name = "message", DisplayName = "Message", Required = true },
                     new ParameterDefinition { Name = "count", DisplayName = "Count", DefaultValue = 1 },
+                    new ParameterDefinition { Name = "url", DisplayName = "URL" },
                 ],
                 Ports =
                 [
@@ -39,7 +41,8 @@ public sealed class NodeExecutionContextFactoryTests
             _registry,
             new ParameterResolver(NullLogger<ParameterResolver>.Instance),
             _credentialAccessor,
-            new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            tokenService: new StubOAuth2TokenService());
     }
 
     [Fact]
@@ -73,6 +76,37 @@ public sealed class NodeExecutionContextFactoryTests
     }
 
     [Fact]
+    public async Task CreateAsync_InjectsNodeLocalExtraGlobals()
+    {
+        // 验证节点私有全局（如 $cursor）经 extraGlobals 注入并参与表达式求值，
+        // 而工厂本身不感知该变量名（plan-004：节点私有变量不注册到顶层）。
+        var ct = TestContext.Current.CancellationToken;
+        var workflow = new Workflow { Id = Guid.NewGuid(), Name = "Test" };
+        var execution = new ExecutionRecord { Id = Guid.NewGuid(), WorkflowDefinitionId = workflow.Id };
+        var node = new NodeDefinition
+        {
+            Id = Guid.NewGuid(),
+            TypeName = "testNode",
+            Name = "Node1",
+            Parameters = new Dictionary<string, object> { ["message"] = "\"page-\" + $cursor" },
+        };
+        var nodeInstance = new TestNodeInstance();
+        var extraGlobals = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["$cursor"] = 3
+        };
+
+        var context = await _factory.CreateAsync(
+            workflow, execution, node, nodeInstance,
+            new Dictionary<string, DataBatch>(),
+            new Dictionary<string, DataBatch>(),
+            new Dictionary<string, DataBatch>(),
+            0, ct, extraGlobals: extraGlobals);
+
+        Assert.Equal("page-3", context.ResolvedParameters["message"]);
+    }
+
+    [Fact]
     public async Task CreateAsync_MergesDefaultParameters()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -98,6 +132,32 @@ public sealed class NodeExecutionContextFactoryTests
         Assert.True(context.RawParameters.ContainsKey("message"));
         Assert.True(context.RawParameters.ContainsKey("count"));
         Assert.Equal(1, context.RawParameters["count"]);
+    }
+
+    [Fact]
+    public async Task CreateAsync_PreloadsOAuth2AccessToken_ForCredentialExpression()
+    {
+        // 验证 $credentials.<name>.accessToken 在表达式中可用（plan-004 阶段二）
+        var ct = TestContext.Current.CancellationToken;
+        var workflow = new Workflow { Id = Guid.NewGuid(), Name = "Test" };
+        var execution = new ExecutionRecord { Id = Guid.NewGuid(), WorkflowDefinitionId = workflow.Id };
+        var node = new NodeDefinition
+        {
+            Id = Guid.NewGuid(),
+            TypeName = "testNode",
+            Name = "Node1",
+            Parameters = new Dictionary<string, object> { ["url"] = "$credentials.oauth2.accessToken" },
+        };
+        var nodeInstance = new TestNodeInstance();
+
+        var context = await _factory.CreateAsync(
+            workflow, execution, node, nodeInstance,
+            new Dictionary<string, DataBatch>(),
+            new Dictionary<string, DataBatch>(),
+            new Dictionary<string, DataBatch>(),
+            0, ct);
+
+        Assert.Equal("tok-xxx", context.ResolvedParameters["url"]);
     }
 
     [Fact]
@@ -188,5 +248,40 @@ public sealed class NodeExecutionContextFactoryTests
     {
         public Task<CredentialValue> GetCredentialAsync(Guid credentialId, CancellationToken ct = default) =>
             Task.FromResult(new CredentialValue { Name = "stub", Type = "apiKey" });
+
+        public Task<CredentialValue?> GetCredentialByNameAsync(string name, CancellationToken ct = default)
+        {
+            if (string.Equals(name, "oauth2", StringComparison.OrdinalIgnoreCase))
+            {
+                return Task.FromResult<CredentialValue?>(new CredentialValue
+                {
+                    Name = "oauth2",
+                    Type = "oauth2",
+                    Fields = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+                    {
+                        ["tokenUrl"] = "http://example.com/token",
+                        ["clientId"] = "cid",
+                        ["clientSecret"] = "cs",
+                        ["scope"] = "read"
+                    }
+                });
+            }
+
+            return Task.FromResult<CredentialValue?>(null);
+        }
+    }
+
+    private sealed class StubOAuth2TokenService : IOAuth2TokenService
+    {
+        public Task<OAuth2TokenResponse> GetTokenAsync(OAuth2TokenRequest request, CancellationToken cancellationToken = default) =>
+            Task.FromResult(new OAuth2TokenResponse
+            {
+                AccessToken = "tok-xxx",
+                TokenType = "Bearer",
+                ExpiresIn = 3600
+            });
+
+        public Task<OAuth2TokenResponse> GetOrRefreshTokenAsync(string cacheKey, OAuth2TokenRequest request, CancellationToken cancellationToken = default) =>
+            GetTokenAsync(request, cancellationToken);
     }
 }

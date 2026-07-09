@@ -175,7 +175,8 @@ public class NodeExecutionContext
     }
 
     /// <summary>
-    /// 解析凭据并返回 API Key。
+    /// 解析凭据并返回 API Key 或 OAuth2 accessToken。
+    /// 支持按凭据 ID（Guid）或凭据名称解析；oauth2 类型返回 <c>accessToken</c>。
     /// </summary>
     public async Task<string?> ResolveApiKeyAsync(string? credentialId, CancellationToken cancellationToken = default)
     {
@@ -184,15 +185,33 @@ public class NodeExecutionContext
             return null;
         }
 
-        if (!Guid.TryParse(credentialId, out var id))
-        {
-            return null;
-        }
-
         try
         {
-            var credential = await Credentials.GetCredentialAsync(id, cancellationToken)
-                .ConfigureAwait(false);
+            CredentialValue credential;
+            if (Guid.TryParse(credentialId, out var id))
+            {
+                credential = await Credentials.GetCredentialAsync(id, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                var byName = await Credentials.GetCredentialByNameAsync(credentialId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (byName is null)
+                {
+                    return null;
+                }
+
+                credential = byName;
+            }
+
+            if (string.Equals(credential.Type, "oauth2", StringComparison.OrdinalIgnoreCase))
+            {
+                if (credential.Fields.TryGetValue("accessToken", out var accessToken))
+                {
+                    return accessToken;
+                }
+            }
 
             if (credential.Fields.TryGetValue(FlowConstants.CredentialFields.ApiKey, out var apiKey))
             {
