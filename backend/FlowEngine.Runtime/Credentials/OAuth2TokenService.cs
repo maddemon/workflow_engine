@@ -21,7 +21,7 @@ public sealed class OAuth2TokenService : IOAuth2TokenService, IDisposable
     public int RefreshBufferSeconds { get; set; } = 60;
 
     /// <summary>
-    /// 最大重试次数（含首次请求）。
+    /// 最大重试次数。默认 3，即最多 4 次总请求（首次 + 3 次重试）。
     /// </summary>
     public int MaxRetries { get; set; } = 3;
 
@@ -56,7 +56,7 @@ public sealed class OAuth2TokenService : IOAuth2TokenService, IDisposable
 
         var attempt = 0;
         Exception? lastException = null;
-        while (attempt < MaxRetries)
+        while (attempt <= MaxRetries)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -75,8 +75,8 @@ public sealed class OAuth2TokenService : IOAuth2TokenService, IDisposable
             }
             catch (TaskCanceledException ex)
             {
-                // 仅将超时类取消视为可重试；用户主动取消已在上面抛出
-                if (ex.CancellationToken == cancellationToken)
+                // 用户主动取消时直接抛出；否则将超时类取消视为可重试
+                if (cancellationToken.IsCancellationRequested)
                 {
                     throw;
                 }
@@ -84,12 +84,13 @@ public sealed class OAuth2TokenService : IOAuth2TokenService, IDisposable
                 lastException = ex;
             }
 
-            attempt++;
             if (attempt < MaxRetries)
             {
-                var delayMs = 1000 * (1 << (attempt - 1));
+                var delayMs = 1000 * (1 << attempt);
                 await Task.Delay(delayMs, cancellationToken).ConfigureAwait(false);
             }
+
+            attempt++;
         }
 
         throw new BusinessException(

@@ -169,7 +169,7 @@ public sealed class NodeExecutionContextFactory(
         {
             credsAccessor = new OAuth2CredentialAccessor(credsAccessor, _tokenService);
         }
-        var credentialsDict = await PreloadCredentialsAsync(rawParameters, credsAccessor, cancellationToken)
+        var credentialsDict = await PreloadCredentialsAsync(rawParameters, credsAccessor, hydratorLogger, cancellationToken)
             .ConfigureAwait(false);
         js.SetValue("$credentials", credentialsDict);
 
@@ -335,6 +335,7 @@ public sealed class NodeExecutionContextFactory(
     private static async Task<Dictionary<string, object?>> PreloadCredentialsAsync(
         IReadOnlyDictionary<string, object> rawParameters,
         ICredentialAccessor credsAccessor,
+        ILogger<ParameterHydrator>? hydratorLogger,
         CancellationToken ct)
     {
         var result = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
@@ -353,9 +354,10 @@ public sealed class NodeExecutionContextFactory(
                         kv => kv.Key, kv => (object?)kv.Value);
                 }
             }
-            catch
+            catch (Exception ex)
             {
-                // 凭据加载失败时不阻断执行，跳过该凭据
+                // 凭据加载失败时不阻断执行，记录警告后跳过该凭据
+                hydratorLogger?.LogWarning(ex, "预加载凭据 '{CredentialName}' 失败：{ErrorMessage}", name, ex.Message);
             }
         }
         return result;

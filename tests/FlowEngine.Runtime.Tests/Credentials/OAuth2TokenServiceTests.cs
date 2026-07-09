@@ -55,7 +55,7 @@ public sealed class OAuth2TokenServiceTests
     public async Task GetTokenAsync_5xx_RetriesWithBackoff_AndEventuallySucceeds()
     {
         var handler = new FakeTokenHandler();
-        handler.FailuresBeforeSuccess = 2;
+        handler.FailuresBeforeSuccess = 3;
         var factory = new StubHttpClientFactory(handler);
         var service = new OAuth2TokenService(factory)
         {
@@ -69,9 +69,9 @@ public sealed class OAuth2TokenServiceTests
         stopwatch.Stop();
 
         Assert.Equal("tok-after-retry", response.AccessToken);
-        Assert.Equal(3, handler.CallCount);
-        // 退避 1s + 2s，至少经历部分延迟
-        Assert.True(stopwatch.ElapsedMilliseconds >= 2500, "应存在指数退避延迟");
+        Assert.Equal(4, handler.CallCount);
+        // 退避 1s + 2s + 4s
+        Assert.True(stopwatch.ElapsedMilliseconds >= 6500, "应存在指数退避延迟");
     }
 
     [Fact]
