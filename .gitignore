@@ -400,3 +400,4 @@ cli/.env
 .agents/documents/
 
 review_diff.patch
+.nuget-offline.tmp.config
