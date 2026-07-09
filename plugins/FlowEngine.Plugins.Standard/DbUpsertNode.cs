@@ -1,0 +1,283 @@
+using Acornima.Ast;
+using System.ComponentModel;
+using System.Data.Common;
+using System.Text.Json.Nodes;
+using FlowEngine.Core;
+using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Attributes;
+using FlowEngine.Core.Entities;
+using FlowEngine.Core.Enums;
+using FlowEngine.Core.Scripting;
+using FlowEngine.Plugins.Standard.Data;
+using Jint;
+
+namespace FlowEngine.Plugins.Standard;
+
+/// <summary>
+/// 通用数据库写入节点，支持 upsert / insert / update。
+/// </summary>
+public sealed class DbUpsertNode : INodeType
+{
+    /// <inheritdoc />
+    public string TypeName => "dbUpsert";
+
+    /// <inheritdoc />
+    public string DisplayName => "DB Upsert";
+
+    /// <inheritdoc />
+    public string Category => "Data";
+
+    /// <inheritdoc />
+    public string Icon => "database";
+
+    /// <inheritdoc />
+    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
+
+    /// <summary>
+    /// 数据库连接字符串或表达式（如 <c>$credentials.db.connectionString</c>）。
+    /// </summary>
+    [Hint(PresentationHint.Expression)]
+    [Description("Connection string or expression (e.g. $credentials.db.connectionString).")]
+    public string Connection { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 目标表名。
+    /// </summary>
+    [Description("Target table name.")]
+    public string Table { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 写入模式：upsert、insert、update。
+    /// </summary>
+    [Description("Write mode: upsert | insert | update.")]
+    public string Mode { get; set; } = "upsert";
+
+    /// <summary>
+    /// 主键列，逗号分隔（upsert/update 必填）。
+    /// </summary>
+    [Description("Primary key columns, comma-separated (required for upsert/update).")]
+    public string KeyColumns { get; set; } = string.Empty;
+
+    /// <summary>
+    /// 列映射：键为数据库列名，值为 JS 表达式（如 <c>$input.item().userid</c> 或 <c>$json.userid</c>）。
+    /// </summary>
+    [Hint(PresentationHint.Script)]
+    [Description("Column mapping: key = DB column, value = JS expression evaluated per row.")]
+    public Dictionary<string, string> Columns { get; set; } = [];
+
+    /// <summary>
+    /// 可选方言；留空时从连接字符串推断。
+    /// </summary>
+    [Description("Optional dialect. Inferred from connection string when omitted.")]
+    public string? Dialect { get; set; }
+
+    /// <inheritdoc />
+    public IReadOnlyList<PortDefinition> Ports { get; } =
+    [
+        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
+        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
+    ];
+
+    /// <inheritdoc />
+    public bool DefaultIsEntry => false;
+
+    /// <inheritdoc />
+    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            var validationError = Validate(context, out var keyColumnList, out var columnList);
+            if (validationError is not null)
+            {
+                return validationError;
+            }
+
+            var mode = Mode.Trim();
+            if (!mode.Equals("upsert", StringComparison.OrdinalIgnoreCase) &&
+                !mode.Equals("insert", StringComparison.OrdinalIgnoreCase) &&
+                !mode.Equals("update", StringComparison.OrdinalIgnoreCase))
+            {
+                return context.ErrorResult("InvalidMode", $"Mode must be 'upsert', 'insert' or 'update', got '{Mode}'.");
+            }
+
+            if ((mode.Equals("upsert", StringComparison.OrdinalIgnoreCase) || mode.Equals("update", StringComparison.OrdinalIgnoreCase))
+                && keyColumnList!.Count == 0)
+            {
+                return context.ErrorResult("MissingKeyColumns", "KeyColumns is required for upsert/update mode.");
+            }
+
+            var dialect = DbDialectResolver.Resolve(Dialect, Connection);
+            var generator = SqlGeneratorFactory.Create(dialect);
+            var sql = mode.ToLowerInvariant() switch
+            {
+                "upsert" => generator.BuildUpsertSql(Table, columnList!, keyColumnList!),
+                "insert" => generator.BuildInsertSql(Table, columnList!),
+                "update" => generator.BuildUpdateSql(Table, columnList!, keyColumnList!),
+                _ => throw new InvalidOperationException($"Unexpected mode '{Mode}'.")
+            };
+
+            var inputBatch = context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch)
+                ? batch
+                : new DataBatch();
+
+            if (inputBatch.Items.Count == 0)
+            {
+                return CreateResult(context, true, 0, 0, 0);
+            }
+
+            var allItems = inputBatch.Items.Select(i => (object?)i.Data).ToList();
+            var preparedExpressions = Columns.Values.Select(JsEngine.PrepareExpression).ToList();
+
+            await using var connection = DbConnectionFactory.CreateConnection(dialect, Connection);
+            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
+
+            var affectedRows = 0;
+            for (var itemIndex = 0; itemIndex < inputBatch.Items.Count; itemIndex++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var item = inputBatch.Items[itemIndex];
+                var values = EvaluateRowValues(preparedExpressions, allItems, item.Data, itemIndex);
+
+                if (mode.Equals("update", StringComparison.OrdinalIgnoreCase))
+                {
+                    values = ReorderUpdateValues(values, columnList!, keyColumnList!);
+                }
+
+                using var command = connection.CreateCommand();
+                command.CommandText = sql;
+                for (var i = 0; i < values.Count; i++)
+                {
+                    var parameter = command.CreateParameter();
+                    parameter.ParameterName = $"@p{i}";
+                    parameter.Value = values[i] ?? DBNull.Value;
+                    command.Parameters.Add(parameter);
+                }
+
+                affectedRows += await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+            }
+
+            var inserted = mode.Equals("insert", StringComparison.OrdinalIgnoreCase) ? affectedRows : 0;
+            var updated = mode.Equals("update", StringComparison.OrdinalIgnoreCase) ? affectedRows : 0;
+            return CreateResult(context, true, affectedRows, inserted, updated);
+        }
+        catch (OperationCanceledException)
+        {
+            return context.ErrorResult("Cancelled", "Database operation was cancelled.");
+        }
+        catch (DbException ex)
+        {
+            return context.ErrorResult("DbError", $"Database error: {ex.Message}");
+        }
+        catch (Exception ex)
+        {
+            return context.ErrorResult("UnexpectedError", $"Unexpected database error: {ex.Message}");
+        }
+    }
+
+    private NodeExecutionResult? Validate(NodeExecutionContext context, out List<string>? keyColumnList, out List<string>? columnList)
+    {
+        keyColumnList = null;
+        columnList = null;
+
+        if (string.IsNullOrWhiteSpace(Connection))
+        {
+            return context.ErrorResult("MissingConnection", "Connection is required.");
+        }
+
+        if (string.IsNullOrWhiteSpace(Table))
+        {
+            return context.ErrorResult("MissingTable", "Table is required.");
+        }
+
+        if (!IdentifierValidator.IsValid(Table))
+        {
+            return context.ErrorResult("InvalidTable", $"Table name '{Table}' contains invalid characters.");
+        }
+
+        var columns = Columns ?? [];
+        if (columns.Count == 0)
+        {
+            return context.ErrorResult("MissingColumns", "Columns mapping is required.");
+        }
+
+        foreach (var columnName in columns.Keys)
+        {
+            if (!IdentifierValidator.IsValid(columnName))
+            {
+                return context.ErrorResult("InvalidColumn", $"Column name '{columnName}' contains invalid characters.");
+            }
+        }
+
+        columnList = columns.Keys.ToList();
+
+        keyColumnList = KeyColumns
+            .Split(',', StringSplitOptions.RemoveEmptyEntries)
+            .Select(c => c.Trim())
+            .Where(c => !string.IsNullOrEmpty(c))
+            .ToList();
+
+        foreach (var key in keyColumnList)
+        {
+            if (!IdentifierValidator.IsValid(key))
+            {
+                return context.ErrorResult("InvalidKeyColumn", $"Key column '{key}' contains invalid characters.");
+            }
+        }
+
+        return null;
+    }
+
+    private List<object?> EvaluateRowValues(
+        IReadOnlyList<Prepared<Script>> preparedExpressions,
+        List<object?> allItems,
+        JsonNode? currentItem,
+        int itemIndex)
+    {
+        using var engine = JsEngine.Create();
+        engine.SetValue("$json", currentItem);
+        engine.SetValue("$input", new InputContainer(allItems, currentItem));
+        engine.SetValue("$itemIndex", itemIndex);
+        engine.SetValue("$runIndex", itemIndex);
+
+        var values = new List<object?>();
+        foreach (var prepared in preparedExpressions)
+        {
+            var result = engine.EvaluatePrepared(prepared);
+            values.Add(JsEngine.ToClrValue(result));
+        }
+
+        return values;
+    }
+
+    private static List<object?> ReorderUpdateValues(
+        List<object?> values,
+        List<string> columns,
+        List<string> keyColumns)
+    {
+        var setColumns = columns.Except(keyColumns).ToList();
+        var reordered = new List<object?>(values.Count);
+        foreach (var column in setColumns)
+        {
+            reordered.Add(values[columns.IndexOf(column)]);
+        }
+
+        foreach (var column in keyColumns)
+        {
+            reordered.Add(values[columns.IndexOf(column)]);
+        }
+
+        return reordered;
+    }
+
+    private static NodeExecutionResult CreateResult(NodeExecutionContext context, bool success, int affectedRows, int inserted, int updated)
+    {
+        return context.CreateSingleResult(new JsonObject
+        {
+            ["success"] = success,
+            ["affectedRows"] = affectedRows,
+            ["inserted"] = inserted,
+            ["updated"] = updated
+        }, success);
+    }
+}
