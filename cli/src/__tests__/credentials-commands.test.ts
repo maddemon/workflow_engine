@@ -294,19 +294,18 @@ describe('commands/credentials', () => {
   });
 
   it('create - missing required field error mentions missing fields', async () => {
-    try {
-      await credentialCreate({
+    await expect(
+      credentialCreate({
         name: 'Test',
         type: 'connectionString',
         fields: '{"host":"localhost"}',
         configOptions: options,
-      });
-    } catch (err) {
-      const cliErr = err as CLIError;
-      expect(cliErr.code).toBe(ErrorCode.ValidationError);
-      expect(cliErr.exitCode).toBe(ExitCode.InvocationError);
-      expect(cliErr.message).toContain('connectionString');
-    }
+      }),
+    ).rejects.toMatchObject({
+      code: ErrorCode.ValidationError,
+      exitCode: ExitCode.InvocationError,
+      message: expect.stringContaining('connectionString'),
+    });
   });
 
   it('update - puts credential dto', async () => {

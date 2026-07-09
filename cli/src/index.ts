@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
 import pkg from '../package.json' with { type: 'json' };
+import { type ConfigOptions } from './config.js';
 import { CLIError, ErrorCode, ExitCode } from './errors.js';
 import { error, isJsonMode, log, setOutputOptions, writeJson } from './output.js';
 import { login, logout, me, profile } from './commands/auth.js';
@@ -491,8 +492,8 @@ credentialCmd
   .description('列出已知凭据类型及其字段')
   .action(async function () {
     const command = this;
-    const opts = command.optsWithGlobals<{ profile?: string }>();
-    await credentialTypes({ profile: opts.profile });
+    const opts = command.optsWithGlobals<{ profile?: string; configOptions?: ConfigOptions }>();
+    await credentialTypes({ profile: opts.profile, configOptions: opts.configOptions });
   });
 
 credentialCmd
