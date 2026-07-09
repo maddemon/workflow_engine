@@ -1,9 +1,4 @@
-using System.Collections;
-using System.Collections.Concurrent;
 using System.Linq;
-using System.Text.Json;
-using System.Text.Json.Nodes;
-using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Configuration;
 using FlowEngine.Core.Data;
@@ -11,8 +6,9 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.Exceptions;
+using FlowEngine.Core.Scripting;
 using FlowEngine.Core.ValueObjects;
-using FlowEngine.Runtime.WaitingArea;
+using FlowEngine.Runtime.Security;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -22,13 +18,10 @@ namespace FlowEngine.Runtime.Executor;
 public sealed class WorkflowExecutor : IEngine
 {
     private readonly FlowEngineDbContext _dbContext;
-    private readonly INodeRegistry _nodeRegistry;
-    private readonly NodeExecutionContextFactory _contextFactory;
-    private readonly ErrorStrategyHandler _errorHandler;
     private readonly WorkflowExecutionQueue _executionQueue;
     private readonly IEventBus? _eventBus;
     private readonly ILogger<WorkflowExecutor> _logger;
-    private readonly EngineDefaultsOptions _defaults;
+    private readonly WorkflowSchedulerKernel _kernel;
 
     public WorkflowExecutor(
         FlowEngineDbContext dbContext,
@@ -37,17 +30,22 @@ public sealed class WorkflowExecutor : IEngine
         ErrorStrategyHandler errorHandler,
         WorkflowExecutionQueue executionQueue,
         ILogger<WorkflowExecutor> logger,
+        ILogger<WorkflowSchedulerKernel> kernelLogger,
+        ISecretMasker secretMasker,
         IEventBus? eventBus = null,
         IOptions<EngineDefaultsOptions>? defaultsOptions = null)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
-        _nodeRegistry = nodeRegistry ?? throw new ArgumentNullException(nameof(nodeRegistry));
-        _contextFactory = contextFactory ?? throw new ArgumentNullException(nameof(contextFactory));
-        _errorHandler = errorHandler ?? throw new ArgumentNullException(nameof(errorHandler));
         _executionQueue = executionQueue ?? throw new ArgumentNullException(nameof(executionQueue));
-        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _eventBus = eventBus;
-        _defaults = defaultsOptions?.Value ?? new EngineDefaultsOptions();
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _kernel = new WorkflowSchedulerKernel(
+            nodeRegistry ?? throw new ArgumentNullException(nameof(nodeRegistry)),
+            contextFactory ?? throw new ArgumentNullException(nameof(contextFactory)),
+            errorHandler ?? throw new ArgumentNullException(nameof(errorHandler)),
+            secretMasker ?? throw new ArgumentNullException(nameof(secretMasker)),
+            kernelLogger ?? throw new ArgumentNullException(nameof(kernelLogger)),
+            defaultsOptions);
     }
 
     public async Task<ExecutionId> StartAsync(
@@ -97,763 +95,110 @@ public sealed class WorkflowExecutor : IEngine
             .ConfigureAwait(false);
         if (execution is null) return;
 
-        var session = new ExecutionSession(workflow, execution, executionRecordId, executionStore);
-        session.StateMachine.Start();
+        var session = new ExecutionSession(workflow, execution, executionRecordId)
+        {
+            SensitiveValues = ExecutionSession.EmptySensitiveValues
+        };
+        // 状态机由 WorkflowSchedulerKernel.RunAsync 负责启动；此处仅将执行记录标记为 Running 并落库。
         session.Execution.Status = ExecutionStatus.Running;
         await executionStore.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await EnqueueEntryNodesAsync(session, triggerPayload, cancellationToken).ConfigureAwait(false);
+        var sideEffects = new ExecutorSideEffects(executionStore, execution, _eventBus, _logger);
+        await _kernel.RunAsync(session, sideEffects, triggerPayload, cancellationToken).ConfigureAwait(false);
+    }
 
-        const int IdleDelayMilliseconds = 500;
+    /// <summary>
+    /// 普通执行的副作用实现：将内核的纯内存调度结果落库并发布事件。
+    /// </summary>
+    private sealed class ExecutorSideEffects : IExecutionSideEffects
+    {
+        private readonly FlowEngineDbContext _store;
+        private readonly ExecutionRecord _execution;
+        private readonly IEventBus? _eventBus;
+        private readonly ILogger<WorkflowExecutor> _logger;
 
-        while (!cancellationToken.IsCancellationRequested)
+        public ExecutorSideEffects(FlowEngineDbContext store, ExecutionRecord execution, IEventBus? eventBus, ILogger<WorkflowExecutor> logger)
         {
-            await ProcessTimeoutsAsync(session, cancellationToken).ConfigureAwait(false);
+            _store = store;
+            _execution = execution;
+            _eventBus = eventBus;
+            _logger = logger;
+        }
 
-            if (session.Queue.Reader.TryRead(out var item))
+        public async Task PersistNodeRecordAsync(NodeExecutionRecord record, CancellationToken cancellationToken)
+        {
+            _store.Entry(_execution).Property(e => e.NodeRecords).IsModified = true;
+            try
             {
-                var shouldStop = await ProcessNodeAsync(item, session, cancellationToken).ConfigureAwait(false);
-
-                if (shouldStop)
-                {
-                    session.StateMachine.Fail();
-                    break;
-                }
-
-                continue;
+                await _store.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             }
-
-            if (session.WaitingArea.IsEmpty)
+            catch (OperationCanceledException)
             {
-                break;
+                _logger.LogWarning("节点 {NodeId} 执行记录保存被取消。", record.NodeDefinitionId);
             }
-
-            await Task.Delay(IdleDelayMilliseconds, cancellationToken).ConfigureAwait(false);
         }
 
-        if (cancellationToken.IsCancellationRequested)
+        public Task PersistFailedStateAsync(CancellationToken cancellationToken)
         {
-            session.StateMachine.Cancel();
-            session.WaitingArea.CleanupExecution(execution.Id);
-        }
-        else if (session.StateMachine.Status == ExecutionStatus.Running)
-        {
-            session.StateMachine.Complete();
+            return _store.SaveChangesAsync(CancellationToken.None);
         }
 
-        session.Execution.Status = session.StateMachine.Status;
-        if (session.StateMachine.Status is ExecutionStatus.Completed or ExecutionStatus.Failed or ExecutionStatus.Cancelled)
+        public Task PersistExecutionAsync(CancellationToken cancellationToken)
         {
-            session.Execution.CompletedAt = DateTime.UtcNow;
+            return _store.SaveChangesAsync(cancellationToken);
         }
-        await executionStore.SaveChangesAsync(default).ConfigureAwait(false);
 
-        // 发布完成事件，触发 WebSocket 推送
-        if (_eventBus is not null)
+        public async Task PublishNodeStartedAsync(Guid executionId, Guid nodeId, int runIndex, CancellationToken cancellationToken)
         {
-            AuditEvent? completedEvent = session.StateMachine.Status switch
+            if (_eventBus is null) return;
+            await _eventBus.PublishAsync(new NodeStartedEvent(executionId, nodeId, runIndex), cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task PublishCompletedAsync(ExecutionStatus status, CancellationToken cancellationToken)
+        {
+            if (_eventBus is null) return;
+
+            AuditEvent? completedEvent = status switch
             {
                 ExecutionStatus.Completed => new WorkflowCompletedEvent(
-                    session.Execution.Id, session.Workflow.Id, ExecutionStatus.Completed),
+                    _execution.Id, _execution.WorkflowDefinitionId, ExecutionStatus.Completed),
                 ExecutionStatus.Failed => new WorkflowFailedEvent(
-                    session.Execution.Id, session.Workflow.Id,
+                    _execution.Id, _execution.WorkflowDefinitionId,
                     new NodeError { Code = "ExecutionFailed", Message = "工作流执行失败" }),
                 ExecutionStatus.Cancelled => new WorkflowCancelledEvent(
-                    session.Execution.Id, session.Workflow.Id),
-                _ => null,
+                    _execution.Id, _execution.WorkflowDefinitionId),
+                _ => null
             };
             if (completedEvent is not null)
             {
-                await _eventBus.PublishAsync(completedEvent, CancellationToken.None).ConfigureAwait(false);
-            }
-        }
-    }
-
-    private async Task EnqueueEntryNodesAsync(
-        ExecutionSession session,
-        object? triggerPayload,
-        CancellationToken cancellationToken)
-    {
-        var triggerBatch = CreateDataBatch(triggerPayload);
-        var hasInputConnections = session.Workflow.Connections
-            .Select(c => c.TargetNodeId)
-            .ToHashSet();
-
-        foreach (var node in session.Workflow.Nodes)
-        {
-            var nodeType = _nodeRegistry.Get(node.TypeName);
-            var isExplicitEntry = node.IsEntry || nodeType.DefaultIsEntry;
-            var isImplicitEntry = !hasInputConnections.Contains(node.Id);
-
-            if (!isExplicitEntry && !isImplicitEntry)
-            {
-                continue;
-            }
-
-            var inputs = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase);
-            var inputPorts = GetInputPortNames(nodeType);
-            if (inputPorts.Count > 0)
-            {
-                inputs[inputPorts[0]] = triggerBatch;
-            }
-
-            await session.Queue.EnqueueAsync(
-                new NodeWorkItem(session.Execution.Id, node.Id, inputs),
-                cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    private async Task<bool> ProcessNodeAsync(
-        NodeWorkItem item,
-        ExecutionSession session,
-        CancellationToken cancellationToken)
-    {
-        if (!session.NodeMap.TryGetValue(item.NodeInstanceId, out var node))
-        {
-            return false;
-        }
-
-        var nodeType = _nodeRegistry.Get(node.TypeName);
-        var executionMode = nodeType.ExecutionMode;
-        var runCount = executionMode == ExecutionMode.OncePerItem
-            ? Math.Max(1, item.Inputs.Values.DefaultIfEmpty(new DataBatch()).Max(b => b.Items.Count))
-            : 1;
-
-        NodeExecutionResult? finalResult = null;
-
-        for (var runIndex = 0; runIndex < runCount; runIndex++)
-        {
-            var runInputs = BuildRunInputs(item.Inputs, executionMode, runIndex);
-            var context = await _contextFactory.CreateAsync(
-                session.Workflow,
-                session.Execution,
-                node,
-                nodeType,
-                runInputs,
-                session.SuccessfulOutputs,
-                session.LatestBatches,
-                runIndex,
-                cancellationToken).ConfigureAwait(false);
-            context.NodeExecutionRecordId = Guid.NewGuid();
-            context.Memory = session.Memory;
-
-            var resolvedLlmClient = ResolveLlmClientForNode(node, nodeType, session.NodeMap, session.ConnectionsBySource, session.NodeLlmClients);
-            if (resolvedLlmClient is not null)
-            {
-                context.LlmClient = resolvedLlmClient;
-            }
-
-            context.OnLlmStreamChunk = CreateLlmStreamCallback(session.Execution.Id, node.Id, runIndex);
-
-            // 发布节点开始执行事件
-            if (_eventBus is not null)
-            {
-                var nodeStartedEvent = new NodeStartedEvent(
-                    session.Execution.Id,
-                    node.Id,
-                    runIndex);
-                await _eventBus.PublishAsync(nodeStartedEvent, cancellationToken).ConfigureAwait(false);
-            }
-
-            var result = await ExecuteNodeWithRetryAsync(node, nodeType, context, cancellationToken)
-                .ConfigureAwait(false);
-
-            if (context.LlmClient is not null)
-            {
-                session.NodeLlmClients[node.Id] = context.LlmClient;
-            }
-
-            var record = BuildNodeExecutionRecord(node.Id, runIndex, runInputs, result, context);
-
-            session.Execution.NodeRecords.Add(record);
-            session.DbContext.Entry(session.Execution).Property(e => e.NodeRecords).IsModified = true;
-            try
-            {
-                await session.DbContext.SaveChangesAsync(cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                _logger.LogWarning("节点 {NodeId} 执行记录保存被取消。", node.Id);
-            }
-
-            finalResult = result;
-
-            if (!result.Success && node.ErrorStrategy != ErrorStrategy.Continue)
-            {
-                session.Execution.Status = ExecutionStatus.Failed;
-                session.Execution.CompletedAt = DateTime.UtcNow;
-                await session.DbContext.SaveChangesAsync(CancellationToken.None).ConfigureAwait(false);
-                session.WaitingArea.CleanupExecution(session.Execution.Id);
-                return true;
+                await _eventBus.PublishAsync(completedEvent, cancellationToken).ConfigureAwait(false);
             }
         }
 
-        if (finalResult is null)
+        public Func<LlmStreamChunk, CancellationToken, Task> CreateLlmStreamCallback(Guid executionId, Guid nodeId, int runIndex)
         {
-            return false;
-        }
+            if (_eventBus is null) return (_, _) => Task.CompletedTask;
 
-        session.LatestBatches[node.Name] = finalResult.Output;
-        if (finalResult.Success)
-        {
-            session.SuccessfulOutputs[node.Name] = finalResult.Output;
-        }
-
-        _logger.LogInformation(
-            "ProcessNodeAsync: 节点 {NodeId} ({NodeType}) 执行完成，准备路由输出。",
-            node.Id,
-            node.TypeName);
-
-        await RouteOutputsAsync(node, nodeType, finalResult, session, cancellationToken).ConfigureAwait(false);
-
-        _logger.LogInformation(
-            "ProcessNodeAsync: 节点 {NodeId} ({NodeType}) 输出路由完成。",
-            node.Id,
-            node.TypeName);
-
-        return false;
-    }
-
-    private async Task<NodeExecutionResult> ExecuteNodeWithRetryAsync(
-        NodeDefinition node,
-        INodeType nodeType,
-        NodeExecutionContext context,
-        CancellationToken cancellationToken)
-    {
-        var maxRetries = node.RetryPolicy?.MaxRetries
-            ?? (node.ErrorStrategy == ErrorStrategy.Retry ? Math.Max(_defaults.DefaultMaxRetries, 1) : _defaults.DefaultMaxRetries);
-
-        var effectiveTimeout = node.Timeout
-            ?? (_defaults.DefaultTimeoutSeconds.HasValue ? TimeSpan.FromSeconds(_defaults.DefaultTimeoutSeconds.Value) : null);
-
-        NodeExecutionResult result;
-        for (var attempt = 0; attempt <= maxRetries; attempt++)
-        {
-            CancellationTokenSource? timeoutCts = null;
-            try
+            return async (chunk, ct) =>
             {
-                var effectiveToken = cancellationToken;
-                if (effectiveTimeout is { } timeout && timeout > TimeSpan.Zero)
+                try
                 {
-                    timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                    timeoutCts.CancelAfter(timeout);
-                    effectiveToken = timeoutCts.Token;
-                }
-
-                result = await nodeType.ExecuteAsync(context, effectiveToken).ConfigureAwait(false);
-            }
-            catch (OperationCanceledException) when (timeoutCts is not null && timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
-            {
-                // 节点超时，不重试，直接返回超时错误。
-                var timeoutError = new NodeError
-                {
-                    Code = "Timeout",
-                    Message = $"节点执行超时，超时时间：{effectiveTimeout!.Value.TotalMilliseconds}ms。",
-                    NodeDefinitionId = node.Id
-                };
-                return new NodeExecutionResult
-                {
-                    Success = false,
-                    Error = timeoutError,
-                    Output = new DataBatch
+                    await _eventBus.PublishAsync(new LlmTokenStreamEvent
                     {
-                        Items =
-                        [
-                            new DataItem
-                            {
-                                Success = false,
-                                Error = timeoutError
-                            }
-                        ]
-                    }
-                };
-            }
-            catch (OperationCanceledException)
-            {
-                // 取消异常不重试，直接返回取消结果由上层错误策略处理。
-                var cancelledError = new NodeError
-                {
-                    Code = "Cancelled",
-                    Message = "节点执行被取消。",
-                    NodeDefinitionId = node.Id
-                };
-                return new NodeExecutionResult
-                {
-                    Success = false,
-                    Error = cancelledError,
-                    Output = new DataBatch
-                    {
-                        Items =
-                        [
-                            new DataItem
-                            {
-                                Success = false,
-                                Error = cancelledError
-                            }
-                        ]
-                    }
-                };
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "节点 {NodeName} ({NodeId}) 执行时发生异常。", node.Name, node.Id);
-                var nodeError = new NodeError
-                {
-                    Code = "NodeExecutionFailed",
-                    Message = ex.Message,
-                    NodeDefinitionId = node.Id,
-                    StackTrace = ex.StackTrace
-                };
-                result = new NodeExecutionResult
-                {
-                    Success = false,
-                    Error = nodeError,
-                    Output = new DataBatch
-                    {
-                        Items =
-                        [
-                            new DataItem
-                            {
-                                Success = false,
-                                Error = nodeError
-                            }
-                        ]
-                    }
-                };
-            }
-            finally
-            {
-                timeoutCts?.Dispose();
-            }
-
-            // 检查可重试错误码过滤
-            if (!result.Success && node.RetryPolicy?.RetryableErrorCodes?.Count > 0)
-            {
-                var errorCode = result.Error?.Code ?? string.Empty;
-                if (!node.RetryPolicy.RetryableErrorCodes.Contains(errorCode))
-                {
-                    return result; // 错误码不在可重试列表中，直接返回不重试
+                        ExecutionId = executionId,
+                        NodeDefinitionId = nodeId,
+                        RunIndex = runIndex,
+                        Delta = chunk.Delta,
+                        IsFinal = chunk.IsFinal,
+                    }, ct).ConfigureAwait(false);
                 }
-            }
-
-            if (result.Success || attempt == maxRetries)
-            {
-                if (!result.Success && node.ErrorStrategy == ErrorStrategy.Continue)
+                catch (Exception ex)
                 {
-                    return _errorHandler.Handle(result, node.Id, ErrorStrategy.Continue);
+                    _logger.LogWarning(ex,
+                        "Failed to publish LlmTokenStreamEvent for node {NodeDefinitionId}.",
+                        nodeId);
                 }
-
-                return result;
-            }
-
-            var delay = CalculateBackoff(node.RetryPolicy, attempt, _defaults);
-            _logger.LogWarning(
-                "节点 {NodeName} ({NodeId}) 第 {Attempt} 次执行失败，{Delay}ms 后重试。",
-                node.Name,
-                node.Id,
-                attempt + 1,
-                delay.TotalMilliseconds);
-
-            await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
-        }
-
-        throw new InvalidOperationException("节点重试逻辑出现不可达路径。");
-    }
-
-    private async Task RouteOutputsAsync(
-        NodeDefinition node,
-        INodeType nodeType,
-        NodeExecutionResult result,
-        ExecutionSession session,
-        CancellationToken cancellationToken)
-    {
-        var sourcePortName = ResolveSourcePortName(nodeType, result);
-        var sourceKey = (node.Id, sourcePortName.ToLowerInvariant());
-        var connections = session.ConnectionsBySource.Contains(sourceKey)
-            ? session.ConnectionsBySource[sourceKey]
-            : Enumerable.Empty<Connection>();
-        var connectionList = connections.ToList();
-
-        _logger.LogInformation(
-            "RouteOutputsAsync: 节点 {NodeId} ({NodeType}) 从端口 {PortName} 路由，找到 {ConnectionCount} 条下游连接。",
-            node.Id,
-            node.TypeName,
-            sourcePortName,
-            connectionList.Count);
-
-        foreach (var connection in connectionList)
-        {
-            if (!session.NodeMap.TryGetValue(connection.TargetNodeId, out var targetNode))
-            {
-                _logger.LogWarning(
-                    "RouteOutputsAsync: 目标节点 {TargetNodeId} 不存在，跳过连接 {ConnectionId}。",
-                    connection.TargetNodeId,
-                    connection.Id);
-                continue;
-            }
-
-            var targetNodeType = _nodeRegistry.Get(targetNode.TypeName);
-            var targetInputPorts = GetInputPortNames(targetNodeType);
-            var outputBatch = result.Output;
-
-            _logger.LogInformation(
-                "RouteOutputsAsync: 将节点 {NodeId} 的输出路由到 {TargetNodeId} ({TargetNodeType})，目标端口 {TargetPortName}。",
-                node.Id,
-                targetNode.Id,
-                targetNode.TypeName,
-                connection.TargetPortName);
-
-            if (targetInputPorts.Count <= 1)
-            {
-                var inputs = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase)
-                {
-                    [connection.TargetPortName] = outputBatch
-                };
-
-                await session.Queue.EnqueueAsync(
-                    new NodeWorkItem(session.Execution.Id, targetNode.Id, inputs),
-                    cancellationToken).ConfigureAwait(false);
-
-                _logger.LogInformation(
-                    "RouteOutputsAsync: 节点 {TargetNodeId} 已入队。",
-                    targetNode.Id);
-            }
-            else
-            {
-                session.WaitingArea.Receive(session.Execution.Id, targetNode.Id, connection.TargetPortName, outputBatch);
-
-                if (session.WaitingArea.IsReady(session.Execution.Id, targetNode.Id, targetInputPorts))
-                {
-                    if (session.WaitingArea.TryTake(session.Execution.Id, targetNode.Id, out var readyInputs))
-                    {
-                        await session.Queue.EnqueueAsync(
-                            new NodeWorkItem(session.Execution.Id, targetNode.Id, readyInputs),
-                            cancellationToken).ConfigureAwait(false);
-
-                        _logger.LogInformation(
-                            "RouteOutputsAsync: 多输入节点 {TargetNodeId} 已入队。",
-                            targetNode.Id);
-                    }
-                }
-            }
-        }
-    }
-
-    private async Task ProcessTimeoutsAsync(
-        ExecutionSession session,
-        CancellationToken cancellationToken)
-    {
-        foreach (var (executionId, nodeInstanceId) in session.WaitingArea.GetTimeoutKeys().ToList())
-        {
-            if (executionId != session.Execution.Id)
-            {
-                continue;
-            }
-
-            if (!session.NodeMap.TryGetValue(nodeInstanceId, out var node))
-            {
-                session.WaitingArea.CancelWaiting(executionId, nodeInstanceId);
-                continue;
-            }
-
-            session.WaitingArea.TryTake(executionId, nodeInstanceId, out _);
-
-            var timeoutResult = _errorHandler.CreateInputTimeoutResult(node.Id);
-            if (node.ErrorStrategy == ErrorStrategy.Continue)
-            {
-                timeoutResult = _errorHandler.Handle(timeoutResult, node.Id, ErrorStrategy.Continue);
-            }
-
-            var record = BuildNodeExecutionRecord(
-                node.Id,
-                runIndex: 0,
-                inputs: new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase),
-                output: timeoutResult,
-                rawParameters: new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase),
-                resolvedParameters: new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase));
-
-            session.Execution.NodeRecords.Add(record);
-            session.DbContext.Entry(session.Execution).Property(e => e.NodeRecords).IsModified = true;
-            try
-            {
-                await session.DbContext.SaveChangesAsync(cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                _logger.LogWarning("节点 {NodeId} 超时记录保存被取消。", node.Id);
-            }
-
-            if (node.ErrorStrategy != ErrorStrategy.Continue)
-            {
-                session.Execution.Status = ExecutionStatus.Failed;
-                session.Execution.CompletedAt = DateTime.UtcNow;
-                await session.DbContext.SaveChangesAsync(CancellationToken.None).ConfigureAwait(false);
-                session.WaitingArea.CleanupExecution(session.Execution.Id);
-                return;
-            }
-
-            var nodeType = _nodeRegistry.Get(node.TypeName);
-            await RouteOutputsAsync(node, nodeType, timeoutResult, session, cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    private static string ResolveSourcePortName(INodeType nodeType, NodeExecutionResult result)
-    {
-        if (result.BranchIndex.HasValue)
-        {
-            var outputPorts = GetOutputPortNames(nodeType);
-            var index = result.BranchIndex.Value;
-            if (index >= 0 && index < outputPorts.Count)
-            {
-                return outputPorts[index];
-            }
-        }
-
-        return FlowConstants.PortNames.Output;
-    }
-
-    private static IReadOnlyDictionary<string, DataBatch> BuildRunInputs(
-        IReadOnlyDictionary<string, DataBatch> inputs,
-        ExecutionMode mode,
-        int runIndex)
-    {
-        if (mode != ExecutionMode.OncePerItem)
-        {
-            return inputs;
-        }
-
-        var result = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (portName, batch) in inputs)
-        {
-            if (runIndex < batch.Items.Count)
-            {
-                result[portName] = new DataBatch
-                {
-                    Items = [batch.Items[runIndex]]
-                };
-            }
-            else
-            {
-                result[portName] = new DataBatch();
-            }
-        }
-
-        return result;
-    }
-
-    private static DataBatch CreateDataBatch(object? payload)
-    {
-        if (payload is DataBatch batch) return batch;
-        if (payload is DataItem item) return new DataBatch { Items = [item] };
-
-        if (payload is null)
-        {
-            return new DataBatch
-            {
-                Items =
-                [
-                    new DataItem { Data = null, Success = true, SourceIndex = 0 }
-                ]
             };
         }
-
-        if (payload is IEnumerable enumerable && payload is not string)
-        {
-            var items = new List<DataItem>();
-            var index = 0;
-            foreach (var value in enumerable)
-            {
-                items.Add(new DataItem
-                {
-                    Data = JsonSerializer.SerializeToNode(value, JsonDefaults.Options),
-                    Success = true,
-                    SourceIndex = index++
-                });
-            }
-            return new DataBatch { Items = items };
-        }
-
-        var data = JsonSerializer.SerializeToNode(payload, JsonDefaults.Options);
-        return new DataBatch
-        {
-            Items =
-            [
-                new DataItem { Data = data, Success = true, SourceIndex = 0 }
-            ]
-        };
-    }
-
-    private static TimeSpan CalculateBackoff(RetryPolicy? policy, int attempt, EngineDefaultsOptions? defaults = null)
-    {
-        var baseDelay = policy?.BaseDelay > TimeSpan.Zero
-            ? policy.BaseDelay
-            : TimeSpan.FromSeconds(defaults?.DefaultBaseDelaySeconds ?? 1);
-        var maxDelay = policy?.MaxDelay > TimeSpan.Zero
-            ? policy.MaxDelay
-            : TimeSpan.FromSeconds(defaults?.DefaultMaxDelaySeconds ?? 60);
-
-        var strategy = policy?.BackoffStrategy ?? BackoffStrategy.Exponential;
-
-        TimeSpan delay = strategy switch
-        {
-            BackoffStrategy.Linear => baseDelay * (attempt + 1),
-            BackoffStrategy.Fixed => baseDelay,
-            _ => TimeSpan.FromTicks((long)(baseDelay.Ticks * Math.Pow(2, attempt))) // Exponential
-        };
-
-        delay = TimeSpan.FromTicks(Math.Min(delay.Ticks, maxDelay.Ticks));
-
-        if (policy?.UseJitter == true)
-        {
-            var jitter = Random.Shared.NextDouble() * delay.TotalMilliseconds;
-            delay = TimeSpan.FromMilliseconds(delay.TotalMilliseconds + jitter);
-            delay = TimeSpan.FromTicks(Math.Min(delay.Ticks, maxDelay.Ticks));
-        }
-
-        return delay;
-    }
-
-    /// <summary>
-    /// 输入端口名缓存：按节点类型名缓存，避免热路径反复 LINQ（P3）。
-    /// </summary>
-    private static readonly ConcurrentDictionary<string, IReadOnlyList<string>> InputPortCache = new(StringComparer.OrdinalIgnoreCase);
-
-    /// <summary>
-    /// 输出端口名缓存：按节点类型名缓存，避免热路径反复 LINQ（P3）。
-    /// </summary>
-    private static readonly ConcurrentDictionary<string, IReadOnlyList<string>> OutputPortCache = new(StringComparer.OrdinalIgnoreCase);
-
-    private static IReadOnlyList<string> GetInputPortNames(INodeType nodeType)
-    {
-        return InputPortCache.GetOrAdd(nodeType.TypeName, _ =>
-            nodeType.Ports
-                .Where(p => p.Direction == PortDirection.Input)
-                .Select(p => p.Name)
-                .ToList());
-    }
-
-    private static IReadOnlyList<string> GetOutputPortNames(INodeType nodeType)
-    {
-        return OutputPortCache.GetOrAdd(nodeType.TypeName, _ =>
-            nodeType.Ports
-                .Where(p => p.Direction == PortDirection.Output)
-                .Select(p => p.Name)
-                .ToList());
-    }
-
-    private Func<LlmStreamChunk, CancellationToken, Task> CreateLlmStreamCallback(
-        Guid executionId,
-        Guid nodeDefinitionId,
-        int runIndex)
-    {
-        var eventBus = _eventBus;
-        if (eventBus is null)
-        {
-            return (_, _) => Task.CompletedTask;
-        }
-
-        return async (chunk, cancellationToken) =>
-        {
-            try
-            {
-                var tokenEvent = new LlmTokenStreamEvent
-                {
-                    ExecutionId = executionId,
-                    NodeDefinitionId = nodeDefinitionId,
-                    RunIndex = runIndex,
-                    Delta = chunk.Delta,
-                    IsFinal = chunk.IsFinal,
-                };
-
-                await eventBus.PublishAsync(tokenEvent, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex,
-                    "Failed to publish LlmTokenStreamEvent for node {NodeDefinitionId}.",
-                    nodeDefinitionId);
-            }
-        };
-    }
-
-    private static ILlmClient? ResolveLlmClientForNode(
-        NodeDefinition node,
-        INodeType nodeType,
-        Dictionary<Guid, NodeDefinition> nodeMap,
-        ILookup<(Guid SourceNodeId, string SourcePortName), Connection> connectionsBySource,
-        ConcurrentDictionary<Guid, ILlmClient> nodeLlmClients)
-    {
-        var supplyInputPorts = nodeType.Ports
-            .Where(p => p.Direction == PortDirection.Input && p.Type == PortType.LLM)
-            .ToList();
-
-        if (supplyInputPorts.Count == 0)
-        {
-            return null;
-        }
-
-        foreach (var port in supplyInputPorts)
-        {
-            var incomingConnections = connectionsBySource
-                .Where(g => g.Key.SourceNodeId != node.Id)
-                .SelectMany(g => g)
-                .Where(c => c.TargetNodeId == node.Id && c.TargetPortName.Equals(port.Name, StringComparison.OrdinalIgnoreCase))
-                .ToList();
-
-            foreach (var connection in incomingConnections)
-            {
-                if (nodeLlmClients.TryGetValue(connection.SourceNodeId, out var client))
-                {
-                    return client;
-                }
-            }
-        }
-
-        return null;
-    }
-
-    private static NodeExecutionRecord BuildNodeExecutionRecord(
-        Guid nodeDefinitionId,
-        int runIndex,
-        IReadOnlyDictionary<string, DataBatch> inputs,
-        NodeExecutionResult output,
-        NodeExecutionContext context)
-    {
-        return new NodeExecutionRecord
-        {
-            Id = context.NodeExecutionRecordId,
-            NodeDefinitionId = nodeDefinitionId,
-            RunIndex = runIndex,
-            StartedAt = DateTime.UtcNow,
-            CompletedAt = DateTime.UtcNow,
-            Inputs = inputs.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
-            Output = output,
-            RawParameters = context.RawParameters.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
-            ResolvedParameters = context.ResolvedParameters.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase)
-        };
-    }
-
-    private static NodeExecutionRecord BuildNodeExecutionRecord(
-        Guid nodeDefinitionId,
-        int runIndex,
-        IReadOnlyDictionary<string, DataBatch> inputs,
-        NodeExecutionResult output,
-        IReadOnlyDictionary<string, object> rawParameters,
-        IReadOnlyDictionary<string, object> resolvedParameters)
-    {
-        return new NodeExecutionRecord
-        {
-            NodeDefinitionId = nodeDefinitionId,
-            RunIndex = runIndex,
-            StartedAt = DateTime.UtcNow,
-            CompletedAt = DateTime.UtcNow,
-            Inputs = inputs.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
-            Output = output,
-            RawParameters = rawParameters.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
-            ResolvedParameters = resolvedParameters.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase)
-        };
     }
 }

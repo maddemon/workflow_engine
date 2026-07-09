@@ -10,12 +10,18 @@ namespace FlowEngine.Runtime.Executor;
 
 /// <summary>
 /// 封装执行循环中的全部可变状态，消除方法间长参数列表。
-/// 在 <see cref="WorkflowExecutor.ExecuteLoopAsync"/> 入口构造，传递给各内部方法。
+/// 在 <see cref="WorkflowSchedulerKernel.RunAsync"/> 入口构造，传递给各内部方法。
+/// 纯内存、不持有 <c>DbContext</c>（持久化由外壳经 <see cref="IExecutionSideEffects"/> 完成）。
 /// </summary>
 public sealed class ExecutionSession
 {
+    /// <summary>
+    /// 空敏感值集合：普通执行使用，仅对 <see cref="FlowEngine.Core.Data.CredentialValue"/> 脱敏，字面量不额外脱敏。
+    /// </summary>
+    public static readonly IReadOnlySet<string> EmptySensitiveValues = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
     public Workflow Workflow { get; }
-    public ExecutionRecord Execution { get; set; }
+    public ExecutionRecord Execution { get; private set; }
     public Guid ExecutionRecordId { get; }
 
     public Dictionary<Guid, NodeDefinition> NodeMap { get; }
@@ -30,18 +36,26 @@ public sealed class ExecutionSession
     public ConcurrentDictionary<Guid, ILlmClient> NodeLlmClients { get; } = new();
     public ConcurrentDictionary<string, JsonNode?> Memory { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-    public FlowEngineDbContext DbContext { get; }
+    /// <summary>
+    /// 凭据访问器覆写。为 null 时使用节点执行上下文工厂的默认访问器（普通执行）；
+    /// Dry-Run 注入临时凭据访问器。
+    /// </summary>
+    public ICredentialAccessor? CredentialAccessor { get; init; }
+
+    /// <summary>
+    /// 字面量敏感值集合（用于脱敏输出/参数中的字面凭据值）。
+    /// 普通执行为空集合；Dry-Run 为临时凭据的字面字段值集合。
+    /// </summary>
+    public IReadOnlySet<string> SensitiveValues { get; init; } = EmptySensitiveValues;
 
     public ExecutionSession(
         Workflow workflow,
         ExecutionRecord execution,
-        Guid executionRecordId,
-        FlowEngineDbContext dbContext)
+        Guid executionRecordId)
     {
         Workflow = workflow;
         Execution = execution;
         ExecutionRecordId = executionRecordId;
-        DbContext = dbContext;
 
         NodeMap = workflow.Nodes.ToDictionary(n => n.Id);
         ConnectionsBySource = workflow.Connections

@@ -28,7 +28,9 @@ public class MinimalExecuteTests
 
         var executor = new WorkflowExecutor(
             dbContext, nodeRegistry, contextFactory, errorHandler, queue,
-            NullLogger<WorkflowExecutor>.Instance);
+            NullLogger<WorkflowExecutor>.Instance,
+            NullLogger<WorkflowSchedulerKernel>.Instance,
+            new FlowEngine.Runtime.Security.SecretMasker());
 
         var nodeA = new NodeDefinition
         {

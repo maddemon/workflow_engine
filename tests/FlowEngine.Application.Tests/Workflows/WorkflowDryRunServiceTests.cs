@@ -1,7 +1,10 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Workflows;
+using FlowEngine.Core.Authorization;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
@@ -139,7 +142,7 @@ public sealed class WorkflowDryRunServiceTests : IDisposable
     }
 
     [Fact]
-    public void SanitizeParameters_ReplacesCredentialValuesRecursively()
+    public void SecretMasker_MasksCredentialValuesAndSensitiveLiteralsRecursively()
     {
         var credential = new CredentialValue
         {
@@ -156,13 +159,8 @@ public sealed class WorkflowDryRunServiceTests : IDisposable
         };
         var sensitiveValues = new HashSet<string> { "secret-token" };
 
-        var method = typeof(WorkflowDryRunService).GetMethod(
-            "SanitizeParameters",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static,
-            [typeof(IReadOnlyDictionary<string, object>), typeof(IReadOnlySet<string>)]);
-        Assert.NotNull(method);
-        var result = method.Invoke(null, [parameters, sensitiveValues]);
-        Assert.IsType<Dictionary<string, object>>(result);
+        FlowEngine.Runtime.Security.ISecretMasker masker = new FlowEngine.Runtime.Security.SecretMasker();
+        var result = masker.MaskParameters(parameters, sensitiveValues);
 
         var json = JsonSerializer.Serialize(result, JsonDefaults.Options);
         Assert.DoesNotContain("secret-token", json);
@@ -206,7 +204,58 @@ public sealed class WorkflowDryRunServiceTests : IDisposable
         return new WorkflowDryRunService(
             _nodeRegistry,
             _contextFactory,
-            NullLogger<WorkflowDryRunService>.Instance);
+            NullLogger<WorkflowSchedulerKernel>.Instance,
+            new FlowEngine.Runtime.Security.SecretMasker(),
+            new PermissiveAuthorizationGuard());
+    }
+
+    [Fact]
+    public async Task DryRunAsync_Unauthenticated_ThrowsUnauthorizedException()
+    {
+        var service = new WorkflowDryRunService(
+            _nodeRegistry,
+            _contextFactory,
+            NullLogger<WorkflowSchedulerKernel>.Instance,
+            new FlowEngine.Runtime.Security.SecretMasker(),
+            new UnauthenticatedAuthorizationGuard());
+
+        await Assert.ThrowsAsync<UnauthorizedException>(
+            () => service.DryRunAsync(CreateSetNodeRequest(), TestContext.Current.CancellationToken));
+    }
+
+    [Fact]
+    public async Task DryRunAsync_WithoutExecutePermission_ThrowsPermissionDeniedException()
+    {
+        var service = new WorkflowDryRunService(
+            _nodeRegistry,
+            _contextFactory,
+            NullLogger<WorkflowSchedulerKernel>.Instance,
+            new FlowEngine.Runtime.Security.SecretMasker(),
+            new DenyingAuthorizationGuard());
+
+        await Assert.ThrowsAsync<PermissionDeniedException>(
+            () => service.DryRunAsync(CreateSetNodeRequest(), TestContext.Current.CancellationToken));
+    }
+
+    private sealed class PermissiveAuthorizationGuard : IAuthorizationGuard
+    {
+        public Task RequireAccessAsync(ResourceKind kind, Guid resourceId, Operation operation, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RequireScopeAsync(Scope scope, Operation operation, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RequireAdminAsync(Operation operation, CancellationToken ct = default) => Task.CompletedTask;
+    }
+
+    private sealed class UnauthenticatedAuthorizationGuard : IAuthorizationGuard
+    {
+        public Task RequireAccessAsync(ResourceKind kind, Guid resourceId, Operation operation, CancellationToken ct = default) => throw new UnauthorizedException("未认证");
+        public Task RequireScopeAsync(Scope scope, Operation operation, CancellationToken ct = default) => throw new UnauthorizedException("未认证");
+        public Task RequireAdminAsync(Operation operation, CancellationToken ct = default) => throw new UnauthorizedException("未认证");
+    }
+
+    private sealed class DenyingAuthorizationGuard : IAuthorizationGuard
+    {
+        public Task RequireAccessAsync(ResourceKind kind, Guid resourceId, Operation operation, CancellationToken ct = default) => throw new PermissionDeniedException("无权限");
+        public Task RequireScopeAsync(Scope scope, Operation operation, CancellationToken ct = default) => throw new PermissionDeniedException("无权限");
+        public Task RequireAdminAsync(Operation operation, CancellationToken ct = default) => throw new PermissionDeniedException("无权限");
     }
 
     private static DryRunWorkflowRequestDto CreateSetNodeRequest()

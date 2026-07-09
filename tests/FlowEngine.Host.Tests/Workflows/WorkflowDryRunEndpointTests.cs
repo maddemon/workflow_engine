@@ -21,7 +21,8 @@ using Microsoft.Extensions.Hosting;
 namespace FlowEngine.Host.Tests.Workflows;
 
 /// <summary>
-/// Dry-Run 端点集成测试：验证直接传入 DSL 执行，仅 [Authorize] 即可访问。
+/// Dry-Run 端点集成测试：验证直接传入 DSL 执行，需已认证且拥有 Workflow.Execute 权限（Admin/Editor）；
+/// Viewer 等无 Execute 权限的角色返回 403，未认证返回 401。
 /// </summary>
 public class WorkflowDryRunEndpointTests : IClassFixture<FlowEngineWebApplicationFactory>, IDisposable
 {
@@ -69,7 +70,7 @@ public class WorkflowDryRunEndpointTests : IClassFixture<FlowEngineWebApplicatio
     public async Task DryRun_WithJwt_ReturnsOkAndExecutesSetNode()
     {
         var ct = TestContext.Current.CancellationToken;
-        var client = await CreateAuthenticatedClientAsync("jwt-dryrun@example.com", roles: [], ct);
+        var client = await CreateAuthenticatedClientAsync("jwt-dryrun@example.com", roles: ["Editor"], ct);
 
         var response = await client.PostAsJsonAsync(
             "/api/v1/workflows/dry-run",
@@ -88,7 +89,7 @@ public class WorkflowDryRunEndpointTests : IClassFixture<FlowEngineWebApplicatio
     public async Task DryRun_WithApiKey_ReturnsOkAndExecutesSetNode()
     {
         var ct = TestContext.Current.CancellationToken;
-        var (client, _, _) = await CreateClientWithApiKeyAsync("apikey-dryrun@example.com", roles: [], ct);
+        var (client, _, _) = await CreateClientWithApiKeyAsync("apikey-dryrun@example.com", roles: ["Editor"], ct);
 
         var response = await client.PostAsJsonAsync(
             "/api/v1/workflows/dry-run",
@@ -158,10 +159,10 @@ public class WorkflowDryRunEndpointTests : IClassFixture<FlowEngineWebApplicatio
     }
 
     [Fact]
-    public async Task DryRun_WithNonAdminRole_ReturnsOk()
+    public async Task DryRun_WithEditorRole_ReturnsOk()
     {
         var ct = TestContext.Current.CancellationToken;
-        var client = await CreateAuthenticatedClientAsync("jwt-dryrun-viewer@example.com", roles: ["Viewer"], ct);
+        var client = await CreateAuthenticatedClientAsync("jwt-dryrun-editor@example.com", roles: ["Editor"], ct);
 
         var response = await client.PostAsJsonAsync(
             "/api/v1/workflows/dry-run",
@@ -175,10 +176,24 @@ public class WorkflowDryRunEndpointTests : IClassFixture<FlowEngineWebApplicatio
     }
 
     [Fact]
+    public async Task DryRun_WithViewerRole_ReturnsForbidden()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = await CreateAuthenticatedClientAsync("jwt-dryrun-viewer@example.com", roles: ["Viewer"], ct);
+
+        var response = await client.PostAsJsonAsync(
+            "/api/v1/workflows/dry-run",
+            CreateSetNodeRequest(),
+            ct);
+
+        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+    }
+
+    [Fact]
     public async Task DryRun_DoesNotCreateWorkflowOrExecutionRecords()
     {
         var ct = TestContext.Current.CancellationToken;
-        var client = await CreateAuthenticatedClientAsync("jwt-dryrun-nopersist@example.com", roles: [], ct);
+        var client = await CreateAuthenticatedClientAsync("jwt-dryrun-nopersist@example.com", roles: ["Editor"], ct);
 
         int workflowCountBefore;
         int executionCountBefore;

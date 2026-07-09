@@ -1,3 +1,4 @@
+using System.Reflection;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Data;
@@ -52,7 +53,9 @@ public class WorkflowExecutorTests
             contextFactory,
             errorHandler,
             _executionQueue,
-            NullLogger<WorkflowExecutor>.Instance);
+            NullLogger<WorkflowExecutor>.Instance,
+            NullLogger<WorkflowSchedulerKernel>.Instance,
+            new FlowEngine.Runtime.Security.SecretMasker());
     }
 
     private async Task DrainAndExecuteAsync(CancellationToken cancellationToken = default)
@@ -461,5 +464,58 @@ public class WorkflowExecutorTests
             .UseInMemoryDatabase(databaseName: _dbName)
             .Options;
         return new FlowEngineDbContext(options);
+    }
+
+    [Fact]
+    public void BuildNodeExecutionRecord_MasksCredentialValueInResolvedParameters()
+    {
+        var credential = new CredentialValue
+        {
+            Name = "my-api-key",
+            Type = "apiKey",
+            Fields = new Dictionary<string, string> { ["token"] = "secret-token" }
+        };
+
+        var context = new NodeExecutionContext
+        {
+            NodeExecutionRecordId = Guid.NewGuid(),
+            RawParameters = new Dictionary<string, object>(),
+            ResolvedParameters = new Dictionary<string, object> { ["cred"] = credential },
+            Inputs = new Dictionary<string, DataBatch>()
+        };
+
+        var resolver = new ParameterResolver(NullLogger<ParameterResolver>.Instance);
+        var contextFactory = new NodeExecutionContextFactory(_nodeRegistry, resolver, new TestCredentialAccessor(), new HashSet<string>());
+        var errorHandler = new ErrorStrategyHandler();
+        var kernel = new WorkflowSchedulerKernel(
+            _nodeRegistry,
+            contextFactory,
+            errorHandler,
+            new FlowEngine.Runtime.Security.SecretMasker(),
+            NullLogger<WorkflowSchedulerKernel>.Instance);
+        var method = typeof(WorkflowSchedulerKernel).GetMethod(
+            "BuildNodeExecutionRecord",
+            BindingFlags.NonPublic | BindingFlags.Instance,
+            null,
+            new[] { typeof(Guid), typeof(int), typeof(IReadOnlyDictionary<string, DataBatch>), typeof(NodeExecutionResult), typeof(NodeExecutionContext), typeof(IReadOnlySet<string>) },
+            null);
+        Assert.NotNull(method);
+
+        var record = (NodeExecutionRecord)method.Invoke(
+            kernel,
+            new object?[]
+            {
+                Guid.NewGuid(),
+                0,
+                new Dictionary<string, DataBatch>(),
+                new NodeExecutionResult(),
+                context,
+                ExecutionSession.EmptySensitiveValues
+            })!;
+
+        var masked = Assert.IsType<Dictionary<string, object>>(record.ResolvedParameters["cred"]);
+        Assert.Equal("my-api-key", masked["name"]);
+        Assert.False(masked.ContainsKey("Fields"));
+        Assert.False(masked.ContainsKey("fields"));
     }
 }

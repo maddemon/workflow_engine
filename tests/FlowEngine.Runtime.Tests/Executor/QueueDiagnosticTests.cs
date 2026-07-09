@@ -31,7 +31,9 @@ public class QueueDiagnosticTests
 
         var executor = new WorkflowExecutor(
             dbContext, nodeRegistry, contextFactory, errorHandler, queue,
-            NullLogger<WorkflowExecutor>.Instance);
+            NullLogger<WorkflowExecutor>.Instance,
+            NullLogger<WorkflowSchedulerKernel>.Instance,
+            new FlowEngine.Runtime.Security.SecretMasker());
 
         // Create workflow
         var nodeA = new NodeDefinition
