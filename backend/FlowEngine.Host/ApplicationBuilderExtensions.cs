@@ -48,13 +48,16 @@ public static class ApplicationBuilderExtensions
             KeepAliveInterval = TimeSpan.FromSeconds(30),
         });
 
-        app.Map("/ws/execution", async (HttpContext context) =>
+        app.Map(RouteConstants.WebSocketPrefix + "/execution", async (HttpContext context) =>
         {
             var handler = context.RequestServices.GetRequiredService<ExecutionWebSocketHandler>();
             await handler.HandleAsync(context,  () => Task.CompletedTask);
         });
 
-        app.MapFallbackToFile("{*path:regex(^(?!api(?:/|$)).*$)}", "index.html");
+        // SPA Fallback：除 API 路由组（RouteConstants.ApiPrefix）外，其余路径回退到 index.html。
+        app.MapFallbackToFile(
+            $"{{*path:regex(^(?!{RouteConstants.ApiPrefix.TrimStart('/')}(?:/|$)).*$)}}",
+            "index.html");
 
         return app;
     }
@@ -70,11 +73,11 @@ public static class ApplicationBuilderExtensions
 
     private static void UseRoutes(WebApplication app)
     {
-        app.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
-        app.MapGet("/health/ready", () => Results.Ok(new { status = "ready" }));
+        app.MapGet(RouteConstants.HealthPrefix, () => Results.Ok(new { status = "healthy" }));
+        app.MapGet(RouteConstants.HealthReadyPath, () => Results.Ok(new { status = "ready" }));
 
-        var api = app.MapGroup("/api/v1");
-        api.MapGet("/health", () => Results.Ok(new { status = "healthy" }));
+        var api = app.MapGroup($"{RouteConstants.ApiPrefix}/v1");
+        api.MapGet(RouteConstants.HealthPrefix, () => Results.Ok(new { status = "healthy" }));
 
         app.MapControllers();
     }

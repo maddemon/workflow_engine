@@ -91,6 +91,34 @@ public class WebhookRoutingMiddlewareTests
     }
 
     [Fact]
+    public async Task PostToHealthSubPath_CallsNext_NotHandler()
+    {
+        var context = CreateContext("/health/ready");
+        var nextCalled = false;
+        var middleware = CreateMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
+
+        await middleware.InvokeAsync(context);
+
+        Assert.True(nextCalled);
+        _handler.Verify(h => h.HandleAsync(It.IsAny<HttpContext>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
+    public async Task PostToHealthLikePath_DispatchesToHandler()
+    {
+        // "/health" 前缀不能误伤 "/healthcare" 这类合法 Webhook 路径。
+        var context = CreateContext("/healthcare/notify");
+        var nextCalled = false;
+        var middleware = CreateMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
+
+        await middleware.InvokeAsync(context);
+
+        Assert.False(nextCalled);
+        _handler.Verify(h => h.HandleAsync(It.IsAny<HttpContext>(), "/healthcare/notify"), Times.Once);
+    }
+
+
+    [Fact]
     public async Task PostToWebSocketPath_CallsNext_NotHandler()
     {
         var context = CreateContext("/ws/execution");
