@@ -227,6 +227,7 @@ public sealed class NodeExecutionContextFactory(
             NodeRegistry = registry,
             ContextFactory = this,
             WorkflowLoader = workflowLoader,
+            GlobalVariables = BuildGlobalVariables(credentialsDict, workflow, execution.Id, nodeDefinition, runIndex, rawParameters, environmentWhitelist),
         };
     }
 
@@ -390,6 +391,48 @@ public sealed class NodeExecutionContextFactory(
         }
 
         return merged;
+    }
+
+    /// <summary>
+    /// 构建非逐项全局变量字典，供节点在逐项求值时复用。
+    /// 不含 $json/$input/$itemIndex/$runIndex（逐项变量由各节点自行注入）。
+    /// </summary>
+    private static Dictionary<string, object?> BuildGlobalVariables(
+        Dictionary<string, object?> credentialsDict,
+        Workflow workflow,
+        Guid executionId,
+        NodeDefinition nodeDefinition,
+        int runIndex,
+        IReadOnlyDictionary<string, object> rawParameters,
+        IReadOnlySet<string> environmentWhitelist)
+    {
+        return new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["$credentials"] = credentialsDict,
+            ["$workflow"] = new Dictionary<string, object?>
+            {
+                ["id"] = workflow.Id,
+                ["name"] = workflow.Name,
+                ["projectId"] = workflow.ProjectId,
+                ["version"] = workflow.Version,
+                ["isActive"] = workflow.IsActive,
+            },
+            ["$execution"] = new Dictionary<string, object?>
+            {
+                ["id"] = executionId,
+            },
+            ["$env"] = new EnvironmentAccessor(environmentWhitelist),
+            ["$vars"] = new Dictionary<string, object?>(),
+            ["$now"] = DateTime.UtcNow,
+            ["$today"] = DateTime.UtcNow.Date,
+            ["$node"] = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase),
+            ["$ctx"] = new Dictionary<string, object?>
+            {
+                ["$credentials"] = credentialsDict,
+                ["parameter"] = rawParameters,
+            },
+            ["parameter"] = rawParameters,
+        };
     }
 
     private sealed class NullExecutionLogger : IExecutionLogger

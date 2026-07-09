@@ -37,7 +37,7 @@
 | 平台专用节点 | **默认不做，留作未来模板** | 一个节点 = 一个平台 + 一个 SDK 程序集；当前先用通用能力覆盖，避免过度膨胀 |
 | 令牌生命周期归属 | 放**凭据层**（非节点内） | 天然解决「拿到 token 就不需要再请求」：令牌按 `credentialName+endpoint+scope` 持久缓存、跨运行复用，运行时不再重复请求；节点仅消费 |
 | 多字段凭据 | 新增**类型注册表 + 字段 schema** | 当前 `Credential Type` 是任意字符串、只暴露 `apiKey` 单字段（task-003 S3/S8） |
-| 表达式统一模型 | **函数式 `ctx =>` + 省略式双写法，Acornima AST 分类，无 `={{ }}` 包裹前缀** | 引擎现状 4 套矛盾约定（`ParameterResolver` 的 `input` 启发式 / `HttpRequestNode` 的 `ScriptEngine(input)` / `JSNode` 的 `$input` / `FilterNode` 的 `{{ $json }}`）；以「`$` 前缀 = 引擎内建、裸名 = 用户数据」两分法收口，兼容旧式启发式表达式（task-003 S9） |
+| 表达式统一模型 | **`$` 前缀变量注入 + 字符启发式识别 + `return (expr)` 包裹求值**；函数式 `ctx =>` + Acornima AST 三分类为规划中未实现 | 实际落地：`ParameterResolver.IsExpression` 为字符启发式（纯字面/`s_knownIdentifiers`命中/含运算字符），`JsEngine` 统一以 `return (expr)` 包裹求值。`$` 前缀变量注入清单已落地（S9 变量部分）；AST 三分类与函数式双写法尚未实现。IfNode/FilterNode 已改走统一表达式引擎。 |
 
 ### 1.6 实施状态（截至 2026-07-09 评审6）
 
@@ -46,10 +46,11 @@
 - [x] **阶段一·核心任务2：`$credentials.<name>.<field>` 表达式引用（含 oauth2 `accessToken`）**
   - 工厂经 `PreloadCredentialsAsync` 逐名 `GetCredentialByNameAsync` 预加载为 `Dictionary<name, Dictionary<field,value>>`，支持 `$credentials.dingtalk.accessToken` 属性式访问。
   - 证据：`backend/FlowEngine.Runtime/Executor/NodeExecutionContextFactory.cs`、`tests/.../Expressions/ParameterResolverTests.cs`（新增 `$credentials` 属性式访问测试，断言 `tok-xxx`）。
-- [x] **阶段一·核心任务3：统一表达式变量模型（顶层字段注入）**
-  - 通用核心 `$` 变量全部注入：`$json`/`$input`/`$items`/`$node`/`$workflow`/`$execution`/`$env`/`$vars`/`$now`/`$today`/`$runIndex`/`$itemIndex`/`$credentials`/`$ctx`。
-  - `$input` 改为 n8n 式容器，方法 camelCase：`item()`/`all()`/`first()`/`last()`/`count()`（`InputContainer.cs`）；新增 `$ctx` bundle 注入。
-  - 证据：`backend/FlowEngine.Core/Scripting/InputContainer.cs`、`tests/.../Expressions/ParameterResolverTests.cs`（`$input.item().userid` 集成断言）。
+- [x] **阶段一·核心任务3：统一表达式变量模型（顶层字段注入）——部分落地**
+  - ✅ 已落地：通用核心 `$` 变量全部注入（`$json`/`$input`/`$items`/`$node`/`$workflow`/`$execution`/`$env`/`$vars`/`$now`/`$today`/`$runIndex`/`$itemIndex`/`$credentials`/`$ctx`）；`$input` 改为 n8n 式容器；`NodeExecutionContext.GlobalVariables` 供节点逐项求值复用。
+  - ✅ 已落地：IfNode 删除自写 `ToBoolean`/`Compare` 解析器，改走 `ParameterResolver` 预求值；FilterNode 删除 `{{ $json }}` mustache 解析器，改走逐项 JsEngine 求值 + GlobalVariables 注入。
+  - ❌ 未落地：Acornima AST 三分类（Function/Expression/Script）、函数式 `ctx =>` 双写法、`$items(name?)`/`$node['N']` 引用机制。
+  - 证据：`ParameterResolver.cs`（字符启发式 `IsExpression`）、`IfNode.cs`（`ResolvedParameters`）、`FilterNode.cs`（逐项 JsEngine）、`NodeExecutionContext.cs`（`GlobalVariables`）。
 - [x] **阶段一·安全修正**
   - 从 `s_forbiddenIdentifiers` 移除 `"Function"`（`new Function`/`Function()` 已由 `JsEngine.DisableStringCompilation()` 运行时封死）。
   - `ContainsWord` 重写为跳过字符串/模板字面量与注释，仅匹配真正标识符——**修复了 `"http://..."`/`"https://..."` 字面量被误判为禁止标识符、所有 URL 表达式被拒**的隐藏 bug（draft 的 `https://oapi.dingtalk.com/...` 亦受影响）。
@@ -94,10 +95,12 @@
   2. 扩展 `CredentialAccessor`，在表达式上下文注入 `$credentials.<name>.<field>`（`$` 前缀内建，见本阶段表达式模型）。
   3. 统一表达式变量模型（呼应 task-003 S9；**替代此前评审稿中虚构的 `={{ }}` 包裹语法**——引擎实际并无该包裹，见下「实现要点」）：将现状 4 套互相矛盾的约定收口为**单一表达式引擎语义**（实现于 `JsEngine` / `ParameterResolver`），规则如下：
 
-     - **两种写法，同一语义**：
+     > **实施注记（2026-07-10）**：下方"两种写法"与"AST 三分类"为**规划目标，尚未实现**。当前实际实现为字符启发式 `IsExpression` + `return (expr)` 统一包裹。已落地部分：`$` 变量注入清单、IfNode/FilterNode 解析器统一、`NodeExecutionContext.GlobalVariables` 逐项求值复用。AST 三分类与 `ctx =>` 双写法留待后续。
+
+     - **两种写法，同一语义**（规划中，未实现）：
        - 函数式：`ctx => <expr>` 或 `({ $json }) => <expr>`，参数 `ctx` 为上下文 bundle（属性即下方 `$` 顶层字段，如 `ctx.$json` / `ctx.$input`）；也支持 `function f(ctx){...}` / `function({ $json }){...}` 函数声明/表达式。
        - 省略式（裸式）：直接写表达式或语句，如 `({ dept_id: 1, page: $page })`、`$json.status === 'active'`、`const x = $input.first(); return x * 2`。
-     - **先判函数，否则包裹运行**（核心机制，基于 Acornima 解析顶层 AST，非行数判断）：
+     - **先判函数，否则包裹运行**（规划中，未实现。当前统一走 `return (expr)` 包裹）：
        1. 解析表达式顶层 AST 节点类型：顶层为 `ArrowFunctionExpression` / `FunctionExpression` / `FunctionDeclaration` → **Function** 类；顶层为单条 `ExpressionStatement`（非函数）→ **Expression** 类；其它（多条语句、`const`/`let`/`var`、控制流、单条 `return`）→ **Script** 类。
        2. 按类选择包裹并求值：
           - Function：`const __fn = (<raw>); return typeof __fn === 'function' ? __fn(ctx) : __fn;`（自动以 `ctx` bundle 调用；误判非函数则原样返回）。
@@ -117,7 +120,7 @@
        - **冲突策略**：用户数据项若含与内建同名（裸）字段，内建 `$` 变量不受影响（前缀隔离）；裸写的同名标识符指向用户数据。`$` 清单见文档。
      - **安全修正（必须）**：`ParameterResolver.s_forbiddenIdentifiers` 含 `"Function"`，而 `ContainsWord` 为 `OrdinalIgnoreCase`，会误杀小写 `function` 关键字（所有函数声明/表达式被 `SecurityViolationException` 拒绝）。修复：从静态禁止列表移除 `"Function"`（真正的 `new Function`/`Function()` 构造器已由 `JsEngine` 的 `o.DisableStringCompilation()` 在运行时封死），或细化为「值用法」匹配。
      - **兼容与迁移**：`IsExpression` 启发式保留（`function`/`=>`/`(` 等已能识别函数为表达式）；旧式 `input.name`、`input.status == 'active'` 等不含 `=>` 的表达式走 Expression/Script 类自然兼容，不立即 break 存量流程。
-     - **统一落点**：`httpRequest` 的 url/header/body、`DbUpsert` 的 `connection`、`SetNode`(S5 后续) 字段值、`IfNode`/`FilterNode`/`SwitchNode` 条件，全部走同一表达式引擎；**删除 `IfNode` 自写 `==` 解析器与 `FilterNode` 的 `{{ $json }}` 解析器**（统一消除 bug 源）。
+     - **统一落点**：`httpRequest` 的 url/header/body、`DbUpsert` 的 `connection`/`columns`、`IfNode`/`FilterNode` 条件，全部走同一表达式引擎；**已删除 `IfNode` 自写 `==` 解析器（改走 `ParameterResolver` 预求值）与 `FilterNode` 的 `{{ $json }}` 解析器（改走逐项 JsEngine 求值 + `GlobalVariables` 注入）**。`SetNode`(S5 后续) 待补齐。
 - 输入：`CredentialService`、`FlowConstants.CredentialFields`、`CredentialAccessor`、`ParameterHydrator`。
 - 输出：多字段凭据可建、可在表达式中引用；CLI 有类型校验与列举。
 - 验收标准：
@@ -177,7 +180,7 @@
        }
        ```
      - **输入/输出语义（澄清）**：`PaginateNode` **不是对已有 `DataBatch` 做分批**（那是 `LoopNode` 职责），而是**对「内置 HTTP 请求」做循环拉取**——每次迭代用当前 `$cursor` 发请求、取回一页、按 `itemsPath` 抽取数组、**将所有页的数组元素打平（flatten）为单一 item 流**。
-     - **输出端口**：`Output` 汇聚后发出**一个 `DataBatch`，其中每个 `DataItem` = 某页 `itemsPath` 数组的一个元素（整体打平）**，全量拉取完成后发一次 → 接 `map-fields` 等映射/落库节点；可选 `Page`（每页一次，供逐页处理，元素为该页数组）。例：DingTalk `result.list[]` 跨页打平后，每个 item 即一个 `userid/name/dept_id` 用户对象，故 `map-fields` 用 `$input.item().userid` 取值（`$input` 为 n8n 式输入容器，见 §3 阶段一；等价于 `$json.userid`）。
+     - **输出端口**：`Output` 汇聚后发出**一个 `DataBatch`，其中每个 `DataItem` = 某页 `itemsPath` 数组的一个元素（整体打平）**，全量拉取完成后发一次 → 接 `map-fields` 等映射/落库节点。~~可选 `Page`（每页一次）~~——原计划声明但未实现，已删除空悬端口定义，后续按需补回。例：DingTalk `result.list[]` 跨页打平后，每个 item 即一个 `userid/name/dept_id` 用户对象，故 `map-fields` 用 `$input.item().userid` 取值（`$input` 为 n8n 式输入容器，见 §3 阶段一；等价于 `$json.userid`）。
   2. CLI `workflow validate <file>`：基于已缓存/内置节点 schema 本地校验节点类型、端口、连接图（呼应 task-003 S6/S7）；`--dry-run` 增加基础结构校验；`guide` 在 `incomplete` 时显式提示能力缺口。
 - 输入：阶段二（OAuth2 + httpRequest）、阶段三（DbUpsert）；CLI 现有 `node-types`/`workflows`/`guide` 命令。
 - 输出：可用 `PaginateNode` 跑通「OAuth2 取令牌 → 带令牌分页拉全量 → 落库」；CLI 建流程前可本地发现非法节点/缺口。

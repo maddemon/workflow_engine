@@ -134,6 +134,10 @@ public sealed class DbUpsertNode : INodeType
             var allItems = inputBatch.Items.Select(i => (object?)i.Data).ToList();
             var preparedExpressions = Columns.Values.Select(JsEngine.PrepareExpression).ToList();
 
+            // 单引擎复用：全局变量只注入一次，逐项变量在循环内覆盖。
+            using var engine = JsEngine.Create();
+            engine.ApplyGlobalVariables(context);
+
             await using var connection = DbConnectionFactory.CreateConnection(dialect, connectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
@@ -151,7 +155,7 @@ public sealed class DbUpsertNode : INodeType
                     cancellationToken.ThrowIfCancellationRequested();
 
                     var item = inputBatch.Items[itemIndex];
-                    var values = EvaluateRowValues(preparedExpressions, allItems, item.Data, itemIndex);
+                    var values = EvaluateRowValues(engine, preparedExpressions, allItems, item.Data, itemIndex, context);
 
                     if (mode.Equals("update", StringComparison.OrdinalIgnoreCase))
                     {
@@ -332,16 +336,14 @@ public sealed class DbUpsertNode : INodeType
     }
 
     private List<object?> EvaluateRowValues(
+        JsEngine engine,
         IReadOnlyList<Prepared<Script>> preparedExpressions,
         List<object?> allItems,
         JsonNode? currentItem,
-        int itemIndex)
+        int itemIndex,
+        NodeExecutionContext context)
     {
-        using var engine = JsEngine.Create();
-        engine.SetValue("$json", currentItem);
-        engine.SetValue("$input", new InputContainer(allItems, currentItem));
-        engine.SetValue("$itemIndex", itemIndex);
-        engine.SetValue("$runIndex", itemIndex);
+        engine.ApplyItemScope(context, currentItem, allItems, itemIndex);
 
         var values = new List<object?>();
         foreach (var prepared in preparedExpressions)

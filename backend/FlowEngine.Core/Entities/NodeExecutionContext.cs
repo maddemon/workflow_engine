@@ -101,6 +101,13 @@ public class NodeExecutionContext
     public IDictionary<string, JsonNode?> Memory { get; set; } = new Dictionary<string, JsonNode?>(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
+    /// 由工厂注入的全局变量字典（非逐项变量），供节点在逐项求值时复用。
+    /// 包含 $credentials/$env/$workflow/$execution/$vars/$now/$today/$node/$ctx 等，
+    /// 不含逐项变量 $json/$input/$itemIndex/$runIndex。
+    /// </summary>
+    public IReadOnlyDictionary<string, object?>? GlobalVariables { get; set; }
+
+    /// <summary>
     /// LLM 流式 token 回调，由 WorkflowExecutor 注入用于将 LLM 增量 chunk 推送到前端。
     /// 仅在 AgentNode 等使用 LLM 的节点执行时被触发。
     /// </summary>

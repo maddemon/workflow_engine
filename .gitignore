@@ -401,3 +401,5 @@ cli/.env
 
 review_diff.patch
 .nuget-offline.tmp.config
+.agents/.cron-lock
+.superpowers/sdd/task-4-report.md

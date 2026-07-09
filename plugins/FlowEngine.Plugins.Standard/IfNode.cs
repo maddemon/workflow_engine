@@ -29,13 +29,13 @@ public sealed class IfNode : INodeType
     public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
 
     /// <summary>
-    /// 条件表达式，求值结果应为 true 或 false。
-    /// 支持比较运算符：==, !=, >, <, >=, <=
-    /// 示例：<c>input.status == "active"</c> 或 <c>input.count > 10</c>
+    /// 条件表达式，由 ParameterResolver 在工厂阶段求值。
+    /// 支持 <c>$json.status === 'active'</c>、<c>$input.item().count > 10</c>、<c>$credentials.x.accessToken</c> 等
+    /// 统一表达式变量模型中的所有 <c>$</c> 前缀变量。
     /// </summary>
     [DisplayName("Condition")]
-    [Description("Condition that evaluates to true or false. Supports ==, !=, >, <, >=, <= operators (e.g. input.status == 'active').")]
-    [Hint("language", ScriptLanguage.JavaScript)]
+    [Description("Condition expression (e.g. $json.status === 'active', $input.item().count > 10).")]
+    [Hint(PresentationHint.Expression)]
     public string Condition { get; set; } = string.Empty;
 
     /// <inheritdoc />
@@ -54,12 +54,12 @@ public sealed class IfNode : INodeType
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(Condition))
+            if (!context.ResolvedParameters.TryGetValue("condition", out var resolvedValue) || resolvedValue is null)
             {
                 return Task.FromResult(context.ErrorResult("MissingCondition", "Condition 参数不能为空。"));
             }
 
-            var conditionResult = ToBoolean(Condition);
+            var conditionResult = ToBoolean(resolvedValue);
 
             var inputBatch = context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch)
                 ? batch
@@ -78,71 +78,22 @@ public sealed class IfNode : INodeType
         }
     }
 
-    private static bool ToBoolean(string value)
+    /// <summary>
+    /// 将 ParameterResolver 已求值的结果转换为布尔值。
+    /// </summary>
+    private static bool ToBoolean(object value)
     {
-        var trimmed = value.Trim();
-
-        var operators = new[] { ">=", "<=", "==", "!=", ">", "<" };
-        foreach (var op in operators)
+        if (value is bool b) return b;
+        if (value is int i) return i != 0;
+        if (value is long l) return l != 0;
+        if (value is double d) return d != 0;
+        if (value is string s)
         {
-            var idx = trimmed.IndexOf(op, StringComparison.Ordinal);
-            if (idx > 0 && idx < trimmed.Length - op.Length)
-            {
-                var leftExpr = trimmed[..idx].Trim();
-                var rightExpr = trimmed[(idx + op.Length)..].Trim();
-                return Compare(leftExpr, rightExpr, op);
-            }
+            if (bool.TryParse(s, out var boolResult)) return boolResult;
+            if (s.Equals("true", StringComparison.OrdinalIgnoreCase)) return true;
+            if (s.Equals("false", StringComparison.OrdinalIgnoreCase)) return false;
+            return !string.IsNullOrEmpty(s);
         }
-
-        if (bool.TryParse(trimmed, out var b)) return b;
-        if (trimmed.Equals("true", StringComparison.OrdinalIgnoreCase)) return true;
-        if (trimmed.Equals("false", StringComparison.OrdinalIgnoreCase)) return false;
-
-        if (double.TryParse(trimmed, out var n)) return n != 0;
-
-        return !string.IsNullOrEmpty(trimmed);
-    }
-
-    private static bool Compare(string left, string right, string op)
-    {
-        left = Unquote(left);
-        right = Unquote(right);
-
-        if (double.TryParse(left, out var leftNum) && double.TryParse(right, out var rightNum))
-        {
-            return op switch
-            {
-                ">=" => leftNum >= rightNum,
-                "<=" => leftNum <= rightNum,
-                "==" => leftNum == rightNum,
-                "!=" => leftNum != rightNum,
-                ">" => leftNum > rightNum,
-                "<" => leftNum < rightNum,
-                _ => false
-            };
-        }
-
-        return op switch
-        {
-            "==" => string.Equals(left, right, StringComparison.Ordinal),
-            "!=" => !string.Equals(left, right, StringComparison.Ordinal),
-            ">=" => string.Compare(left, right, StringComparison.Ordinal) >= 0,
-            "<=" => string.Compare(left, right, StringComparison.Ordinal) <= 0,
-            ">" => string.Compare(left, right, StringComparison.Ordinal) > 0,
-            "<" => string.Compare(left, right, StringComparison.Ordinal) < 0,
-            _ => false
-        };
-    }
-
-    private static string Unquote(string value)
-    {
-        var trimmed = value.Trim();
-        if ((trimmed.StartsWith('\'') && trimmed.EndsWith('\'')) ||
-            (trimmed.StartsWith('"') && trimmed.EndsWith('"')))
-        {
-            return trimmed[1..^1];
-        }
-
-        return trimmed;
+        return value is not null;
     }
 }

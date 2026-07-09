@@ -119,6 +119,13 @@ const commonErrors = [
   },
 ];
 
+const recentProgress = [
+  'DbUpsertNode（通用数据库 upsert，支持 PG/MySQL/MSSQL）',
+  'PaginateNode（游标分页拉取，支持 cursor/offset）',
+  'OAuth2 凭据类型 + 令牌自动托管（获取/缓存/刷新/重试）',
+  'IfNode/FilterNode 条件表达式统一走表达式引擎（支持 $json/$credentials 等变量）',
+];
+
 const knownGaps = [
   '平台专用 SDK 节点（钉钉 / 企业微信 / 飞书）未提供，需用通用 OAuth2 + HTTP 节点自行组装。',
   '部分高级数据库功能（存储过程、复杂迁移）需自行扩展。',
@@ -272,8 +279,8 @@ function buildGuideJson(nodeTypes: NodeTypeDescriptorDto[], incomplete: boolean)
     examples: buildExamples(),
     commonErrors,
     ...(incomplete
-      ? { incomplete: true, offlineNotice: '未连接后端，节点类型清单不可用。以下为基础模板与已知内置能力。', knownGaps }
-      : {}),
+      ? { incomplete: true, offlineNotice: '未连接后端，节点类型清单不可用。以下为基础模板与已知内置能力。', recentProgress, knownGaps }
+      : { recentProgress }),
   };
 }
 
@@ -326,6 +333,11 @@ function buildGuideText(nodeTypes: NodeTypeDescriptorDto[], incomplete: boolean)
   lines.push('');
 
   if (incomplete) {
+    lines.push('## 近期已补齐能力');
+    for (const p of recentProgress) {
+      lines.push(`- ${p}`);
+    }
+    lines.push('');
     lines.push('## 已知能力缺口');
     for (const gap of knownGaps) {
       lines.push(`- ${gap}`);

@@ -5,11 +5,15 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Scripting;
+using Jint;
 
 namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
 /// 过滤节点，根据条件保留或丢弃数据项。
+/// <c>Condition</c> 为 JS 表达式，在逐项求值时支持 <c>$json</c>/<c>$input</c>/<c>$credentials</c> 等所有 <c>$</c> 前缀变量。
+/// <c>Conditions</c> 列表为结构化条件（LeftValue/Operation/RightValue），独立于表达式求值。
 /// </summary>
 public sealed class FilterNode : INodeType
 {
@@ -29,10 +33,11 @@ public sealed class FilterNode : INodeType
     public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
 
     /// <summary>
-    /// 过滤条件（表达式）。
+    /// 过滤条件表达式（逐项求值）。支持 <c>$json.field === 'value'</c>、<c>$input.item().count > 10</c> 等。
+    /// 由节点在执行时逐项求值（不经 ParameterResolver 预求值）。
     /// </summary>
-    [Description("Condition expression. Items matching the condition are kept.")]
-    [Hint(PresentationHint.TextArea)]
+    [Description("Condition expression evaluated per item (e.g. $json.status === 'active').")]
+    [Hint(PresentationHint.Script)]
     public string Condition { get; set; } = string.Empty;
 
     /// <summary>
@@ -42,9 +47,9 @@ public sealed class FilterNode : INodeType
     public FilterCombinator Combinator { get; set; } = FilterCombinator.And;
 
     /// <summary>
-    /// 额外条件列表。
+    /// 额外条件列表（结构化）。
     /// </summary>
-    [Description("Additional conditions to combine.")]
+    [Description("Additional structured conditions to combine.")]
     public List<FilterCondition> Conditions { get; set; } = [];
 
     /// <inheritdoc />
@@ -68,9 +73,23 @@ public sealed class FilterNode : INodeType
         var keptItems = new List<DataItem>();
         var discardedItems = new List<DataItem>();
 
-        foreach (var item in inputBatch.Items)
+        // 预编译主条件表达式
+        Prepared<Acornima.Ast.Script>? preparedCondition = null;
+        if (!string.IsNullOrWhiteSpace(Condition))
         {
-            var matches = EvaluateCondition(item.Data, context);
+            preparedCondition = JsEngine.PrepareExpression(Condition);
+        }
+
+        var allItems = inputBatch.Items.Select(i => (object?)i.Data).ToList();
+
+        // 单引擎复用：全局变量只注入一次，逐项变量在循环内覆盖。
+        using var engine = JsEngine.Create();
+        engine.ApplyGlobalVariables(context);
+
+        for (var itemIndex = 0; itemIndex < inputBatch.Items.Count; itemIndex++)
+        {
+            var item = inputBatch.Items[itemIndex];
+            var matches = EvaluateItemCondition(engine, item.Data, allItems, itemIndex, preparedCondition, context);
             if (matches)
             {
                 keptItems.Add(item);
@@ -81,8 +100,6 @@ public sealed class FilterNode : INodeType
             }
         }
 
-        // For now, return kept items as output
-        // In a full implementation, we'd need separate output ports
         return Task.FromResult(new NodeExecutionResult
         {
             Success = true,
@@ -90,12 +107,21 @@ public sealed class FilterNode : INodeType
         });
     }
 
-    private bool EvaluateCondition(JsonNode? data, NodeExecutionContext context)
+    /// <summary>
+    /// 逐项求值：对单个数据项评估主条件 + 结构化条件组合。
+    /// </summary>
+    private bool EvaluateItemCondition(
+        JsEngine engine,
+        JsonNode? data,
+        List<object?> allItems,
+        int itemIndex,
+        Prepared<Acornima.Ast.Script>? preparedCondition,
+        NodeExecutionContext context)
     {
-        // If there's a main condition, evaluate it
-        if (!string.IsNullOrWhiteSpace(Condition))
+        // 主条件（表达式）
+        if (preparedCondition is not null)
         {
-            var mainResult = EvaluateExpression(Condition, data, context);
+            var mainResult = EvaluateExpressionForItem(engine, data, allItems, itemIndex, preparedCondition.Value, context);
             if (Conditions.Count == 0)
             {
                 return mainResult;
@@ -111,20 +137,67 @@ public sealed class FilterNode : INodeType
             }
         }
 
-        // Evaluate additional conditions
+        // 结构化条件
         if (Conditions.Count == 0)
         {
-            return true; // No conditions, keep all
+            return true;
         }
 
-        var results = Conditions.Select(c => EvaluateCondition(c, data, context)).ToList();
+        var results = Conditions.Select(c => EvaluateStructuredCondition(c, data)).ToList();
 
         return Combinator == FilterCombinator.And
             ? results.All(r => r)
             : results.Any(r => r);
     }
 
-    private bool EvaluateCondition(FilterCondition condition, JsonNode? data, NodeExecutionContext context)
+    /// <summary>
+    /// 用 JsEngine 对单个数据项求值表达式。引擎由调用方复用，此处仅覆盖逐项变量。
+    /// </summary>
+    private bool EvaluateExpressionForItem(
+        JsEngine engine,
+        JsonNode? data,
+        List<object?> allItems,
+        int itemIndex,
+        Prepared<Acornima.Ast.Script> preparedCondition,
+        NodeExecutionContext context)
+    {
+        engine.ApplyItemScope(context, data, allItems, itemIndex);
+
+        try
+        {
+            var result = engine.EvaluatePrepared(preparedCondition);
+            var clrValue = JsEngine.ToClrValue(result);
+            return ToBoolean(clrValue);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 将 JsEngine 求值结果转换为布尔值。
+    /// </summary>
+    private static bool ToBoolean(object? value)
+    {
+        if (value is bool b) return b;
+        if (value is int i) return i != 0;
+        if (value is long l) return l != 0;
+        if (value is double d) return d != 0;
+        if (value is string s)
+        {
+            if (bool.TryParse(s, out var boolResult)) return boolResult;
+            if (s.Equals("true", StringComparison.OrdinalIgnoreCase)) return true;
+            if (s.Equals("false", StringComparison.OrdinalIgnoreCase)) return false;
+            return !string.IsNullOrEmpty(s);
+        }
+        return value is not null;
+    }
+
+    /// <summary>
+    /// 结构化条件求值（LeftValue/Operation/RightValue）。
+    /// </summary>
+    private static bool EvaluateStructuredCondition(FilterCondition condition, JsonNode? data)
     {
         var leftValue = GetJsonValue(data, condition.LeftValue);
         var rightValue = condition.RightValue;
@@ -144,36 +217,6 @@ public sealed class FilterNode : INodeType
             FilterOperation.IsNotEmpty => !string.IsNullOrEmpty(leftValue),
             _ => false
         };
-    }
-
-    private static bool EvaluateExpression(string expression, JsonNode? data, NodeExecutionContext context)
-    {
-        // Simple expression evaluation
-        // For now, just check if the expression resolves to a truthy value
-        // A full implementation would parse {{ $json.field }} syntax
-        if (expression.StartsWith("{{") && expression.EndsWith("}}"))
-        {
-            var fieldPath = expression[2..^2].Trim();
-            if (fieldPath.StartsWith("$json."))
-            {
-                var path = fieldPath[6..];
-                var value = GetJsonValue(data, path);
-                return !string.IsNullOrEmpty(value) && value != "false" && value != "0";
-            }
-        }
-
-        // Check for direct boolean expressions
-        var trimmed = expression.Trim();
-        if (bool.TryParse(trimmed, out var boolResult))
-        {
-            return boolResult;
-        }
-
-        if (trimmed.Equals("true", StringComparison.OrdinalIgnoreCase)) return true;
-        if (trimmed.Equals("false", StringComparison.OrdinalIgnoreCase)) return false;
-
-        // For non-empty strings, return true
-        return !string.IsNullOrEmpty(trimmed);
     }
 
     private static string? GetJsonValue(JsonNode? data, string? path)
