@@ -1,4 +1,5 @@
 using System.Reflection;
+using System.Runtime.Versioning;
 using FlowEngine.Core.Abstractions;
 using Microsoft.Extensions.Logging;
 
@@ -11,6 +12,13 @@ public sealed class PluginLoader
 {
     private readonly string _pluginsDirectory;
     private readonly ILogger<PluginLoader> _logger;
+
+    // B9：宿主自身编译时的目标框架，用于拦截与宿主 TFM 不一致的陈旧插件。
+    // 取自当前程序集的 TargetFrameworkAttribute，避免硬编码，随宿主 TFM 自动同步。
+    private static readonly string HostFrameworkName =
+        typeof(PluginLoader).Assembly
+            .GetCustomAttribute<TargetFrameworkAttribute>()?.FrameworkName
+        ?? string.Empty;
 
     /// <summary>
     /// 初始化插件加载器。
@@ -47,6 +55,19 @@ public sealed class PluginLoader
             {
                 var context = new PluginLoadContext(dllPath);
                 var assembly = context.LoadFromAssemblyPath(Path.GetFullPath(dllPath));
+
+                // B9：拦截与宿主目标框架不一致的陈旧插件，给出明确告警而非晦涩的类型加载异常。
+                var pluginFramework = assembly.GetCustomAttribute<TargetFrameworkAttribute>()?.FrameworkName;
+                if (!string.IsNullOrEmpty(pluginFramework) &&
+                    !string.IsNullOrEmpty(HostFrameworkName) &&
+                    !string.Equals(pluginFramework, HostFrameworkName, StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogWarning(
+                        "跳过插件 {DllPath}：目标框架 {PluginFramework} 与宿主 {HostFramework} 不一致，可能是陈旧插件。",
+                        dllPath, pluginFramework, HostFrameworkName);
+                    continue;
+                }
+
                 var nodeTypes = assembly.GetTypes()
                     .Where(t => typeof(INodeType).IsAssignableFrom(t)
                                 && t is { IsClass: true, IsAbstract: false })
