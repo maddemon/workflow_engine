@@ -13,19 +13,19 @@
 
   <Target Name="BuildPlugins" BeforeTargets="BeforeBuild">
     <MSBuild Projects="..\..\plugins\FlowEngine.Plugins.Standard\FlowEngine.Plugins.Standard.csproj" Targets="Build" />
-    <!-- 将插件构建产物同步到插件扫描目录（../../plugins），保证本地运行与集成测试加载到的始终是当前源码编译的 DLL。
-         插件仅引用 Core，其依赖（Jint 等）由宿主默认加载上下文提供，无需随插件一并拷贝。 -->
+    <!-- 将插件构建产物（含其私有依赖 OpenAI / System.ClientModel 等）同步到插件扫描目录（../../plugins）。
+         插件共享依赖（Core / Jint / 运行时程序集）由宿主默认加载上下文提供；PluginLoadContext.Load 会优先复用
+         默认上下文中已加载的同名程序集，因此即便一并拷贝也不会造成类型标识冲突，仅插件私有依赖会被插件 ALC 实际加载。 -->
     <ItemGroup>
-      <PluginOutputFiles Include="..\..\plugins\FlowEngine.Plugins.Standard\bin\$(Configuration)\$(TargetFramework)\FlowEngine.Plugins.Standard.dll" />
-      <PluginOutputFiles Include="..\..\plugins\FlowEngine.Plugins.Standard\bin\$(Configuration)\$(TargetFramework)\FlowEngine.Plugins.Standard.pdb" />
-      <PluginOutputFiles Include="..\..\plugins\FlowEngine.Plugins.Standard\bin\$(Configuration)\$(TargetFramework)\FlowEngine.Plugins.Standard.deps.json" />
+      <PluginOutputFiles Include="..\..\plugins\FlowEngine.Plugins.Standard\bin\$(Configuration)\$(TargetFramework)\*.dll" />
+      <PluginOutputFiles Include="..\..\plugins\FlowEngine.Plugins.Standard\bin\$(Configuration)\$(TargetFramework)\*.pdb" />
     </ItemGroup>
     <Copy SourceFiles="@(PluginOutputFiles)" DestinationFolder="..\..\plugins" SkipUnchangedFiles="true" />
   </Target>
 
   <Target Name="CopyPluginsOnPublish" AfterTargets="Publish">
     <ItemGroup>
-      <PluginAssemblies Include="..\..\plugins\**\bin\$(Configuration)\$(TargetFramework)\FlowEngine.Plugins.*.dll" />
+      <PluginAssemblies Include="..\..\plugins\FlowEngine.Plugins.Standard\bin\$(Configuration)\$(TargetFramework)\*.dll" />
     </ItemGroup>
     <MakeDir Directories="$(PublishDir)plugins" />
     <Copy SourceFiles="@(PluginAssemblies)" DestinationFolder="$(PublishDir)plugins\" SkipUnchangedFiles="true" />

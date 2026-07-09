@@ -76,17 +76,26 @@ public sealed class WebhookHandler : IWebhookHandler
             return;
         }
 
-        if (!await ValidateRequestAsync(context, route).ConfigureAwait(false))
+        // 请求体仅读取一次，供签名校验与 payload 解析复用；
+        // 不依赖流的 Seek/Position 回退，避免在非 seekable 请求流（如 Kestrel）上崩溃（B8 修复）。
+        // 契约：空 body（ContentLength == 0）时 rawBody 为 null，签名分支以 string.Empty 参与 HMAC，
+        // 与无 body 的客户端约定一致，后续改动勿破坏此契约。
+        string? rawBody = null;
+        if (context.Request.ContentLength > 0)
+        {
+            using var reader = new StreamReader(context.Request.Body, Encoding.UTF8, leaveOpen: true);
+            rawBody = await reader.ReadToEndAsync(context.RequestAborted).ConfigureAwait(false);
+        }
+
+        if (!await ValidateRequestAsync(context, route, rawBody).ConfigureAwait(false))
         {
             return;
         }
 
         object? payload = null;
-        if (context.Request.ContentLength > 0)
+        if (!string.IsNullOrEmpty(rawBody))
         {
-            using var reader = new StreamReader(context.Request.Body, Encoding.UTF8);
-            var body = await reader.ReadToEndAsync(context.RequestAborted).ConfigureAwait(false);
-            payload = JsonSerializer.Deserialize<Dictionary<string, object>>(body);
+            payload = JsonSerializer.Deserialize<Dictionary<string, object>>(rawBody);
         }
 
         var metadata = new Dictionary<string, string>
@@ -195,7 +204,7 @@ public sealed class WebhookHandler : IWebhookHandler
         }
     }
 
-    private async Task<bool> ValidateRequestAsync(HttpContext context, WebhookRoute route)
+    private async Task<bool> ValidateRequestAsync(HttpContext context, WebhookRoute route, string? rawBody)
     {
         // H3：未配置密钥时，必须显式配置 IP 白名单作为替代防护，否则拒绝匿名触发。
         // 避免空 Secret 使任意匿名 POST 直接触发工作流执行。
@@ -230,8 +239,7 @@ public sealed class WebhookHandler : IWebhookHandler
                 return false;
             }
 
-            var body = await ReadBodyAsync(context.Request).ConfigureAwait(false);
-            var expectedHash = ComputeHmacSha256(route.Secret, body);
+            var expectedHash = ComputeHmacSha256(route.Secret, rawBody ?? string.Empty);
             var expected = $"sha256={expectedHash}";
 
             if (!CryptographicOperations.FixedTimeEquals(
@@ -245,8 +253,6 @@ public sealed class WebhookHandler : IWebhookHandler
                     context.RequestAborted).ConfigureAwait(false);
                 return false;
             }
-
-            context.Request.Body.Position = 0;
         }
 
         if (route.AllowedIps?.Count > 0)
@@ -288,12 +294,6 @@ public sealed class WebhookHandler : IWebhookHandler
         }
 
         return true;
-    }
-
-    private static async Task<string> ReadBodyAsync(HttpRequest request)
-    {
-        using var reader = new StreamReader(request.Body, Encoding.UTF8, leaveOpen: true);
-        return await reader.ReadToEndAsync().ConfigureAwait(false);
     }
 
     private static string ComputeHmacSha256(string secret, string body)
