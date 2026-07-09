@@ -147,7 +147,8 @@ describe('commands/guide', () => {
     const output = await captureStdout(() => guide({ configOptions: options }));
 
     expect(output).toContain('Flow Engine DSL 编写指南');
-    expect(output).toContain('无法获取后端节点类型清单');
+    expect(output).toContain('未连接后端');
+    expect(output).toContain('节点类型清单不可用');
   });
 
   it('JSON mode marks incomplete when backend is unavailable', async () => {
@@ -163,5 +164,16 @@ describe('commands/guide', () => {
     expect(parsed.schema).toBeDefined();
     expect(parsed.examples).toBeDefined();
     spy.mockRestore();
+  });
+
+  it('shows offline notice and known capability gaps when backend is unavailable', async () => {
+    mockInstance.get.mockRejectedValue(new Error('Network Error'));
+
+    const output = await captureStdout(() => guide({ configOptions: options }));
+
+    expect(output).toContain('未连接后端');
+    expect(output).toContain('节点类型清单不可用');
+    expect(output).toContain('已知能力缺口');
+    expect(output).toContain('manualTrigger');
   });
 });

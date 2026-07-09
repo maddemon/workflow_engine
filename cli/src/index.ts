@@ -51,6 +51,7 @@ import {
   workflowImport,
   workflowList,
   workflowUpdate,
+  workflowValidate,
   workflowVersions,
 } from './commands/workflows.js';
 
@@ -653,6 +654,15 @@ workflowCmd
       dryRun: opts.dryRun,
       profile: opts.profile,
     });
+  });
+
+workflowCmd
+  .command('validate <file>')
+  .description('离线校验工作流 JSON 文件')
+  .action(async function (file: string) {
+    const command = this;
+    const opts = command.optsWithGlobals<{ profile?: string }>();
+    await workflowValidate({ file, profile: opts.profile });
   });
 
 workflowCmd

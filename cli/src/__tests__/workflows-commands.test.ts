@@ -11,6 +11,7 @@ import {
   workflowImport,
   workflowList,
   workflowUpdate,
+  workflowValidate,
   workflowVersions,
 } from '../commands/workflows.js';
 import { setProfile, type ConfigOptions } from '../config.js';
@@ -217,13 +218,51 @@ describe('commands/workflows', () => {
     expect(mockInstance.post.mock.calls[0][1].name).toBe('New Name');
   });
 
-  it('create - dry-run prints request body', async () => {
+  it('create - dry-run prints request body for valid workflow', async () => {
     const filePath = join(tempDir, 'workflow.json');
     writeFileSync(
       filePath,
-      JSON.stringify({ name: 'Workflow One', nodes: [], connections: [] }),
+      JSON.stringify({
+        name: 'Workflow One',
+        nodes: [
+          {
+            id: 'start',
+            typeName: 'manualTrigger',
+            name: '开始',
+            parameters: {},
+            ports: [{ name: 'Output', direction: 'Output', type: 'Main' }],
+            positionX: 100,
+            positionY: 100,
+            isEntry: true,
+          },
+          {
+            id: 'http',
+            typeName: 'httpRequest',
+            name: '请求',
+            parameters: { method: 'GET', url: 'https://api.example.com/items' },
+            ports: [
+              { name: 'Input', direction: 'Input', type: 'Main' },
+              { name: 'Output', direction: 'Output', type: 'Main' },
+            ],
+            positionX: 300,
+            positionY: 100,
+            isEntry: false,
+          },
+        ],
+        connections: [
+          {
+            id: 'conn-1',
+            sourceNodeId: 'start',
+            sourcePortName: 'Output',
+            targetNodeId: 'http',
+            targetPortName: 'Input',
+          },
+        ],
+      }),
       'utf-8',
     );
+
+    mockInstance.get.mockRejectedValue(new Error('offline'));
 
     const output = await captureStdout(() =>
       workflowCreate({ file: filePath, dryRun: true, configOptions: options }),
@@ -232,6 +271,48 @@ describe('commands/workflows', () => {
     expect(output).toContain('Dry-run 模式');
     expect(output).toContain('"name": "Workflow One"');
     expect(output).toContain('"createdBy": "user-1"');
+    expect(mockInstance.post).not.toHaveBeenCalled();
+  });
+
+  it('create - dry-run fails validation for invalid node type', async () => {
+    const filePath = join(tempDir, 'invalid.json');
+    writeFileSync(
+      filePath,
+      JSON.stringify({
+        name: 'Invalid Workflow',
+        nodes: [
+          {
+            id: 'start',
+            typeName: 'manualTrigger',
+            name: '开始',
+            parameters: {},
+            ports: [{ name: 'Output', direction: 'Output', type: 'Main' }],
+            positionX: 100,
+            positionY: 100,
+            isEntry: true,
+          },
+          {
+            id: 'bad',
+            typeName: 'notImplementedNode',
+            name: 'Bad',
+            parameters: {},
+            ports: [{ name: 'Output', direction: 'Output', type: 'Main' }],
+            positionX: 300,
+            positionY: 100,
+            isEntry: false,
+          },
+        ],
+        connections: [],
+      }),
+      'utf-8',
+    );
+
+    mockInstance.get.mockRejectedValue(new Error('offline'));
+
+    await expect(
+      workflowCreate({ file: filePath, dryRun: true, configOptions: options }),
+    ).rejects.toThrow(CLIError);
+
     expect(mockInstance.post).not.toHaveBeenCalled();
   });
 
@@ -398,5 +479,209 @@ describe('commands/workflows', () => {
       const cliErr = err as CLIError;
       expect(cliErr.exitCode).toBe(ExitCode.InvocationError);
     }
+  });
+
+  describe('workflow validate', () => {
+    function writeWorkflow(fileName: string, workflow: unknown): string {
+      const filePath = join(tempDir, fileName);
+      writeFileSync(filePath, JSON.stringify(workflow), 'utf-8');
+      return filePath;
+    }
+
+    const manualTriggerNode = {
+      id: 'start',
+      typeName: 'manualTrigger',
+      name: '开始',
+      parameters: {},
+      ports: [{ name: 'Output', direction: 'Output', type: 'Main' }],
+      positionX: 100,
+      positionY: 100,
+      isEntry: true,
+    };
+
+    const httpRequestNode = {
+      id: 'http',
+      typeName: 'httpRequest',
+      name: '请求',
+      parameters: { method: 'GET', url: 'https://api.example.com/items' },
+      ports: [
+        { name: 'Input', direction: 'Input', type: 'Main' },
+        { name: 'Output', direction: 'Output', type: 'Main' },
+      ],
+      positionX: 300,
+      positionY: 100,
+      isEntry: false,
+    };
+
+    const validWorkflow = {
+      name: 'Valid Workflow',
+      nodes: [manualTriggerNode, httpRequestNode],
+      connections: [
+        {
+          id: 'conn-1',
+          sourceNodeId: 'start',
+          sourcePortName: 'Output',
+          targetNodeId: 'http',
+          targetPortName: 'Input',
+        },
+      ],
+    };
+
+    beforeEach(() => {
+      mockInstance.get.mockRejectedValue(new Error('offline'));
+    });
+
+    it('passes for valid workflow', async () => {
+      const filePath = writeWorkflow('valid.json', validWorkflow);
+
+      const output = await captureStdout(() =>
+        workflowValidate({ file: filePath, configOptions: options }),
+      );
+
+      expect(output).toContain('工作流校验通过');
+    });
+
+    it('reports unknown node type', async () => {
+      const workflow = {
+        ...validWorkflow,
+        nodes: [
+          {
+            id: 'bad',
+            typeName: 'unknownNode',
+            name: 'Bad',
+            parameters: {},
+            ports: [{ name: 'Output', direction: 'Output', type: 'Main' }],
+            positionX: 0,
+            positionY: 0,
+            isEntry: true,
+          },
+        ],
+      };
+      const filePath = writeWorkflow('unknown.json', workflow);
+
+      await expect(
+        workflowValidate({ file: filePath, configOptions: options }),
+      ).rejects.toThrow(CLIError);
+
+      try {
+        await workflowValidate({ file: filePath, configOptions: options });
+      } catch (err) {
+        const cliErr = err as CLIError;
+        expect(cliErr.exitCode).toBe(ExitCode.InvocationError);
+        expect(cliErr.message).toContain('unknownNode');
+      }
+    });
+
+    it('reports port direction mismatch', async () => {
+      const workflow = {
+        ...validWorkflow,
+        connections: [
+          {
+            id: 'conn-1',
+            sourceNodeId: 'start',
+            sourcePortName: 'Input',
+            targetNodeId: 'http',
+            targetPortName: 'Input',
+          },
+        ],
+      };
+      const filePath = writeWorkflow('port.json', workflow);
+
+      await expect(
+        workflowValidate({ file: filePath, configOptions: options }),
+      ).rejects.toThrow(CLIError);
+
+      try {
+        await workflowValidate({ file: filePath, configOptions: options });
+      } catch (err) {
+        const cliErr = err as CLIError;
+        expect(cliErr.exitCode).toBe(ExitCode.InvocationError);
+        expect(cliErr.message).toContain('Output');
+      }
+    });
+
+    it('reports missing required parameter', async () => {
+      const workflow = {
+        ...validWorkflow,
+        nodes: [
+          manualTriggerNode,
+          {
+            ...httpRequestNode,
+            parameters: { method: 'GET' },
+          },
+        ],
+      };
+      const filePath = writeWorkflow('param.json', workflow);
+
+      await expect(
+        workflowValidate({ file: filePath, configOptions: options }),
+      ).rejects.toThrow(CLIError);
+
+      try {
+        await workflowValidate({ file: filePath, configOptions: options });
+      } catch (err) {
+        const cliErr = err as CLIError;
+        expect(cliErr.exitCode).toBe(ExitCode.InvocationError);
+        expect(cliErr.message).toContain('url');
+      }
+    });
+
+    it('reports missing entry node', async () => {
+      const workflow = {
+        ...validWorkflow,
+        nodes: [manualTriggerNode, { ...httpRequestNode, isEntry: false }],
+      };
+      workflow.nodes[0].isEntry = false;
+      const filePath = writeWorkflow('entry.json', workflow);
+
+      await expect(
+        workflowValidate({ file: filePath, configOptions: options }),
+      ).rejects.toThrow(CLIError);
+
+      try {
+        await workflowValidate({ file: filePath, configOptions: options });
+      } catch (err) {
+        const cliErr = err as CLIError;
+        expect(cliErr.exitCode).toBe(ExitCode.InvocationError);
+        expect(cliErr.message).toContain('入口');
+      }
+    });
+
+    it('JSON mode returns structured validation result', async () => {
+      const workflow = {
+        ...validWorkflow,
+        nodes: [
+          {
+            id: 'bad',
+            typeName: 'notImplementedNode',
+            name: 'Bad',
+            parameters: {},
+            ports: [{ name: 'Output', direction: 'Output', type: 'Main' }],
+            positionX: 0,
+            positionY: 0,
+            isEntry: true,
+          },
+        ],
+      };
+      const filePath = writeWorkflow('invalid-json.json', workflow);
+
+      setOutputOptions({ json: true, verbose: false });
+      const originalExitCode = process.exitCode;
+      process.exitCode = 0;
+      const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+
+      await workflowValidate({ file: filePath, configOptions: options });
+
+      expect(spy).toHaveBeenCalled();
+      const parsed = JSON.parse(spy.mock.calls[0][0] as string);
+      expect(parsed.valid).toBe(false);
+      expect(parsed.errors.length).toBeGreaterThan(0);
+      expect(Array.isArray(parsed.warnings)).toBe(true);
+      expect(process.exitCode).toBe(ExitCode.InvocationError);
+
+      spy.mockRestore();
+      process.exitCode = originalExitCode;
+      setOutputOptions({ json: false, verbose: false });
+    });
   });
 });

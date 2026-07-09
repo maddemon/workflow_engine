@@ -1,11 +1,12 @@
 import { createClient, type ApiClientOptions } from '../api/client.js';
 import { getConfig, type ConfigOptions } from '../config.js';
 import { CLIError, ErrorCode, ExitCode } from '../errors.js';
-import { isJsonMode, isVerbose, log, writeJson } from '../output.js';
+import { isJsonMode, isVerbose, log, verbose, writeJson } from '../output.js';
 import type {
   CreateWorkflowDto,
   ImportResult,
   ImportWorkflowRequest,
+  NodeTypeDescriptorDto,
   PagedResult,
   UpdateWorkflowDto,
   WorkflowDto,
@@ -13,6 +14,7 @@ import type {
   WorkflowSummaryDto,
 } from '../types.js';
 import { readFileSync } from 'node:fs';
+import { BUILT_IN_NODE_TYPES } from './builtInNodeTypes.js';
 
 export interface WorkflowListOptions {
   page?: number;
@@ -71,6 +73,12 @@ export interface WorkflowImportOptions {
   file: string;
   projectId?: string;
   dryRun?: boolean;
+  profile?: string;
+  configOptions?: ConfigOptions;
+}
+
+export interface WorkflowValidateOptions {
+  file: string;
   profile?: string;
   configOptions?: ConfigOptions;
 }
@@ -141,6 +149,231 @@ function readJsonFile(filePath: string): unknown {
       err,
     );
   }
+}
+
+interface NodeTypeSchema {
+  typeName: string;
+  ports: Array<{ name: string; direction: string; type: string }>;
+  parameters: Array<{ name: string; required: boolean }>;
+}
+
+function getBuiltInNodeTypeMap(): Map<string, NodeTypeSchema> {
+  const map = new Map<string, NodeTypeSchema>();
+  for (const nodeType of BUILT_IN_NODE_TYPES) {
+    map.set(nodeType.typeName, {
+      typeName: nodeType.typeName,
+      ports: nodeType.ports,
+      parameters: nodeType.parameters,
+    });
+  }
+  return map;
+}
+
+async function fetchNodeTypeSchemas(
+  profile?: string,
+  configOptions?: ConfigOptions,
+): Promise<Map<string, NodeTypeSchema>> {
+  const schemas = getBuiltInNodeTypeMap();
+  try {
+    const client = createApiClient(profile, configOptions);
+    const response = await client.get('/node-types');
+    const data: unknown = response.data;
+    let nodeTypes: NodeTypeDescriptorDto[] = [];
+    if (Array.isArray(data)) {
+      nodeTypes = data as NodeTypeDescriptorDto[];
+    } else if (isRecord(data) && Array.isArray(data.items)) {
+      nodeTypes = data.items as NodeTypeDescriptorDto[];
+    }
+    for (const nodeType of nodeTypes) {
+      schemas.set(nodeType.typeName, nodeType);
+    }
+  } catch (err) {
+    verbose('无法从后端获取节点类型，回退到内置 schema');
+  }
+  return schemas;
+}
+
+function isNonEmptyValue(value: unknown): boolean {
+  if (value === undefined || value === null) return false;
+  if (typeof value === 'string') return value.trim().length > 0;
+  if (Array.isArray(value)) return value.length > 0;
+  if (isRecord(value)) return Object.keys(value).length > 0;
+  return true;
+}
+
+interface ValidationResult {
+  valid: boolean;
+  errors: string[];
+  warnings: string[];
+}
+
+function validateWorkflow(raw: unknown, schemas: Map<string, NodeTypeSchema>): ValidationResult {
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
+  if (!isRecord(raw)) {
+    errors.push('工作流文件必须是 JSON 对象');
+    return { valid: false, errors, warnings };
+  }
+
+  if (typeof raw.name !== 'string' || raw.name.trim().length === 0) {
+    errors.push('工作流名称不能为空');
+  }
+
+  const nodesValid = Array.isArray(raw.nodes) && raw.nodes.length > 0;
+  if (!nodesValid) {
+    errors.push('nodes 必须是非空数组');
+  }
+
+  const connectionsValid = Array.isArray(raw.connections);
+  if (!connectionsValid) {
+    errors.push('connections 必须是数组');
+  }
+
+  if (!nodesValid) {
+    return { valid: false, errors, warnings };
+  }
+
+  const nodes = raw.nodes as unknown[];
+  const connections = raw.connections as unknown[];
+
+  const nodeMap = new Map<string, Record<string, unknown>>();
+  let entryCount = 0;
+
+  for (let i = 0; i < nodes.length; i++) {
+    const node = nodes[i];
+    const prefix = `nodes[${i}]`;
+    if (!isRecord(node)) {
+      errors.push(`${prefix} 必须是对象`);
+      continue;
+    }
+    if (typeof node.id !== 'string' || node.id.length === 0) {
+      errors.push(`${prefix} 缺少有效的 id`);
+      continue;
+    }
+    if (typeof node.typeName !== 'string' || node.typeName.length === 0) {
+      errors.push(`${prefix} 缺少有效的 typeName`);
+      continue;
+    }
+    if (node.isEntry === true) {
+      entryCount++;
+    }
+    nodeMap.set(node.id, node);
+  }
+
+  if (entryCount === 0) {
+    errors.push('至少需要一个入口节点（isEntry = true）');
+  }
+
+  for (const [id, node] of nodeMap.entries()) {
+    const typeName = String(node.typeName);
+    const schema = schemas.get(typeName);
+    if (!schema) {
+      errors.push(`节点 "${id}" 使用了未知的节点类型 "${typeName}"`);
+      continue;
+    }
+
+    const nodeParameters = isRecord(node.parameters) ? node.parameters : {};
+    for (const param of schema.parameters) {
+      if (param.required && !isNonEmptyValue(nodeParameters[param.name])) {
+        errors.push(`节点 "${id}" (${typeName}) 缺少必填参数 "${param.name}"`);
+      }
+    }
+  }
+
+  if (!connectionsValid) {
+    return { valid: false, errors, warnings };
+  }
+
+  for (let i = 0; i < connections.length; i++) {
+    const conn = connections[i];
+    const prefix = `connections[${i}]`;
+    if (!isRecord(conn)) {
+      errors.push(`${prefix} 必须是对象`);
+      continue;
+    }
+
+    const sourceId = typeof conn.sourceNodeId === 'string' ? conn.sourceNodeId : '';
+    const targetId = typeof conn.targetNodeId === 'string' ? conn.targetNodeId : '';
+    const sourcePort = typeof conn.sourcePortName === 'string' ? conn.sourcePortName : '';
+    const targetPort = typeof conn.targetPortName === 'string' ? conn.targetPortName : '';
+
+    if (!sourceId || !nodeMap.has(sourceId)) {
+      errors.push(`${prefix} 引用了不存在的源节点 "${sourceId}"`);
+      continue;
+    }
+    if (!targetId || !nodeMap.has(targetId)) {
+      errors.push(`${prefix} 引用了不存在的目标节点 "${targetId}"`);
+      continue;
+    }
+
+    const sourceNode = nodeMap.get(sourceId)!;
+    const targetNode = nodeMap.get(targetId)!;
+    const sourceSchema = schemas.get(String(sourceNode.typeName));
+    const targetSchema = schemas.get(String(targetNode.typeName));
+
+    if (sourceSchema) {
+      const port = sourceSchema.ports.find((p) => p.name === sourcePort);
+      if (!port) {
+        errors.push(
+          `${prefix} 源节点 "${sourceId}" (${sourceNode.typeName}) 不存在 Output 端口 "${sourcePort}"`,
+        );
+      } else if (port.direction !== 'Output') {
+        errors.push(
+          `${prefix} 源端口 "${sourcePort}" 必须是 Output 端口（当前为 ${port.direction}）`,
+        );
+      }
+    }
+
+    if (targetSchema) {
+      const port = targetSchema.ports.find((p) => p.name === targetPort);
+      if (!port) {
+        errors.push(
+          `${prefix} 目标节点 "${targetId}" (${targetNode.typeName}) 不存在 Input 端口 "${targetPort}"`,
+        );
+      } else if (port.direction !== 'Input') {
+        errors.push(
+          `${prefix} 目标端口 "${targetPort}" 必须是 Input 端口（当前为 ${port.direction}）`,
+        );
+      }
+    }
+  }
+
+  return { valid: errors.length === 0, errors, warnings };
+}
+
+export async function workflowValidate(options: WorkflowValidateOptions): Promise<void> {
+  const filePath = requireString(options.file, '--file');
+  const raw = readJsonFile(filePath);
+  const schemas = await fetchNodeTypeSchemas(options.profile, options.configOptions);
+  const result = validateWorkflow(raw, schemas);
+
+  if (isJsonMode()) {
+    writeJson(result);
+    if (!result.valid) {
+      process.exitCode = ExitCode.InvocationError;
+    }
+    return;
+  }
+
+  for (const warning of result.warnings) {
+    log(`[警告] ${warning}`);
+  }
+
+  if (result.valid) {
+    log('工作流校验通过');
+    return;
+  }
+
+  for (const error of result.errors) {
+    log(`[错误] ${error}`);
+  }
+
+  throw new CLIError(
+    `工作流校验失败：存在 ${result.errors.length} 处错误\n${result.errors.join('\n')}`,
+    ErrorCode.ValidationError,
+    ExitCode.InvocationError,
+  );
 }
 
 function parseActive(value: string | undefined): boolean | undefined {
@@ -343,6 +576,20 @@ export async function workflowCreate(options: WorkflowCreateOptions): Promise<vo
   const dto = buildCreateWorkflowDto({ ...options, file: filePath }, config);
 
   if (options.dryRun) {
+    const raw = readJsonFile(filePath);
+    const schemas = await fetchNodeTypeSchemas(options.profile, options.configOptions);
+    const validation = validateWorkflow(raw, schemas);
+    if (!validation.valid) {
+      for (const error of validation.errors) {
+        log(`[错误] ${error}`);
+      }
+      throw new CLIError(
+        `工作流校验失败：存在 ${validation.errors.length} 处错误\n${validation.errors.join('\n')}`,
+        ErrorCode.ValidationError,
+        ExitCode.InvocationError,
+      );
+    }
+
     if (isJsonMode()) {
       writeJson({ dryRun: true, requestBody: dto });
       return;

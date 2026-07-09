@@ -3,6 +3,7 @@ import { createClient, type ApiClientOptions } from '../api/client.js';
 import { getConfig, type ConfigOptions } from '../config.js';
 import { isJsonMode, isVerbose, log, writeJson, error } from '../output.js';
 import type { NodeTypeDescriptorDto } from '../types.js';
+import { BUILT_IN_NODE_TYPES } from './builtInNodeTypes.js';
 
 export interface GuideOptions {
   output?: string;
@@ -116,6 +117,12 @@ const commonErrors = [
     message: '工作流中存在孤立的节点或缺少入口节点。',
     resolution: '至少设置一个 isEntry=true 的节点，并确保所有节点都在连接图中可达。',
   },
+];
+
+const knownGaps = [
+  '平台专用 SDK 节点（钉钉 / 企业微信 / 飞书）未提供，需用通用 OAuth2 + HTTP 节点自行组装。',
+  '部分高级数据库功能（存储过程、复杂迁移）需自行扩展。',
+  'authorization_code 等交互式授权、外部凭据保险库（Vault/KMS）对接尚未实现。',
 ];
 
 function buildExamples(): unknown[] {
@@ -264,7 +271,9 @@ function buildGuideJson(nodeTypes: NodeTypeDescriptorDto[], incomplete: boolean)
     nodeTypes: groupByCategory(nodeTypes),
     examples: buildExamples(),
     commonErrors,
-    ...(incomplete ? { incomplete: true } : {}),
+    ...(incomplete
+      ? { incomplete: true, offlineNotice: '未连接后端，节点类型清单不可用。以下为基础模板与已知内置能力。', knownGaps }
+      : {}),
   };
 }
 
@@ -274,7 +283,7 @@ function buildGuideText(nodeTypes: NodeTypeDescriptorDto[], incomplete: boolean)
   lines.push('');
 
   if (incomplete) {
-    lines.push('> 注意：当前无法获取后端节点类型清单，以下内容为基础模板。');
+    lines.push('> 未连接后端，节点类型清单不可用。以下为基础模板与已知内置能力。');
     lines.push('');
   }
 
@@ -316,6 +325,14 @@ function buildGuideText(nodeTypes: NodeTypeDescriptorDto[], incomplete: boolean)
   }
   lines.push('');
 
+  if (incomplete) {
+    lines.push('## 已知能力缺口');
+    for (const gap of knownGaps) {
+      lines.push(`- ${gap}`);
+    }
+    lines.push('');
+  }
+
   lines.push('## 示例工作流');
   for (const example of buildExamples()) {
     const ex = example as { name: string; description: string; workflow: unknown };
@@ -347,6 +364,15 @@ export async function guide(options: GuideOptions): Promise<void> {
     incomplete = true;
     const message = err instanceof Error ? err.message : String(err);
     error(`获取节点类型失败：${message}`);
+    nodeTypes = BUILT_IN_NODE_TYPES.map((n) => ({
+      typeName: n.typeName,
+      displayName: n.displayName,
+      category: n.category,
+      executionMode: 'OnceForAll' as const,
+      defaultIsEntry: false,
+      parameters: [],
+      ports: [],
+    }));
   }
 
   if (isJsonMode()) {
