@@ -6,6 +6,7 @@ using FlowEngine.Application.Identity;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
+using FlowEngine.Core.Credentials;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Events;
@@ -35,7 +36,17 @@ public sealed class CredentialServiceTests : IDisposable
         _userContext = new FakeUserContext();
         var auditFactory = new AuditEventFactory(_userContext);
         var resourceAuthService = new StubResourceAuthorizationService();
-        _service = new CredentialService(_dbContext, _encryptionService, _keyProvider, _eventBus, auditFactory, resourceAuthService, _userContext, new WorkflowRepository(_dbContext), AuthorizationGuardFactory.Create(_userContext, resourceAuthService));
+        _service = new CredentialService(
+            _dbContext,
+            _encryptionService,
+            _keyProvider,
+            _eventBus,
+            auditFactory,
+            resourceAuthService,
+            _userContext,
+            new WorkflowRepository(_dbContext),
+            AuthorizationGuardFactory.Create(_userContext, resourceAuthService),
+            new CredentialTypeRegistry());
     }
 
     public void Dispose()
@@ -51,7 +62,7 @@ public sealed class CredentialServiceTests : IDisposable
         {
             Name = "Test API Key",
             Type = "apiKey",
-            Fields = new Dictionary<string, string> { ["key"] = "sk-123456" },
+            Fields = new Dictionary<string, string> { ["apiKey"] = "sk-123456" },
         };
 
         var result = await _service.CreateAsync(dto, ct);
@@ -94,6 +105,7 @@ public sealed class CredentialServiceTests : IDisposable
         {
             Name = "Test",
             Type = "apiKey",
+            Fields = new Dictionary<string, string> { ["apiKey"] = "sk-test" },
         };
 
         await _service.CreateAsync(dto, ct);
@@ -214,7 +226,7 @@ public sealed class CredentialServiceTests : IDisposable
         {
             Name = "Ensure Key",
             Type = "apiKey",
-            Fields = new Dictionary<string, string> { ["key"] = "sk-ensure" },
+            Fields = new Dictionary<string, string> { ["apiKey"] = "sk-ensure" },
         };
 
         var (result, created) = await _service.EnsureAsync(dto, ct);
@@ -223,7 +235,7 @@ public sealed class CredentialServiceTests : IDisposable
         Assert.NotEqual(Guid.Empty, result.Id);
         Assert.Equal("Ensure Key", result.Name);
         Assert.Equal("apiKey", result.Type);
-        Assert.Equal("sk-ensure", result.Fields["key"]);
+        Assert.Equal("sk-ensure", result.Fields["apiKey"]);
     }
 
     [Fact]
@@ -234,7 +246,7 @@ public sealed class CredentialServiceTests : IDisposable
         var existing = CreateTestCredential("Ensure Existing", projectId: projectId);
         existing.Data = new Dictionary<string, EncryptedField>
         {
-            ["key"] = _encryptionService.Encrypt("old-value", _keyProvider.GetKey()),
+            ["apiKey"] = _encryptionService.Encrypt("old-value", _keyProvider.GetKey()),
         };
         _dbContext.Credentials.Add(existing);
         await _dbContext.SaveChangesAsync(ct);
@@ -244,18 +256,18 @@ public sealed class CredentialServiceTests : IDisposable
             Name = existing.Name,
             Type = existing.Type,
             ProjectId = projectId,
-            Fields = new Dictionary<string, string> { ["key"] = "new-value" },
+            Fields = new Dictionary<string, string> { ["apiKey"] = "new-value" },
         };
 
         var (result, created) = await _service.EnsureAsync(dto, ct);
 
         Assert.False(created);
         Assert.Equal(existing.Id, result.Id);
-        Assert.Equal("new-value", result.Fields["key"]);
+        Assert.Equal("new-value", result.Fields["apiKey"]);
 
         var updated = await _dbContext.Credentials.FindAsync([existing.Id], ct);
         Assert.NotNull(updated);
-        Assert.Equal("encrypted:new-value", updated.Data["key"].CipherText);
+        Assert.Equal("encrypted:new-value", updated.Data["apiKey"].CipherText);
     }
 
     [Fact]
@@ -263,6 +275,10 @@ public sealed class CredentialServiceTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
         var existing = CreateTestCredential("Ensure Update Event");
+        existing.Data = new Dictionary<string, EncryptedField>
+        {
+            ["apiKey"] = _encryptionService.Encrypt("old-value", _keyProvider.GetKey()),
+        };
         _dbContext.Credentials.Add(existing);
         await _dbContext.SaveChangesAsync(ct);
 
@@ -270,7 +286,7 @@ public sealed class CredentialServiceTests : IDisposable
         {
             Name = existing.Name,
             Type = existing.Type,
-            Fields = [],
+            Fields = new Dictionary<string, string> { ["apiKey"] = "updated-value" },
         };
 
         await _service.EnsureAsync(dto, ct);
@@ -290,7 +306,7 @@ public sealed class CredentialServiceTests : IDisposable
         {
             Name = "Ensure Create Event",
             Type = "apiKey",
-            Fields = [],
+            Fields = new Dictionary<string, string> { ["apiKey"] = "sk-event" },
         };
 
         var (result, _) = await _service.EnsureAsync(dto, ct);
@@ -308,6 +324,10 @@ public sealed class CredentialServiceTests : IDisposable
         var ct = TestContext.Current.CancellationToken;
         var projectId = Guid.NewGuid();
         var existing = CreateTestCredential("Same Name Type", projectId: projectId);
+        existing.Data = new Dictionary<string, EncryptedField>
+        {
+            ["apiKey"] = _encryptionService.Encrypt("old-value", _keyProvider.GetKey()),
+        };
         _dbContext.Credentials.Add(existing);
         _dbContext.Credentials.Add(CreateTestCredential("Same Name Type"));
         await _dbContext.SaveChangesAsync(ct);
@@ -317,7 +337,7 @@ public sealed class CredentialServiceTests : IDisposable
             Name = existing.Name,
             Type = existing.Type,
             ProjectId = projectId,
-            Fields = [],
+            Fields = new Dictionary<string, string> { ["apiKey"] = "new-value" },
         };
 
         var (result, created) = await _service.EnsureAsync(dto, ct);
@@ -347,6 +367,69 @@ public sealed class CredentialServiceTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
         await Assert.ThrowsAsync<ArgumentNullException>(() => _service.EnsureAsync(null!, ct));
+    }
+
+    [Fact]
+    public async Task CreateAsync_UnknownType_ThrowsBusinessException()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var dto = new CreateCredentialDto
+        {
+            Name = "Test",
+            Type = "unknownType",
+            Fields = new Dictionary<string, string> { ["apiKey"] = "sk-test" },
+        };
+
+        var exception = await Assert.ThrowsAsync<BusinessException>(() => _service.CreateAsync(dto, ct));
+        Assert.Contains("未知凭据类型", exception.Message);
+    }
+
+    [Fact]
+    public async Task CreateAsync_MissingRequiredFields_ThrowsBusinessException()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var dto = new CreateCredentialDto
+        {
+            Name = "Test",
+            Type = "oauth2",
+            Fields = new Dictionary<string, string> { ["tokenUrl"] = "https://example.com/token" },
+        };
+
+        var exception = await Assert.ThrowsAsync<BusinessException>(() => _service.CreateAsync(dto, ct));
+        Assert.Contains("缺少必填字段", exception.Message);
+        Assert.Contains("clientId", exception.Message);
+        Assert.Contains("clientSecret", exception.Message);
+    }
+
+    [Fact]
+    public async Task EnsureAsync_UnknownType_ThrowsBusinessException()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var dto = new CreateCredentialDto
+        {
+            Name = "Test",
+            Type = "unknownType",
+            Fields = new Dictionary<string, string> { ["apiKey"] = "sk-test" },
+        };
+
+        var exception = await Assert.ThrowsAsync<BusinessException>(() => _service.EnsureAsync(dto, ct));
+        Assert.Contains("未知凭据类型", exception.Message);
+    }
+
+    [Fact]
+    public async Task EnsureAsync_MissingRequiredFields_ThrowsBusinessException()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var dto = new CreateCredentialDto
+        {
+            Name = "Test",
+            Type = "basicAuth",
+            Fields = new Dictionary<string, string> { ["username"] = "user" },
+        };
+
+        var exception = await Assert.ThrowsAsync<BusinessException>(() => _service.EnsureAsync(dto, ct));
+        Assert.Contains("缺少必填字段", exception.Message);
+        Assert.Contains("password", exception.Message);
     }
 
     private static Credential CreateTestCredential(string? name = null, Guid? id = null, Guid? projectId = null)

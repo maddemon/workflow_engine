@@ -9,6 +9,7 @@ import {
   credentialEnsure,
   credentialGet,
   credentialList,
+  credentialTypes,
   credentialUpdate,
 } from '../commands/credentials.js';
 import { setProfile, type ConfigOptions } from '../config.js';
@@ -157,8 +158,8 @@ describe('commands/credentials', () => {
       data: {
         id: 'cred-1',
         name: 'API Key',
-        type: 'ApiKey',
-        fields: { key: '***' },
+        type: 'apiKey',
+        fields: { apiKey: '***' },
         createdAt: '2025-01-01T00:00:00Z',
       },
     });
@@ -166,8 +167,8 @@ describe('commands/credentials', () => {
     const output = await captureStdout(() =>
       credentialCreate({
         name: 'API Key',
-        type: 'ApiKey',
-        fields: '{"key":"secret"}',
+        type: 'apiKey',
+        fields: '{"apiKey":"secret"}',
         configOptions: options,
       }),
     );
@@ -175,28 +176,28 @@ describe('commands/credentials', () => {
     expect(output).toContain('已创建凭据：cred-1');
     expect(mockInstance.post).toHaveBeenCalledWith('/credentials', {
       name: 'API Key',
-      type: 'ApiKey',
-      fields: { key: 'secret' },
+      type: 'apiKey',
+      fields: { apiKey: 'secret' },
     });
   });
 
   it('create - includes projectId', async () => {
     mockInstance.post.mockResolvedValue({
-      data: { id: 'cred-1', name: 'API Key', type: 'ApiKey', fields: {}, createdAt: '2025-01-01T00:00:00Z' },
+      data: { id: 'cred-1', name: 'API Key', type: 'apiKey', fields: { apiKey: '***' }, createdAt: '2025-01-01T00:00:00Z' },
     });
 
     await credentialCreate({
       name: 'API Key',
-      type: 'ApiKey',
-      fields: '{}',
+      type: 'apiKey',
+      fields: '{"apiKey":"secret"}',
       projectId: 'project-1',
       configOptions: options,
     });
 
     expect(mockInstance.post).toHaveBeenCalledWith('/credentials', {
       name: 'API Key',
-      type: 'ApiKey',
-      fields: {},
+      type: 'apiKey',
+      fields: { apiKey: 'secret' },
       projectId: 'project-1',
     });
   });
@@ -206,8 +207,8 @@ describe('commands/credentials', () => {
       data: {
         id: 'cred-1',
         name: 'API Key',
-        type: 'ApiKey',
-        fields: { key: '***' },
+        type: 'apiKey',
+        fields: { apiKey: '***' },
         createdAt: '2025-01-01T00:00:00Z',
         created: true,
       },
@@ -218,8 +219,8 @@ describe('commands/credentials', () => {
 
     await credentialEnsure({
       name: 'API Key',
-      type: 'ApiKey',
-      fields: '{"key":"secret"}',
+      type: 'apiKey',
+      fields: '{"apiKey":"secret"}',
       configOptions: options,
     });
 
@@ -235,8 +236,8 @@ describe('commands/credentials', () => {
       data: {
         id: 'cred-1',
         name: 'API Key',
-        type: 'ApiKey',
-        fields: { key: '***' },
+        type: 'apiKey',
+        fields: { apiKey: '***' },
         createdAt: '2025-01-01T00:00:00Z',
       },
     });
@@ -246,14 +247,66 @@ describe('commands/credentials', () => {
 
     await credentialEnsure({
       name: 'API Key',
-      type: 'ApiKey',
-      fields: '{"key":"secret"}',
+      type: 'apiKey',
+      fields: '{"apiKey":"secret"}',
       configOptions: options,
     });
 
     const parsed = JSON.parse(spy.mock.calls[0][0] as string);
     expect(parsed.created).toBe(false);
     spy.mockRestore();
+  });
+
+  it('types - lists known credential types and fields', async () => {
+    const output = await captureStdout(() => credentialTypes({ configOptions: options }));
+
+    expect(output).toContain('oauth2');
+    expect(output).toContain('apiKey');
+    expect(output).toContain('connectionString');
+    expect(output).toContain('basicAuth');
+    expect(output).toContain('clientSecret');
+  });
+
+  it('create - rejects unknown type locally without calling API', async () => {
+    await expect(
+      credentialCreate({
+        name: 'Test',
+        type: 'unknownType',
+        fields: '{"apiKey":"secret"}',
+        configOptions: options,
+      }),
+    ).rejects.toThrow(CLIError);
+
+    expect(mockInstance.post).not.toHaveBeenCalled();
+  });
+
+  it('create - rejects missing required fields locally without calling API', async () => {
+    await expect(
+      credentialCreate({
+        name: 'Test',
+        type: 'oauth2',
+        fields: '{"tokenUrl":"https://example.com/token"}',
+        configOptions: options,
+      }),
+    ).rejects.toThrow(CLIError);
+
+    expect(mockInstance.post).not.toHaveBeenCalled();
+  });
+
+  it('create - missing required field error mentions missing fields', async () => {
+    try {
+      await credentialCreate({
+        name: 'Test',
+        type: 'connectionString',
+        fields: '{"host":"localhost"}',
+        configOptions: options,
+      });
+    } catch (err) {
+      const cliErr = err as CLIError;
+      expect(cliErr.code).toBe(ErrorCode.ValidationError);
+      expect(cliErr.exitCode).toBe(ExitCode.InvocationError);
+      expect(cliErr.message).toContain('connectionString');
+    }
   });
 
   it('update - puts credential dto', async () => {

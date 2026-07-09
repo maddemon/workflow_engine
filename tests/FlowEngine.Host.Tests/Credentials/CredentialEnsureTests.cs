@@ -70,7 +70,7 @@ public class CredentialEnsureTests : IClassFixture<FlowEngineWebApplicationFacto
         {
             Name = "Ensure API Key",
             Type = "apiKey",
-            Fields = new Dictionary<string, string> { ["key"] = "sk-create" },
+            Fields = new Dictionary<string, string> { ["apiKey"] = "sk-create" },
         };
 
         var response = await client.PostAsJsonAsync("/api/v1/credentials/ensure", dto, ct);
@@ -79,7 +79,7 @@ public class CredentialEnsureTests : IClassFixture<FlowEngineWebApplicationFacto
         var result = await response.Content.ReadFromJsonAsync<CredentialDto>(TestJsonOptions, ct);
         Assert.NotNull(result);
         Assert.Equal("Ensure API Key", result!.Name);
-        Assert.Equal("sk-create", result.Fields["key"]);
+        Assert.Equal("sk-create", result.Fields["apiKey"]);
     }
 
     [Fact]
@@ -88,13 +88,13 @@ public class CredentialEnsureTests : IClassFixture<FlowEngineWebApplicationFacto
         var ct = TestContext.Current.CancellationToken;
         var email = "jwt-credential-ensure-update@example.com";
         var client = await CreateAuthenticatedClientAsync(email, [RoleConstants.Admin], ct);
-        var credential = await SeedCredentialAsync(email, "Ensure Update Key", "apiKey", new Dictionary<string, string> { ["key"] = "sk-old" }, ct);
+        var credential = await SeedCredentialAsync(email, "Ensure Update Key", "apiKey", new Dictionary<string, string> { ["apiKey"] = "sk-old" }, ct);
 
         var dto = new CreateCredentialDto
         {
             Name = credential.Name,
             Type = credential.Type,
-            Fields = new Dictionary<string, string> { ["key"] = "sk-new" },
+            Fields = new Dictionary<string, string> { ["apiKey"] = "sk-new" },
         };
 
         var response = await client.PostAsJsonAsync("/api/v1/credentials/ensure", dto, ct);
@@ -103,7 +103,7 @@ public class CredentialEnsureTests : IClassFixture<FlowEngineWebApplicationFacto
         var result = await response.Content.ReadFromJsonAsync<CredentialDto>(TestJsonOptions, ct);
         Assert.NotNull(result);
         Assert.Equal(credential.Id, result!.Id);
-        Assert.Equal("sk-new", result.Fields["key"]);
+        Assert.Equal("sk-new", result.Fields["apiKey"]);
     }
 
     [Fact]

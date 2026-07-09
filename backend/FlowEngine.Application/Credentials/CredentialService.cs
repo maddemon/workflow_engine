@@ -5,6 +5,7 @@ using FlowEngine.Application.Identity;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
+using FlowEngine.Core.Credentials;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Events;
@@ -28,7 +29,8 @@ public sealed class CredentialService(
     IResourceAuthorizationService resourceAuthorization,
     IUserContext userContext,
     WorkflowRepository workflowRepository,
-    IAuthorizationGuard authGuard)
+    IAuthorizationGuard authGuard,
+    ICredentialTypeRegistry credentialTypeRegistry)
 {
     private const string KeyVersion = "v1";
 
@@ -41,6 +43,8 @@ public sealed class CredentialService(
 
         await authGuard.RequireScopeAsync(Scope.Credential, Operation.Write, cancellationToken);
 
+        ValidateCredentialType(dto.Type, dto.Fields);
+
         return await CreateCredentialInternalAsync(dto, cancellationToken).ConfigureAwait(false);
     }
 
@@ -52,6 +56,8 @@ public sealed class CredentialService(
         ArgumentNullException.ThrowIfNull(dto);
 
         await authGuard.RequireScopeAsync(Scope.Credential, Operation.Write, cancellationToken);
+
+        ValidateCredentialType(dto.Type, dto.Fields);
 
         var existing = await dbContext.Credentials
             .FirstOrDefaultAsync(
@@ -211,6 +217,15 @@ public sealed class CredentialService(
             cancellationToken).ConfigureAwait(false);
 
         return new CredentialDeleteResult { Deleted = true };
+    }
+
+    private void ValidateCredentialType(string type, Dictionary<string, string> fields)
+    {
+        var validationResult = credentialTypeRegistry.Validate(type, fields);
+        if (!validationResult.IsValid)
+        {
+            throw new BusinessException(validationResult.ErrorMessage);
+        }
     }
 
     private Dictionary<string, EncryptedField> EncryptFields(Dictionary<string, string> fields, byte[] key)

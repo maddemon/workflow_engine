@@ -7,6 +7,7 @@ using FlowEngine.Application.Triggers;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
+using FlowEngine.Core.Credentials;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -174,7 +175,8 @@ public sealed class ProjectFilterTests : IDisposable
             new StubResourceAuthorizationService(),
             userContext,
             new WorkflowRepository(_dbContext),
-            AuthorizationGuardFactory.Create(userContext, new StubResourceAuthorizationService()));
+            AuthorizationGuardFactory.Create(userContext, new StubResourceAuthorizationService()),
+            new CredentialTypeRegistry());
     }
 
     private TriggerService CreateTriggerService()

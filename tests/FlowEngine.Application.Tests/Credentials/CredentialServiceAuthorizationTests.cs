@@ -6,6 +6,7 @@ using FlowEngine.Application.Identity;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
+using FlowEngine.Core.Credentials;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Events;
@@ -40,7 +41,8 @@ public sealed class CredentialServiceAuthorizationTests : IDisposable
             resourceAuthService,
             _userContext,
             new WorkflowRepository(_dbContext),
-            AuthorizationGuardFactory.Create(_userContext, resourceAuthService));
+            AuthorizationGuardFactory.Create(_userContext, resourceAuthService),
+            new CredentialTypeRegistry());
     }
 
     public void Dispose()

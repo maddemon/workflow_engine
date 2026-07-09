@@ -53,6 +53,87 @@ export interface CredentialDeleteOptions {
   configOptions?: ConfigOptions;
 }
 
+export interface CredentialTypeOptions {
+  profile?: string;
+  configOptions?: ConfigOptions;
+}
+
+export interface CredentialFieldDefinition {
+  name: string;
+  displayName: string;
+  isRequired: boolean;
+  secret: boolean;
+  hint?: string;
+}
+
+export interface CredentialTypeDefinition {
+  name: string;
+  displayName: string;
+  fields: CredentialFieldDefinition[];
+}
+
+const builtInCredentialTypes: CredentialTypeDefinition[] = [
+  {
+    name: 'apiKey',
+    displayName: 'API Key',
+    fields: [{ name: 'apiKey', displayName: 'API Key', isRequired: true, secret: true }],
+  },
+  {
+    name: 'connectionString',
+    displayName: 'Connection String',
+    fields: [
+      {
+        name: 'connectionString',
+        displayName: 'Connection String',
+        isRequired: true,
+        secret: true,
+      },
+    ],
+  },
+  {
+    name: 'basicAuth',
+    displayName: 'Basic Auth',
+    fields: [
+      { name: 'username', displayName: 'Username', isRequired: true, secret: false },
+      { name: 'password', displayName: 'Password', isRequired: true, secret: true },
+    ],
+  },
+  {
+    name: 'oauth2',
+    displayName: 'OAuth2',
+    fields: [
+      {
+        name: 'tokenUrl',
+        displayName: 'Token URL',
+        isRequired: true,
+        secret: false,
+        hint: 'OAuth2 token 端点地址',
+      },
+      { name: 'clientId', displayName: 'Client ID', isRequired: true, secret: false },
+      { name: 'clientSecret', displayName: 'Client Secret', isRequired: true, secret: true },
+      { name: 'scope', displayName: 'Scope', isRequired: false, secret: false },
+      {
+        name: 'grant',
+        displayName: 'Grant Type',
+        isRequired: false,
+        secret: false,
+        hint: '默认 client_credentials',
+      },
+      {
+        name: 'tokenPath',
+        displayName: 'Token Path',
+        isRequired: false,
+        secret: false,
+        hint: '默认 access_token',
+      },
+    ],
+  },
+];
+
+function findCredentialType(type: string): CredentialTypeDefinition | undefined {
+  return builtInCredentialTypes.find((t) => t.name.toLowerCase() === type.toLowerCase());
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -114,6 +195,30 @@ function requireString(value: string | undefined, label: string): string {
     );
   }
   return trimmed;
+}
+
+function validateCredentialFields(type: string, fields: Record<string, string>): void {
+  const definition = findCredentialType(type);
+  if (!definition) {
+    const knownTypes = builtInCredentialTypes.map((t) => t.name).join(', ');
+    throw new CLIError(
+      `未知凭据类型 '${type}'。可用类型：${knownTypes}`,
+      ErrorCode.ValidationError,
+      ExitCode.InvocationError,
+    );
+  }
+
+  const missingFields = definition.fields
+    .filter((f) => f.isRequired && !(f.name in fields))
+    .map((f) => f.name);
+
+  if (missingFields.length > 0) {
+    throw new CLIError(
+      `凭据类型 '${type}' 缺少必填字段：${missingFields.join(', ')}`,
+      ErrorCode.ValidationError,
+      ExitCode.InvocationError,
+    );
+  }
 }
 
 async function confirmDelete(resource: string, id: string): Promise<void> {
@@ -209,6 +314,8 @@ export async function credentialCreate(options: CredentialCreateOptions): Promis
   const type = requireString(options.type, '--type');
   const fields = parseFields(options.fields);
 
+  validateCredentialFields(type, fields);
+
   const body: CreateCredentialDto = {
     name,
     type,
@@ -237,6 +344,8 @@ export async function credentialEnsure(options: CredentialEnsureOptions): Promis
   const type = requireString(options.type, '--type');
   const fields = parseFields(options.fields);
 
+  validateCredentialFields(type, fields);
+
   const body: CreateCredentialDto = {
     name,
     type,
@@ -263,6 +372,23 @@ export async function credentialEnsure(options: CredentialEnsureOptions): Promis
   log(`${output.created ? '已新建' : '已更新'}凭据：${output.id}`);
   log(`Name: ${output.name}`);
   log(`Type: ${output.type}`);
+}
+
+export async function credentialTypes(_options: CredentialTypeOptions): Promise<void> {
+  if (isJsonMode()) {
+    writeJson(builtInCredentialTypes);
+    return;
+  }
+
+  for (const type of builtInCredentialTypes) {
+    log(`${type.name} (${type.displayName})`);
+    for (const field of type.fields) {
+      const required = field.isRequired ? '必填' : '可选';
+      const secret = field.secret ? '敏感' : '明文';
+      const hint = field.hint ? ` - ${field.hint}` : '';
+      log(`  ${field.name}: ${field.displayName} [${required}, ${secret}]${hint}`);
+    }
+  }
 }
 
 export async function credentialUpdate(options: CredentialUpdateOptions): Promise<void> {

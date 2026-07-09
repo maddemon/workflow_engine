@@ -27,6 +27,7 @@ import {
   credentialEnsure,
   credentialGet,
   credentialList,
+  credentialTypes,
   credentialUpdate,
 } from './commands/credentials.js';
 import { guide } from './commands/guide.js';
@@ -483,6 +484,15 @@ credentialCmd
       projectId: opts.projectId,
       profile: opts.profile,
     });
+  });
+
+credentialCmd
+  .command('types')
+  .description('列出已知凭据类型及其字段')
+  .action(async function () {
+    const command = this;
+    const opts = command.optsWithGlobals<{ profile?: string }>();
+    await credentialTypes({ profile: opts.profile });
   });
 
 credentialCmd

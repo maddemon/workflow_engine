@@ -10,6 +10,7 @@ using FlowEngine.Application.Triggers;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Configuration;
+using FlowEngine.Core.Credentials;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Events;
 using FlowEngine.Host.Executor;
@@ -160,6 +161,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<AuditEventFactory>();
 
         // ── Business ────────────────────────────────────────────────
+        services.AddSingleton<ICredentialTypeRegistry, CredentialTypeRegistry>();
         services.AddSingleton<ICryptoKeyProvider, CryptoKeyProvider>();
         services.AddSingleton<ICredentialEncryptionService, CredentialEncryptionService>();
         services.AddScoped<CredentialService>();
