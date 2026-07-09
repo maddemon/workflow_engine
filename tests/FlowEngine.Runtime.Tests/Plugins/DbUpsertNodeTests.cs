@@ -5,7 +5,6 @@ using FlowEngine.Core.Enums;
 using FlowEngine.Plugins.Standard;
 using FlowEngine.Plugins.Standard.Data;
 using Microsoft.Data.Sqlite;
-using Xunit;
 
 namespace FlowEngine.Runtime.Tests.Plugins;
 
@@ -36,7 +35,10 @@ public sealed class DbUpsertNodeTests
             CancellationToken.None);
 
         Assert.True(first.Success, first.Error?.Message);
-        Assert.Equal(1, GetInt(first.Output.Items[0].Data, "affectedRows"));
+        var firstData = first.Output.Items[0].Data;
+        Assert.Equal(1, GetInt(firstData, "affectedRows"));
+        Assert.Equal(1, GetInt(firstData, "inserted"));
+        Assert.Equal(0, GetInt(firstData, "updated"));
 
         var second = await node.ExecuteAsync(
             CreateContext(new DataBatch
@@ -49,7 +51,10 @@ public sealed class DbUpsertNodeTests
             CancellationToken.None);
 
         Assert.True(second.Success, second.Error?.Message);
-        Assert.Equal(1, GetInt(second.Output.Items[0].Data, "affectedRows"));
+        var secondData = second.Output.Items[0].Data;
+        Assert.Equal(1, GetInt(secondData, "affectedRows"));
+        Assert.Equal(0, GetInt(secondData, "inserted"));
+        Assert.Equal(1, GetInt(secondData, "updated"));
 
         await using var verify = new SqliteConnection(connectionString);
         await verify.OpenAsync();
@@ -220,7 +225,8 @@ public sealed class DbUpsertNodeTests
         Assert.Contains("INSERT INTO", sql);
         Assert.Contains("ON DUPLICATE KEY UPDATE", sql);
         Assert.Contains("`users`", sql);
-        Assert.Contains("VALUES(`name`)", sql);
+        Assert.Contains("AS new", sql);
+        Assert.Contains("new.`name`", sql);
     }
 
     [Fact]
@@ -293,6 +299,88 @@ public sealed class DbUpsertNodeTests
 
         Assert.False(result.Success);
         Assert.Equal("MissingColumns", result.Error?.Code);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_InvalidTable_ReturnsError()
+    {
+        var node = new DbUpsertNode
+        {
+            Connection = "Data Source=:memory:",
+            Table = "users; DROP TABLE users--",
+            Mode = "insert",
+            Columns = new Dictionary<string, string> { ["id"] = "$json.id" }
+        };
+
+        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal("InvalidTable", result.Error?.Code);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_InvalidColumn_ReturnsError()
+    {
+        var node = new DbUpsertNode
+        {
+            Connection = "Data Source=:memory:",
+            Table = "users",
+            Mode = "insert",
+            Columns = new Dictionary<string, string>
+            {
+                ["id"] = "$json.id",
+                ["name; DROP TABLE users--"] = "$json.name"
+            }
+        };
+
+        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal("InvalidColumn", result.Error?.Code);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_InvalidKeyColumn_ReturnsError()
+    {
+        var node = new DbUpsertNode
+        {
+            Connection = "Data Source=:memory:",
+            Table = "users",
+            Mode = "upsert",
+            KeyColumns = "id; DROP TABLE users--",
+            Columns = new Dictionary<string, string>
+            {
+                ["id"] = "$json.id",
+                ["name"] = "$json.name"
+            }
+        };
+
+        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal("InvalidKeyColumn", result.Error?.Code);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_MissingKeyColumn_ReturnsError()
+    {
+        var node = new DbUpsertNode
+        {
+            Connection = "Data Source=:memory:",
+            Table = "users",
+            Mode = "upsert",
+            KeyColumns = "missing",
+            Columns = new Dictionary<string, string>
+            {
+                ["id"] = "$json.id",
+                ["name"] = "$json.name"
+            }
+        };
+
+        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal("MissingKeyColumn", result.Error?.Code);
     }
 
     private static int GetInt(JsonNode? node, string key)

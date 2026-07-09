@@ -35,9 +35,9 @@ public sealed class MySqlSqlGenerator : IDbSqlGenerator
         var quotedColumns = string.Join(", ", columns.Select(QuoteIdentifier));
         var values = string.Join(", ", columns.Select((_, i) => $"@p{i}"));
         var updateColumns = GetUpdateColumns(columns, keyColumns);
-        var updates = string.Join(", ", updateColumns.Select(c => $"{QuoteIdentifier(c)} = VALUES({QuoteIdentifier(c)})"));
+        var updates = string.Join(", ", updateColumns.Select(c => $"{QuoteIdentifier(c)} = new.{QuoteIdentifier(c)}"));
 
-        return $"INSERT INTO {quotedTable} ({quotedColumns}) VALUES ({values}) ON DUPLICATE KEY UPDATE {updates}";
+        return $"INSERT INTO {quotedTable} ({quotedColumns}) VALUES ({values}) AS new ({quotedColumns}) ON DUPLICATE KEY UPDATE {updates}";
     }
 
     /// <inheritdoc />

@@ -131,34 +131,92 @@ public sealed class DbUpsertNode : INodeType
             await using var connection = DbConnectionFactory.CreateConnection(dialect, Connection);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
+            using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
             var affectedRows = 0;
-            for (var itemIndex = 0; itemIndex < inputBatch.Items.Count; itemIndex++)
+            var inserted = 0;
+            var updated = 0;
+            var isUpsert = mode.Equals("upsert", StringComparison.OrdinalIgnoreCase);
+
+            try
             {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var item = inputBatch.Items[itemIndex];
-                var values = EvaluateRowValues(preparedExpressions, allItems, item.Data, itemIndex);
-
-                if (mode.Equals("update", StringComparison.OrdinalIgnoreCase))
+                for (var itemIndex = 0; itemIndex < inputBatch.Items.Count; itemIndex++)
                 {
-                    values = ReorderUpdateValues(values, columnList!, keyColumnList!);
+                    cancellationToken.ThrowIfCancellationRequested();
+
+                    var item = inputBatch.Items[itemIndex];
+                    var values = EvaluateRowValues(preparedExpressions, allItems, item.Data, itemIndex);
+
+                    if (mode.Equals("update", StringComparison.OrdinalIgnoreCase))
+                    {
+                        values = ReorderUpdateValues(values, columnList!, keyColumnList!);
+                    }
+
+                    var rowExisted = false;
+                    if (isUpsert)
+                    {
+                        var keyValues = GetKeyValues(values, columnList!, keyColumnList!);
+                        rowExisted = await RowExistsAsync(
+                            connection,
+                            transaction,
+                            Table,
+                            keyColumnList!,
+                            keyValues,
+                            generator,
+                            cancellationToken).ConfigureAwait(false);
+                    }
+
+                    using var command = connection.CreateCommand();
+                    command.Transaction = transaction;
+                    command.CommandText = sql;
+                    for (var i = 0; i < values.Count; i++)
+                    {
+                        var parameter = command.CreateParameter();
+                        parameter.ParameterName = $"@p{i}";
+                        parameter.Value = values[i] ?? DBNull.Value;
+                        command.Parameters.Add(parameter);
+                    }
+
+                    affectedRows += await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+
+                    if (isUpsert)
+                    {
+                        if (rowExisted)
+                        {
+                            updated++;
+                        }
+                        else
+                        {
+                            inserted++;
+                        }
+                    }
                 }
 
-                using var command = connection.CreateCommand();
-                command.CommandText = sql;
-                for (var i = 0; i < values.Count; i++)
+                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                try
                 {
-                    var parameter = command.CreateParameter();
-                    parameter.ParameterName = $"@p{i}";
-                    parameter.Value = values[i] ?? DBNull.Value;
-                    command.Parameters.Add(parameter);
+                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // Best-effort rollback; the original exception will be handled below.
                 }
 
-                affectedRows += await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
+                throw;
             }
 
-            var inserted = mode.Equals("insert", StringComparison.OrdinalIgnoreCase) ? affectedRows : 0;
-            var updated = mode.Equals("update", StringComparison.OrdinalIgnoreCase) ? affectedRows : 0;
+            if (mode.Equals("insert", StringComparison.OrdinalIgnoreCase))
+            {
+                inserted = affectedRows;
+            }
+            else if (mode.Equals("update", StringComparison.OrdinalIgnoreCase))
+            {
+                updated = affectedRows;
+            }
+
             return CreateResult(context, true, affectedRows, inserted, updated);
         }
         catch (OperationCanceledException)
@@ -225,6 +283,14 @@ public sealed class DbUpsertNode : INodeType
             }
         }
 
+        foreach (var key in keyColumnList)
+        {
+            if (!columns.ContainsKey(key))
+            {
+                return context.ErrorResult("MissingKeyColumn", $"Key column '{key}' is not defined in Columns mapping.");
+            }
+        }
+
         return null;
     }
 
@@ -268,6 +334,49 @@ public sealed class DbUpsertNode : INodeType
         }
 
         return reordered;
+    }
+
+    private static List<object?> GetKeyValues(
+        List<object?> values,
+        List<string> columns,
+        List<string> keyColumns)
+    {
+        var keyValues = new List<object?>(keyColumns.Count);
+        foreach (var key in keyColumns)
+        {
+            var index = columns.IndexOf(key);
+            keyValues.Add(values[index]);
+        }
+
+        return keyValues;
+    }
+
+    private static async Task<bool> RowExistsAsync(
+        DbConnection connection,
+        DbTransaction transaction,
+        string table,
+        IReadOnlyList<string> keyColumns,
+        IReadOnlyList<object?> keyValues,
+        IDbSqlGenerator generator,
+        CancellationToken cancellationToken)
+    {
+        var quotedTable = generator.QuoteIdentifier(table);
+        var where = string.Join(" AND ", keyColumns.Select((c, i) => $"{generator.QuoteIdentifier(c)} = @p{i}"));
+        var sql = $"SELECT 1 FROM {quotedTable} WHERE {where}";
+
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        for (var i = 0; i < keyValues.Count; i++)
+        {
+            var parameter = command.CreateParameter();
+            parameter.ParameterName = $"@p{i}";
+            parameter.Value = keyValues[i] ?? DBNull.Value;
+            command.Parameters.Add(parameter);
+        }
+
+        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        return result is not null && result != DBNull.Value;
     }
 
     private static NodeExecutionResult CreateResult(NodeExecutionContext context, bool success, int affectedRows, int inserted, int updated)
