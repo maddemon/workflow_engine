@@ -1,0 +1,96 @@
+{
+  "name": "钉钉员工同步到数据库",
+  "credentials": [
+    {
+      "name": "dingtalk",
+      "type": "oauth2",
+      "fields": {
+        "tokenUrl": "https://oapi.dingtalk.com/gettoken",
+        "clientId": "<appKey>",
+        "clientSecret": "<appSecret>",
+        "grant": "client_credentials",
+        "scope": "",
+        "tokenPath": "access_token"
+      }
+    },
+    {
+      "name": "db",
+      "type": "connectionString",
+      "fields": { "connectionString": "<Server=...;Database=...;User Id=...;Password=...>" }
+    }
+  ],
+  "nodes": [
+    {
+      "id": "trigger-1",
+      "typeName": "manualTrigger",
+      "name": "手动触发",
+      "parameters": {},
+      "ports": [
+        { "name": "Output", "direction": "Output", "type": "Main" }
+      ],
+      "positionX": 100,
+      "positionY": 200,
+      "isEntry": true
+    },
+    {
+      "id": "paginate",
+      "typeName": "paginate",
+      "name": "拉取全量员工（OAuth2 + 游标分页）",
+      "parameters": {
+        "url": "https://oapi.dingtalk.com/topapi/v2/user/list?access_token=" + $credentials.dingtalk.accessToken,
+        "method": "POST",
+        "bodyExpression": "({ dept_id: 1, cursor: $cursor, size: 100 })",
+        "credentialName": "dingtalk",
+        "cursorInitial": "0",
+        "cursorType": "number",
+        "nextCursorPath": "result.next_cursor",
+        "itemsPath": "result.list",
+        "terminateWhen": "$nextCursor == ''"
+      },
+      "ports": [
+        { "name": "Input", "direction": "Input", "type": "Main" },
+        { "name": "Output", "direction": "Output", "type": "Main" },
+        { "name": "Page", "direction": "Output", "type": "Main" }
+      ],
+      "positionX": 300,
+      "positionY": 200
+    },
+    {
+      "id": "map-fields",
+      "typeName": "script",
+      "name": "字段映射（S5 延迟期用 script）",
+      "parameters": {
+        "codeMode": "RunOnceForEachItem",
+        "code": "return { emp_id: $input.item().userid, name: $input.item().name, dept: $input.item().dept_id };"
+      },
+      "ports": [
+        { "name": "Input", "direction": "Input", "type": "Main" },
+        { "name": "Output", "direction": "Output", "type": "Main" }
+      ],
+      "positionX": 500,
+      "positionY": 200
+    },
+    {
+      "id": "db-upsert",
+      "typeName": "dbUpsert",
+      "name": "写入指定数据库",
+      "parameters": {
+        "connection": "$credentials.db.connectionString",
+        "table": "employees",
+        "mode": "upsert",
+        "keyColumns": ["emp_id"]
+      },
+      "ports": [
+        { "name": "Input", "direction": "Input", "type": "Main" },
+        { "name": "Output", "direction": "Output", "type": "Main" }
+      ],
+      "positionX": 700,
+      "positionY": 200
+    }
+  ],
+  "connections": [
+    { "id": "c1", "sourceNodeId": "trigger-1", "sourcePortName": "Output", "targetNodeId": "paginate", "targetPortName": "Input" },
+    { "id": "c2", "sourceNodeId": "paginate", "sourcePortName": "Output", "targetNodeId": "map-fields", "targetPortName": "Input" },
+    { "id": "c3", "sourceNodeId": "map-fields", "sourcePortName": "Output", "targetNodeId": "db-upsert", "targetPortName": "Input" }
+  ]
+}

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using FlowEngine.Core;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Expressions;
 using FlowEngine.Runtime.Expressions;
@@ -7,6 +8,7 @@ using FlowEngine.Runtime.Expressions.Exceptions;
 using FlowEngine.Core.Scripting;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
+using Jint;
 
 namespace FlowEngine.Runtime.Tests.Expressions;
 
@@ -89,6 +91,21 @@ public class ParameterResolverTests
     }
 
     [Fact]
+    public void Resolve_UrlStringContainingHttp_IsNotBlocked()
+    {
+        // 字面量中的 "http"/"https" 不应被安全扫描误判为禁止标识符
+        using var js = CreateJsEngine();
+        var raw = new Dictionary<string, object>
+        {
+            ["url"] = "\"https://oapi.dingtalk.com/topapi/v2/user/list?access_token=\" + $credentials.testCred.accessToken"
+        };
+
+        var result = _resolver.Resolve(raw, js);
+
+        Assert.Equal("https://oapi.dingtalk.com/topapi/v2/user/list?access_token=tok-xxx", result["url"]);
+    }
+
+    [Fact]
     public void Resolve_InvalidSyntax_ThrowsSyntaxErrorException()
     {
         using var js = CreateJsEngine();
@@ -116,10 +133,62 @@ public class ParameterResolverTests
         Assert.True(cache.TryGetValue(cacheKey with { Expression = "input.value * 2" }, out _));
     }
 
+    [Fact]
+    public void Resolve_DollarInputItem_Evaluates_From_InputContainer()
+    {
+        // 验证 $input.item() 经 Jint 求值的 camelCase 兼容性
+        var data = new JsonObject { ["userid"] = "abc123", ["name"] = "张三" };
+        using var js = JsEngine.Create();
+        js.SetValue("$json", data);
+        js.SetValue("$input", new InputContainer([data], data));
+        js.SetValue("$items", new Func<string?, object?>(_ => new List<object?> { data }));
+        js.SetValue("$runIndex", 0);
+        js.SetValue("$itemIndex", 0);
+        js.SetValue("$now", DateTime.UtcNow);
+        js.SetValue("$today", DateTime.UtcNow.Date);
+        js.SetValue("$node", new Dictionary<string, NodeOutput>(StringComparer.OrdinalIgnoreCase));
+        js.SetValue("$workflow", new Dictionary<string, object?>());
+        js.SetValue("$execution", new Dictionary<string, object?>());
+        js.SetValue("$env", new Dictionary<string, object?>());
+        js.SetValue("$vars", new Dictionary<string, object?>());
+        js.SetValue("$credentials", new Dictionary<string, object?>());
+
+        var raw = new Dictionary<string, object>
+        {
+            ["from_item"] = "$input.item().userid",
+            ["from_json"] = "$json.name",
+        };
+
+        var result = _resolver.Resolve(raw, js);
+
+        Assert.Equal("abc123", result["from_item"]);
+        Assert.Equal("张三", result["from_json"]);
+    }
+
+    [Fact]
+    public void Resolve_DollarCredentials_PropertyAccess_Evaluates_NestedFields()
+    {
+        // 验证 $credentials.<name>.<field> 经 Jint 属性式访问求值（plan-004 / draft 用法）
+        using var js = CreateJsEngine();
+        var raw = new Dictionary<string, object>
+        {
+            ["token"] = "$credentials.testCred.accessToken",
+            ["key"] = "$credentials.testCred.apiKey",
+        };
+
+        var result = _resolver.Resolve(raw, js);
+
+        Assert.Equal("tok-xxx", result["token"]);
+        Assert.Equal("sk-test", result["key"]);
+    }
+
     private static JsEngine CreateJsEngine(JsonObject? inputData = null)
     {
         var js = JsEngine.Create();
-        js.SetValue("input", inputData ?? new JsonObject());
+
+        // 旧式裸名（向后兼容）
+        var input = inputData ?? new JsonObject();
+        js.SetValue("input", input);
         js.SetValue("inputs", new Dictionary<string, DataBatch>());
         js.SetValue("nodes", new Dictionary<string, DataBatch>());
         js.SetValue("items", new Dictionary<string, DataBatch>());
@@ -128,6 +197,30 @@ public class ParameterResolverTests
         js.SetValue("runIndex", 0);
         js.SetValue("parameter", new Dictionary<string, object>());
         js.SetValue("env", new Dictionary<string, object?>());
+
+        // $ 前缀内建变量（plan-004 评审5）
+        js.SetValue("$json", input);
+        var inputItems = new List<object?> { input };
+        js.SetValue("$input", new InputContainer(inputItems, input, new Dictionary<string, object>()));
+        js.SetValue("$items", new Func<string?, object?>(_ => inputItems));
+        js.SetValue("$node", new Dictionary<string, NodeOutput>(StringComparer.OrdinalIgnoreCase));
+        js.SetValue("$workflow", new Dictionary<string, object?>());
+        js.SetValue("$execution", new Dictionary<string, object?>());
+        js.SetValue("$env", new Dictionary<string, object?>());
+        js.SetValue("$vars", new Dictionary<string, object?>());
+        js.SetValue("$now", DateTime.UtcNow);
+        js.SetValue("$today", DateTime.UtcNow.Date);
+        js.SetValue("$runIndex", 0);
+        js.SetValue("$itemIndex", 0);
+        js.SetValue("$credentials", new Dictionary<string, object?>
+        {
+            ["testCred"] = new Dictionary<string, object?>
+            {
+                ["apiKey"] = "sk-test",
+                ["accessToken"] = "tok-xxx",
+            }
+        });
+
         return js;
     }
 }

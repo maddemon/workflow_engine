@@ -197,7 +197,7 @@ new ParameterDefinition
 | `Required`        | 是否必填。                                                               |
 | `ValidationRules` | 校验规则列表，如非空、正则、范围等。                                     |
 | `DisplayRule`     | 条件显示规则。                                                           |
-| `CredentialType`  | 当 `Type == Credential` 时，限制可选择的凭据类型，如 `apiKey`、`oauth`。 |
+| `CredentialType`  | 当 `Type == Credential` 时，限制可选择的凭据类型，如 `apiKey`、`oauth2`。 |
 | `Options`         | 当 `Type == Options` 时的可选项列表。                                    |
 
 完整字段定义见 [terminology.md#核心数据模型](terminology.md#核心数据模型)。
@@ -217,14 +217,15 @@ new ParameterDefinition
 
 ## 5. 节点分类
 
+> 下表为**面向用户的功能视角**分类。代码中 `INodeType.Category` 字段的实际取值更粗：标准插件里大多数节点（含 `HTTP Request`、`Webhook`、`Code`、`Set`、`Filter`、`Paginate`、`OAuth2` 等）当前 `Category` 均为 `"Core"`，数据库写入类为 `"Data"`，AI 类为 `"AI"`。功能分类与代码字段并非一一对应。
+
 | 分类      | 说明           | 示例                                  |
 | --------- | -------------- | ------------------------------------- |
-| `Core`    | 核心控制流节点 | `If`、`Loop`、`Merge`                 |
-| `Data`    | 数据读写节点   | `Postgres`、`MySQL`、`Redis`          |
-| `HTTP`    | 网络请求节点   | `HTTP Request`、`Webhook`             |
+| `Core`    | 核心控制流 / 通用节点 | `If`、`Loop`、`Merge`、`HTTP Request`、`Paginate (Cursor)`、`OAuth2` |
+| `Data`    | 数据读写节点   | `Postgres`、`MySQL`、`Redis`、`DB Upsert` |
 | `AI`      | AI 相关节点    | `Agent`、`LLM`、`Prompt`              |
 | `Trigger` | 触发器节点     | `Schedule Trigger`、`Webhook Trigger` |
-| `Utility` | 工具节点       | `Code`、`Set`、`Filter`               |
+| `Utility` | 工具节点（功能视角） | `Code`、`Set`、`Filter`（代码 `Category` 实为 `Core`） |
 
 ## 6. 冷启动加载流程
 
@@ -300,3 +301,96 @@ public class PortDefinition
 - `ExpectedSchema`：连接到本端口的下游数据应满足的结构（用于设计期提示）。
 
 运行期 Schema 校验失败时生成 `NodeError { Code = "SchemaMismatch" }`，帮助用户定位数据流问题。
+
+## 11. plan-004 新增节点
+
+本章节补充集成基础能力（plan-004）引入的三个标准节点：通用数据库写入、OAuth2 令牌物化、游标分页拉取。
+
+### 11.1 DB Upsert (`dbUpsert`)
+
+通用数据库写入节点，支持 PostgreSQL、MySQL、SQL Server，以及 SQLite 等测试环境。节点对上游 `DataBatch` 逐行执行 upsert / insert / update，输出受影响行数统计。
+
+| 参数 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `connection` | Expression | 连接字符串或表达式，如 `$credentials.db.connectionString`。 |
+| `table` | String | 目标表名。 |
+| `mode` | Options | `upsert` / `insert` / `update`，默认 `upsert`。 |
+| `keyColumns` | String | 主键列，逗号分隔；`upsert`/`update` 必填。 |
+| `columns` | Script/Json | 列映射：键为数据库列名，值为 JS 表达式（如 `$input.item().userid`）。 |
+| `dialect` | String? | 可选方言；留空时从连接字符串推断。 |
+
+执行要点：
+
+- `connection` 支持表达式求值，最终得到原始连接字符串。
+- 使用 `DbDialectResolver` + `SqlGeneratorFactory` 生成对应方言的参数化 SQL；禁止字符串拼接字段名。
+- `upsert` 模式下先按 `keyColumns` 查询行是否存在，再决定计数为 `inserted` 或 `updated`。
+- 所有行在同一个事务中提交，失败时回滚。
+- 输出 `DataItem`：
+
+```json
+{
+  "success": true,
+  "affectedRows": 6,
+  "inserted": 3,
+  "updated": 3
+}
+```
+
+### 11.2 OAuth2 (`oauth2`)
+
+OAuth2 节点是凭据层的薄封装，将已托管（已缓存/刷新）的令牌物化为工作流变量，供 query 形态 API 显式拼接 token 使用。节点本身不直接请求 token。
+
+| 参数 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `credentialName` | String | 要物化的 oauth2 凭据名称。 |
+
+执行逻辑：
+
+1. 通过 `context.Credentials.GetCredentialByNameAsync` 获取凭据。
+2. 读取 `accessToken`、`tokenType`、`expiresAt` 字段。
+3. 输出单一 `DataItem`：
+
+```json
+{
+  "accessToken": "tok-xxx",
+  "tokenType": "Bearer",
+  "expiresAt": "2026-07-09T10:00:00.0000000Z"
+}
+```
+
+更常见的用法是直接在 `httpRequest` 的 URL 表达式中引用 `$credentials.<name>.accessToken`，或在 `PaginateNode` 中选择 `Authentication = BearerToken`。
+
+### 11.3 Paginate (`paginate`)
+
+游标分页节点，内置 HTTP 循环：反复使用当前 `$cursor` 发请求，按 `nextCursorPath` 提取下一页游标，按 `itemsPath` 抽取数组元素，最终把所有页的数据**打平为单一 item 流**输出。
+
+| 参数 | 类型 | 说明 |
+| ---- | ---- | ---- |
+| `url` | Expression | 请求 URL，支持 `$cursor` / `$credentials...` 表达式。 |
+| `method` | Options | `GET` / `POST` / `PUT` / ... |
+| `bodyExpression` | Expression? | POST/PUT 请求体 JS 表达式，作用域含 `$cursor`。 |
+| `authentication` | Options | `None` / `BearerToken` / `ApiKey` / `BasicAuth`。 |
+| `credentialName` | String? | 用于认证头的凭据名称。 |
+| `cursorInitial` | String | 起始游标，默认 `"0"`。 |
+| `cursorType` | Options | `number` / `string`，默认 `string`。 |
+| `nextCursorPath` | String | 响应中下一游标路径，如 `result.next_cursor`。 |
+| `itemsPath` | String | 响应中本页数组路径，如 `result.list`。 |
+| `terminateWhen` | Expression | 终止条件表达式，作用域含 `$nextCursor` / `$page` / `$response`。 |
+| `maxPages` | Number | 最大分页次数（安全上限），默认 100。 |
+
+执行要点：
+
+- 节点私有变量 `$cursor` / `$nextCursor` / `$page` / `$response` 通过 `extraGlobals` 本地注入表达式引擎。
+- 每轮迭代使用 **更新后的 `$cursor`** 重新解析 `url`/`bodyExpression`，不会恒为初值。
+- 响应体取 HTTP 执行结果信封的 `.body` 字段。
+- 终止条件满足或 `$nextCursor` 为空时停止。
+- 主输出端口 `output` 发出**单个** `DataBatch`：所有页的 `itemsPath` 数组元素被**打平**，每个元素成为一个 `DataItem`。
+- ⚠️ 节点虽声明了 `page` 端口，但当前 `ExecuteAsync` 只填充 `NodeExecutionResult.Output`（单一输出），**尚未向 `page` 端口逐页发送数据**。「每页输出一次本页数组」为规划中能力，需引擎支持多端口输出后再实现。
+
+典型使用：
+
+```
+manualTrigger → Paginate($credentials.<name>.accessToken + 分页拉取)
+              → script/map-fields ($input.item().userid)
+              → dbUpsert
+```

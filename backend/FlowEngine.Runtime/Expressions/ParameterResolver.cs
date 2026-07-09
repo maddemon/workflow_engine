@@ -20,16 +20,23 @@ public sealed class ParameterResolver
     private static readonly TimeSpan DefaultCacheExpiration = TimeSpan.FromHours(1);
     private static readonly HashSet<string> s_knownIdentifiers = new(StringComparer.OrdinalIgnoreCase)
     {
+        // 旧式裸全局（向后兼容，后续实现按 plan-004 收敛到 $ 前缀）
         "input", "inputs", "nodes", "items", "parameter",
         "workflow", "execution", "env", "runIndex", "run_index",
         "this", "true", "false", "null", "undefined",
-        "now", "nowIso", "jmespath", "length", "trim"
+        "now", "nowIso", "jmespath", "length", "trim",
+        // n8n 式 $ 前缀内建（plan-004 评审5：命名铁律 $ 前缀=引擎内建）
+        "$json", "$input", "$items", "$node",
+        "$workflow", "$execution", "$env", "$vars", "$now", "$today",
+        "$runIndex", "$itemIndex", "$credentials", "$ctx",
+        // 节点/场景特有
+        "$cursor", "$nextCursor", "$page", "$response", "$payload", "$tool"
     };
 
     private static readonly HashSet<string> s_forbiddenIdentifiers = new(StringComparer.OrdinalIgnoreCase)
     {
         "require", "process", "fs", "path", "os", "net", "http", "https",
-        "fetch", "XMLHttpRequest", "WebSocket", "eval", "Function",
+        "fetch", "XMLHttpRequest", "WebSocket", "eval",
         "setTimeout", "setInterval", "setImmediate", "clearTimeout", "clearInterval",
         "globalThis", "window", "document", "constructor", "prototype", "__proto__",
         "import", "export", "module", "exports"
@@ -173,18 +180,67 @@ public sealed class ParameterResolver
 
     private static bool ContainsWord(string text, string word)
     {
-        // 简单但有效的词边界检查：前后不是字母、数字或下划线。
-        var index = text.IndexOf(word, StringComparison.OrdinalIgnoreCase);
-        while (index >= 0)
+        // 逐字符扫描，跳过字符串/模板字面量与注释内容，
+        // 避免把 "http://..." 这类字面量中的子串误判为禁止标识符。
+        var inSingle = false;
+        var inDouble = false;
+        var inTemplate = false;
+        var i = 0;
+        while (i < text.Length)
         {
-            var before = index == 0 || !IsIdentifierChar(text[index - 1]);
-            var after = index + word.Length == text.Length || !IsIdentifierChar(text[index + word.Length]);
-            if (before && after)
+            var c = text[i];
+
+            if (inSingle || inDouble || inTemplate)
             {
-                return true;
+                if (c == '\\')
+                {
+                    i += 2;
+                    continue;
+                }
+
+                if (inSingle && c == '\'') inSingle = false;
+                else if (inDouble && c == '"') inDouble = false;
+                else if (inTemplate && c == '`') inTemplate = false;
+                i++;
+                continue;
             }
 
-            index = text.IndexOf(word, index + 1, StringComparison.OrdinalIgnoreCase);
+            // 行注释：跳过至行尾
+            if (c == '/' && i + 1 < text.Length && text[i + 1] == '/')
+            {
+                while (i < text.Length && text[i] != '\n') i++;
+                continue;
+            }
+
+            // 块注释：跳过至 */
+            if (c == '/' && i + 1 < text.Length && text[i + 1] == '*')
+            {
+                i += 2;
+                while (i < text.Length && !(text[i] == '*' && i + 1 < text.Length && text[i + 1] == '/'))
+                {
+                    i++;
+                }
+
+                if (i < text.Length) i += 2;
+                continue;
+            }
+
+            if (c == '\'') { inSingle = true; i++; continue; }
+            if (c == '"') { inDouble = true; i++; continue; }
+            if (c == '`') { inTemplate = true; i++; continue; }
+
+            if (text.Length - i >= word.Length
+                && string.Equals(text.Substring(i, word.Length), word, StringComparison.OrdinalIgnoreCase))
+            {
+                var before = i == 0 || !IsIdentifierChar(text[i - 1]);
+                var after = i + word.Length == text.Length || !IsIdentifierChar(text[i + word.Length]);
+                if (before && after)
+                {
+                    return true;
+                }
+            }
+
+            i++;
         }
 
         return false;
@@ -270,7 +326,7 @@ public sealed class ParameterResolver
     private static string GetFirstWord(ReadOnlySpan<char> text)
     {
         var i = 0;
-        while (i < text.Length && (char.IsLetterOrDigit(text[i]) || text[i] == '_'))
+        while (i < text.Length && (char.IsLetterOrDigit(text[i]) || text[i] == '_' || text[i] == '$'))
         {
             i++;
         }

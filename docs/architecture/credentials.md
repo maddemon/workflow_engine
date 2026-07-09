@@ -37,7 +37,7 @@ public class Credential
 {
     public Guid Id { get; set; }
     public string Name { get; set; }
-    public string Type { get; set; } // "apiKey", "oauth", "basicAuth", "connectionString"...
+    public string Type { get; set; } // "apiKey", "oauth2", "basicAuth", "connectionString"...
     public Dictionary<string, EncryptedField> Data { get; set; }
 
     /// <summary>
@@ -65,6 +65,53 @@ public class EncryptedField
     public bool IsBinary { get; set; }
 }
 ```
+
+### 2.1 凭据类型注册表
+
+`Credential` 的 `Type` 不再只是任意字符串，而是由 `ICredentialTypeRegistry` 管理的类型名。注册表保存每种凭据类型的字段 schema，用于后端校验、CLI 本地校验与前端表单渲染。
+
+```csharp
+public interface ICredentialTypeRegistry
+{
+    IReadOnlyCollection<CredentialTypeDefinition> GetAll();
+    CredentialTypeDefinition? Get(string type);
+    bool IsKnown(string type);
+    ValidationResult Validate(string type, Dictionary<string, string> fields);
+}
+
+public sealed class CredentialTypeDefinition
+{
+    public string Name { get; }
+    public string DisplayName { get; }
+    public IReadOnlyList<CredentialFieldDefinition> Fields { get; }
+}
+
+public sealed class CredentialFieldDefinition
+{
+    public string Name { get; }
+    public string DisplayName { get; }
+    public bool IsRequired { get; }
+    public bool Secret { get; }
+    public string? Hint { get; }
+}
+```
+
+`ValidationResult` 返回成功或带可读提示的失败信息。创建/更新凭据时，`CredentialService` 调用注册表校验必填字段；CLI `credential create --type` 与 `credential types` 也复用同一内置 schema（后端注册表与 CLI 本地清单保持一致）。
+
+内置凭据类型及字段：
+
+| 类型               | 字段               | 必填 | 敏感                            |
+| ------------------ | ------------------ | ---- | ------------------------------- |
+| `apiKey`           | `apiKey`           | 是   | 是                              |
+| `connectionString` | `connectionString` | 是   | 是                              |
+| `basicAuth`        | `username`         | 是   | 否                              |
+|                    | `password`         | 是   | 是                              |
+| `oauth2`           | `tokenUrl`         | 是   | 否                              |
+|                    | `clientId`         | 是   | 否                              |
+|                    | `clientSecret`     | 是   | 是                              |
+|                    | `scope`            | 否   | 否                              |
+|                    | `grant`            | 否   | 否（默认 `client_credentials`） |
+|                    | `tokenPath`        | 否   | 否（默认 `access_token`）       |
 
 ## 3. 加密方案
 
@@ -99,22 +146,73 @@ new ParameterDefinition
 ```csharp
 public interface ICredentialAccessor
 {
-    CredentialValue GetCredential(Guid credentialId);
+    Task<CredentialValue> GetCredentialAsync(Guid credentialId, CancellationToken cancellationToken = default);
+
+    // 按名称获取（可选实现，供 dry-run 等临时凭据场景使用），未找到返回 null
+    Task<CredentialValue?> GetCredentialByNameAsync(string name, CancellationToken cancellationToken = default);
 }
 ```
 
-`CredentialValue` 的字段定义见 [terminology.md#核心数据模型](terminology.md#核心数据模型)。节点在执行时使用：
+`CredentialValue` 的字段定义见 [terminology.md#核心数据模型](terminology.md#核心数据模型)。节点在执行时使用（异步）：
 
 ```csharp
 public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context)
 {
-    var credential = context.Credentials.GetCredential(
+    var credential = await context.Credentials.GetCredentialAsync(
         Guid.Parse(context.RawParameters["apiCredential"].ToString()));
 
     var apiKey = credential.Fields["apiKey"];
     // 发请求...
 }
 ```
+
+### 4.1 OAuth2 令牌生命周期
+
+`oauth2` 凭据由 `OAuth2TokenService` 统一托管令牌获取、缓存、刷新与错误重试。令牌按 `credentialName + tokenUrl + scope + grantType` 生成缓存键持久缓存，跨执行复用，避免每次运行都请求 token。
+
+```csharp
+public interface IOAuth2TokenService
+{
+    Task<OAuth2TokenResponse> GetTokenAsync(OAuth2TokenRequest request, CancellationToken ct = default);
+    Task<OAuth2TokenResponse> GetOrRefreshTokenAsync(string cacheKey, OAuth2TokenRequest request, CancellationToken ct = default);
+}
+
+public class OAuth2TokenRequest
+{
+    public string TokenUrl { get; set; } = string.Empty;
+    public string ClientId { get; set; } = string.Empty;
+    public string ClientSecret { get; set; } = string.Empty;
+    public string? Scope { get; set; }
+    public string GrantType { get; set; } = "client_credentials";
+    public string? TokenPath { get; set; } // 默认 access_token
+    public Dictionary<string, string?>? ExtraParameters { get; set; }
+}
+
+public class OAuth2TokenResponse
+{
+    public string AccessToken { get; set; } = string.Empty;
+    public string TokenType { get; set; } = "Bearer";
+    public long? ExpiresIn { get; set; }
+    public string? RefreshToken { get; set; }
+    public string? Scope { get; set; }
+    public JsonNode? Raw { get; set; }
+}
+```
+
+生命周期行为：
+
+- **首次获取**：按 `client_credentials` 向 `tokenUrl` 发送 `application/x-www-form-urlencoded` 请求，从 `tokenPath`（默认 `access_token`）提取令牌。
+- **缓存**：结果存入内存缓存；缓存键为 `ComputeCacheKey(credentialName, tokenUrl, scope, grantType)` 的 SHA-256 前 16 位。
+- **刷新**：调用 `GetOrRefreshTokenAsync` 时，若缓存命中且未到达 `ExpiresAt - RefreshBufferSeconds`，直接返回；否则重新获取并覆盖缓存。
+- **重试**：`GetTokenAsync` 对 `HttpRequestException` 与非主动取消的 `TaskCanceledException` 按指数退避重试，默认 `MaxRetries = 3`，延迟分别为 1s / 2s / 4s；4xx 业务错误不重试。
+
+`OAuth2CredentialAccessor` 包装 `ICredentialAccessor`，在解析 `oauth2` 凭据时自动调用令牌服务，并把返回的 `accessToken`、`tokenType`、`expiresAt` 注入凭据字段字典。因此表达式中可直接使用：
+
+```
+$credentials.myOAuth2.accessToken
+```
+
+`httpRequest` 节点也可以选择 `Authentication = BearerToken` 并引用 oauth2 凭据，由节点自动附加 `Authorization: Bearer <accessToken>` 头。
 
 ## 5. 安全红线
 
@@ -126,12 +224,30 @@ public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context
 
 ## 6. 凭据使用范围
 
-| 场景 | 处理方式 |
-|------|----------|
+| 场景                           | 处理方式                                   |
+| ------------------------------ | ------------------------------------------ |
 | 同一工作流多个节点引用同一凭据 | 凭据 ID 保存在工作流定义中，运行时统一解密 |
-| 多个工作流共享凭据 | 凭据全局存储，按 ID 引用 |
-| 凭据更新 | 更新后立即生效，下次执行使用新值 |
-| 凭据删除 | 删除前检查是否有工作流引用，避免执行失败 |
+| 多个工作流共享凭据             | 凭据全局存储，按 ID 引用                   |
+| 凭据更新                       | 更新后立即生效，下次执行使用新值           |
+| 凭据删除                       | 删除前检查是否有工作流引用，避免执行失败   |
+
+### 6.3 表达式中的凭据访问
+
+执行上下文工厂在创建节点上下文时预加载节点参数中引用的凭据，并注入为 `$credentials` 全局变量。`$credentials` 是一个两层字典：凭据名称 → 字段名 → 解密后的字段值。
+
+```csharp
+// 节点执行上下文中
+js.SetValue("$credentials", credentialsDict);
+```
+
+在节点参数表达式中，使用 `$` 前缀内建变量访问：
+
+```
+$credentials.db.connectionString
+$credentials.myOAuth2.accessToken
+```
+
+`OAuth2CredentialAccessor` 保证 `$credentials.myOAuth2.accessToken` 返回的是已缓存/刷新后的有效令牌，节点无需自己处理 token 生命周期。
 
 ## 6.1 密钥轮换
 
