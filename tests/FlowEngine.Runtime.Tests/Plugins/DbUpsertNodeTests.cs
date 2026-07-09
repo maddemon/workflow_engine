@@ -254,6 +254,83 @@ public sealed class DbUpsertNodeTests
     }
 
     [Fact]
+    public async Task ExecuteAsync_Connection_ResolvedParameters_UsesEvaluatedValue()
+    {
+        const string connectionString = "Data Source=shared_resolved;Mode=Memory;Cache=Shared";
+        using var holder = CreateSharedMemoryConnection(connectionString);
+        await CreateUsersTableAsync(holder);
+
+        var node = new DbUpsertNode
+        {
+            Connection = "$credentials.db.connectionString",
+            Table = "users",
+            Mode = "insert",
+            Columns = new Dictionary<string, string>
+            {
+                ["id"] = "$json.id",
+                ["name"] = "$json.name",
+                ["email"] = "$json.email"
+            }
+        };
+
+        var resolvedParameters = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["connection"] = connectionString
+        };
+
+        var result = await node.ExecuteAsync(
+            CreateContext(new DataBatch
+            {
+                Items =
+                [
+                    new DataItem { Data = CreateUser(10, "Resolved", "resolved@example.com"), Success = true }
+                ]
+            }, resolvedParameters),
+            CancellationToken.None);
+
+        Assert.True(result.Success, result.Error?.Message);
+        var data = result.Output.Items[0].Data;
+        Assert.Equal(1, GetInt(data, "affectedRows"));
+        Assert.Equal(1, GetInt(data, "inserted"));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Connection_ExpressionEvaluation_UsesEvaluatedValue()
+    {
+        const string connectionString = "Data Source=shared_expr_eval;Mode=Memory;Cache=Shared";
+        using var holder = CreateSharedMemoryConnection(connectionString);
+        await CreateUsersTableAsync(holder);
+
+        var node = new DbUpsertNode
+        {
+            Connection = "'Data Source=shared_expr_eval;Mode=Memory;Cache=Shared'",
+            Table = "users",
+            Mode = "insert",
+            Columns = new Dictionary<string, string>
+            {
+                ["id"] = "$json.id",
+                ["name"] = "$json.name",
+                ["email"] = "$json.email"
+            }
+        };
+
+        var result = await node.ExecuteAsync(
+            CreateContext(new DataBatch
+            {
+                Items =
+                [
+                    new DataItem { Data = CreateUser(11, "ExprEval", "expr@example.com"), Success = true }
+                ]
+            }),
+            CancellationToken.None);
+
+        Assert.True(result.Success, result.Error?.Message);
+        var data = result.Output.Items[0].Data;
+        Assert.Equal(1, GetInt(data, "affectedRows"));
+        Assert.Equal(1, GetInt(data, "inserted"));
+    }
+
+    [Fact]
     public async Task ExecuteAsync_MissingConnection_ReturnsError()
     {
         var node = new DbUpsertNode
@@ -440,7 +517,7 @@ public sealed class DbUpsertNodeTests
         };
     }
 
-    private static NodeExecutionContext CreateContext(DataBatch input)
+    private static NodeExecutionContext CreateContext(DataBatch input, IReadOnlyDictionary<string, object>? resolvedParameters = null)
     {
         var nodeId = Guid.NewGuid();
         return new NodeExecutionContext
@@ -456,7 +533,8 @@ public sealed class DbUpsertNodeTests
             Inputs = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase)
             {
                 [FlowConstants.PortNames.Input] = input
-            }
+            },
+            ResolvedParameters = resolvedParameters ?? new Dictionary<string, object>()
         };
     }
 }

@@ -86,7 +86,13 @@ public sealed class DbUpsertNode : INodeType
     {
         try
         {
-            var validationError = Validate(context, out var keyColumnList, out var columnList);
+            var connectionString = ResolveConnection(context);
+            if (connectionString is null)
+            {
+                return context.ErrorResult("MissingConnection", "Connection string is required.");
+            }
+
+            var validationError = Validate(context, connectionString, out var keyColumnList, out var columnList);
             if (validationError is not null)
             {
                 return validationError;
@@ -106,7 +112,7 @@ public sealed class DbUpsertNode : INodeType
                 return context.ErrorResult("MissingKeyColumns", "KeyColumns is required for upsert/update mode.");
             }
 
-            var dialect = DbDialectResolver.Resolve(Dialect, Connection);
+            var dialect = DbDialectResolver.Resolve(Dialect, connectionString);
             var generator = SqlGeneratorFactory.Create(dialect);
             var sql = mode.ToLowerInvariant() switch
             {
@@ -128,7 +134,7 @@ public sealed class DbUpsertNode : INodeType
             var allItems = inputBatch.Items.Select(i => (object?)i.Data).ToList();
             var preparedExpressions = Columns.Values.Select(JsEngine.PrepareExpression).ToList();
 
-            await using var connection = DbConnectionFactory.CreateConnection(dialect, Connection);
+            await using var connection = DbConnectionFactory.CreateConnection(dialect, connectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
             using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
@@ -233,14 +239,45 @@ public sealed class DbUpsertNode : INodeType
         }
     }
 
-    private NodeExecutionResult? Validate(NodeExecutionContext context, out List<string>? keyColumnList, out List<string>? columnList)
+    private string? ResolveConnection(NodeExecutionContext context)
+    {
+        if (context.ResolvedParameters.TryGetValue("connection", out var resolved) && resolved is string resolvedString && !string.IsNullOrWhiteSpace(resolvedString))
+        {
+            return resolvedString;
+        }
+
+        if (string.IsNullOrWhiteSpace(Connection))
+        {
+            return null;
+        }
+
+        var trimmed = Connection.TrimStart();
+        if (trimmed.StartsWith('$') || trimmed.StartsWith('\'') || trimmed.StartsWith('"'))
+        {
+            try
+            {
+                using var engine = JsEngine.Create();
+                var result = engine.Evaluate(Connection);
+                var value = JsEngine.ToClrValue(result) as string;
+                return string.IsNullOrWhiteSpace(value) ? null : value;
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        return Connection;
+    }
+
+    private NodeExecutionResult? Validate(NodeExecutionContext context, string connectionString, out List<string>? keyColumnList, out List<string>? columnList)
     {
         keyColumnList = null;
         columnList = null;
 
-        if (string.IsNullOrWhiteSpace(Connection))
+        if (string.IsNullOrWhiteSpace(connectionString))
         {
-            return context.ErrorResult("MissingConnection", "Connection is required.");
+            return context.ErrorResult("MissingConnection", "Connection string is required.");
         }
 
         if (string.IsNullOrWhiteSpace(Table))
