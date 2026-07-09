@@ -32,7 +32,7 @@ public sealed class TriggerServiceAuthorizationTests : IDisposable
         var auditFactory = new AuditEventFactory(_userContext);
         var scheduleManager = new FakeScheduleManager();
         var resourceAuthorization = new RoleBasedResourceAuthorizationService(_userContext);
-        _service = new TriggerService(_dbContext, eventBus, auditFactory, scheduleManager, _userContext, resourceAuthorization, new WebhookRouteService(_dbContext));
+        _service = new TriggerService(_dbContext, eventBus, auditFactory, scheduleManager, AuthorizationGuardFactory.Create(_userContext, resourceAuthorization), new WebhookRouteService(_dbContext));
     }
 
     public void Dispose()
@@ -41,12 +41,12 @@ public sealed class TriggerServiceAuthorizationTests : IDisposable
     }
 
     [Fact]
-    public async Task GetByIdAsync_UnauthenticatedUser_ThrowsPermissionDeniedException()
+    public async Task GetByIdAsync_UnauthenticatedUser_ThrowsUnauthorizedException()
     {
         var ct = TestContext.Current.CancellationToken;
         _userContext.UserId = null;
 
-        await Assert.ThrowsAsync<PermissionDeniedException>(() => _service.GetByIdAsync(Guid.NewGuid(), ct));
+        await Assert.ThrowsAsync<UnauthorizedException>(() => _service.GetByIdAsync(Guid.NewGuid(), ct));
     }
 
     [Fact]

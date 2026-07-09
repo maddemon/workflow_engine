@@ -16,98 +16,63 @@ public sealed class ResourceAuthorizationService(FlowEngineDbContext dbContext, 
 
     /// <inheritdoc />
     public async Task<bool> CanAccessWorkflowAsync(Guid userId, Guid workflowId, Operation operation, CancellationToken ct = default)
-    {
-        var roles = await GetUserRolesAsync(userId, ct).ConfigureAwait(false);
-        if (!CheckRoleAccess(roles, Scope.Workflow, operation))
-        {
-            return false;
-        }
-
-        if (IsAdmin(roles))
-        {
-            return true;
-        }
-
-        var projectId = await dbContext.Workflows
-            .AsNoTracking()
-            .Where(w => w.Id == workflowId && !w.Deleted)
-            .Select(w => w.ProjectId)
-            .FirstOrDefaultAsync(ct)
-            .ConfigureAwait(false);
-
-        return await OwnsProjectAsync(userId, projectId, ct).ConfigureAwait(false);
-    }
+        => (await DecideAsync(userId, ResourceKind.Workflow, workflowId, operation, ct).ConfigureAwait(false)) == AccessDecision.Allowed;
 
     /// <inheritdoc />
     public async Task<bool> CanAccessCredentialAsync(Guid userId, Guid credentialId, Operation operation, CancellationToken ct = default)
-    {
-        var roles = await GetUserRolesAsync(userId, ct).ConfigureAwait(false);
-        if (!CheckRoleAccess(roles, Scope.Credential, operation))
-        {
-            return false;
-        }
-
-        if (IsAdmin(roles))
-        {
-            return true;
-        }
-
-        var projectId = await dbContext.Credentials
-            .AsNoTracking()
-            .Where(c => c.Id == credentialId && !c.Deleted)
-            .Select(c => c.ProjectId)
-            .FirstOrDefaultAsync(ct)
-            .ConfigureAwait(false);
-
-        return await OwnsProjectAsync(userId, projectId, ct).ConfigureAwait(false);
-    }
+        => (await DecideAsync(userId, ResourceKind.Credential, credentialId, operation, ct).ConfigureAwait(false)) == AccessDecision.Allowed;
 
     /// <inheritdoc />
     public async Task<bool> CanAccessExecutionAsync(Guid userId, Guid executionId, Operation operation, CancellationToken ct = default)
-    {
-        var roles = await GetUserRolesAsync(userId, ct).ConfigureAwait(false);
-        if (!CheckRoleAccess(roles, Scope.Execution, operation))
-        {
-            return false;
-        }
-
-        if (IsAdmin(roles))
-        {
-            return true;
-        }
-
-        var projectId = await dbContext.ExecutionRecords
-            .AsNoTracking()
-            .Where(e => e.Id == executionId && !e.Deleted)
-            .Select(e => e.ProjectId)
-            .FirstOrDefaultAsync(ct)
-            .ConfigureAwait(false);
-
-        return await OwnsProjectAsync(userId, projectId, ct).ConfigureAwait(false);
-    }
+        => (await DecideAsync(userId, ResourceKind.Execution, executionId, operation, ct).ConfigureAwait(false)) == AccessDecision.Allowed;
 
     /// <inheritdoc />
     public async Task<bool> CanAccessTriggerAsync(Guid userId, Guid triggerId, Operation operation, CancellationToken ct = default)
+        => (await DecideAsync(userId, ResourceKind.Trigger, triggerId, operation, ct).ConfigureAwait(false)) == AccessDecision.Allowed;
+
+    /// <inheritdoc />
+    public async Task<AccessDecision> DecideAsync(Guid userId, ResourceKind kind, Guid resourceId, Operation operation, CancellationToken ct = default)
     {
+        var (scope, projectId) = await ResolveProjectAsync(kind, resourceId, ct).ConfigureAwait(false);
         var roles = await GetUserRolesAsync(userId, ct).ConfigureAwait(false);
-        if (!CheckRoleAccess(roles, Scope.Trigger, operation))
+
+        if (!CheckRoleAccess(roles, scope, operation))
         {
-            return false;
+            return AccessDecision.DeniedByRole;
         }
 
         if (IsAdmin(roles))
         {
-            return true;
+            return AccessDecision.Allowed;
         }
 
-        var projectId = await dbContext.Triggers
-            .AsNoTracking()
-            .Where(t => t.Id == triggerId && !t.Deleted)
-            .Select(t => t.ProjectId)
-            .FirstOrDefaultAsync(ct)
-            .ConfigureAwait(false);
+        if (!projectId.HasValue)
+        {
+            // 未关联/未找到项目的资源：非 Admin 用户不应默认获得访问权，避免水平越权。
+            return AccessDecision.DeniedByOwnership;
+        }
 
-        return await OwnsProjectAsync(userId, projectId, ct).ConfigureAwait(false);
+        return await OwnsProjectAsync(userId, projectId.Value, ct).ConfigureAwait(false)
+            ? AccessDecision.Allowed
+            : AccessDecision.DeniedByOwnership;
+    }
+
+    /// <summary>
+    /// 按资源类型解析其所属项目 ID 与用于角色判定的作用域。
+    /// 文件继承所属项目权限，故作用域取 Project（审计 resourceType 仍为 File）。
+    /// </summary>
+    private async Task<(Scope scope, Guid? projectId)> ResolveProjectAsync(ResourceKind kind, Guid resourceId, CancellationToken ct)
+    {
+        return kind switch
+        {
+            ResourceKind.Workflow => (Scope.Workflow, await dbContext.Workflows.AsNoTracking().Where(w => w.Id == resourceId && !w.Deleted).Select(w => (Guid?)w.ProjectId).FirstOrDefaultAsync(ct).ConfigureAwait(false)),
+            ResourceKind.Credential => (Scope.Credential, await dbContext.Credentials.AsNoTracking().Where(c => c.Id == resourceId && !c.Deleted).Select(c => (Guid?)c.ProjectId).FirstOrDefaultAsync(ct).ConfigureAwait(false)),
+            ResourceKind.Execution => (Scope.Execution, await dbContext.ExecutionRecords.AsNoTracking().Where(e => e.Id == resourceId && !e.Deleted).Select(e => (Guid?)e.ProjectId).FirstOrDefaultAsync(ct).ConfigureAwait(false)),
+            ResourceKind.Trigger => (Scope.Trigger, await dbContext.Triggers.AsNoTracking().Where(t => t.Id == resourceId && !t.Deleted).Select(t => (Guid?)t.ProjectId).FirstOrDefaultAsync(ct).ConfigureAwait(false)),
+            ResourceKind.Project => (Scope.Project, resourceId),
+            ResourceKind.File => (Scope.Project, await dbContext.StoredFiles.AsNoTracking().Where(f => f.Id == resourceId && !f.Deleted).Select(f => (Guid?)f.ProjectId).FirstOrDefaultAsync(ct).ConfigureAwait(false)),
+            _ => throw new ArgumentOutOfRangeException(nameof(kind), kind, null),
+        };
     }
 
     /// <inheritdoc />

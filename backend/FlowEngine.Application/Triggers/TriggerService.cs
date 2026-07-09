@@ -2,7 +2,6 @@ using System.Text.Json;
 using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
-using FlowEngine.Application.Identity;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
@@ -22,8 +21,7 @@ public sealed class TriggerService(
     IEventBus eventBus,
     AuditEventFactory auditFactory,
     IScheduleManager scheduleManager,
-    IUserContext userContext,
-    IResourceAuthorizationService resourceAuthorization,
+    IAuthorizationGuard authGuard,
     WebhookRouteService webhookRouteService)
 {
     /// <summary>
@@ -33,10 +31,7 @@ public sealed class TriggerService(
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        if (!CanWriteTrigger())
-        {
-            throw new PermissionDeniedException("当前用户没有创建触发器的权限。");
-        }
+        await authGuard.RequireScopeAsync(Scope.Trigger, Operation.Write, cancellationToken);
 
         var workflow = await dbContext.Workflows
             .FirstOrDefaultAsync(w => w.Id == dto.WorkflowDefinitionId, cancellationToken)
@@ -91,23 +86,7 @@ public sealed class TriggerService(
     /// </summary>
     public async Task<TriggerDto?> GetByIdAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var userId = userContext.UserId;
-        if (userId is null)
-        {
-            throw new PermissionDeniedException("当前用户未认证。");
-        }
-
-        if (!await resourceAuthorization.CanAccessTriggerAsync(userId.Value, id, Operation.Read, cancellationToken).ConfigureAwait(false))
-        {
-            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
-                AuditEventTypes.PermissionDenied,
-                "Trigger",
-                id,
-                new Dictionary<string, object> { ["operation"] = Operation.Read.ToString(), ["reason"] = "role" }),
-                cancellationToken).ConfigureAwait(false);
-
-            throw new PermissionDeniedException("当前用户没有读取该触发器的权限。");
-        }
+        await authGuard.RequireAccessAsync(ResourceKind.Trigger, id, Operation.Read, cancellationToken);
 
         var trigger = await dbContext.Triggers
             .FirstOrDefaultAsync(t => t.Id == id, cancellationToken)
@@ -159,28 +138,8 @@ public sealed class TriggerService(
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        var userId = userContext.UserId;
-        if (userId is null)
-        {
-            throw new PermissionDeniedException("当前用户未认证。");
-        }
-
-        if (!await resourceAuthorization.CanAccessTriggerAsync(userId.Value, id, Operation.Write, cancellationToken).ConfigureAwait(false))
-        {
-            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
-                AuditEventTypes.PermissionDenied,
-                "Trigger",
-                id,
-                new Dictionary<string, object> { ["operation"] = Operation.Write.ToString(), ["reason"] = "role" }),
-                cancellationToken).ConfigureAwait(false);
-
-            throw new PermissionDeniedException("当前用户没有修改该触发器的权限。");
-        }
-
-        if (!CanWriteTrigger())
-        {
-            throw new PermissionDeniedException("当前用户没有修改触发器的权限。");
-        }
+        await authGuard.RequireAccessAsync(ResourceKind.Trigger, id, Operation.Write, cancellationToken);
+        await authGuard.RequireScopeAsync(Scope.Trigger, Operation.Write, cancellationToken);
 
         var trigger = await dbContext.Triggers
             .FirstOrDefaultAsync(t => t.Id == id, cancellationToken)
@@ -231,28 +190,8 @@ public sealed class TriggerService(
     /// </summary>
     public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var userId = userContext.UserId;
-        if (userId is null)
-        {
-            throw new PermissionDeniedException("当前用户未认证。");
-        }
-
-        if (!await resourceAuthorization.CanAccessTriggerAsync(userId.Value, id, Operation.Delete, cancellationToken).ConfigureAwait(false))
-        {
-            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
-                AuditEventTypes.PermissionDenied,
-                "Trigger",
-                id,
-                new Dictionary<string, object> { ["operation"] = Operation.Delete.ToString(), ["reason"] = "role" }),
-                cancellationToken).ConfigureAwait(false);
-
-            throw new PermissionDeniedException("当前用户没有删除该触发器的权限。");
-        }
-
-        if (!IsSystemAdmin())
-        {
-            throw new PermissionDeniedException("仅管理员可删除触发器。");
-        }
+        await authGuard.RequireAccessAsync(ResourceKind.Trigger, id, Operation.Delete, cancellationToken);
+        await authGuard.RequireAdminAsync(Operation.Delete, cancellationToken);
 
         var trigger = await dbContext.Triggers
             .FirstOrDefaultAsync(t => t.Id == id, cancellationToken)
@@ -414,19 +353,6 @@ public sealed class TriggerService(
     /// <summary>
     /// 判断当前用户是否有触发器写权限（系统全局角色 Admin/Editor）。
     /// </summary>
-    private bool CanWriteTrigger()
-    {
-        return userContext.Roles.Contains(RoleConstants.Admin) || userContext.Roles.Contains(RoleConstants.Editor);
-    }
-
-    /// <summary>
-    /// 判断当前用户是否为系统 Admin（全局角色），用于触发器的删除权限校验。
-    /// </summary>
-    private bool IsSystemAdmin()
-    {
-        return userContext.Roles.Contains(RoleConstants.Admin);
-    }
-
     private static TriggerSettings ConvertToTriggerSettings(TriggerSettingsDto dto)
     {
         return new TriggerSettings

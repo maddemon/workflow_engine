@@ -27,7 +27,8 @@ public sealed class CredentialService(
     AuditEventFactory auditFactory,
     IResourceAuthorizationService resourceAuthorization,
     IUserContext userContext,
-    WorkflowRepository workflowRepository)
+    WorkflowRepository workflowRepository,
+    IAuthorizationGuard authGuard)
 {
     private const string KeyVersion = "v1";
 
@@ -38,10 +39,7 @@ public sealed class CredentialService(
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        if (!CanWriteCredential())
-        {
-            throw new PermissionDeniedException("当前用户没有创建凭据的权限。");
-        }
+        await authGuard.RequireScopeAsync(Scope.Credential, Operation.Write, cancellationToken);
 
         return await CreateCredentialInternalAsync(dto, cancellationToken).ConfigureAwait(false);
     }
@@ -53,23 +51,7 @@ public sealed class CredentialService(
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        var userId = userContext.UserId;
-        if (userId is null)
-        {
-            throw new PermissionDeniedException("当前用户未认证。");
-        }
-
-        if (!CanWriteCredential())
-        {
-            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
-                AuditEventTypes.PermissionDenied,
-                "Credential",
-                Guid.Empty,
-                new Dictionary<string, object> { ["operation"] = Operation.Write.ToString(), ["reason"] = "role" }),
-                cancellationToken).ConfigureAwait(false);
-
-            throw new PermissionDeniedException("当前用户没有创建或更新凭据的权限。");
-        }
+        await authGuard.RequireScopeAsync(Scope.Credential, Operation.Write, cancellationToken);
 
         var existing = await dbContext.Credentials
             .FirstOrDefaultAsync(
@@ -81,17 +63,7 @@ public sealed class CredentialService(
 
         if (existing is not null)
         {
-            if (!await resourceAuthorization.CanAccessCredentialAsync(userId.Value, existing.Id, Operation.Write, cancellationToken).ConfigureAwait(false))
-            {
-                await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
-                    AuditEventTypes.PermissionDenied,
-                    "Credential",
-                    existing.Id,
-                    new Dictionary<string, object> { ["operation"] = Operation.Write.ToString(), ["reason"] = "role" }),
-                    cancellationToken).ConfigureAwait(false);
-
-                throw new PermissionDeniedException("当前用户没有更新该凭据的权限。");
-            }
+            await authGuard.RequireAccessAsync(ResourceKind.Credential, existing.Id, Operation.Write, cancellationToken);
 
             var key = keyProvider.GetKey();
             existing.Data = EncryptFields(dto.Fields, key);
@@ -144,23 +116,7 @@ public sealed class CredentialService(
     /// </summary>
     public async Task<CredentialDto?> GetAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var userId = userContext.UserId;
-        if (userId is null)
-        {
-            throw new PermissionDeniedException("当前用户未认证。");
-        }
-
-        if (!await resourceAuthorization.CanAccessCredentialAsync(userId.Value, id, Operation.Read, cancellationToken).ConfigureAwait(false))
-        {
-            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
-                AuditEventTypes.PermissionDenied,
-                "Credential",
-                id,
-                new Dictionary<string, object> { ["operation"] = Operation.Read.ToString(), ["reason"] = "role" }),
-                cancellationToken).ConfigureAwait(false);
-
-            throw new PermissionDeniedException("当前用户没有读取该凭据的权限。");
-        }
+        await authGuard.RequireAccessAsync(ResourceKind.Credential, id, Operation.Read, cancellationToken);
 
         var credential = await dbContext.Credentials
             .FirstOrDefaultAsync(c => c.Id == id, cancellationToken)
@@ -199,28 +155,8 @@ public sealed class CredentialService(
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        var userId = userContext.UserId;
-        if (userId is null)
-        {
-            throw new PermissionDeniedException("当前用户未认证。");
-        }
-
-        if (!await resourceAuthorization.CanAccessCredentialAsync(userId.Value, id, Operation.Write, cancellationToken).ConfigureAwait(false))
-        {
-            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
-                AuditEventTypes.PermissionDenied,
-                "Credential",
-                id,
-                new Dictionary<string, object> { ["operation"] = Operation.Write.ToString(), ["reason"] = "role" }),
-                cancellationToken).ConfigureAwait(false);
-
-            throw new PermissionDeniedException("当前用户没有修改该凭据的权限。");
-        }
-
-        if (!CanWriteCredential())
-        {
-            throw new PermissionDeniedException("当前用户没有修改凭据的权限。");
-        }
+        await authGuard.RequireAccessAsync(ResourceKind.Credential, id, Operation.Write, cancellationToken);
+        await authGuard.RequireScopeAsync(Scope.Credential, Operation.Write, cancellationToken);
 
         var credential = await dbContext.Credentials
             .FirstOrDefaultAsync(c => c.Id == id, cancellationToken)
@@ -248,28 +184,8 @@ public sealed class CredentialService(
     /// </summary>
     public async Task<CredentialDeleteResult> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var userId = userContext.UserId;
-        if (userId is null)
-        {
-            throw new PermissionDeniedException("当前用户未认证。");
-        }
-
-        if (!await resourceAuthorization.CanAccessCredentialAsync(userId.Value, id, Operation.Delete, cancellationToken).ConfigureAwait(false))
-        {
-            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
-                AuditEventTypes.PermissionDenied,
-                "Credential",
-                id,
-                new Dictionary<string, object> { ["operation"] = Operation.Delete.ToString(), ["reason"] = "role" }),
-                cancellationToken).ConfigureAwait(false);
-
-            throw new PermissionDeniedException("当前用户没有删除该凭据的权限。");
-        }
-
-        if (!IsSystemAdmin())
-        {
-            throw new PermissionDeniedException("仅管理员可删除凭据。");
-        }
+        await authGuard.RequireAccessAsync(ResourceKind.Credential, id, Operation.Delete, cancellationToken);
+        await authGuard.RequireAdminAsync(Operation.Delete, cancellationToken);
 
         var credential = await dbContext.Credentials
             .FirstOrDefaultAsync(c => c.Id == id, cancellationToken)
@@ -315,16 +231,6 @@ public sealed class CredentialService(
         }
 
         return resourceAuthorization.ShouldMaskCredentialValues(userContext.Roles);
-    }
-
-    private bool CanWriteCredential()
-    {
-        return userContext.Roles.Contains(RoleConstants.Admin) || userContext.Roles.Contains(RoleConstants.Editor);
-    }
-
-    private bool IsSystemAdmin()
-    {
-        return userContext.Roles.Contains(RoleConstants.Admin);
     }
 
     private Dictionary<string, string> DecryptFields(Credential credential)

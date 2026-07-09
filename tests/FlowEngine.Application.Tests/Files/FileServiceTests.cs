@@ -28,7 +28,7 @@ public sealed class FileServiceTests : IDisposable
         _fileStorage = new FakeFileStorage();
         _userContext = new FakeUserContext();
         _options = new FileStorageOptions();
-        _service = new FileService(_dbContext, _fileStorage, _userContext, new FakeResourceAuthorizationService(), Options.Create(_options));
+        _service = new FileService(_dbContext, _fileStorage, _userContext, AuthorizationGuardFactory.Create(_userContext, new FakeResourceAuthorizationService()), Options.Create(_options));
     }
 
     public void Dispose()

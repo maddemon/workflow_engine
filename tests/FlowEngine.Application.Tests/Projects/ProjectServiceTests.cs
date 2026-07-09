@@ -30,7 +30,7 @@ public sealed class ProjectServiceTests : IDisposable
         _eventBus = new InMemoryEventBus();
         _userContext = new FakeUserContext();
         var auditFactory = new AuditEventFactory(_userContext);
-        _service = new ProjectService(_dbContext, _userContext, new FakeResourceAuthorizationService(_dbContext, _userContext), _eventBus, auditFactory);
+        _service = new ProjectService(_dbContext, _userContext, AuthorizationGuardFactory.Create(_userContext, new FakeResourceAuthorizationService(_dbContext, _userContext)), _eventBus, auditFactory);
     }
 
     public void Dispose()

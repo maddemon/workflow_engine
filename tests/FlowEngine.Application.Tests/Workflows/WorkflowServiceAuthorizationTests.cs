@@ -33,9 +33,9 @@ public sealed class WorkflowServiceAuthorizationTests : IDisposable
         var auditFactory = new AuditEventFactory(_userContext);
         var scheduleManager = new FakeScheduleManager();
         var resourceAuthorization = new RoleBasedResourceAuthorizationService(_userContext);
-        var triggerService = new TriggerService(_dbContext, eventBus, auditFactory, scheduleManager, _userContext, resourceAuthorization, new WebhookRouteService(_dbContext));
+        var triggerService = new TriggerService(_dbContext, eventBus, auditFactory, scheduleManager, AuthorizationGuardFactory.Create(_userContext, resourceAuthorization), new WebhookRouteService(_dbContext));
         var validator = new WorkflowValidator(new FakeNodeRegistry());
-        _service = new WorkflowService(_dbContext, validator, eventBus, auditFactory, triggerService, _userContext, resourceAuthorization);
+        _service = new WorkflowService(_dbContext, validator, eventBus, auditFactory, triggerService, AuthorizationGuardFactory.Create(_userContext, resourceAuthorization));
     }
 
     public void Dispose()
@@ -44,12 +44,12 @@ public sealed class WorkflowServiceAuthorizationTests : IDisposable
     }
 
     [Fact]
-    public async Task GetAsync_UnauthenticatedUser_ThrowsPermissionDeniedException()
+    public async Task GetAsync_UnauthenticatedUser_ThrowsUnauthorizedException()
     {
         var ct = TestContext.Current.CancellationToken;
         _userContext.UserId = null;
 
-        await Assert.ThrowsAsync<PermissionDeniedException>(() => _service.GetAsync(Guid.NewGuid(), ct));
+        await Assert.ThrowsAsync<UnauthorizedException>(() => _service.GetAsync(Guid.NewGuid(), ct));
     }
 
     [Fact]

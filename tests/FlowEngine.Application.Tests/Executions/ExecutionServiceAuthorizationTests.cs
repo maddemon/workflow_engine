@@ -34,7 +34,7 @@ public sealed class ExecutionServiceAuthorizationTests : IDisposable
         var idempotencyService = new StubIdempotencyService();
         var eventBus = new InMemoryEventBus();
         var auditFactory = new AuditEventFactory(_userContext);
-        _service = new ExecutionService(engine, _dbContext, idempotencyService, _userContext, resourceAuthorization, eventBus, auditFactory);
+        _service = new ExecutionService(engine, _dbContext, idempotencyService, AuthorizationGuardFactory.Create(_userContext, resourceAuthorization), eventBus, auditFactory);
     }
 
     public void Dispose()
@@ -43,12 +43,12 @@ public sealed class ExecutionServiceAuthorizationTests : IDisposable
     }
 
     [Fact]
-    public async Task GetAsync_UnauthenticatedUser_ThrowsPermissionDeniedException()
+    public async Task GetAsync_UnauthenticatedUser_ThrowsUnauthorizedException()
     {
         var ct = TestContext.Current.CancellationToken;
         _userContext.UserId = null;
 
-        await Assert.ThrowsAsync<PermissionDeniedException>(() => _service.GetAsync(Guid.NewGuid(), ct));
+        await Assert.ThrowsAsync<UnauthorizedException>(() => _service.GetAsync(Guid.NewGuid(), ct));
     }
 
     [Fact]
@@ -94,7 +94,7 @@ public sealed class ExecutionServiceAuthorizationTests : IDisposable
     }
 
     [Fact]
-    public async Task ExecuteAsync_UnauthenticatedUser_ThrowsPermissionDeniedException()
+    public async Task ExecuteAsync_UnauthenticatedUser_ThrowsUnauthorizedException()
     {
         var ct = TestContext.Current.CancellationToken;
         var workflow = CreateTestWorkflow();
@@ -102,7 +102,7 @@ public sealed class ExecutionServiceAuthorizationTests : IDisposable
         await _dbContext.SaveChangesAsync(ct);
         _userContext.UserId = null;
 
-        await Assert.ThrowsAsync<PermissionDeniedException>(() => _service.ExecuteAsync(workflow.Id, cancellationToken: ct));
+        await Assert.ThrowsAsync<UnauthorizedException>(() => _service.ExecuteAsync(workflow.Id, cancellationToken: ct));
     }
 
     [Fact]

@@ -145,6 +145,8 @@ public static class ServiceCollectionExtensions
             FlowEngine.Application.Authorization.AuthorizationService>();
         services.AddScoped<FlowEngine.Application.Authorization.IResourceAuthorizationService,
             FlowEngine.Application.Authorization.ResourceAuthorizationService>();
+        services.AddScoped<FlowEngine.Application.Authorization.IAuthorizationGuard,
+            FlowEngine.Application.Authorization.AuthorizationGuard>();
         // ── Identity ────────────────────────────────────────────────
         services.AddScoped<IPasswordHasher, PasswordHasher>();
         services.AddScoped<IPasswordValidator, PasswordValidator>();
@@ -183,6 +185,7 @@ public static class ServiceCollectionExtensions
             return new LocalFileStorage(basePath, logger);
         });
         services.AddScoped<FileService>();
+        services.AddSingleton<FlowEngine.Runtime.Security.ISecretMasker, FlowEngine.Runtime.Security.SecretMasker>();
         services.AddScoped<WorkflowExecutor>();
         services.AddScoped<IEngine>(sp => sp.GetRequiredService<WorkflowExecutor>());
         services.AddHostedService<WorkflowExecutionWorker>();

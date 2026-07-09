@@ -39,8 +39,7 @@ public sealed class ExecutionServiceTests : IDisposable
             _engine,
             _dbContext,
             idempotencyService,
-            _userContext,
-            resourceAuthorization,
+            AuthorizationGuardFactory.Create(_userContext, resourceAuthorization),
             _eventBus,
             auditFactory);
     }
@@ -187,12 +186,12 @@ public sealed class ExecutionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task CancelAsync_UnauthenticatedUser_ThrowsPermissionDeniedException()
+    public async Task CancelAsync_UnauthenticatedUser_ThrowsUnauthorizedException()
     {
         var ct = TestContext.Current.CancellationToken;
         _userContext.UserId = null;
 
-        await Assert.ThrowsAsync<PermissionDeniedException>(() => _service.CancelAsync(Guid.NewGuid(), ct));
+        await Assert.ThrowsAsync<UnauthorizedException>(() => _service.CancelAsync(Guid.NewGuid(), ct));
     }
 
     [Fact]

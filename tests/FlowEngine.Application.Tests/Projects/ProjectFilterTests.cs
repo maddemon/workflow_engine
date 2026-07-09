@@ -159,8 +159,7 @@ public sealed class ProjectFilterTests : IDisposable
             new InMemoryEventBus(),
             new AuditEventFactory(userContext),
             CreateTriggerService(),
-            userContext,
-            resourceAuthorization);
+            AuthorizationGuardFactory.Create(userContext, resourceAuthorization));
     }
 
     private CredentialService CreateCredentialService()
@@ -174,7 +173,8 @@ public sealed class ProjectFilterTests : IDisposable
             new AuditEventFactory(userContext),
             new StubResourceAuthorizationService(),
             userContext,
-            new WorkflowRepository(_dbContext));
+            new WorkflowRepository(_dbContext),
+            AuthorizationGuardFactory.Create(userContext, new StubResourceAuthorizationService()));
     }
 
     private TriggerService CreateTriggerService()
@@ -186,8 +186,7 @@ public sealed class ProjectFilterTests : IDisposable
             new InMemoryEventBus(),
             new AuditEventFactory(userContext),
             new FakeScheduleManager(),
-            userContext,
-            resourceAuthorization,
+            AuthorizationGuardFactory.Create(userContext, resourceAuthorization),
             new WebhookRouteService(_dbContext));
     }
 

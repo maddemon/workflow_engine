@@ -2,7 +2,6 @@ using System.Text.Json;
 using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
-using FlowEngine.Application.Identity;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
@@ -22,8 +21,7 @@ public sealed class ExecutionService(
     IEngine engine,
     FlowEngineDbContext dbContext,
     IExecutionIdempotencyService idempotencyService,
-    IUserContext userContext,
-    IResourceAuthorizationService resourceAuthorization,
+    IAuthorizationGuard authGuard,
     IEventBus eventBus,
     AuditEventFactory auditFactory)
 {
@@ -46,23 +44,7 @@ public sealed class ExecutionService(
             return null;
         }
 
-        var userId = userContext.UserId;
-        if (userId is null)
-        {
-            throw new PermissionDeniedException("当前用户未认证。");
-        }
-
-        if (!await resourceAuthorization.CanAccessWorkflowAsync(userId.Value, workflowId, Operation.Execute, cancellationToken).ConfigureAwait(false))
-        {
-            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
-                AuditEventTypes.PermissionDenied,
-                "Workflow",
-                workflowId,
-                new Dictionary<string, object> { ["operation"] = Operation.Execute.ToString(), ["reason"] = "role" }),
-                cancellationToken).ConfigureAwait(false);
-
-            throw new PermissionDeniedException("当前用户没有启动该工作流的权限。");
-        }
+        await authGuard.RequireAccessAsync(ResourceKind.Workflow, workflowId, Operation.Execute, cancellationToken);
 
         // 幂等检查：如果提供了幂等键，检查是否已存在
         if (!string.IsNullOrEmpty(idempotencyKey))
@@ -130,23 +112,7 @@ public sealed class ExecutionService(
     /// </summary>
     public async Task<(ExecutionDto? Execution, bool Conflict)> CancelAsync(Guid executionId, CancellationToken cancellationToken = default)
     {
-        var userId = userContext.UserId;
-        if (userId is null)
-        {
-            throw new PermissionDeniedException("当前用户未认证。");
-        }
-
-        if (!await resourceAuthorization.CanAccessExecutionAsync(userId.Value, executionId, Operation.Execute, cancellationToken).ConfigureAwait(false))
-        {
-            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
-                AuditEventTypes.PermissionDenied,
-                "Execution",
-                executionId,
-                new Dictionary<string, object> { ["operation"] = Operation.Execute.ToString(), ["reason"] = "role" }),
-                cancellationToken).ConfigureAwait(false);
-
-            throw new PermissionDeniedException("当前用户没有取消该执行记录的权限。");
-        }
+        await authGuard.RequireAccessAsync(ResourceKind.Execution, executionId, Operation.Execute, cancellationToken);
 
         var record = await dbContext.ExecutionRecords
             .FirstOrDefaultAsync(e => e.Id == executionId, cancellationToken)
@@ -176,23 +142,7 @@ public sealed class ExecutionService(
     /// </summary>
     public async Task<ExecutionDto?> GetAsync(Guid executionId, CancellationToken cancellationToken = default)
     {
-        var userId = userContext.UserId;
-        if (userId is null)
-        {
-            throw new PermissionDeniedException("当前用户未认证。");
-        }
-
-        if (!await resourceAuthorization.CanAccessExecutionAsync(userId.Value, executionId, Operation.Read, cancellationToken).ConfigureAwait(false))
-        {
-            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
-                AuditEventTypes.PermissionDenied,
-                "Execution",
-                executionId,
-                new Dictionary<string, object> { ["operation"] = Operation.Read.ToString(), ["reason"] = "role" }),
-                cancellationToken).ConfigureAwait(false);
-
-            throw new PermissionDeniedException("当前用户没有读取该执行记录的权限。");
-        }
+        await authGuard.RequireAccessAsync(ResourceKind.Execution, executionId, Operation.Read, cancellationToken);
 
         var record = await dbContext.ExecutionRecords
             .FirstOrDefaultAsync(e => e.Id == executionId, cancellationToken)

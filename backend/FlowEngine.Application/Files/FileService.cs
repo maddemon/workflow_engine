@@ -18,7 +18,7 @@ public sealed class FileService(
     FlowEngineDbContext dbContext,
     IFileStorage fileStorage,
     IUserContext userContext,
-    IResourceAuthorizationService resourceAuthorization,
+    IAuthorizationGuard authGuard,
     IOptions<FileStorageOptions> options)
 {
     /// <summary>
@@ -38,7 +38,7 @@ public sealed class FileService(
         ArgumentNullException.ThrowIfNull(content);
 
         var userId = userContext.UserId
-            ?? throw new InvalidOperationException("用户未认证。");
+            ?? throw new UnauthorizedException("当前用户未认证。");
 
         await EnsureCanAccessProjectAsync(projectId, Operation.Write, cancellationToken)
             .ConfigureAwait(false);
@@ -172,22 +172,14 @@ public sealed class FileService(
     private async Task EnsureCanAccessFileAsync(StoredFile file, bool requireWrite, CancellationToken cancellationToken)
     {
         var operation = requireWrite ? Operation.Write : Operation.Read;
-        await EnsureCanAccessProjectAsync(file.ProjectId, operation, cancellationToken)
+        await authGuard.RequireAccessAsync(ResourceKind.File, file.Id, operation, cancellationToken)
             .ConfigureAwait(false);
     }
 
     private async Task EnsureCanAccessProjectAsync(Guid projectId, Operation operation, CancellationToken cancellationToken)
     {
-        var userId = userContext.UserId
-            ?? throw new InvalidOperationException("用户未认证。");
-
-        var allowed = await resourceAuthorization.CanAccessProjectAsync(userId, projectId, operation, cancellationToken)
+        await authGuard.RequireAccessAsync(ResourceKind.Project, projectId, operation, cancellationToken)
             .ConfigureAwait(false);
-
-        if (!allowed)
-        {
-            throw new PermissionDeniedException("无权访问该资源。");
-        }
     }
 
     private static StoredFileDto MapToDto(StoredFile file)

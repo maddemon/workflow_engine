@@ -75,6 +75,7 @@ public class GlobalExceptionHandlerMiddleware(
         return exception switch
         {
             PermissionDeniedException => (StatusCodes.Status403Forbidden, "Forbidden"),
+            UnauthorizedException => (StatusCodes.Status401Unauthorized, "Unauthorized"),
             NotFoundException => (StatusCodes.Status404NotFound, "Not Found"),
             BusinessException => (StatusCodes.Status400BadRequest, "Bad Request"),
             ArgumentException => (StatusCodes.Status400BadRequest, "Bad Request"),

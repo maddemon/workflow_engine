@@ -1,7 +1,6 @@
 using System.Runtime.CompilerServices;
 using System.Threading.Channels;
 using FlowEngine.Application.Authorization;
-using FlowEngine.Application.Identity;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Events;
@@ -24,8 +23,7 @@ namespace FlowEngine.Host.Controllers;
 [Route("api/v1")]
 public class SseController(
     IEventBus eventBus,
-    IUserContext userContext,
-    IResourceAuthorizationService resourceAuthorization,
+    IAuthorizationGuard authGuard,
     ILogger<SseController> logger) : ControllerBase
 {
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(30);
@@ -39,16 +37,7 @@ public class SseController(
     [AuthorizePermission(Scope.Execution, Operation.Read)]
     public async Task<IResult> Stream(Guid executionId, CancellationToken cancellationToken)
     {
-        if (!userContext.IsAuthenticated)
-        {
-            return TypedResults.StatusCode(StatusCodes.Status401Unauthorized);
-        }
-
-        if (userContext.UserId is not { } userId ||
-            !await resourceAuthorization.CanAccessExecutionAsync(userId, executionId, Operation.Read, cancellationToken).ConfigureAwait(false))
-        {
-            return TypedResults.StatusCode(StatusCodes.Status403Forbidden);
-        }
+        await authGuard.RequireAccessAsync(ResourceKind.Execution, executionId, Operation.Read, cancellationToken);
 
         // 禁用 nginx 反向代理缓冲，确保事件实时推送
         Response.Headers["X-Accel-Buffering"] = "no";

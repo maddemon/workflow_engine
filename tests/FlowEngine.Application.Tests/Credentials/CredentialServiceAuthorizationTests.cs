@@ -39,7 +39,8 @@ public sealed class CredentialServiceAuthorizationTests : IDisposable
             auditFactory,
             resourceAuthService,
             _userContext,
-            new WorkflowRepository(_dbContext));
+            new WorkflowRepository(_dbContext),
+            AuthorizationGuardFactory.Create(_userContext, resourceAuthService));
     }
 
     public void Dispose()
@@ -48,12 +49,12 @@ public sealed class CredentialServiceAuthorizationTests : IDisposable
     }
 
     [Fact]
-    public async Task GetAsync_UnauthenticatedUser_ThrowsPermissionDeniedException()
+    public async Task GetAsync_UnauthenticatedUser_ThrowsUnauthorizedException()
     {
         var ct = TestContext.Current.CancellationToken;
         _userContext.UserId = null;
 
-        await Assert.ThrowsAsync<PermissionDeniedException>(() => _service.GetAsync(Guid.NewGuid(), ct));
+        await Assert.ThrowsAsync<UnauthorizedException>(() => _service.GetAsync(Guid.NewGuid(), ct));
     }
 
     [Fact]

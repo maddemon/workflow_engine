@@ -18,7 +18,7 @@ namespace FlowEngine.Application.Projects;
 public sealed class ProjectService(
     FlowEngineDbContext dbContext,
     IUserContext userContext,
-    IResourceAuthorizationService resourceAuthorization,
+    IAuthorizationGuard authGuard,
     IEventBus eventBus,
     AuditEventFactory auditFactory)
 {
@@ -30,7 +30,7 @@ public sealed class ProjectService(
         ArgumentNullException.ThrowIfNull(dto);
 
         var userId = userContext.UserId
-            ?? throw new InvalidOperationException("用户未认证。");
+            ?? throw new UnauthorizedException("用户未认证。");
 
         var project = new Project
         {
@@ -58,7 +58,7 @@ public sealed class ProjectService(
     public async Task<IReadOnlyList<ProjectDto>> GetAllAsync(CancellationToken cancellationToken = default)
     {
         var userId = userContext.UserId
-            ?? throw new InvalidOperationException("用户未认证。");
+            ?? throw new UnauthorizedException("用户未认证。");
 
         var query = dbContext.Projects.Where(p => !p.Deleted);
 
@@ -132,10 +132,7 @@ public sealed class ProjectService(
     /// </summary>
     public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        if (!IsSystemAdmin())
-        {
-            throw new PermissionDeniedException("仅系统管理员可删除项目。");
-        }
+        await authGuard.RequireAdminAsync(Operation.Delete, cancellationToken);
 
         var project = await dbContext.Projects
             .FirstOrDefaultAsync(p => p.Id == id && !p.Deleted, cancellationToken)
@@ -335,21 +332,12 @@ public sealed class ProjectService(
 
     private async Task EnsureCanAccessProjectAsync(Guid projectId, Operation operation, CancellationToken cancellationToken)
     {
-        var userId = userContext.UserId
-            ?? throw new InvalidOperationException("用户未认证。");
-
-        var allowed = await resourceAuthorization.CanAccessProjectAsync(userId, projectId, operation, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (!allowed)
-        {
-            throw new PermissionDeniedException("无权访问该项目。");
-        }
+        await authGuard.RequireAccessAsync(ResourceKind.Project, projectId, operation, cancellationToken).ConfigureAwait(false);
     }
 
     private bool IsSystemAdmin()
     {
-        return userContext.Roles.Contains(RoleConstants.Admin);
+        return userContext.Roles.Contains(RoleConstants.Admin, StringComparer.OrdinalIgnoreCase);
     }
 
     private static ProjectDto MapToDto(Project project)

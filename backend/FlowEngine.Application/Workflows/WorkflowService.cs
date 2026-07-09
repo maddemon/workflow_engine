@@ -1,7 +1,6 @@
 using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
-using FlowEngine.Application.Identity;
 using FlowEngine.Application.Triggers;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
@@ -23,8 +22,7 @@ public sealed class WorkflowService(
     IEventBus eventBus,
     AuditEventFactory auditFactory,
     TriggerService _triggerService,
-    IUserContext userContext,
-    IResourceAuthorizationService resourceAuthorization)
+    IAuthorizationGuard authGuard)
 {
     /// <summary>
     /// 创建工作流。允许 ProjectId = null 作为未分类工作流；ProjectId 仅用于分类，不做隔离校验。
@@ -64,23 +62,7 @@ public sealed class WorkflowService(
     /// </summary>
     public async Task<WorkflowDto?> GetAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var userId = userContext.UserId;
-        if (userId is null)
-        {
-            throw new PermissionDeniedException("当前用户未认证。");
-        }
-
-        if (!await resourceAuthorization.CanAccessWorkflowAsync(userId.Value, id, Operation.Read, cancellationToken).ConfigureAwait(false))
-        {
-            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
-                AuditEventTypes.PermissionDenied,
-                "Workflow",
-                id,
-                new Dictionary<string, object> { ["operation"] = Operation.Read.ToString(), ["reason"] = "role" }),
-                cancellationToken).ConfigureAwait(false);
-
-            throw new PermissionDeniedException("当前用户没有读取该工作流的权限。");
-        }
+        await authGuard.RequireAccessAsync(ResourceKind.Workflow, id, Operation.Read, cancellationToken);
 
         var workflow = await dbContext.Workflows
             .FirstOrDefaultAsync(w => w.Id == id, cancellationToken)
@@ -183,23 +165,7 @@ public sealed class WorkflowService(
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        var userId = userContext.UserId;
-        if (userId is null)
-        {
-            throw new PermissionDeniedException("当前用户未认证。");
-        }
-
-        if (!await resourceAuthorization.CanAccessWorkflowAsync(userId.Value, id, Operation.Write, cancellationToken).ConfigureAwait(false))
-        {
-            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
-                AuditEventTypes.PermissionDenied,
-                "Workflow",
-                id,
-                new Dictionary<string, object> { ["operation"] = Operation.Write.ToString(), ["reason"] = "role" }),
-                cancellationToken).ConfigureAwait(false);
-
-            throw new PermissionDeniedException("当前用户没有修改该工作流的权限。");
-        }
+        await authGuard.RequireAccessAsync(ResourceKind.Workflow, id, Operation.Write, cancellationToken);
 
         var existing = await dbContext.Workflows
             .FirstOrDefaultAsync(w => w.Id == id, cancellationToken)
@@ -209,10 +175,7 @@ public sealed class WorkflowService(
             return null;
         }
 
-        if (!CanWriteWorkflow())
-        {
-            throw new PermissionDeniedException("当前用户没有修改工作流的权限。");
-        }
+        await authGuard.RequireScopeAsync(Scope.Workflow, Operation.Write, cancellationToken);
 
         var previousIsActive = existing.IsActive;
         var (nodes, connections, nodeIdMap) = ConvertFromDtos(dto.Nodes, dto.Connections);
@@ -263,23 +226,7 @@ public sealed class WorkflowService(
     /// </summary>
     public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var userId = userContext.UserId;
-        if (userId is null)
-        {
-            throw new PermissionDeniedException("当前用户未认证。");
-        }
-
-        if (!await resourceAuthorization.CanAccessWorkflowAsync(userId.Value, id, Operation.Delete, cancellationToken).ConfigureAwait(false))
-        {
-            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
-                AuditEventTypes.PermissionDenied,
-                "Workflow",
-                id,
-                new Dictionary<string, object> { ["operation"] = Operation.Delete.ToString(), ["reason"] = "role" }),
-                cancellationToken).ConfigureAwait(false);
-
-            throw new PermissionDeniedException("当前用户没有删除该工作流的权限。");
-        }
+        await authGuard.RequireAccessAsync(ResourceKind.Workflow, id, Operation.Delete, cancellationToken);
 
         var existing = await dbContext.Workflows
             .FirstOrDefaultAsync(w => w.Id == id, cancellationToken)
@@ -289,10 +236,7 @@ public sealed class WorkflowService(
             return false;
         }
 
-        if (!IsSystemAdmin())
-        {
-            throw new PermissionDeniedException("仅管理员可删除工作流。");
-        }
+        await authGuard.RequireAdminAsync(Operation.Delete, cancellationToken);
 
         dbContext.Workflows.Remove(existing);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -317,17 +261,8 @@ public sealed class WorkflowService(
         int version,
         CancellationToken cancellationToken = default)
     {
-        var userId = userContext.UserId;
-        if (userId is null)
-        {
-            throw new PermissionDeniedException("当前用户未认证。");
-        }
-
         // M6：历史版本接口同样需要资源归属校验，防止越权读取。
-        if (!await resourceAuthorization.CanAccessWorkflowAsync(userId.Value, id, Operation.Read, cancellationToken).ConfigureAwait(false))
-        {
-            throw new PermissionDeniedException("当前用户没有读取该工作流历史版本的权限。");
-        }
+        await authGuard.RequireAccessAsync(ResourceKind.Workflow, id, Operation.Read, cancellationToken);
 
         var workflow = await dbContext.Workflows
             .FirstOrDefaultAsync(w => w.Id == id && w.Version == version, cancellationToken)
@@ -340,17 +275,8 @@ public sealed class WorkflowService(
     /// </summary>
     public async Task<IReadOnlyCollection<int>> GetVersionsAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        var userId = userContext.UserId;
-        if (userId is null)
-        {
-            throw new PermissionDeniedException("当前用户未认证。");
-        }
-
         // M6：历史版本列表接口同样需要资源归属校验。
-        if (!await resourceAuthorization.CanAccessWorkflowAsync(userId.Value, id, Operation.Read, cancellationToken).ConfigureAwait(false))
-        {
-            throw new PermissionDeniedException("当前用户没有读取该工作流历史版本的权限。");
-        }
+        await authGuard.RequireAccessAsync(ResourceKind.Workflow, id, Operation.Read, cancellationToken);
 
         return await dbContext.Workflows
             .Where(w => w.Id == id)
@@ -379,19 +305,6 @@ public sealed class WorkflowService(
         {
             throw new BusinessException("工作流校验失败：" + string.Join("; ", result.Errors));
         }
-    }
-
-    private bool CanWriteWorkflow()
-    {
-        return userContext.Roles.Contains(RoleConstants.Admin) || userContext.Roles.Contains(RoleConstants.Editor);
-    }
-
-    /// <summary>
-    /// 判断当前用户是否为系统 Admin（全局角色）。
-    /// </summary>
-    private bool IsSystemAdmin()
-    {
-        return userContext.Roles.Contains(RoleConstants.Admin);
     }
 
     private static NodeDefinitionDto BuildNodeDto(NodeDefinition n, string id)
