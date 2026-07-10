@@ -33,9 +33,11 @@ internal static class ScriptCompiler
         var parser = new Parser(new ParserOptions { AllowReturnOutsideFunction = true });
         var ast = parser.ParseScript(source);
 
-        if (ast.Body.Count == 1 && ast.Body[0] is ExpressionStatement)
+        if (ast.Body.Count == 1 && ast.Body[0] is ExpressionStatement expressionStatement)
         {
-            var wrapped = $"return ({source});";
+            var range = expressionStatement.Expression.Range;
+            var expressionSource = source[range.Start..range.End];
+            var wrapped = $"return ({expressionSource});";
             return Prepare(wrapped, source);
         }
 

@@ -110,4 +110,26 @@ public sealed class ScriptCacheTests
         Assert.NotNull(prepared);
     }
 
+    [Fact]
+    public void GetOrPrepare_ForbiddenIdentifierInRegexLiteralAfterLineComment_IsAllowed()
+    {
+        var cache = CreateCache();
+        var script = new Script { Source = "// comment\n/eval/gi.test('hello')" };
+
+        var prepared = cache.GetOrPrepare(script);
+
+        Assert.NotNull(prepared);
+    }
+
+    [Fact]
+    public void GetOrPrepare_ForbiddenIdentifierInRegexLiteralAfterBlockComment_IsAllowed()
+    {
+        var cache = CreateCache();
+        var script = new Script { Source = "/* comment */ /eval/gi.test('hello')" };
+
+        var prepared = cache.GetOrPrepare(script);
+
+        Assert.NotNull(prepared);
+    }
+
 }

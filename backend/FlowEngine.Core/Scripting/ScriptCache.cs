@@ -211,11 +211,65 @@ public sealed class ScriptCache : IScriptCache
             return false; // 注释，不是正则
         }
 
-        // 向前查找前一个非空白字符，判断当前是否处于期望表达式的上下文。
+        // 向前查找前一个非注释、非空白的有效字符，判断当前是否处于期望表达式的上下文。
         var j = i - 1;
-        while (j >= 0 && char.IsWhiteSpace(text[j]))
+        while (j >= 0)
         {
-            j--;
+            // 先处理行注释边界：从当前位置回退到同一行的 // 之前。
+            if (text[j] == '\n')
+            {
+                var linePos = j - 1;
+                var foundLineComment = false;
+                while (linePos >= 0 && text[linePos] != '\n')
+                {
+                    if (linePos >= 1 && text[linePos] == '/' && text[linePos - 1] == '/')
+                    {
+                        j = linePos - 2;
+                        foundLineComment = true;
+                        break;
+                    }
+
+                    linePos--;
+                }
+
+                if (foundLineComment)
+                {
+                    continue;
+                }
+
+                break;
+            }
+
+            // 跳过空白字符（不跳过换行，换行在上面单独处理）。
+            while (j >= 0 && text[j] != '\n' && char.IsWhiteSpace(text[j]))
+            {
+                j--;
+            }
+
+            if (j < 0)
+            {
+                return true;
+            }
+
+            // 跳过块注释：回退到 /* 之前。
+            if (text[j] == '/' && j - 1 >= 0 && text[j - 1] == '*')
+            {
+                j -= 2;
+                while (j >= 1 && !(text[j] == '*' && text[j - 1] == '/'))
+                {
+                    j--;
+                }
+
+                if (j >= 1)
+                {
+                    j -= 2;
+                    continue;
+                }
+
+                return false; // 找不到匹配的 /*，保守地不视为正则
+            }
+
+            break;
         }
 
         if (j < 0)

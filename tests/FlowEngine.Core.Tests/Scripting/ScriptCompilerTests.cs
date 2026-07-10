@@ -78,6 +78,18 @@ public sealed class ScriptCompilerTests
     }
 
     [Fact]
+    public void Compile_SingleExpression_WithTrailingSemicolon_ReturnsValue()
+    {
+        var script = new Script { Source = "1 + 1;" };
+        var prepared = ScriptCompiler.Compile(script);
+
+        using var engine = JsEngine.Create();
+        var result = engine.EvaluatePrepared(prepared);
+
+        Assert.Equal(2, result.AsNumber());
+    }
+
+    [Fact]
     public void Compile_NonJavaScript_ThrowsNotSupportedException()
     {
         var script = new Script { Source = "print('hi')", Language = ScriptLanguage.Python };
