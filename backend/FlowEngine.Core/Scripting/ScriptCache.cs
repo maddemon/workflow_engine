@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Text;
 using Acornima;
@@ -11,13 +12,29 @@ using JintPreparedScript = Jint.Prepared<Acornima.Ast.Script>;
 
 /// <summary>
 /// 基于 SHA256(Source) 的脚本编译产物缓存实现。
+/// <para>
+/// 容量保护：当条目数超过 <see cref="DefaultMaxCapacity"/> 时，按加入顺序（LRU）淘汰最旧条目，
+/// 避免 <see cref="ConcurrentDictionary"/> 无界增长。安全校验仅在首次编译（缓存未命中）时执行一次。
+/// </para>
 /// </summary>
 public sealed class ScriptCache : IScriptCache
 {
+    /// <summary>
+    /// 缓存条目容量上限，超过则按加入顺序淘汰最旧条目。
+    /// </summary>
+    public const int DefaultMaxCapacity = 4096;
+
     private readonly ConcurrentDictionary<string, JintPreparedScript> _cache = new(StringComparer.OrdinalIgnoreCase);
-    private readonly List<string> _insertionOrder = [];
+    private readonly ConcurrentDictionary<string, ScriptErrorException> _compileErrors = new(StringComparer.OrdinalIgnoreCase);
+
+    // 加入顺序跟踪：LinkedList 提供 O(1) 头尾增删，Dictionary 提供 O(1) 成员判定，避免 List.Contains 的 O(n) 扫描。
+    private readonly LinkedList<string> _order = new();
+    private readonly Dictionary<string, LinkedListNode<string>> _orderIndex = new(StringComparer.OrdinalIgnoreCase);
     private readonly object _trimLock = new();
+
     private readonly JsEngineOptions _options;
+
+    private static readonly Lazy<JintPreparedScript> s_noOp = new(() => ScriptCompiler.Compile(new Script { Source = string.Empty }));
 
     /// <summary>
     /// 初始化 <see cref="ScriptCache"/>。
@@ -32,11 +49,23 @@ public sealed class ScriptCache : IScriptCache
     {
         ArgumentNullException.ThrowIfNull(script);
 
-        ValidateSecurity(script);
-
         var key = ComputeCacheKey(script.Source);
-        ScriptErrorException? compileError = null;
+
+        // 命中已缓存的编译错误：直接返回，避免重复 tokenize / 编译。
+        if (_compileErrors.TryGetValue(key, out var cachedError))
+        {
+            return new PreparedScript(script, key, s_noOp.Value, cachedError);
+        }
+
         JintPreparedScript? prepared = null;
+        ScriptErrorException? compileError = null;
+
+        // 安全校验仅在首次编译（缓存未命中）时执行一次；命中缓存跳过（编译时校验语义）。
+        // 安全异常直接冒泡，不视为可缓存的编译错误。
+        if (!_cache.ContainsKey(key))
+        {
+            ValidateSecurity(script);
+        }
 
         try
         {
@@ -45,20 +74,57 @@ public sealed class ScriptCache : IScriptCache
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             compileError = new ScriptErrorException(script, ex.Message, ex);
+            _compileErrors.GetOrAdd(key, compileError);
         }
 
         if (prepared is not null)
         {
-            lock (_trimLock)
-            {
-                if (!_insertionOrder.Contains(key))
-                {
-                    _insertionOrder.Add(key);
-                }
-            }
+            RecordAccess(key);
         }
 
-        return new PreparedScript(script, key, prepared ?? CompileNoOp(), compileError);
+        return new PreparedScript(script, key, prepared ?? s_noOp.Value, compileError);
+    }
+
+    /// <summary>
+    /// 记录最近访问的键并触发容量保护（LRU 淘汰）。
+    /// </summary>
+    private void RecordAccess(string key)
+    {
+        lock (_trimLock)
+        {
+            if (_orderIndex.TryGetValue(key, out var node))
+            {
+                // 已存在：移动到队尾表示最近使用。
+                _order.Remove(node);
+                _order.AddLast(node);
+            }
+            else
+            {
+                _orderIndex[key] = _order.AddLast(key);
+            }
+
+            while (_order.Count > DefaultMaxCapacity)
+            {
+                EvictOldest();
+            }
+        }
+    }
+
+    /// <summary>
+    /// 淘汰队首（最旧）条目，并同步清理缓存与编译错误表。
+    /// </summary>
+    private void EvictOldest()
+    {
+        var oldest = _order.First;
+        if (oldest is null)
+        {
+            return;
+        }
+
+        _order.RemoveFirst();
+        _orderIndex.Remove(oldest.Value);
+        _cache.TryRemove(oldest.Value, out _);
+        _compileErrors.TryRemove(oldest.Value, out _);
     }
 
     /// <inheritdoc />
@@ -67,9 +133,11 @@ public sealed class ScriptCache : IScriptCache
         if (maxItems <= 0)
         {
             _cache.Clear();
+            _compileErrors.Clear();
             lock (_trimLock)
             {
-                _insertionOrder.Clear();
+                _order.Clear();
+                _orderIndex.Clear();
             }
 
             return;
@@ -77,11 +145,9 @@ public sealed class ScriptCache : IScriptCache
 
         lock (_trimLock)
         {
-            while (_insertionOrder.Count > maxItems)
+            while (_order.Count > maxItems)
             {
-                var oldest = _insertionOrder[0];
-                _insertionOrder.RemoveAt(0);
-                _cache.TryRemove(oldest, out _);
+                EvictOldest();
             }
         }
     }
@@ -91,11 +157,6 @@ public sealed class ScriptCache : IScriptCache
         var bytes = Encoding.UTF8.GetBytes(source ?? string.Empty);
         var hash = SHA256.HashData(bytes);
         return Convert.ToHexString(hash);
-    }
-
-    private static JintPreparedScript CompileNoOp()
-    {
-        return ScriptCompiler.Compile(new Script { Source = string.Empty });
     }
 
     private void ValidateSecurity(Script script)

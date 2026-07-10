@@ -21,9 +21,29 @@ public static class ScriptEvaluationExtensions
             return script.GetResult<T>();
         }
 
-        var scriptCache = context.ScriptCache ?? new ScriptCache(Options.Create(new JsEngineOptions()));
+        var scriptCache = context.GetScriptCache();
         var prepared = scriptCache.GetOrPrepare(script);
         var result = await prepared.RunAsync(ScriptContext.From(context), cancellationToken).ConfigureAwait(false);
         return result.To<T>();
+    }
+}
+
+/// <summary>
+/// <see cref="NodeExecutionContext"/> 获取 <see cref="IScriptCache"/> 的扩展。
+/// </summary>
+public static class ScriptCacheContextExtensions
+{
+    /// <summary>
+    /// 获取上下文中的脚本缓存。工厂保证 <see cref="NodeExecutionContext.ScriptCache"/> 非空；
+    /// 此分支仅用于脱离工厂的单元测试上下文，回退到默认选项（含标准安全黑名单）。
+    /// </summary>
+    public static IScriptCache GetScriptCache(this NodeExecutionContext context)
+    {
+        if (context.ScriptCache is not null)
+        {
+            return context.ScriptCache;
+        }
+
+        return new ScriptCache(Options.Create(new JsEngineOptions()));
     }
 }

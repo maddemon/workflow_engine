@@ -9,7 +9,6 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Scripting;
-using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -74,7 +73,7 @@ public sealed class CodeSnippetToolNode : INodeType
             var inputPayload = GetInputPayload(context);
             var inputData = GetInputData(inputPayload);
 
-            var scriptCache = context.ScriptCache ?? new ScriptCache(Options.Create(new JsEngineOptions()));
+            var scriptCache = context.GetScriptCache();
             var prepared = scriptCache.GetOrPrepare(Code);
 
             var extraGlobals = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);

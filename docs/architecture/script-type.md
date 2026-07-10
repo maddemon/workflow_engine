@@ -47,15 +47,15 @@ public sealed class Script
 
     // 运行时属性：框架通过 WithResolvedValue 工厂注入，不持久化
     [JsonIgnore]
-    private readonly object? _resolvedValue;
+    private readonly JsonNode? _resolvedValue;
 
-    // 表达式参数：框架预求值后的结果（string / bool / number / Dictionary 等）
+    // 表达式参数：框架预求值后的结果（JsonNode）
     // 代码参数：null（应使用 RunAsync / Session 取运行结果）
-    public object? ResolvedValue => _resolvedValue;
+    public JsonNode? ResolvedValue => _resolvedValue;
 
     public Script() { }
 
-    internal Script(string source, ScriptLanguage language, ScriptReturnType returnType, object? resolvedValue = null)
+    internal Script(string source, ScriptLanguage language, ScriptReturnType returnType, JsonNode? resolvedValue = null)
     {
         Source = source;
         Language = language;
@@ -63,21 +63,21 @@ public sealed class Script
         _resolvedValue = resolvedValue;
     }
 
-    // 强类型取值（不损失精度）：Url.GetResult<string>(), Condition.GetResult<bool>()
-    public T? GetResult<T>() => _resolvedValue is T t ? t : default;
+    // 强类型取值：基于 JsonNode 解析，T=string 时强制转换（数值/布尔亦可用）
+    public T? GetResult<T>();
 
-    // 框架专用：创建"已解析版"实例（新对象，不是修改原对象）
-    internal Script WithResolvedValue(object? value) => new(Source, Language, ReturnType, value);
+    // 工厂：创建"已解析版"实例（新对象，不是修改原对象）
+    public Script WithResolvedValue(JsonNode? value) => new(Source, Language, ReturnType, value);
 
     public static Script Empty { get; }
-        = new() { Source = "", Language = ScriptLanguage.JavaScript, ReturnType = ScriptReturnType.String };
+        = new() { Source = "", Language = ScriptLanguage.JavaScript, ReturnType = ScriptReturnType.Object };
 
     /// <summary>
-    /// 隐式转换：string → Script(Source=str, Language=JavaScript, ReturnType=String)。
+    /// 隐式转换：string → Script(Source=str, Language=JavaScript, ReturnType=Object)。
     /// 仅用于测试代码保持简洁；生产代码应显式指定 ReturnType。
     /// </summary>
     public static implicit operator Script(string source)
-        => new() { Source = source, Language = ScriptLanguage.JavaScript, ReturnType = ScriptReturnType.String };
+        => new() { Source = source, Language = ScriptLanguage.JavaScript, ReturnType = ScriptReturnType.Object };
 
     public override int GetHashCode() => HashCode.Combine(Source, Language, ReturnType);
     public override bool Equals(object? obj) => obj is Script s && Source == s.Source && Language == s.Language && ReturnType == s.ReturnType;
@@ -105,13 +105,13 @@ public sealed class PreparedScript
     public string CacheKey { get; }            // SHA256(Source)
 
     // 单次执行（自建 JsEngine）：创建引擎，通过 ExecutionScope 注入全部变量，执行，返回结果
-    public Task<ScriptResult> RunAsync(ScriptContext ctx);
+    public Task<ScriptResult> RunAsync(ScriptContext ctx, CancellationToken cancellationToken = default);
 
     // 单次执行（复用已存在的 JsEngine）：引擎须已通过 ExecutionScope 注入变量，仅执行求值
-    public Task<ScriptResult> RunAsync(ScriptContext ctx, JsEngine engine);
+    public Task<ScriptResult> RunAsync(ScriptContext ctx, JsEngine engine, CancellationToken cancellationToken = default);
 
     // 逐项执行：返回 Session，引擎复用，全局变量注入一次，逐项覆盖 item 级变量
-    public PreparedScriptSession CreateSession(ScriptContext ctx);
+    public PreparedScriptSession CreateSession(JsEngine engine);
 }
 ```
 
@@ -127,10 +127,10 @@ public sealed class PreparedScriptSession : IDisposable
     // 绑定 JsEngine，全局变量已通过 ExecutionScope.ApplyGlobalVariables 注入
 
     // 在 Session 引擎上执行指定 PreparedScript（单次，不切换 item 作用域）
-    public Task<ScriptResult> RunAsync(PreparedScript script);
+    public Task<ScriptResult> RunAsync(PreparedScript script, ScriptContext ctx, CancellationToken cancellationToken = default);
 
     // 在 Session 引擎上执行指定 PreparedScript，先切换 item 作用域再执行
-    public Task<ScriptResult> RunForItemAsync(PreparedScript script, JsonNode? itemData, int itemIndex);
+    public Task<ScriptResult> RunForItemAsync(PreparedScript script, ScriptContext ctx, JsonNode? itemData, int itemIndex, CancellationToken cancellationToken = default);
 
     public void Dispose();
 }
@@ -138,7 +138,7 @@ public sealed class PreparedScriptSession : IDisposable
 
 - **Session 接受 PreparedScript 参数**：每列有各自的 `PreparedScript`（AST 已缓存），传入 Session 共享引擎执行，AST 正确复用。
 - **RunForItemAsync 全异步**：与 `RunAsync` 一致。
-- **CreateSession 来源**：可从任意 `PreparedScript.CreateSession(ctx)` 创建，Session 与特定 PreparedScript 不绑定。
+- **CreateSession 来源**：可从任意 `PreparedScript.CreateSession(engine)` 创建，Session 与特定 PreparedScript 不绑定；`ownsEngine=false` 时由调用方释放引擎（逐项复用同一引擎），`ownsEngine=true` 时 Session 释放时一并释放。
 
 ### 3.4 ScriptResult（统一结果模型）
 
@@ -146,8 +146,8 @@ public sealed class PreparedScriptSession : IDisposable
 public sealed class ScriptResult
 {
     public bool Success { get; }
-    public JsValue? Raw { get; }          // Jint 原始值
-    public ScriptError? Error { get; }    // 结构化错误（消息 + 源码位置）
+    public JsValue Raw { get; }              // Jint 原始值
+    public ScriptErrorException? Error { get; } // 结构化错误（消息 + 源码位置）
 
     // 失败时调用以下方法抛出 ScriptErrorException
     public object? ToClr();               // 原 JsEngine.ToClrValue 语义
@@ -300,19 +300,17 @@ public sealed class HttpRequestNode : INodeType
         var preparedBody = BodyExpression is not null
             ? _scriptCache.GetOrPrepare(BodyExpression) : null;
 
-        if (preparedHeaders is null && preparedBody is null)
+        var scriptContext = ScriptContext.From(context);
+        if (preparedHeaders is not null || preparedBody is not null)
         {
-            // 无额外脚本，直接发请求
-        }
-        else
-        {
-            using var session = (preparedHeaders ?? preparedBody)!.CreateSession(context.ToScriptContext());
+            using var engine = JsEngine.Create();
+            using var session = (preparedHeaders ?? preparedBody)!.CreateSession(engine);
 
             var headers = preparedHeaders is not null
-                ? (await session.RunAsync(preparedHeaders)).To<Dictionary<string, string>>()
+                ? (await session.RunAsync(preparedHeaders, scriptContext)).To<Dictionary<string, string>>()
                 : null;
             var body = preparedBody is not null
-                ? (await session.RunAsync(preparedBody)).ToClr()?.ToString()
+                ? (await session.RunAsync(preparedBody, scriptContext)).ToClr()?.ToString()
                 : null;
 
             // ...
@@ -338,12 +336,14 @@ public sealed class FilterNode : INodeType
 
     public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, ...)
     {
+        var scriptContext = ScriptContext.From(context);
+        using var engine = JsEngine.Create();
         var prepared = _scriptCache.GetOrPrepare(Condition);
-        using var session = prepared.CreateSession(context.ToScriptContext());
+        using var session = prepared.CreateSession(engine);   // 循环外建 session，循环内逐项复用
 
         foreach (var (item, index) in inputBatch.Items.WithIndex())
         {
-            var result = await session.RunForItemAsync(prepared, item.Data, index);
+            var result = await session.RunForItemAsync(prepared, scriptContext, item.Data, index);
             if (result.ToBoolean())
                 keptItems.Add(item);
         }
@@ -378,14 +378,16 @@ public sealed class DbUpsertNode : INodeType
         var preparedColumns = Columns.ToDictionary(
             kvp => kvp.Key, kvp => _scriptCache.GetOrPrepare(kvp.Value));
 
-        using var session = preparedColumns.Values.First().CreateSession(context.ToScriptContext());
+        var scriptContext = ScriptContext.From(context);
+        using var engine = JsEngine.Create();
+        using var session = preparedColumns.Values.First().CreateSession(engine);
 
         foreach (var (item, index) in inputBatch.Items.WithIndex())
         {
             var values = new Dictionary<string, object?>();
             foreach (var (colName, prepared) in preparedColumns)
             {
-                var result = await session.RunForItemAsync(prepared, item.Data, index);
+                var result = await session.RunForItemAsync(prepared, scriptContext, item.Data, index);
                 values[colName] = result.ToClr();
             }
         }
@@ -399,12 +401,17 @@ public sealed class DbUpsertNode : INodeType
 public interface IScriptCache
 {
     PreparedScript GetOrPrepare(Script script);
-    void TrimIfNeeded();
+    void TrimIfNeeded(int maxItems);
 }
 
 public sealed class ScriptCache : IScriptCache
 {
-    private readonly ConcurrentDictionary<string, PreparedScript> _cache = new();
+    public const int DefaultMaxCapacity = 4096;
+
+    private readonly ConcurrentDictionary<string, PreparedScript> _cache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, ScriptErrorException> _compileErrors = new(StringComparer.OrdinalIgnoreCase);
+    private readonly LinkedList<string> _order = new();               // 加入顺序（LRU）
+    private readonly Dictionary<string, LinkedListNode<string>> _orderIndex = new(StringComparer.OrdinalIgnoreCase); // O(1) 成员判定
     private readonly JsEngineOptions _options;
 
     public ScriptCache(IOptions<JsEngineOptions> options)
@@ -413,26 +420,28 @@ public sealed class ScriptCache : IScriptCache
     }
 
     public PreparedScript GetOrPrepare(Script script)
-        => _cache.GetOrAdd(script.CacheKey, _ => Compile(script));
-
-    private PreparedScript Compile(Script script)
     {
-        // 1. 黑名单校验：使用 _options.ForbiddenIdentifiers
-        // 2. AST 分析与自动包裹
-        // 3. 生成 Jint.Prepared<Script> 并封装为 PreparedScript
-        throw new NotImplementedException("设计占位，实施时替换为真实编译逻辑");
+        var key = ComputeCacheKey(script.Source);
+        if (_compileErrors.TryGetValue(key, out var error))           // 编译失败已缓存：直接返回，避免重复编译
+            return new PreparedScript(script, key, NoOp, error);
+
+        if (!_cache.ContainsKey(key))
+            ValidateSecurity(script);                                 // 安全校验仅首次编译执行（编译时一次）
+
+        var prepared = _cache.GetOrAdd(key, _ => ScriptCompiler.Compile(script));
+        RecordAccess(key);                                            // 容量超 DefaultMaxCapacity 时按加入顺序淘汰最旧条目
+        return new PreparedScript(script, key, prepared);
     }
 
-    public void TrimIfNeeded()
+    public void TrimIfNeeded(int maxItems)
     {
-        if (_cache.Count <= 4096) return;
-        _cache.Clear();
+        // maxItems<=0：清空全部；否则按加入顺序淘汰最旧条目至 maxItems
     }
 }
 ```
 
 - **缓存键**：`SHA256(Source)`（不含 ReturnType——不同 ReturnType 不影响编译产物复用）。
-- **生命周期**：进程级，无过期。容量超 4096 时全量重建。
+- **生命周期**：进程级，无过期。容量超 `DefaultMaxCapacity`(4096) 时按加入顺序**（LRU）淘汰最旧条目**，避免 `ConcurrentDictionary` 无界增长；安全校验仅在首次编译执行一次。
 - **替代关系**：取代 `ScriptEngine.ExpressionCache` 和 `ParameterResolver` 本地缓存。
 - **依赖注入**：`IScriptCache` 以单例注入，避免静态字典在测试/多租户场景下互相污染；`IScriptCache` 内部编译入口使用 `IOptions<JsEngineOptions>` 获取安全策略。
 

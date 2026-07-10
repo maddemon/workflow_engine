@@ -6,7 +6,6 @@ using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Scripting;
-using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -77,21 +76,38 @@ public sealed class FilterNode : INodeType
         using var engine = JsEngine.Create();
         engine.ApplyGlobalVariables(context);
 
-        var scriptCache = context.ScriptCache ?? new ScriptCache(Options.Create(new JsEngineOptions()));
+        var scriptCache = context.GetScriptCache();
         var scriptContext = ScriptContext.From(context);
 
-        for (var itemIndex = 0; itemIndex < inputBatch.Items.Count; itemIndex++)
+        // 循环外 prepare + 建 session 一次，循环内逐项复用（设计 §4.4）。
+        PreparedScript? preparedCondition = null;
+        PreparedScriptSession? conditionSession = null;
+        if (!string.IsNullOrWhiteSpace(Condition.Source))
         {
-            var item = inputBatch.Items[itemIndex];
-            var matches = await EvaluateItemConditionAsync(engine, item.Data, itemIndex, scriptCache, scriptContext, context, cancellationToken).ConfigureAwait(false);
-            if (matches)
+            preparedCondition = scriptCache.GetOrPrepare(Condition);
+            conditionSession = preparedCondition.CreateSession(engine);
+        }
+
+        try
+        {
+            for (var itemIndex = 0; itemIndex < inputBatch.Items.Count; itemIndex++)
             {
-                keptItems.Add(item);
+                var item = inputBatch.Items[itemIndex];
+                var matches = await EvaluateItemConditionAsync(
+                    conditionSession, preparedCondition, item.Data, itemIndex, scriptContext, context, cancellationToken).ConfigureAwait(false);
+                if (matches)
+                {
+                    keptItems.Add(item);
+                }
+                else
+                {
+                    discardedItems.Add(item);
+                }
             }
-            else
-            {
-                discardedItems.Add(item);
-            }
+        }
+        finally
+        {
+            conditionSession?.Dispose();
         }
 
         return new NodeExecutionResult
@@ -105,20 +121,18 @@ public sealed class FilterNode : INodeType
     /// 逐项求值：对单个数据项评估主条件 + 结构化条件组合。
     /// </summary>
     private async Task<bool> EvaluateItemConditionAsync(
-        JsEngine engine,
+        PreparedScriptSession? conditionSession,
+        PreparedScript? preparedCondition,
         JsonNode? data,
         int itemIndex,
-        IScriptCache scriptCache,
         ScriptContext scriptContext,
         NodeExecutionContext context,
         CancellationToken cancellationToken)
     {
         // 主条件（表达式）
-        if (!string.IsNullOrWhiteSpace(Condition.Source))
+        if (preparedCondition is not null && conditionSession is not null)
         {
-            var prepared = scriptCache.GetOrPrepare(Condition);
-            using var session = prepared.CreateSession(engine);
-            var result = await session.RunForItemAsync(prepared, scriptContext, data, itemIndex, cancellationToken).ConfigureAwait(false);
+            var result = await conditionSession.RunForItemAsync(preparedCondition, scriptContext, data, itemIndex, cancellationToken).ConfigureAwait(false);
             var mainResult = result.ToBoolean();
 
             if (Conditions.Count == 0)

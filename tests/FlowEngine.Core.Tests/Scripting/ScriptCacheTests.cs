@@ -88,8 +88,8 @@ public sealed class ScriptCacheTests
 
     private static int GetInsertionOrderCount(ScriptCache cache)
     {
-        var field = typeof(ScriptCache).GetField("_insertionOrder", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-        var list = (System.Collections.IList?)field?.GetValue(cache);
+        var field = typeof(ScriptCache).GetField("_order", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var list = (System.Collections.ICollection?)field?.GetValue(cache);
         return list?.Count ?? 0;
     }
 
@@ -163,6 +163,45 @@ public sealed class ScriptCacheTests
 
         var ex = Assert.Throws<ScriptSecurityException>(() => cache.GetOrPrepare(script));
         Assert.Equal("process", ex.Identifier);
+    }
+
+    [Fact]
+    public void GetOrPrepare_ForbiddenIdentifier_ThrowsOnEveryCall()
+    {
+        // 安全校验在首次编译执行；被禁脚本永不入缓存，因此每次调用都会重新校验并抛异常。
+        var cache = CreateCache();
+        var script = new Script { Source = "eval('1')" };
+
+        Assert.Throws<ScriptSecurityException>(() => cache.GetOrPrepare(script));
+        Assert.Throws<ScriptSecurityException>(() => cache.GetOrPrepare(script));
+    }
+
+    [Fact]
+    public void GetOrPrepare_AutoTrims_WhenExceedingCapacity()
+    {
+        var cache = CreateCache();
+        for (var i = 0; i < ScriptCache.DefaultMaxCapacity + 500; i++)
+        {
+            cache.GetOrPrepare(new Script { Source = $"var x = {i}; x" });
+        }
+
+        Assert.True(GetCacheCount(cache) <= ScriptCache.DefaultMaxCapacity);
+        Assert.True(GetInsertionOrderCount(cache) <= ScriptCache.DefaultMaxCapacity);
+    }
+
+    [Fact]
+    public void GetOrPrepare_CachesCompileError_WithoutThrowing()
+    {
+        // 编译失败的脚本被缓存，后续调用不再重新编译，但仍返回携带错误的 PreparedScript。
+        var cache = CreateCache();
+        var script = new Script { Source = "$json.value === " };
+
+        var first = cache.GetOrPrepare(script);
+        var second = cache.GetOrPrepare(script);
+
+        Assert.NotNull(first.CompileError);
+        Assert.NotNull(second.CompileError);
+        Assert.Equal(first.CacheKey, second.CacheKey);
     }
 
 }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -64,6 +65,13 @@ public sealed class Script : IEquatable<Script>
             return default;
         }
 
+        // 字符串目标：将 JSON 值（含数字/布尔）按预期语义强制为字符串，
+        // 避免 JsonValue 无法按 string 反序列化时静默返回 null（如数值结果参与 SwitchNode 匹配）。
+        if (typeof(T) == typeof(string))
+        {
+            return (T?)(object?)CoerceToString(ResolvedValue);
+        }
+
         try
         {
             return ResolvedValue.GetValue<T>();
@@ -72,6 +80,39 @@ public sealed class Script : IEquatable<Script>
         {
             return JsonSerializer.Deserialize<T>(ResolvedValue.ToJsonString(), JsonDefaults.Options);
         }
+    }
+
+    private static string? CoerceToString(JsonNode node)
+    {
+        if (node is JsonValue value)
+        {
+            if (value.TryGetValue<string>(out var str))
+            {
+                return str;
+            }
+
+            if (value.TryGetValue<bool>(out var b))
+            {
+                return b.ToString();
+            }
+
+            if (value.TryGetValue<int>(out var i))
+            {
+                return i.ToString(CultureInfo.InvariantCulture);
+            }
+
+            if (value.TryGetValue<long>(out var l))
+            {
+                return l.ToString(CultureInfo.InvariantCulture);
+            }
+
+            if (value.TryGetValue<double>(out var d))
+            {
+                return d.ToString(CultureInfo.InvariantCulture);
+            }
+        }
+
+        return node.ToJsonString();
     }
 
     /// <summary>

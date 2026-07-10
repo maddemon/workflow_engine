@@ -5,7 +5,6 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Scripting;
-using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -53,7 +52,7 @@ public sealed class CalculatorToolNode : INodeType
             }
 
             // Evaluate expression through the unified IScriptCache pipeline.
-            var scriptCache = context.ScriptCache ?? new ScriptCache(Options.Create(new JsEngineOptions()));
+            var scriptCache = context.GetScriptCache();
             var script = new Script
             {
                 Source = expression,

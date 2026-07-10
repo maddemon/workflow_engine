@@ -9,7 +9,6 @@ using FlowEngine.Core.Enums;
 using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Scripting;
 using FlowEngine.Plugins.Standard.Data;
-using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -131,7 +130,7 @@ public sealed class DbUpsertNode : INodeType
                 return CreateResult(context, true, 0, 0, 0);
             }
 
-            var scriptCache = context.ScriptCache ?? new ScriptCache(Microsoft.Extensions.Options.Options.Create(new JsEngineOptions()));
+            var scriptCache = context.GetScriptCache();
             var preparedColumns = Columns.ToDictionary(
                 c => c.Key,
                 c => scriptCache.GetOrPrepare(c.Value),
