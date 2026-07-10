@@ -1,6 +1,5 @@
 using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Scripting;
-using FlowEngine.Core.Scripting.Models;
 using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Core.Tests.Scripting;
@@ -71,11 +70,44 @@ public sealed class ScriptCacheTests
 
         cache.TrimIfNeeded(2);
 
-        var firstAgain = cache.GetOrPrepare(scripts[0]);
-        var lastAgain = cache.GetOrPrepare(scripts[3]);
+        // 仅保留最新的两条。
+        Assert.Equal(2, GetInsertionOrderCount(cache));
+        Assert.Equal(2, GetCacheCount(cache));
 
-        Assert.NotNull(firstAgain);
-        Assert.NotNull(lastAgain);
+        // 重新获取被移除的最旧条目应再次加入缓存。
+        cache.GetOrPrepare(scripts[0]);
+        Assert.Equal(3, GetInsertionOrderCount(cache));
+        Assert.Equal(3, GetCacheCount(cache));
+
+        // 重新获取仍存在的条目不应重复加入。
+        cache.GetOrPrepare(scripts[3]);
+        Assert.Equal(3, GetInsertionOrderCount(cache));
+        Assert.Equal(3, GetCacheCount(cache));
+    }
+
+    private static int GetInsertionOrderCount(ScriptCache cache)
+    {
+        var field = typeof(ScriptCache).GetField("_insertionOrder", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var list = (System.Collections.IList?)field?.GetValue(cache);
+        return list?.Count ?? 0;
+    }
+
+    private static int GetCacheCount(ScriptCache cache)
+    {
+        var field = typeof(ScriptCache).GetField("_cache", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        var dictionary = (System.Collections.IDictionary?)field?.GetValue(cache);
+        return dictionary?.Count ?? 0;
+    }
+
+    [Fact]
+    public void GetOrPrepare_ForbiddenIdentifierInRegexLiteral_IsAllowed()
+    {
+        var cache = CreateCache();
+        var script = new Script { Source = "/eval/gi.test('hello')" };
+
+        var prepared = cache.GetOrPrepare(script);
+
+        Assert.NotNull(prepared);
     }
 
 }

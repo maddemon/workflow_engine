@@ -1,7 +1,5 @@
 using Acornima;
 using Acornima.Ast;
-using FlowEngine.Core.Enums;
-using FlowEngine.Core.Scripting.Models;
 using Jint;
 
 namespace FlowEngine.Core.Scripting;
@@ -17,7 +15,7 @@ internal static class ScriptCompiler
     /// <summary>
     /// 编译 <see cref="Script"/> 为 Jint 预编译产物。
     /// </summary>
-    public static JintPreparedScript Compile(Models.Script script)
+    public static JintPreparedScript Compile(Script script)
     {
         if (script.Language != ScriptLanguage.JavaScript)
         {
@@ -47,18 +45,7 @@ internal static class ScriptCompiler
             return Prepare(wrapped, source);
         }
 
-        // 多语句且无顶层 return：若最后一条语句是表达式，则返回其值；否则返回 undefined。
-        if (ast.Body.Count > 0 && ast.Body[^1] is ExpressionStatement lastExpr)
-        {
-            var range = lastExpr.Expression.Range;
-            var exprStart = range.Start;
-            var exprEnd = range.End;
-            var preceding = source[..exprStart];
-            var lastExpressionSource = source[exprStart..exprEnd];
-            var wrapped = $"(function(){{ {preceding} return ({lastExpressionSource}); }})();";
-            return Prepare(wrapped, source);
-        }
-
+        // 多语句且无顶层 return：统一包裹为 IIFE 并返回 undefined。
         var iifeWrapped = $"(function(){{ {source}; return undefined; }})();";
         return Prepare(iifeWrapped, source);
     }

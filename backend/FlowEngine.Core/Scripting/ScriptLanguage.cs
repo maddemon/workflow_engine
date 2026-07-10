@@ -1,6 +1,6 @@
 using System.ComponentModel;
 
-namespace FlowEngine.Core.Enums;
+namespace FlowEngine.Core.Scripting;
 
 /// <summary>
 /// 脚本语言类型。

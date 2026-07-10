@@ -1,7 +1,6 @@
 using System.Text.Json.Nodes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Scripting;
-using FlowEngine.Core.Scripting.Models;
 
 namespace FlowEngine.Core.Tests.Scripting;
 
@@ -100,5 +99,31 @@ public sealed class PreparedScriptTests
         session.Dispose();
 
         Assert.Throws<ObjectDisposedException>(() => engine.SetValue("x", 1));
+    }
+
+    [Fact]
+    public async Task Session_RunAsync_CompileError_ReturnsFailedResult()
+    {
+        var script = new Script { Source = "1 + +" };
+        var prepared = new ScriptCache(Microsoft.Extensions.Options.Options.Create(new JsEngineOptions())).GetOrPrepare(script);
+
+        using var session = prepared.CreateSession(JsEngine.Create());
+        var result = await session.RunAsync(prepared, CreateContext(), TestContext.Current.CancellationToken);
+
+        Assert.False(result.Success);
+        Assert.NotNull(result.Error);
+    }
+
+    [Fact]
+    public async Task Session_RunForItemAsync_CompileError_ReturnsFailedResult()
+    {
+        var script = new Script { Source = "1 + +" };
+        var prepared = new ScriptCache(Microsoft.Extensions.Options.Options.Create(new JsEngineOptions())).GetOrPrepare(script);
+
+        using var session = prepared.CreateSession(JsEngine.Create());
+        var result = await session.RunForItemAsync(prepared, CreateContext(), null, 0, TestContext.Current.CancellationToken);
+
+        Assert.False(result.Success);
+        Assert.NotNull(result.Error);
     }
 }

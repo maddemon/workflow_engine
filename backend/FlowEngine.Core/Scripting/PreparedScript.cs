@@ -1,5 +1,4 @@
 using FlowEngine.Core.Exceptions;
-using FlowEngine.Core.Scripting.Models;
 using Jint.Native;
 
 namespace FlowEngine.Core.Scripting;

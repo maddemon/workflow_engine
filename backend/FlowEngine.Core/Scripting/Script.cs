@@ -1,9 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
-using FlowEngine.Core.Enums;
 
-namespace FlowEngine.Core.Scripting.Models;
+namespace FlowEngine.Core.Scripting;
 
 /// <summary>
 /// 脚本值对象。包含脚本源码、语言、返回类型提示以及可选的运行时解析值。

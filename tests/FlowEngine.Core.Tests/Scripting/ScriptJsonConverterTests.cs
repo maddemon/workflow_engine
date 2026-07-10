@@ -1,13 +1,15 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
-using FlowEngine.Core.Enums;
 using FlowEngine.Core.Scripting;
-using FlowEngine.Core.Scripting.Models;
 
 namespace FlowEngine.Core.Tests.Scripting;
 
 public sealed class ScriptJsonConverterTests
 {
-    private static readonly JsonSerializerOptions Options = JsonDefaults.Options;
+    private static readonly JsonSerializerOptions Options = new(JsonDefaults.Options)
+    {
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+    };
 
     [Fact]
     public void Serialize_DefaultValues_EmitsOnlySource()

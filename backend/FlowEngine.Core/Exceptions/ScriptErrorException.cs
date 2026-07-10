@@ -1,4 +1,4 @@
-using FlowEngine.Core.Scripting.Models;
+using FlowEngine.Core.Scripting;
 
 namespace FlowEngine.Core.Exceptions;
 

@@ -2,7 +2,6 @@ using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
 using FlowEngine.Core.Exceptions;
-using FlowEngine.Core.Scripting.Models;
 using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Core.Scripting;
@@ -47,11 +46,14 @@ public sealed class ScriptCache : IScriptCache
             compileError = new ScriptErrorException(script, ex.Message, ex);
         }
 
-        lock (_trimLock)
+        if (prepared is not null)
         {
-            if (!_insertionOrder.Contains(key))
+            lock (_trimLock)
             {
-                _insertionOrder.Add(key);
+                if (!_insertionOrder.Contains(key))
+                {
+                    _insertionOrder.Add(key);
+                }
             }
         }
 
@@ -156,6 +158,25 @@ public sealed class ScriptCache : IScriptCache
                 continue;
             }
 
+            // 正则字面量：/.../flags；跳过其内容避免误判禁止标识符。
+            if (c == '/' && IsRegexStart(text, i))
+            {
+                i++; // 跳过起始 /
+                while (i < text.Length && text[i] != '/')
+                {
+                    if (text[i] == '\\' && i + 1 < text.Length)
+                    {
+                        i += 2;
+                        continue;
+                    }
+                    i++;
+                }
+
+                if (i < text.Length) i++; // 跳过结束 /
+                while (i < text.Length && IsRegexFlag(text[i])) i++; // 跳过 flags
+                continue;
+            }
+
             if (c == '\'') { inSingle = true; i++; continue; }
             if (c == '"') { inDouble = true; i++; continue; }
             if (c == '`') { inTemplate = true; i++; continue; }
@@ -175,6 +196,74 @@ public sealed class ScriptCache : IScriptCache
         }
 
         return false;
+    }
+
+    private static bool IsRegexStart(string text, int i)
+    {
+        if (i + 1 >= text.Length)
+        {
+            return false;
+        }
+
+        var next = text[i + 1];
+        if (next == '/' || next == '*')
+        {
+            return false; // 注释，不是正则
+        }
+
+        // 向前查找前一个非空白字符，判断当前是否处于期望表达式的上下文。
+        var j = i - 1;
+        while (j >= 0 && char.IsWhiteSpace(text[j]))
+        {
+            j--;
+        }
+
+        if (j < 0)
+        {
+            return true;
+        }
+
+        var prev = text[j];
+
+        // 这些操作符/标点之后通常开始一个表达式，因此 / 更可能是正则。
+        if (prev is '(' or '[' or '{' or ',' or ':' or ';' or '?' or '!' or '~'
+            or '+' or '-' or '*' or '%' or '|' or '&' or '^' or '<' or '>' or '=')
+        {
+            return true;
+        }
+
+        // 如果前一个是标识符，需要判断是否为期望表达式的关键字（如 return /.../）。
+        if (IsIdentifierChar(prev))
+        {
+            var keywordStart = j;
+            while (keywordStart >= 0 && IsIdentifierChar(text[keywordStart]))
+            {
+                keywordStart--;
+            }
+
+            var keyword = text.Substring(keywordStart + 1, j - keywordStart).AsSpan();
+            return keyword.Equals("return", StringComparison.OrdinalIgnoreCase)
+                || keyword.Equals("throw", StringComparison.OrdinalIgnoreCase)
+                || keyword.Equals("case", StringComparison.OrdinalIgnoreCase)
+                || keyword.Equals("yield", StringComparison.OrdinalIgnoreCase)
+                || keyword.Equals("await", StringComparison.OrdinalIgnoreCase)
+                || keyword.Equals("typeof", StringComparison.OrdinalIgnoreCase)
+                || keyword.Equals("void", StringComparison.OrdinalIgnoreCase)
+                || keyword.Equals("delete", StringComparison.OrdinalIgnoreCase)
+                || keyword.Equals("new", StringComparison.OrdinalIgnoreCase)
+                || keyword.Equals("instanceof", StringComparison.OrdinalIgnoreCase)
+                || keyword.Equals("in", StringComparison.OrdinalIgnoreCase)
+                || keyword.Equals("of", StringComparison.OrdinalIgnoreCase)
+                || keyword.Equals("do", StringComparison.OrdinalIgnoreCase)
+                || keyword.Equals("else", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return false;
+    }
+
+    private static bool IsRegexFlag(char c)
+    {
+        return c is 'g' or 'i' or 'm' or 's' or 'u' or 'y' or 'd' or 'v';
     }
 
     private static bool IsIdentifierChar(char c) => char.IsLetterOrDigit(c) || c == '_' || c == '$';

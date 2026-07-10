@@ -337,7 +337,7 @@ public sealed class DbUpsertNode : INodeType
 
     private List<object?> EvaluateRowValues(
         JsEngine engine,
-        IReadOnlyList<Prepared<Script>> preparedExpressions,
+        IReadOnlyList<Jint.Prepared<Acornima.Ast.Script>> preparedExpressions,
         List<object?> allItems,
         JsonNode? currentItem,
         int itemIndex,

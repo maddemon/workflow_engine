@@ -1,6 +1,4 @@
-using FlowEngine.Core.Enums;
 using FlowEngine.Core.Scripting;
-using FlowEngine.Core.Scripting.Models;
 using Jint;
 
 namespace FlowEngine.Core.Tests.Scripting;
@@ -58,13 +56,25 @@ public sealed class ScriptCompilerTests
     [Fact]
     public void Compile_ReturnInsideFunction_DoesNotTreatAsTopLevelReturn()
     {
-        var script = new Script { Source = "function f() { return 7; } f();" };
+        var script = new Script { Source = "function f() { return 7; } return f();" };
         var prepared = ScriptCompiler.Compile(script);
 
         using var engine = JsEngine.Create();
         var result = engine.EvaluatePrepared(prepared);
 
         Assert.Equal(7, result.AsNumber());
+    }
+
+    [Fact]
+    public void Compile_MultipleStatementsWithoutReturn_EndingWithExpression_ReturnsUndefined()
+    {
+        var script = new Script { Source = "const x = 1; 2 + 3;" };
+        var prepared = ScriptCompiler.Compile(script);
+
+        using var engine = JsEngine.Create();
+        var result = engine.EvaluatePrepared(prepared);
+
+        Assert.True(result.IsUndefined());
     }
 
     [Fact]

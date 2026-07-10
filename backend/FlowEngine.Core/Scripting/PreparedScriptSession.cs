@@ -1,7 +1,6 @@
 using System.Text.Json.Nodes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Exceptions;
-using FlowEngine.Core.Scripting.Models;
 
 namespace FlowEngine.Core.Scripting;
 
@@ -30,6 +29,11 @@ public sealed class PreparedScriptSession : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(prepared);
         ArgumentNullException.ThrowIfNull(context);
+
+        if (prepared.CompileError is not null)
+        {
+            return Task.FromResult(new ScriptResult(prepared.Original, prepared.CompileError));
+        }
 
         return Task.Run(() =>
         {
@@ -60,6 +64,11 @@ public sealed class PreparedScriptSession : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(prepared);
         ArgumentNullException.ThrowIfNull(context);
+
+        if (prepared.CompileError is not null)
+        {
+            return Task.FromResult(new ScriptResult(prepared.Original, prepared.CompileError));
+        }
 
         return Task.Run(() =>
         {
