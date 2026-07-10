@@ -32,6 +32,16 @@ public sealed class ScriptResult
     public ScriptErrorException? Error { get; }
 
     /// <summary>
+    /// 已预求值路径的 JsonNode（命中 Script.ResolvedValue 时）。
+    /// </summary>
+    private readonly JsonNode? _resolvedNode;
+
+    /// <summary>
+    /// 由 <see cref="_resolvedNode"/> 惰性转换并缓存的 JsValue。
+    /// </summary>
+    private JsValue? _resolvedRaw;
+
+    /// <summary>
     /// 初始化成功的脚本结果。
     /// </summary>
     public ScriptResult(Script original, JsValue raw)
@@ -53,33 +63,75 @@ public sealed class ScriptResult
     }
 
     /// <summary>
+    /// 从已预求值的 <see cref="Script.ResolvedValue"/> 构造结果（快路径，不执行脚本、不建引擎）。
+    /// 内部将 JsonNode 转为 JsValue，以便复用 To&lt;T&gt;/ToClr/ToBoolean/ToJson 统一取值语义。
+    /// </summary>
+    internal ScriptResult(Script original, JsonNode? resolvedValue)
+    {
+        Original = original ?? throw new ArgumentNullException(nameof(original));
+        _resolvedNode = resolvedValue;
+        Raw = JsValue.Undefined;
+        Success = true;
+    }
+
+    /// <summary>
+    /// 从已预求值的脚本构造结果（内部快路径入口）。
+    /// </summary>
+    internal static ScriptResult FromResolved(Script script) => new(script, script.ResolvedValue);
+
+    /// <summary>
+    /// 解析实际参与取值的 JsValue：已预求值路径惰性将 JsonNode 转为 JsValue（线程内复用单个引擎），
+    /// 否则返回执行得到的 <see cref="Raw"/>。
+    /// </summary>
+    private JsValue ResolveRaw()
+    {
+        if (_resolvedNode is null)
+        {
+            return Raw;
+        }
+
+        if (_resolvedRaw is not null)
+        {
+            return _resolvedRaw;
+        }
+
+        // 仅用引擎解析 JSON 字面量（不执行任何用户脚本），线程内只创建一次。
+        _convertEngine ??= new Engine();
+        _resolvedRaw = _convertEngine.Evaluate(_resolvedNode.ToJsonString() ?? "null");
+        return _resolvedRaw;
+    }
+
+    [ThreadStatic] private static Engine? _convertEngine;
+
+    /// <summary>
     /// 将结果转换为 CLR 对象（原 <see cref="JsEngine.ToClrValue"/> 语义）。
     /// </summary>
     public object? ToClr()
     {
         EnsureSuccess();
+        var raw = ResolveRaw();
 
-        if (Raw.IsUndefined() || Raw.IsNull())
+        if (raw.IsUndefined() || raw.IsNull())
         {
             return null;
         }
 
-        if (Raw.IsBoolean())
+        if (raw.IsBoolean())
         {
-            return Raw.AsBoolean();
+            return raw.AsBoolean();
         }
 
-        if (Raw.IsNumber())
+        if (raw.IsNumber())
         {
-            var num = Raw.AsNumber();
+            var num = raw.AsNumber();
             return num == Math.Floor(num) && num is >= int.MinValue and <= int.MaxValue
                 ? (int)num
                 : num;
         }
 
-        if (Raw.IsString())
+        if (raw.IsString())
         {
-            return Raw.AsString();
+            return raw.AsString();
         }
 
         return ToJson();
@@ -91,30 +143,31 @@ public sealed class ScriptResult
     public bool ToBoolean()
     {
         EnsureSuccess();
+        var raw = ResolveRaw();
 
-        if (Raw.IsUndefined() || Raw.IsNull())
+        if (raw.IsUndefined() || raw.IsNull())
         {
             return false;
         }
 
-        if (Raw.IsBoolean())
+        if (raw.IsBoolean())
         {
-            return Raw.AsBoolean();
+            return raw.AsBoolean();
         }
 
-        if (Raw.IsNumber())
+        if (raw.IsNumber())
         {
-            var num = Raw.AsNumber();
+            var num = raw.AsNumber();
             return !double.IsNaN(num) && num != 0;
         }
 
-        if (Raw.IsString())
+        if (raw.IsString())
         {
-            return Raw.AsString().Length > 0;
+            return raw.AsString().Length > 0;
         }
 
         // 数组与对象在 JS 中均为 truthy。
-        if (Raw.IsArray() || Raw.IsObject())
+        if (raw.IsArray() || raw.IsObject())
         {
             return true;
         }
@@ -128,20 +181,21 @@ public sealed class ScriptResult
     public JsonNode? ToJson()
     {
         EnsureSuccess();
+        var raw = ResolveRaw();
 
-        if (Raw.IsUndefined() || Raw.IsNull())
+        if (raw.IsUndefined() || raw.IsNull())
         {
             return null;
         }
 
-        if (Raw.IsBoolean())
+        if (raw.IsBoolean())
         {
-            return JsonValue.Create(Raw.AsBoolean());
+            return JsonValue.Create(raw.AsBoolean());
         }
 
-        if (Raw.IsNumber())
+        if (raw.IsNumber())
         {
-            var num = Raw.AsNumber();
+            var num = raw.AsNumber();
             if (num == Math.Floor(num) && num is >= int.MinValue and <= int.MaxValue)
             {
                 return JsonValue.Create((int)num);
@@ -150,19 +204,19 @@ public sealed class ScriptResult
             return JsonValue.Create(num);
         }
 
-        if (Raw.IsString())
+        if (raw.IsString())
         {
-            return JsonValue.Create(Raw.AsString());
+            return JsonValue.Create(raw.AsString());
         }
 
         try
         {
-            var obj = Raw.ToObject();
+            var obj = raw.ToObject();
             return JsonSerializer.SerializeToNode(obj, JsonDefaults.Options);
         }
         catch
         {
-            var str = Raw.ToString();
+            var str = raw.ToString();
             try
             {
                 return JsonNode.Parse(str);
@@ -181,12 +235,13 @@ public sealed class ScriptResult
     public T? To<T>()
     {
         EnsureSuccess();
+        var raw = ResolveRaw();
 
         var targetType = typeof(T);
 
         if (targetType == typeof(string))
         {
-            return (T?)(object?)Raw.ToString();
+            return (T?)(object?)raw.ToString();
         }
 
         if (targetType == typeof(bool))
@@ -196,12 +251,12 @@ public sealed class ScriptResult
 
         if (targetType == typeof(int) || targetType == typeof(long) || targetType == typeof(double))
         {
-            if (!Raw.IsNumber())
+            if (!raw.IsNumber())
             {
                 return default;
             }
 
-            var num = Raw.AsNumber();
+            var num = raw.AsNumber();
             if (targetType == typeof(int))
             {
                 return (T?)(object)Convert.ToInt32(num);

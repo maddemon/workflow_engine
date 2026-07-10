@@ -177,22 +177,11 @@ public class ParameterResolverTests
     {
         var js = JsEngine.Create();
 
-        // 旧式裸名（向后兼容）
-        var input = inputData ?? new JsonObject();
-        js.SetValue("input", input);
-        js.SetValue("inputs", new Dictionary<string, DataBatch>());
-        js.SetValue("nodes", new Dictionary<string, DataBatch>());
-        js.SetValue("items", new Dictionary<string, DataBatch>());
-        js.SetValue("workflow", new Dictionary<string, object?>());
-        js.SetValue("execution", new Dictionary<string, object?>());
-        js.SetValue("runIndex", 0);
-        js.SetValue("parameter", new Dictionary<string, object>());
-        js.SetValue("env", new Dictionary<string, object?>());
-
         // $ 前缀内建变量（plan-004 评审5）
-        js.SetValue("$json", input);
-        var inputItems = new List<object?> { input };
-        js.SetValue("$input", new InputContainer(inputItems, input, new Dictionary<string, object>()));
+        js.SetValue("$json", inputData);
+        js.SetValue("input", inputData);
+        var inputItems = new List<object?> { inputData };
+        js.SetValue("$input", new InputContainer(inputItems, inputData, new Dictionary<string, object>()));
         js.SetValue("$items", new Func<string?, object?>(_ => inputItems));
         js.SetValue("$node", new Dictionary<string, NodeOutput>(StringComparer.OrdinalIgnoreCase));
         js.SetValue("$workflow", new Dictionary<string, object?>());

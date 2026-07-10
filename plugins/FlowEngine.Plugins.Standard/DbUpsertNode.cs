@@ -85,7 +85,12 @@ public sealed class DbUpsertNode : INodeType
     {
         try
         {
-            var connectionString = Connection.GetResult<string>();
+            if (string.IsNullOrWhiteSpace(Connection.Source))
+            {
+                return context.ErrorResult("MissingConnection", "Connection string is required.");
+            }
+
+            var connectionString = await Connection.EvaluateAsync<string>(context, cancellationToken: cancellationToken);
             if (string.IsNullOrWhiteSpace(connectionString))
             {
                 return context.ErrorResult("MissingConnection", "Connection string is required.");
@@ -130,16 +135,6 @@ public sealed class DbUpsertNode : INodeType
                 return CreateResult(context, true, 0, 0, 0);
             }
 
-            var scriptCache = context.GetScriptCache();
-            var preparedColumns = Columns.ToDictionary(
-                c => c.Key,
-                c => scriptCache.GetOrPrepare(c.Value),
-                StringComparer.OrdinalIgnoreCase);
-
-            // 单引擎复用：全局变量只注入一次，逐项变量在循环内覆盖。
-            using var engine = JsEngine.Create();
-            engine.ApplyGlobalVariables(context);
-
             await using var connection = DbConnectionFactory.CreateConnection(dialect, connectionString);
             await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
 
@@ -149,7 +144,6 @@ public sealed class DbUpsertNode : INodeType
             var inserted = 0;
             var updated = 0;
             var isUpsert = mode.Equals("upsert", StringComparison.OrdinalIgnoreCase);
-            var allItems = inputBatch.Items.Select(i => (object?)i.Data).ToList();
 
             try
             {
@@ -158,7 +152,7 @@ public sealed class DbUpsertNode : INodeType
                     cancellationToken.ThrowIfCancellationRequested();
 
                     var item = inputBatch.Items[itemIndex];
-                    var values = EvaluateRowValues(engine, preparedColumns, allItems, item.Data, itemIndex, context);
+                    var values = await EvaluateRowValues(Columns, item.Data, itemIndex, context, cancellationToken).ConfigureAwait(false);
 
                     if (mode.Equals("update", StringComparison.OrdinalIgnoreCase))
                     {
@@ -311,23 +305,18 @@ public sealed class DbUpsertNode : INodeType
         return null;
     }
 
-    private List<object?> EvaluateRowValues(
-        JsEngine engine,
-        IReadOnlyDictionary<string, PreparedScript> preparedColumns,
-        List<object?> allItems,
+    private async Task<List<object?>> EvaluateRowValues(
+        IReadOnlyDictionary<string, Script> columns,
         JsonNode? currentItem,
         int itemIndex,
-        NodeExecutionContext context)
+        NodeExecutionContext context,
+        CancellationToken cancellationToken)
     {
-        engine.ApplyItemScope(context, currentItem, allItems, itemIndex);
-
-        var scriptContext = ScriptContext.From(context);
         var values = new List<object?>();
-        foreach (var columnName in preparedColumns.Keys)
+        foreach (var (_, columnScript) in columns)
         {
-            var prepared = preparedColumns[columnName];
-            var result = prepared.RunAsync(scriptContext, engine, context.CancellationToken).GetAwaiter().GetResult();
-            values.Add(result.ToClr());
+            var value = await columnScript.EvaluateAsync<object>(context, currentItem, itemIndex, cancellationToken: cancellationToken).ConfigureAwait(false);
+            values.Add(value);
         }
 
         return values;

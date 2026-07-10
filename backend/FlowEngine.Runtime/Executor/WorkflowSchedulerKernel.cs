@@ -178,8 +178,17 @@ public sealed class WorkflowSchedulerKernel(
             await sideEffects.PublishNodeStartedAsync(session.Execution.Id, node.Id, runIndex, cancellationToken)
                 .ConfigureAwait(false);
 
-            var result = await ExecuteNodeWithRetryAsync(node, nodeType, context, cancellationToken)
-                .ConfigureAwait(false);
+            NodeExecutionResult result;
+            try
+            {
+                result = await ExecuteNodeWithRetryAsync(node, nodeType, context, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                // 释放节点执行期间托管的 JS 引擎（含重试循环结束后统一释放）。
+                context.ReleaseEngine();
+            }
 
             if (context.LlmClient is not null)
             {

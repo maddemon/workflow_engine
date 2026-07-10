@@ -27,6 +27,7 @@
 - 把 `ToBoolean` / `ToClrValue` / `GetJsonValue` 等通用逻辑从节点类迁到 Core 脚本子系统，消除复制。
 - **统一编译与执行管线**：三套执行入口归并为同一套 `PreparedScript` → `ScriptResult` 管线。**框架预求值**与**节点显式求值**是同一管线的两种调用时机，不是两套机制。
 - 保留 Jint 沙箱边界不变：安全策略来自服务端配置，不随脚本载荷传输。
+- **节点只依赖 `Script` 与 `ScriptResult`**：主取值路径是泛型 `script.EvaluateAsync<T>(context[, scope])`，直接拿强类型返回值；少数需判定成败或多次取值的节点用 `script.ExecuteAsync(...)` 拿 `ScriptResult`。`IScriptCache` / `PreparedScript` / `PreparedScriptSession` / `JsEngine`，以及缓存、引擎复用、逐项作用域、引擎释放，全部由 Core 门面与运行时透明承担，节点代码不得直接依赖（详见 §4.4）。
 
 ## 3. 核心类型定义
 
@@ -92,7 +93,7 @@ public sealed class Script
   - `Source` 永远表示用户编写的源码文本。
   - `ResolvedValue` 仅对 `Hint=Expression` 且框架预求值成功的参数非 null。
   - 代码参数（Hint=CodeEditor/Script）的 `ResolvedValue` 始终为 null，节点应通过 `PreparedScript.RunAsync` 取结果。
-- **`.GetResult<T>()` 强类型取值**：对表达式参数，直接取已解析的 CLR 对象，不损失精度。如 `Condition.GetResult<bool>()` 取 true，`Url.GetResult<string>()` 取字符串。
+- **`.GetResult<T>()` 强类型取值**：对表达式参数，直接取已解析的 CLR 对象，不损失精度。门面收敛后（§4.4）此方法降为 `internal`，仅供 `ScriptResult.FromResolved` 复用其 JsonNode→T 转换逻辑；节点统一改用 `ScriptResult.To<T>()`。
 - **Script.Empty 定义明确**：`Source = ""` 时 `IScriptCache.GetOrPrepare(Script.Empty)` 返回 no-op `PreparedScript`，其 `RunAsync` / `RunForItemAsync` 直接返回 `ScriptResult.Success(JsValue.Undefined)`。
 - **隐式转换仅用于测试**：生产代码应显式构造 `Script` 并指定 `ReturnType`，避免类型推断隐藏错误。
 
@@ -160,6 +161,7 @@ public sealed class ScriptResult
 - **失败时抛异常**：`Success == false` 时调用任何 `To*` 方法抛出 `ScriptErrorException`，不会静默返回默认值。
 - `ToBoolean()` 取代 [FilterNode.cs:181](../plugins/FlowEngine.Plugins.Standard/FilterNode.cs#L181) 与 [IfNode.cs:84](../plugins/FlowEngine.Plugins.Standard/IfNode.cs#L84) 的两份私有实现。
 - `ToClr()` 取代 `JsEngine.ToClrValue`（[JsEngine.cs:102](../backend/FlowEngine.Core/Scripting/JsEngine.cs#L102)）。
+- `FromResolved(Script)`（internal）：把框架预求值写入的 `ResolvedValue`（`JsonNode`）包装为成功结果，使门面 `EvaluateAsync` 命中快路径时 `To<T>()` 的语义与执行路径完全一致（见 §4.4）。
 
 ### 3.5 ScriptContext（执行上下文，对齐 ExecutionScope）
 
@@ -216,8 +218,8 @@ else:
 | 触发者   | NodeExecutionContextFactory                               | 节点 ExecuteAsync                      |
 | 时机     | 节点执行前                                                | 节点执行中                             |
 | 频率     | 每参数一次                                                | 可逐 item / 按需                       |
-| 取值方式 | `Url.GetResult<string>()` / `Condition.GetResult<bool>()` | `session.RunAsync(prepared).To<T>()`   |
-| 底层管线 | `IScriptCache.GetOrPrepare → RunAsync`                    | 同左                                   |
+| 取值方式 | `await Url.EvaluateAsync<string>(ctx)`（命中快路径）      | `await script.EvaluateAsync<T>(ctx[, scope])` |
+| 底层管线 | `IScriptCache.GetOrPrepare → RunAsync`（门面内部）        | 同左（门面内部）                       |
 
 **统一点**：两者走同一条 `PreparedScript → ScriptResult` 管线，安全策略来自同一个 `JsEngineOptions`，缓存来自同一个 `ScriptCache`。
 
@@ -241,9 +243,74 @@ IIFE 包裹 + 严格模式隔离：表达式参数的 `return (expr)` 包裹无�
 
 **预求值失败处理**：框架捕获异常后，直接终止节点执行并返回结构化错误（错误码 + 源码位置 + 异常消息），**不再回退到 Source**。这样避免把错误处理责任推给每个节点，也避免静默错误。
 
-### 4.4 节点 API 示例
+### 4.4 节点求值门面与 API 示例
 
-#### 表达式参数（框架预求值）
+节点不应感知缓存、预编译产物、引擎复用与逐项作用域。这些全部收敛到 Core 门面。节点只做两件事：**声明 `Script` 属性**、**调用一次求值直接拿返回值**。
+
+**关键取舍**：节点绝大多数场景要的是"脚本算出来的那个值"（`bool` / `string` / `JsonNode` / `Dictionary` / 原生 `object`），极少需要检查执行成败或对同一次结果做多种取值。因此**主入口是泛型的 `EvaluateAsync<T>`，直接返回 `T?`**；返回 `ScriptResult` 的 `ExecuteAsync` 仅作次要入口，供需要 `Success`/`Error` 判定或一次结果多次取值的少数节点使用。
+
+#### 门面签名
+
+```csharp
+public static class ScriptEvaluationExtensions
+{
+    // 主入口（逐项求值）：传 JsonNode item 即按当前 item 逐项求值，框架注入标准 $json / $itemIndex；
+    // 需要额外全局变量时通过 globals 传入（与上下文全局变量合并）。覆盖绝大多数节点。
+    // - Expression 参数已被框架预求值：命中 Script.ResolvedValue，走零成本快路径（不建引擎、不执行）。
+    // 内部等价于 (await script.ExecuteAsync(...)).To<T>()——取值逻辑仍集中在 ScriptResult，不产生第二套。
+    public static Task<T?> EvaluateAsync<T>(
+        this Script script,
+        NodeExecutionContext context,
+        JsonNode? item,
+        int itemIndex = 0,
+        (string Key, object? Value)[]? globals = null,
+        CancellationToken cancellationToken = default);
+
+    // 主入口（额外全局）：第二个参数直接传键值对即可，框架自动作为额外全局变量注入（无需任何作用域类型）。
+    // 与逐项重载按第二个参数类型（JsonNode vs 键值对）自动区分。
+    public static Task<T?> EvaluateAsync<T>(
+        this Script script,
+        NodeExecutionContext context,
+        CancellationToken cancellationToken,
+        params (string Key, object? Value)[] globals);
+
+    // 次要入口（逐项 / 额外全局）：语义同上，返回原始 ScriptResult（判定 Success/Error 或一次结果多种取值）。
+    public static Task<ScriptResult> ExecuteAsync(
+        this Script script, NodeExecutionContext context, JsonNode? item,
+        int itemIndex = 0, (string Key, object? Value)[]? globals = null, CancellationToken cancellationToken = default);
+    public static Task<ScriptResult> ExecuteAsync(
+        this Script script, NodeExecutionContext context, CancellationToken cancellationToken,
+        params (string Key, object? Value)[] globals);
+}
+```
+
+**节点无需感知任何作用域类型**：逐项求值传 `JsonNode`、额外全局直接传键值对，二者由第二个参数类型自动区分。节点侧示例：
+
+```csharp
+// 1) 普通参数表达式（无 item、无额外全局）——最常见
+var url = await Url.EvaluateAsync<string>(context, cancellationToken);
+
+// 2) 逐条 item 循环（自动注入 $json / $itemIndex）
+foreach (var (item, index) in inputBatch.Items.WithIndex())
+    if (await Condition.EvaluateAsync<bool>(context, item.Data, index, cancellationToken: cancellationToken))
+
+// 3) 额外全局变量（第二个参数直接传键值对，ct 在前）
+stop = await terminateScript.EvaluateAsync<bool>(context, cancellationToken,
+    ("$cursor", cursor), ("$nextCursor", nextCursor), ("$page", page), ("$response", httpBody));
+
+// 4) item + 额外全局（item 自动注入 $json，仅需补额外变量）
+var result = await Code.EvaluateAsync<JsonNode>(context, currentItem,
+    globals: new (string, object?)[] { ("$input", inputContainer) },
+    cancellationToken: cancellationToken);
+```
+
+**取值收敛**：`EvaluateAsync<T>` 覆盖节点全部取值场景，因为 `ScriptResult.To<T>()` 内部已归一——`<bool>` 走 `ToBoolean` 真值语义、`<JsonNode>` 走 `ToJson`、`<object>` 走 `ToClr` 原生对象、`<string>` 走字符串转换。只有确需检查成败或复用同一结果时才用 `ExecuteAsync` 拿 `ScriptResult` 再自选 `To<T>()`/`ToClr()`/`ToJson()`/`ToBoolean()`。`EvaluateExpressionAsync<T>()` 删除（其职责由 `EvaluateAsync<T>` 承接），`Script.GetResult<T>()` 降为 `internal`（仅 `ScriptResult.FromResolved` 内部使用）。
+
+#### 上下文托管引擎
+
+两个入口内部均通过 `NodeExecutionContext` 懒创建并复用单个 `JsEngine`（逐项时复用同一会话作用域）。`NodeExecutionContext` 将该引擎登记为可释放资源，运行时（`WorkflowSchedulerKernel`）在节点执行结束（含重试循环结束）后统一释放。节点无需 `using`、无需 `CreateSession`、无需持有 `IScriptCache`。
+
+#### 表达式参数（框架预求值，命中快路径）
 
 ```csharp
 public sealed class IfNode : INodeType
@@ -251,149 +318,95 @@ public sealed class IfNode : INodeType
     [Hint(PresentationHint.Expression)]
     public Script Condition { get; set; } = Script.Empty;
 
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, ...)
+    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken ct = default)
     {
-        bool result = Condition.GetResult<bool>();              // 框架已预求值，直接取 bool
-        // 或：string source = Condition.Source;          // 取源码文本（调试用）
-    }
-}
-
-public sealed class ShellToolNode : INodeType
-{
-    [Hint(PresentationHint.Expression)]
-    public Script Command { get; set; } = Script.Empty;
-
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, ...)
-    {
-        string cmd = Command.GetResult<string>()!;                                       // 框架已预求值，直接取 string
+        bool ok = await Condition.EvaluateAsync<bool>(context, cancellationToken: ct);
+        // ...
     }
 }
 ```
 
-#### 代码参数 + 多脚本共享引擎
+`ShellToolNode.Command` / `SwitchNode.Expression` / `HttpRequestNode.Url` 等 Expression 字段同理：
+`await Field.EvaluateAsync<string>(context, cancellationToken: ct)`。
+
+#### 代码参数 + 多脚本
 
 ```csharp
 public sealed class HttpRequestNode : INodeType
 {
-    private readonly IScriptCache _scriptCache;
-
-    public HttpRequestNode(IScriptCache scriptCache)
-    {
-        _scriptCache = scriptCache;
-    }
-
     [Hint(PresentationHint.Expression)]
-    public Script Url { get; set; } = Script.Empty;     // 简单 URL 表达式，框架预求值
+    public Script Url { get; set; } = Script.Empty;
 
     [Hint(PresentationHint.Script)]
-    public Script? HeadersExpression { get; set; }       // 脚本，节点显式执行
+    public Script? HeadersExpression { get; set; }
 
     [Hint(PresentationHint.Script)]
-    public Script? BodyExpression { get; set; }          // 脚本，节点显式执行
+    public Script? BodyExpression { get; set; }
 
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, ...)
+    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken ct = default)
     {
-        string url = Url.GetResult<string>()!;                                       // 框架已预求值
+        var url = await Url.EvaluateAsync<string>(context, cancellationToken: ct);
 
-        var preparedHeaders = HeadersExpression is not null
-            ? _scriptCache.GetOrPrepare(HeadersExpression) : null;
-        var preparedBody = BodyExpression is not null
-            ? _scriptCache.GetOrPrepare(BodyExpression) : null;
-
-        var scriptContext = ScriptContext.From(context);
-        if (preparedHeaders is not null || preparedBody is not null)
-        {
-            using var engine = JsEngine.Create();
-            using var session = (preparedHeaders ?? preparedBody)!.CreateSession(engine);
-
-            var headers = preparedHeaders is not null
-                ? (await session.RunAsync(preparedHeaders, scriptContext)).To<Dictionary<string, string>>()
-                : null;
-            var body = preparedBody is not null
-                ? (await session.RunAsync(preparedBody, scriptContext)).ToClr()?.ToString()
-                : null;
-
-            // ...
-        }
+        var headers = HeadersExpression is null ? null
+            : await HeadersExpression.EvaluateAsync<Dictionary<string, string>>(context, cancellationToken: ct);
+        var body = BodyExpression is null ? null
+            : (await BodyExpression.EvaluateAsync<JsonNode>(context, cancellationToken: ct))?.ToJsonString();
+        // 多脚本自动复用上下文托管的同一引擎，节点无需感知
     }
 }
 ```
+
+节点不再注入 `IScriptCache`，不再 `JsEngine.Create()` / `CreateSession()`。
 
 #### 逐项执行
 
 ```csharp
 public sealed class FilterNode : INodeType
 {
-    private readonly IScriptCache _scriptCache;
-
-    public FilterNode(IScriptCache scriptCache)
-    {
-        _scriptCache = scriptCache;
-    }
-
     [Hint(PresentationHint.Script)]
     public Script Condition { get; set; } = Script.Empty;
 
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, ...)
+    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken ct = default)
     {
-        var scriptContext = ScriptContext.From(context);
-        using var engine = JsEngine.Create();
-        var prepared = _scriptCache.GetOrPrepare(Condition);
-        using var session = prepared.CreateSession(engine);   // 循环外建 session，循环内逐项复用
-
         foreach (var (item, index) in inputBatch.Items.WithIndex())
         {
-            var result = await session.RunForItemAsync(prepared, scriptContext, item.Data, index);
-            if (result.ToBoolean())
+            if (await Condition.EvaluateAsync<bool>(context, item.Data, index, cancellationToken: ct))
                 keptItems.Add(item);
         }
     }
 }
 ```
 
-> **破坏性变更**：当前 `FilterNode.EvaluateExpressionForItem` 在 catch 所有异常后返回 `false`（静默丢弃）。改为 `ScriptResult.ToBoolean()` 抛异常后，脚本错误会导致节点执行失败，这是行为变更，需在前端/文档中说明。
+> **破坏性变更（沿用旧设计）**：脚本错误经 `EvaluateAsync<bool>`（内部 `ToBoolean`）抛 `ScriptErrorException`，不再静默返回 `false`。
 
-#### 多脚本逐项执行
+#### 多脚本逐项执行（按 key 直接用 Script）
 
 ```csharp
 public sealed class DbUpsertNode : INodeType
 {
-    private readonly IScriptCache _scriptCache;
-
-    public DbUpsertNode(IScriptCache scriptCache)
-    {
-        _scriptCache = scriptCache;
-    }
-
     [Hint(PresentationHint.Expression)]
-    public Script Connection { get; set; } = Script.Empty;  // 框架预求值
+    public Script Connection { get; set; } = Script.Empty;
 
     [Hint(PresentationHint.Script)]
-    public Dictionary<string, Script> Columns { get; set; } = [];  // 节点逐项执行
+    public Dictionary<string, Script> Columns { get; set; } = [];
 
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, ...)
+    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken ct = default)
     {
-        string connection = Connection.GetResult<string>()!;                                       // 框架已预求值
-
-        var preparedColumns = Columns.ToDictionary(
-            kvp => kvp.Key, kvp => _scriptCache.GetOrPrepare(kvp.Value));
-
-        var scriptContext = ScriptContext.From(context);
-        using var engine = JsEngine.Create();
-        using var session = preparedColumns.Values.First().CreateSession(engine);
+        var connection = await Connection.EvaluateAsync<string>(context, cancellationToken: ct);
 
         foreach (var (item, index) in inputBatch.Items.WithIndex())
         {
             var values = new Dictionary<string, object?>();
-            foreach (var (colName, prepared) in preparedColumns)
-            {
-                var result = await session.RunForItemAsync(prepared, scriptContext, item.Data, index);
-                values[colName] = result.ToClr();
-            }
+            foreach (var (colName, script) in Columns)
+                values[colName] = await script.EvaluateAsync<object>(context, item.Data, index, cancellationToken: ct);
+            // <object> 内部走 ToClr，得到原生 int/double/string/bool/JsonNode
+            // ...
         }
     }
 }
 ```
+
+不再有 `preparedColumns` 字典、`GetOrPrepare` 循环、`CreateSession`——按 key 直接用每个 `Script`。
 
 ### 4.5 缓存策略
 
@@ -628,6 +641,9 @@ Hint 仍保留，用于框架决定预求值行为（Expression → 预求值，
 | FilterNode          | `GetJsonValue`                        | Core 新增 `JsonPath`                                                                                  |
 | ScriptEngine 全部   | `Evaluate*` 系列                      | 标记 `[Obsolete]`，由 `PreparedScript.RunAsync` + `ScriptResult.To*` 替代；不物理删除（遵循项目规则） |
 | ParameterResolver   | `EvaluateExpression` + `IsExpression` | 简化为"Script 参数 + ScriptCache"；保留处理非 Script 字符串的旧逻辑作为兼容层                         |
+| ScriptEvaluationExtensions | `EvaluateExpressionAsync<T>`   | 删除，由主入口 `Script.EvaluateAsync<T>(...)`（直接返回 `T?`）取代；`ExecuteAsync` 作次要入口返回 `ScriptResult` |
+| Script              | `GetResult<T>`（public）              | 降为 `internal`，仅供 `ScriptResult.FromResolved` 复用；节点改用 `EvaluateAsync<T>`                    |
+| 各节点              | `IScriptCache` / `PreparedScript` / `PreparedScriptSession` / `JsEngine.Create` 直接依赖 | 全部收敛进门面 `EvaluateAsync` + `NodeExecutionContext` 托管引擎，运行时统一释放                       |
 
 ## 10. 安全边界
 
@@ -683,3 +699,5 @@ Hint 仍保留，用于框架决定预求值行为（Expression → 预求值，
 | 2026-07-10 | Agent  | v5：恢复 ScriptReturnType（定义时返回类型即定死；编译时验证 + 驱动前端渲染：Bool→switch+script 切换，Dictionary→key-value+script 切换）                                                                                                                                                                                               |
 | 2026-07-10 | Agent  | v6：Grill-me 评审后更新——CacheKey 改为 SHA256(Source) 不含 ReturnType；新增 RunAsync(ctx, engine?) 引擎复用重载；合并阶段四-六-七为全量节点迁移；移除 SetNode；添加 implicit operator string→Script                                                                                                                                   |
 | 2026-07-10 | Agent  | v7：源码调研后修订——弱化 ReturnType 为渲染/转换提示；删除移除 SetNode 提议；明确 Source/ResolvedValue 分离；预求值失败直接失败；补充 ParameterHydrator/ParameterDiscoverer/NodeExecutionContextFactory/JsEngineOptions 改造细节；前端 ParameterType 扩展；阶段划分为基础设施→单节点试点→全量迁移；ScriptEngine 标记 Obsolete 而非删除 |
+| 2026-07-10 | Agent  | v8：新增节点求值门面 `Script.EvaluateAsync`/`ExecuteAsync`，收敛节点对 `IScriptCache`/`PreparedScript`/`PreparedScriptSession`/`JsEngine` 的直接依赖；新增 `ScriptResult.FromResolved` 统一取值语义；`GetResult<T>` 降为 internal、删除 `EvaluateExpressionAsync<T>`；引擎复用改由 `NodeExecutionContext` 托管、运行时执行后释放；节点无需感知任何作用域类型（逐项传 `JsonNode`、额外全局直接传键值对，按第二个参数类型自动区分）；§4.4 示例与 §4.2 取值方式、§9 归位清单同步更新 |
+| 2026-07-10 | Agent  | v9：门面主入口改为泛型 `EvaluateAsync<T>` 直接返回 `T?`（节点绝大多数只要返回值），`ScriptResult` 经次要入口 `ExecuteAsync` 返回（仅判定成败/多次取值时用）；§2、§4.2、§4.4、§9 全部示例统一为 `await script.EvaluateAsync<T>(...)` |

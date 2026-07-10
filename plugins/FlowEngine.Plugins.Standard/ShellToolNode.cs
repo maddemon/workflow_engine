@@ -109,7 +109,7 @@ public sealed class ShellToolNode : INodeType
                 return context.ErrorResult("MissingCommand", "Command is required.");
             }
 
-            var resolvedCommand = Command.GetResult<string>();
+            var resolvedCommand = await Command.EvaluateAsync<string>(context, cancellationToken: cancellationToken);
             if (string.IsNullOrWhiteSpace(resolvedCommand))
             {
                 return context.ErrorResult("MissingCommand", "Command resolution failed.");

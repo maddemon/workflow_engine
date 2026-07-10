@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Scripting;
+using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Core.Entities;
 
@@ -118,6 +119,41 @@ public class NodeExecutionContext
     /// 仅在 AgentNode 等使用 LLM 的节点执行时被触发。
     /// </summary>
     public Func<LlmStreamChunk, CancellationToken, Task>? OnLlmStreamChunk { get; set; }
+
+    /// <summary>
+    /// JS 引擎安全限制配置，供门面托管引擎创建时使用（由工厂注入）。为 null 时使用默认限制。
+    /// </summary>
+    public JsEngineOptions? EngineOptions { get; set; }
+
+    /// <summary>
+    /// JS 引擎日志器，供门面托管引擎使用（由工厂注入）。
+    /// </summary>
+    public ILogger<JsEngine>? EngineLogger { get; set; }
+
+    private JsEngine? _managedEngine;
+
+    /// <summary>
+    /// 获取或创建单次节点执行托管的单个 JsEngine（懒创建、复用）。
+    /// 引擎由运行时（WorkflowSchedulerKernel）在节点执行（含重试）结束后调用 <see cref="ReleaseEngine"/> 释放。
+    /// </summary>
+    public JsEngine GetOrCreateEngine()
+    {
+        if (_managedEngine is null)
+        {
+            _managedEngine = JsEngine.Create(EngineOptions, logger: EngineLogger);
+        }
+
+        return _managedEngine;
+    }
+
+    /// <summary>
+    /// 释放托管的 JS 引擎（若存在）。节点执行结束后由运行时统一调用。
+    /// </summary>
+    public void ReleaseEngine()
+    {
+        _managedEngine?.Dispose();
+        _managedEngine = null;
+    }
 
     /// <summary>
     /// 获取参数值，优先从 ResolvedParameters 获取，其次从 RawParameters 获取。

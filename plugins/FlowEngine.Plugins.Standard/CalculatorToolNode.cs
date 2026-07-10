@@ -51,17 +51,14 @@ public sealed class CalculatorToolNode : INodeType
                 return context.ErrorResult("MissingExpression", "Math expression is required.");
             }
 
-            // Evaluate expression through the unified IScriptCache pipeline.
-            var scriptCache = context.GetScriptCache();
+            // Evaluate expression through the unified script evaluation facade.
             var script = new Script
             {
                 Source = expression,
                 Language = ScriptLanguage.JavaScript,
                 ReturnType = ScriptReturnType.Number
             };
-            var prepared = scriptCache.GetOrPrepare(script);
-            var result = await prepared.RunAsync(ScriptContext.From(context), cancellationToken).ConfigureAwait(false);
-            var value = result.ToClr();
+            var value = await script.EvaluateAsync<object>(context, cancellationToken: cancellationToken);
 
             var outputBatch = new DataBatch
             {

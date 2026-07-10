@@ -98,16 +98,12 @@ public sealed class PaginateNode : INodeType
         JsonNode? lastResponse = null;
         var allItems = new List<DataItem>();
 
-        var scriptCache = context.ScriptCache ?? new ScriptCache(Options.Create(new JsEngineOptions()));
         var terminateScript = new Script
         {
             Source = terminateWhen,
             Language = ScriptLanguage.JavaScript,
             ReturnType = ScriptReturnType.Bool
         };
-        var preparedTerminate = scriptCache.GetOrPrepare(terminateScript);
-        using var termEngine = JsEngine.Create();
-        using var termSession = preparedTerminate.CreateSession(termEngine);
 
         for (var page = 0; page < maxPages; page++)
         {
@@ -227,20 +223,15 @@ public sealed class PaginateNode : INodeType
             }
 
             // 终止判断：以新游标作为 $nextCursor 求值 terminateWhen
-            var terminateGlobals = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["$cursor"] = cursor,
-                ["$nextCursor"] = nextCursor,
-                ["$page"] = page,
-                ["$response"] = httpBody
-            };
-            var terminateContext = new ScriptContext(context, terminateGlobals);
-
             bool stop;
             try
             {
-                var terminateResult = await termSession.RunAsync(preparedTerminate, terminateContext, cancellationToken).ConfigureAwait(false);
-                stop = terminateResult.ToBoolean();
+                stop = await terminateScript.EvaluateAsync<bool>(context,
+                    cancellationToken,
+                    ("$cursor", cursor),
+                    ("$nextCursor", nextCursor),
+                    ("$page", page),
+                    ("$response", httpBody)).ConfigureAwait(false);
             }
             catch (ScriptErrorException)
             {

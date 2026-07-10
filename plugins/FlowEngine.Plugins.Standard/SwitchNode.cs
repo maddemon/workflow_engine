@@ -63,27 +63,27 @@ public sealed class SwitchNode : INodeType
     public bool DefaultIsEntry => false;
 
     /// <inheritdoc />
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
         try
         {
-            var value = Expression.GetResult<string>();
+            var value = await Expression.EvaluateAsync<string>(context, cancellationToken: cancellationToken);
 
             var match = Cases.FindIndex(c =>
                 string.Equals(c.Value, value, StringComparison.OrdinalIgnoreCase));
 
             var inputBatch = context.Inputs.Values.FirstOrDefault() ?? new DataBatch();
 
-            return Task.FromResult(new NodeExecutionResult
+            return new NodeExecutionResult
             {
                 Success = true,
                 Output = inputBatch,
                 BranchIndex = match >= 0 ? match : Cases.Count
-            });
+            };
         }
         catch (Exception ex)
         {
-            return Task.FromResult(context.ErrorResult("UnexpectedError", $"Unexpected switch error: {ex.Message}"));
+            return context.ErrorResult("UnexpectedError", $"Unexpected switch error: {ex.Message}");
         }
     }
 }

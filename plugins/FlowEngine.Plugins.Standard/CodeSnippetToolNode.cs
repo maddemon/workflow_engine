@@ -73,17 +73,9 @@ public sealed class CodeSnippetToolNode : INodeType
             var inputPayload = GetInputPayload(context);
             var inputData = GetInputData(inputPayload);
 
-            var scriptCache = context.GetScriptCache();
-            var prepared = scriptCache.GetOrPrepare(Code);
-
-            var extraGlobals = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
-            if (inputData is not null)
-            {
-                extraGlobals["input"] = inputData;
-            }
-
-            var scriptContext = new ScriptContext(context, extraGlobals);
-            var result = await prepared.RunAsync(scriptContext, cancellationToken).ConfigureAwait(false);
+            var result = inputData is not null
+                ? await Code.ExecuteAsync(context, cancellationToken, ("input", inputData)).ConfigureAwait(false)
+                : await Code.ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
             var outputItem = ToDataItem(result);
 
             return new NodeExecutionResult

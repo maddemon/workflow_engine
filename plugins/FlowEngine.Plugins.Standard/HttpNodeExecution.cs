@@ -38,7 +38,7 @@ internal static class HttpNodeExecution
                 return context.ErrorResult("MissingUrl", "URL is required.");
             }
 
-            var resolvedUrl = url.GetResult<string>();
+            var resolvedUrl = await url.EvaluateAsync<string>(context, cancellationToken: cancellationToken);
             if (string.IsNullOrWhiteSpace(resolvedUrl))
             {
                 return context.ErrorResult("MissingUrl", "URL resolution failed.");
@@ -61,42 +61,23 @@ internal static class HttpNodeExecution
                 }
             }
 
-            var scriptCache = context.GetScriptCache();
-            var scriptContext = ScriptContext.From(context);
-
-            var preparedHeaders = sendHeaders && headersExpression is not null && !string.IsNullOrWhiteSpace(headersExpression.Source)
-                ? scriptCache.GetOrPrepare(headersExpression)
-                : null;
-            var preparedBody = sendBody && bodyExpression is not null && !string.IsNullOrWhiteSpace(bodyExpression.Source) &&
-                method is HttpMethodOption.Post or HttpMethodOption.Put or HttpMethodOption.Patch
-                ? scriptCache.GetOrPrepare(bodyExpression)
-                : null;
-
-            if (preparedHeaders is not null || preparedBody is not null)
+            if (sendHeaders && headersExpression is not null && !string.IsNullOrWhiteSpace(headersExpression.Source))
             {
-                // 引擎随 using 释放，避免每次请求泄漏 Jint 引擎（设计 §4.4）。
-                using var engine = JsEngine.Create();
-                using var session = (preparedHeaders ?? preparedBody)!.CreateSession(engine);
-
-                if (preparedHeaders is not null)
+                var headers = await headersExpression.EvaluateAsync<Dictionary<string, string>>(context, cancellationToken: cancellationToken);
+                if (headers is not null)
                 {
-                    var headersResult = await session.RunAsync(preparedHeaders, scriptContext, cancellationToken).ConfigureAwait(false);
-                    var headers = headersResult.To<Dictionary<string, string>>();
-                    if (headers is not null)
+                    foreach (var (key, value) in headers)
                     {
-                        foreach (var (key, value) in headers)
-                        {
-                            request.Headers.TryAddWithoutValidation(key, value);
-                        }
+                        request.Headers.TryAddWithoutValidation(key, value);
                     }
                 }
+            }
 
-                if (preparedBody is not null)
-                {
-                    var bodyResult = await session.RunAsync(preparedBody, scriptContext, cancellationToken).ConfigureAwait(false);
-                    var bodyJson = bodyResult.ToJson()?.ToJsonString() ?? string.Empty;
-                    request.Content = new StringContent(bodyJson, Encoding.UTF8, new System.Net.Http.Headers.MediaTypeHeaderValue("application/json"));
-                }
+            if (sendBody && bodyExpression is not null && !string.IsNullOrWhiteSpace(bodyExpression.Source) &&
+                method is HttpMethodOption.Post or HttpMethodOption.Put or HttpMethodOption.Patch)
+            {
+                var bodyJson = (await bodyExpression.EvaluateAsync<JsonNode>(context, cancellationToken: cancellationToken))?.ToJsonString() ?? string.Empty;
+                request.Content = new StringContent(bodyJson, Encoding.UTF8, new System.Net.Http.Headers.MediaTypeHeaderValue("application/json"));
             }
 
             var client = context.HttpClientPool?.GetClient();

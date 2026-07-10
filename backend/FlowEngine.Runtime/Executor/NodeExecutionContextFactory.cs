@@ -130,19 +130,6 @@ public sealed class NodeExecutionContextFactory(
         // 也作为 ScriptContext.ExtraGlobals 传入，保证两种求值路径变量集一致。
         var globals = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
         {
-            // 旧式裸名全局（plan-004 迁移期向后兼容）
-            ["input"] = currentInput,
-            ["inputs"] = inputs,
-            ["parameter"] = rawParameters,
-            ["nodes"] = successfulOutputs,
-            ["items"] = latestBatches,
-            ["workflow"] = workflowDict,
-            ["execution"] = executionDict,
-            ["runIndex"] = runIndex,
-            ["run_index"] = runIndex,
-            ["env"] = new EnvironmentAccessor(environmentWhitelist),
-            ["now"] = DateTime.UtcNow,
-
             // $ 前缀内建变量（plan-004 评审5）
             ["$json"] = currentInput,
             ["$input"] = inputContainer,
@@ -231,6 +218,8 @@ public sealed class NodeExecutionContextFactory(
             ContextFactory = this,
             WorkflowLoader = workflowLoader,
             ScriptCache = scriptCache,
+            EngineOptions = jsEngineOptions,
+            EngineLogger = jsLogger,
             GlobalVariables = BuildGlobalVariables(credentialsDict, workflow, execution.Id, nodeDefinition, runIndex, rawParameters, environmentWhitelist),
         };
     }

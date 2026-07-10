@@ -72,42 +72,19 @@ public sealed class FilterNode : INodeType
         var keptItems = new List<DataItem>();
         var discardedItems = new List<DataItem>();
 
-        // 单引擎复用：全局变量只注入一次，逐项变量在循环内覆盖。
-        using var engine = JsEngine.Create();
-        engine.ApplyGlobalVariables(context);
-
-        var scriptCache = context.GetScriptCache();
-        var scriptContext = ScriptContext.From(context);
-
-        // 循环外 prepare + 建 session 一次，循环内逐项复用（设计 §4.4）。
-        PreparedScript? preparedCondition = null;
-        PreparedScriptSession? conditionSession = null;
-        if (!string.IsNullOrWhiteSpace(Condition.Source))
+        for (var itemIndex = 0; itemIndex < inputBatch.Items.Count; itemIndex++)
         {
-            preparedCondition = scriptCache.GetOrPrepare(Condition);
-            conditionSession = preparedCondition.CreateSession(engine);
-        }
-
-        try
-        {
-            for (var itemIndex = 0; itemIndex < inputBatch.Items.Count; itemIndex++)
+            var item = inputBatch.Items[itemIndex];
+            var matches = await EvaluateItemConditionAsync(
+                item.Data, itemIndex, context, cancellationToken).ConfigureAwait(false);
+            if (matches)
             {
-                var item = inputBatch.Items[itemIndex];
-                var matches = await EvaluateItemConditionAsync(
-                    conditionSession, preparedCondition, item.Data, itemIndex, scriptContext, context, cancellationToken).ConfigureAwait(false);
-                if (matches)
-                {
-                    keptItems.Add(item);
-                }
-                else
-                {
-                    discardedItems.Add(item);
-                }
+                keptItems.Add(item);
             }
-        }
-        finally
-        {
-            conditionSession?.Dispose();
+            else
+            {
+                discardedItems.Add(item);
+            }
         }
 
         return new NodeExecutionResult
@@ -121,19 +98,15 @@ public sealed class FilterNode : INodeType
     /// 逐项求值：对单个数据项评估主条件 + 结构化条件组合。
     /// </summary>
     private async Task<bool> EvaluateItemConditionAsync(
-        PreparedScriptSession? conditionSession,
-        PreparedScript? preparedCondition,
         JsonNode? data,
         int itemIndex,
-        ScriptContext scriptContext,
         NodeExecutionContext context,
         CancellationToken cancellationToken)
     {
         // 主条件（表达式）
-        if (preparedCondition is not null && conditionSession is not null)
+        if (!string.IsNullOrWhiteSpace(Condition.Source))
         {
-            var result = await conditionSession.RunForItemAsync(preparedCondition, scriptContext, data, itemIndex, cancellationToken).ConfigureAwait(false);
-            var mainResult = result.ToBoolean();
+            var mainResult = await Condition.EvaluateAsync<bool>(context, data, itemIndex, cancellationToken: cancellationToken);
 
             if (Conditions.Count == 0)
             {

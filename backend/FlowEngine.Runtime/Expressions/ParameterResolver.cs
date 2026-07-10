@@ -21,11 +21,6 @@ public sealed class ParameterResolver
 {
     private static readonly HashSet<string> s_knownIdentifiers = new(StringComparer.OrdinalIgnoreCase)
     {
-        // 旧式裸全局（向后兼容，后续实现按 plan-004 收敛到 $ 前缀）
-        "input", "inputs", "nodes", "items", "parameter",
-        "workflow", "execution", "env", "runIndex", "run_index",
-        "this", "true", "false", "null", "undefined",
-        "now", "nowIso", "jmespath", "length", "trim",
         // $ 前缀内建（plan-004 评审5：命名铁律 $ 前缀=引擎内建）
         "$json", "$input", "$items", "$node",
         "$workflow", "$execution", "$env", "$vars", "$now", "$today",

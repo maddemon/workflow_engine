@@ -51,31 +51,31 @@ public sealed class IfNode : INodeType
     public bool DefaultIsEntry => false;
 
     /// <inheritdoc />
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
         try
         {
             if (Condition is null || string.IsNullOrWhiteSpace(Condition.Source))
             {
-                return Task.FromResult(context.ErrorResult("MissingCondition", "Condition 参数不能为空。"));
+                return context.ErrorResult("MissingCondition", "Condition 参数不能为空。");
             }
 
-            var conditionResult = Condition.GetResult<bool>();
+            var conditionResult = await Condition.EvaluateAsync<bool>(context, cancellationToken: cancellationToken);
 
             var inputBatch = context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch)
                 ? batch
                 : new DataBatch();
 
-            return Task.FromResult(new NodeExecutionResult
+            return new NodeExecutionResult
             {
                 Success = true,
                 Output = inputBatch,
                 BranchIndex = conditionResult ? 0 : 1
-            });
+            };
         }
         catch (Exception ex)
         {
-            return Task.FromResult(context.ErrorResult("ConditionError", $"条件求值失败: {ex.Message}"));
+            return context.ErrorResult("ConditionError", $"条件求值失败: {ex.Message}");
         }
     }
 }

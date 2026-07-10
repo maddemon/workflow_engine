@@ -58,7 +58,7 @@ public sealed class Script : IEquatable<Script>
     /// <summary>
     /// 获取解析值为指定 CLR 类型。
     /// </summary>
-    public T? GetResult<T>()
+    internal T? GetResult<T>()
     {
         if (ResolvedValue is null)
         {

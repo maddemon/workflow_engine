@@ -71,15 +71,12 @@ public sealed class JSNode : INodeType
                 ? batch
                 : new DataBatch();
 
-            var scriptCache = context.GetScriptCache();
-            var prepared = scriptCache.GetOrPrepare(Code);
-
             if (CodeMode == CodeExecutionMode.RunOnceForEachItem)
             {
-                return await ExecuteForEachItem(inputBatch, context, prepared, cancellationToken).ConfigureAwait(false);
+                return await ExecuteForEachItem(inputBatch, context, cancellationToken).ConfigureAwait(false);
             }
 
-            return await ExecuteForAllItems(inputBatch, context, prepared, cancellationToken).ConfigureAwait(false);
+            return await ExecuteForAllItems(inputBatch, context, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
@@ -102,7 +99,6 @@ public sealed class JSNode : INodeType
     private async Task<NodeExecutionResult> ExecuteForAllItems(
         DataBatch inputBatch,
         NodeExecutionContext context,
-        PreparedScript prepared,
         CancellationToken cancellationToken)
     {
         var allItems = inputBatch.Items.Select(i => (object?)i.Data).ToList();
@@ -117,14 +113,13 @@ public sealed class JSNode : INodeType
             ["workflowId"] = context.Workflow.Id,
         };
 
-        var extraGlobals = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["$json"] = currentItem,
-            ["$input"] = new InputContainer(allItems, currentItem, context.RawParameters, inputContext),
-        };
-
-        var scriptContext = new ScriptContext(context, extraGlobals);
-        var result = await prepared.RunAsync(scriptContext, cancellationToken).ConfigureAwait(false);
+        // item 自动注入 $json；仅需额外暴露 $input 容器。
+        var result = await Code.EvaluateAsync<JsonNode>(context, currentItem,
+            globals: new (string, object?)[]
+            {
+                ("$input", new InputContainer(allItems, currentItem, context.RawParameters, inputContext)),
+            },
+            cancellationToken: cancellationToken).ConfigureAwait(false);
         var outputItem = ToDataItem(result);
 
         return new NodeExecutionResult
@@ -137,22 +132,14 @@ public sealed class JSNode : INodeType
     private async Task<NodeExecutionResult> ExecuteForEachItem(
         DataBatch inputBatch,
         NodeExecutionContext context,
-        PreparedScript prepared,
         CancellationToken cancellationToken)
     {
         var outputItems = new List<DataItem>();
 
-        using var engine = JsEngine.Create();
-        engine.ApplyGlobalVariables(context);
-
-        using var session = prepared.CreateSession(engine);
-        var scriptContext = ScriptContext.From(context);
-
         for (var itemIndex = 0; itemIndex < inputBatch.Items.Count; itemIndex++)
         {
             var item = inputBatch.Items[itemIndex];
-            var result = await session.RunForItemAsync(
-                prepared, scriptContext, item.Data, itemIndex, cancellationToken).ConfigureAwait(false);
+            var result = await Code.EvaluateAsync<JsonNode>(context, item.Data, itemIndex, cancellationToken: cancellationToken).ConfigureAwait(false);
             outputItems.Add(ToDataItem(result));
         }
 
@@ -163,9 +150,8 @@ public sealed class JSNode : INodeType
         };
     }
 
-    private static DataItem ToDataItem(ScriptResult result)
+    private static DataItem ToDataItem(JsonNode? json)
     {
-        var json = result.ToJson();
         return new DataItem
         {
             Data = json,
