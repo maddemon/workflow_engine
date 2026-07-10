@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Scripting;
 using FlowEngine.Plugins.Standard;
 using FlowEngine.Runtime.Expressions;
@@ -18,13 +19,13 @@ using Xunit;
 namespace FlowEngine.Runtime.Tests.Plugins;
 
 /// <summary>
-/// FilterNode 单元测试：验证 Condition 改为逐项走统一表达式引擎（JsEngine + GlobalVariables + $json/$input），
-/// 支持裸式 `$json.field` 表达式，并保留空条件时保留全部 item 的行为。
-/// 对应 review 发现 A4（FilterNode 的 `{{ $json }}` mustache 解析器已删除，改走逐项 JsEngine）。
+/// FilterNode 单元测试：验证 Condition 改为 <see cref="Script"/> 类型后，
+/// 逐项走 IScriptCache + PreparedScriptSession 求值，支持裸式 <c>$json.field</c> 表达式，
+/// 脚本错误时向上冒泡，空条件时保留全部 item。
 /// </summary>
 public sealed class FilterNodeTests
 {
-    private static NodeExecutionContext BuildContext(string condition, List<DataItem> items)
+    private static async Task<NodeExecutionContext> BuildContextAsync(string condition, List<DataItem> items)
     {
         var config = new Dictionary<string, object> { ["condition"] = condition };
         var inputs = new Dictionary<string, DataBatch>
@@ -38,19 +39,23 @@ public sealed class FilterNodeTests
             new ParameterResolver(NullLogger<ParameterResolver>.Instance),
             new NullCredentialAccessor(),
             new HashSet<string>(StringComparer.OrdinalIgnoreCase));
-        return new NodeExecutionContext
+        var nodeDef = new NodeDefinition
         {
-            Workflow = new Workflow { Id = Guid.NewGuid(), Name = "t" },
-            ExecutionId = Guid.NewGuid(),
-            Node = new NodeDefinition { Id = Guid.NewGuid(), TypeName = "filter", Name = "f1", Parameters = config },
-            Inputs = inputs,
-            RawParameters = config,
-            ResolvedParameters = config,
-            Credentials = new NullCredentialAccessor(),
-            CancellationToken = CancellationToken.None,
-            NodeRegistry = registry,
-            ContextFactory = factory
+            Id = Guid.NewGuid(),
+            TypeName = "filter",
+            Name = "f1",
+            Parameters = config
         };
+        return await factory.CreateAsync(
+            new Workflow { Id = Guid.NewGuid(), Name = "t" },
+            new ExecutionRecord { Id = Guid.NewGuid() },
+            nodeDef,
+            new FilterNode(),
+            inputs,
+            new Dictionary<string, DataBatch>(),
+            new Dictionary<string, DataBatch>(),
+            0,
+            CancellationToken.None).ConfigureAwait(false);
     }
 
     private static List<DataItem> BuildItems(params int[] values)
@@ -73,9 +78,10 @@ public sealed class FilterNodeTests
     public async Task ExecuteAsync_KeepsItemsMatchingExpression()
     {
         var items = BuildItems(1, 2, 3);
-        var context = BuildContext("$json.value > 1", items);
+        var context = await BuildContextAsync("$json.value > 1", items);
 
-        var result = await new FilterNode { Condition = "$json.value > 1" }.ExecuteAsync(context, CancellationToken.None);
+        var result = await new FilterNode { Condition = new Script { Source = "$json.value > 1", ReturnType = ScriptReturnType.Bool } }
+            .ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(2, result.Output.Items.Count);
@@ -85,9 +91,10 @@ public sealed class FilterNodeTests
     public async Task ExecuteAsync_EmptyCondition_KeepsAll()
     {
         var items = BuildItems(1, 2, 3);
-        var context = BuildContext("", items);
+        var context = await BuildContextAsync("", items);
 
-        var result = await new FilterNode { Condition = "" }.ExecuteAsync(context, CancellationToken.None);
+        var result = await new FilterNode { Condition = Script.Empty }
+            .ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(3, result.Output.Items.Count);
@@ -97,15 +104,42 @@ public sealed class FilterNodeTests
     public async Task ExecuteAsync_ExpressionCanAccessInputContext()
     {
         // 验证统一 ExecutionScope 注入后 $input.context 可用
-        // （修复前节点自行构造 InputContainer 时未传入 inputContext，表达式为 null 会报错丢 item）。
         var items = BuildItems(1);
-        var context = BuildContext("$json.value > 0", items);
+        var context = await BuildContextAsync("$json.value > 0", items);
 
-        var result = await new FilterNode { Condition = "$input.context.nodeName === 'f1'" }
+        var result = await new FilterNode { Condition = new Script { Source = "$input.context.nodeName === 'f1'", ReturnType = ScriptReturnType.Bool } }
             .ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Output.Items);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_PerItemVariables_AreIsolated()
+    {
+        var items = new List<DataItem>
+        {
+            new() { Data = JsonNode.Parse("{\"value\":1}"), Success = true, SourceIndex = 0 },
+            new() { Data = JsonNode.Parse("{\"value\":2}"), Success = true, SourceIndex = 1 }
+        };
+        var context = await BuildContextAsync("$json.value === $itemIndex + 1", items);
+
+        var result = await new FilterNode { Condition = new Script { Source = "$json.value === $itemIndex + 1", ReturnType = ScriptReturnType.Bool } }
+            .ExecuteAsync(context, CancellationToken.None);
+
+        Assert.True(result.Success, result.Error?.Message);
+        Assert.Equal(2, result.Output.Items.Count);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ScriptError_ThrowsScriptErrorException()
+    {
+        var items = BuildItems(1);
+        var context = await BuildContextAsync("$json.value === ", items);
+
+        await Assert.ThrowsAsync<ScriptErrorException>(() =>
+            new FilterNode { Condition = new Script { Source = "$json.value === ", ReturnType = ScriptReturnType.Bool } }
+                .ExecuteAsync(context, CancellationToken.None));
     }
 
     private sealed class NullCredentialAccessor : ICredentialAccessor

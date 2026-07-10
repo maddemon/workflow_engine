@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Scripting;
 
 namespace FlowEngine.Core.Entities;
 
@@ -83,6 +84,11 @@ public class NodeExecutionContext
     /// 节点执行上下文工厂，供 Agent 等节点执行子节点。
     /// </summary>
     public INodeExecutionContextFactory? ContextFactory { get; set; }
+
+    /// <summary>
+    /// 脚本编译缓存，供 FilterNode 等需要逐项求值的节点复用已编译脚本。
+    /// </summary>
+    public IScriptCache? ScriptCache { get; set; }
 
     /// <summary>
     /// 工作流加载器，供子工作流工具节点从数据库加载工作流。

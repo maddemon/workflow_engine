@@ -81,7 +81,8 @@ public sealed class PreparedScriptTests
         var context = ScriptContext.From(nodeContext);
         var item = JsonNode.Parse("""{"value":10}""")!;
 
-        using var session = prepared.CreateSession(JsEngine.Create());
+        using var engine = JsEngine.Create();
+        using var session = prepared.CreateSession(engine);
         var result = await session.RunForItemAsync(prepared, context, item, 5, TestContext.Current.CancellationToken);
 
         Assert.True(result.Success);
@@ -89,14 +90,26 @@ public sealed class PreparedScriptTests
     }
 
     [Fact]
-    public async Task Session_Dispose_DisposesEngine()
+    public void Session_Dispose_DoesNotDisposeExternalEngine()
     {
         var script = new Script { Source = "1" };
         var prepared = new ScriptCache(Microsoft.Extensions.Options.Options.Create(new JsEngineOptions())).GetOrPrepare(script);
-        var engine = JsEngine.Create();
-        var session = prepared.CreateSession(engine);
+        using var engine = JsEngine.Create();
+        using var session = prepared.CreateSession(engine);
 
         session.Dispose();
+
+        // 默认情况下会话不拥有引擎，释放会话后引擎仍可用。
+        engine.SetValue("x", 1);
+    }
+
+    [Fact]
+    public void Session_Dispose_WhenOwnsEngine_DisposesEngine()
+    {
+        var engine = JsEngine.Create();
+        using (var session = new PreparedScriptSession(engine, ownsEngine: true))
+        {
+        }
 
         Assert.Throws<ObjectDisposedException>(() => engine.SetValue("x", 1));
     }
@@ -107,7 +120,8 @@ public sealed class PreparedScriptTests
         var script = new Script { Source = "1 + +" };
         var prepared = new ScriptCache(Microsoft.Extensions.Options.Options.Create(new JsEngineOptions())).GetOrPrepare(script);
 
-        using var session = prepared.CreateSession(JsEngine.Create());
+        using var engine = JsEngine.Create();
+        using var session = prepared.CreateSession(engine);
         var result = await session.RunAsync(prepared, CreateContext(), TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
@@ -120,7 +134,8 @@ public sealed class PreparedScriptTests
         var script = new Script { Source = "1 + +" };
         var prepared = new ScriptCache(Microsoft.Extensions.Options.Options.Create(new JsEngineOptions())).GetOrPrepare(script);
 
-        using var session = prepared.CreateSession(JsEngine.Create());
+        using var engine = JsEngine.Create();
+        using var session = prepared.CreateSession(engine);
         var result = await session.RunForItemAsync(prepared, CreateContext(), null, 0, TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);

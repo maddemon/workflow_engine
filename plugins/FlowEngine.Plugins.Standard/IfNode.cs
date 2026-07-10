@@ -4,12 +4,13 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Scripting;
 
 namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
 /// 条件分支节点，根据条件表达式路由到 true 或 false 分支。
-/// 条件值由执行引擎的 ParameterResolver 预先求值后传入 ResolvedParameters。
+/// Condition 为 <see cref="Script"/> 类型，由工厂在预求值阶段完成 Expression 求值并写入 ResolvedValue。
 /// </summary>
 public sealed class IfNode : INodeType
 {
@@ -29,14 +30,14 @@ public sealed class IfNode : INodeType
     public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
 
     /// <summary>
-    /// 条件表达式，由 ParameterResolver 在工厂阶段求值。
+    /// 条件表达式，由工厂在预求值阶段完成求值。
     /// 支持 <c>$json.status === 'active'</c>、<c>$input.item().count > 10</c>、<c>$credentials.x.accessToken</c> 等
     /// 统一表达式变量模型中的所有 <c>$</c> 前缀变量。
     /// </summary>
     [DisplayName("Condition")]
     [Description("Condition expression (e.g. $json.status === 'active', $input.item().count > 10).")]
     [Hint(PresentationHint.Expression)]
-    public string Condition { get; set; } = string.Empty;
+    public Script Condition { get; set; } = Script.Empty;
 
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
@@ -54,12 +55,12 @@ public sealed class IfNode : INodeType
     {
         try
         {
-            if (!context.ResolvedParameters.TryGetValue("condition", out var resolvedValue) || resolvedValue is null)
+            if (Condition is null || string.IsNullOrWhiteSpace(Condition.Source))
             {
                 return Task.FromResult(context.ErrorResult("MissingCondition", "Condition 参数不能为空。"));
             }
 
-            var conditionResult = ToBoolean(resolvedValue);
+            var conditionResult = Condition.GetResult<bool>();
 
             var inputBatch = context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch)
                 ? batch
@@ -76,24 +77,5 @@ public sealed class IfNode : INodeType
         {
             return Task.FromResult(context.ErrorResult("ConditionError", $"条件求值失败: {ex.Message}"));
         }
-    }
-
-    /// <summary>
-    /// 将 ParameterResolver 已求值的结果转换为布尔值。
-    /// </summary>
-    private static bool ToBoolean(object value)
-    {
-        if (value is bool b) return b;
-        if (value is int i) return i != 0;
-        if (value is long l) return l != 0;
-        if (value is double d) return d != 0;
-        if (value is string s)
-        {
-            if (bool.TryParse(s, out var boolResult)) return boolResult;
-            if (s.Equals("true", StringComparison.OrdinalIgnoreCase)) return true;
-            if (s.Equals("false", StringComparison.OrdinalIgnoreCase)) return false;
-            return !string.IsNullOrEmpty(s);
-        }
-        return value is not null;
     }
 }

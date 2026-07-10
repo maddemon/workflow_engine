@@ -230,6 +230,7 @@ public sealed class NodeExecutionContextFactory(
             NodeRegistry = registry,
             ContextFactory = this,
             WorkflowLoader = workflowLoader,
+            ScriptCache = scriptCache,
             GlobalVariables = BuildGlobalVariables(credentialsDict, workflow, execution.Id, nodeDefinition, runIndex, rawParameters, environmentWhitelist),
         };
     }
@@ -498,22 +499,47 @@ public sealed class NodeExecutionContextFactory(
             return true;
         }
 
-        if (value is JsonElement element)
+        try
         {
-            dict = element.Deserialize<Dictionary<string, Script>>(JsonDefaults.Options);
-            return dict is not null;
-        }
+            if (value is JsonElement element)
+            {
+                if (element.ValueKind != JsonValueKind.Object)
+                {
+                    dict = null;
+                    return false;
+                }
 
-        if (value is JsonNode node)
-        {
-            dict = node.Deserialize<Dictionary<string, Script>>(JsonDefaults.Options);
-            return dict is not null;
-        }
+                dict = element.Deserialize<Dictionary<string, Script>>(JsonDefaults.Options);
+                return dict is not null;
+            }
 
-        if (value is string str)
+            if (value is JsonObject obj)
+            {
+                dict = obj.Deserialize<Dictionary<string, Script>>(JsonDefaults.Options);
+                return dict is not null;
+            }
+
+            if (value is JsonNode node)
+            {
+                if (node is not JsonObject)
+                {
+                    dict = null;
+                    return false;
+                }
+
+                dict = node.Deserialize<Dictionary<string, Script>>(JsonDefaults.Options);
+                return dict is not null;
+            }
+
+            if (value is string str)
+            {
+                dict = JsonSerializer.Deserialize<Dictionary<string, Script>>(str, JsonDefaults.Options);
+                return dict is not null;
+            }
+        }
+        catch (JsonException)
         {
-            dict = JsonSerializer.Deserialize<Dictionary<string, Script>>(str, JsonDefaults.Options);
-            return dict is not null;
+            // 值不是 Dictionary<string, Script> 结构，返回 false 让后续分支处理
         }
 
         dict = null;

@@ -39,6 +39,11 @@ public sealed class Script : IEquatable<Script>
     }
 
     /// <summary>
+    /// 空脚本实例。
+    /// </summary>
+    public static Script Empty { get; } = new Script();
+
+    /// <summary>
     /// 内部构造函数，用于 <see cref="WithResolvedValue"/> 与缓存层。
     /// </summary>
     internal Script(string source, ScriptLanguage language, ScriptReturnType returnType, JsonNode? resolvedValue = null)

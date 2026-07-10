@@ -1,5 +1,9 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Entities;
+using FlowEngine.Core.Enums;
+using FlowEngine.Core.Scripting;
 using FlowEngine.Plugins.Standard;
 using FlowEngine.Runtime.Registry;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -67,5 +71,68 @@ public class ParameterHydratorTests
         await _hydrator.HydrateAsync(node, resolved);
 
         Assert.Equal("https://example.com", node.Url);
+    }
+
+    [Fact]
+    public async Task Hydrate_String_To_Script_Sets_SourceAndDefaults()
+    {
+        var node = new ScriptTestNode();
+        var resolved = new Dictionary<string, object>
+        {
+            ["expression"] = "$json.value > 0"
+        };
+
+        await _hydrator.HydrateAsync(node, resolved);
+
+        Assert.NotNull(node.Expression);
+        Assert.Equal("$json.value > 0", node.Expression.Source);
+        Assert.Equal(ScriptLanguage.JavaScript, node.Expression.Language);
+        Assert.Equal(ScriptReturnType.String, node.Expression.ReturnType);
+    }
+
+    [Fact]
+    public async Task Hydrate_JsonElement_To_Script_Deserializes()
+    {
+        var node = new ScriptTestNode();
+        var jsonStr = """{"expression": {"source": "$json.value > 0", "returnType": "bool"}}""";
+        var raw = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(jsonStr)!;
+        var resolved = raw.ToDictionary(kv => kv.Key, kv => (object)kv.Value);
+
+        await _hydrator.HydrateAsync(node, resolved);
+
+        Assert.NotNull(node.Expression);
+        Assert.Equal("$json.value > 0", node.Expression.Source);
+        Assert.Equal(ScriptReturnType.Bool, node.Expression.ReturnType);
+    }
+
+    [Fact]
+    public async Task Hydrate_JsonNode_To_DictionaryOfScript_Deserializes()
+    {
+        var node = new ScriptTestNode();
+        var jsonStr = """{"mappings": {"a": {"source": "1 + 1"}, "b": {"source": "2 + 2"}}}""";
+        var raw = JsonSerializer.Deserialize<Dictionary<string, JsonNode>>(jsonStr)!;
+        var resolved = raw.ToDictionary(kv => kv.Key, kv => (object)kv.Value);
+
+        await _hydrator.HydrateAsync(node, resolved);
+
+        Assert.NotNull(node.Mappings);
+        Assert.Equal(2, node.Mappings.Count);
+        Assert.Equal("1 + 1", node.Mappings["a"].Source);
+        Assert.Equal("2 + 2", node.Mappings["b"].Source);
+    }
+
+    private class ScriptTestNode : INodeType
+    {
+        public string TypeName => "scriptTest";
+        public string DisplayName => "Script Test";
+        public string Category => "Test";
+        public string Icon => "test";
+        public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
+        public IReadOnlyList<PortDefinition> Ports { get; } = [];
+        public bool DefaultIsEntry => false;
+        public Script Expression { get; set; } = Script.Empty;
+        public Dictionary<string, Script> Mappings { get; set; } = [];
+        public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+            => Task.FromResult(new NodeExecutionResult { Success = true });
     }
 }

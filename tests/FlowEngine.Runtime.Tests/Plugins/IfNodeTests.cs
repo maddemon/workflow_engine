@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Scripting;
 using FlowEngine.Plugins.Standard;
 using FlowEngine.Runtime.Expressions;
@@ -18,9 +19,9 @@ using Xunit;
 namespace FlowEngine.Runtime.Tests.Plugins;
 
 /// <summary>
-/// IfNode 单元测试：验证 Condition 经工厂 ParameterResolver 求值（统一表达式引擎）后，
-/// 按结果路由到 True/False 分支，且缺失 condition 时显式报错。
-/// 对应 review 发现 A4（IfNode 自写解析器已删除，改走统一表达式引擎）。
+/// IfNode 单元测试：验证 Condition 改为 <see cref="Script"/> 类型后，
+/// 由工厂预求值并写入 ResolvedValue，节点按结果路由到 True/False 分支，
+/// 且缺失 Condition 或表达式错误时显式报错。
 /// </summary>
 public sealed class IfNodeTests
 {
@@ -34,6 +35,7 @@ public sealed class IfNodeTests
 
     private static async Task<NodeExecutionContext> BuildContextAsync(
         NodeExecutionContextFactory factory,
+        IfNode nodeInstance,
         Dictionary<string, object> config,
         JsonNode? inputData)
     {
@@ -55,7 +57,7 @@ public sealed class IfNodeTests
             new Workflow { Id = Guid.NewGuid(), Name = "t" },
             new ExecutionRecord { Id = Guid.NewGuid() },
             nodeDef,
-            new IfNode(),
+            nodeInstance,
             inputs,
             new Dictionary<string, DataBatch>(),
             new Dictionary<string, DataBatch>(),
@@ -67,10 +69,11 @@ public sealed class IfNodeTests
     public async Task ExecuteAsync_ConditionTrue_RoutesToTrueBranch()
     {
         var factory = BuildFactory(new NullCredentialAccessor());
+        var node = new IfNode();
         var config = new Dictionary<string, object> { ["condition"] = "$json.status === 'active'" };
-        var context = await BuildContextAsync(factory, config, JsonNode.Parse("{\"status\":\"active\"}"));
+        var context = await BuildContextAsync(factory, node, config, JsonNode.Parse("{\"status\":\"active\"}"));
 
-        var result = await new IfNode().ExecuteAsync(context, CancellationToken.None);
+        var result = await node.ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(0, result.BranchIndex); // True 端口
@@ -81,10 +84,11 @@ public sealed class IfNodeTests
     public async Task ExecuteAsync_ConditionFalse_RoutesToFalseBranch()
     {
         var factory = BuildFactory(new NullCredentialAccessor());
+        var node = new IfNode();
         var config = new Dictionary<string, object> { ["condition"] = "$json.status === 'active'" };
-        var context = await BuildContextAsync(factory, config, JsonNode.Parse("{\"status\":\"inactive\"}"));
+        var context = await BuildContextAsync(factory, node, config, JsonNode.Parse("{\"status\":\"inactive\"}"));
 
-        var result = await new IfNode().ExecuteAsync(context, CancellationToken.None);
+        var result = await node.ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(1, result.BranchIndex); // False 端口
@@ -94,14 +98,48 @@ public sealed class IfNodeTests
     public async Task ExecuteAsync_MissingCondition_ReturnsError()
     {
         var factory = BuildFactory(new NullCredentialAccessor());
+        var node = new IfNode();
         var config = new Dictionary<string, object>(); // 无 condition 键
-        var context = await BuildContextAsync(factory, config, null);
+        var context = await BuildContextAsync(factory, node, config, null);
 
-        var result = await new IfNode().ExecuteAsync(context, CancellationToken.None);
+        var result = await node.ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.NotNull(result.Error);
         Assert.Equal("MissingCondition", result.Error!.Code);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_ScriptObjectCondition_Works()
+    {
+        var factory = BuildFactory(new NullCredentialAccessor());
+        var node = new IfNode();
+        var config = new Dictionary<string, object>
+        {
+            ["condition"] = new Script
+            {
+                Source = "$json.value > 10",
+                Language = ScriptLanguage.JavaScript,
+                ReturnType = ScriptReturnType.Bool
+            }
+        };
+        var context = await BuildContextAsync(factory, node, config, JsonNode.Parse("{\"value\":15}"));
+
+        var result = await node.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.True(result.Success, result.Error?.Message);
+        Assert.Equal(0, result.BranchIndex);
+    }
+
+    [Fact]
+    public async Task CreateAsync_ConditionSyntaxError_ThrowsScriptErrorException()
+    {
+        var factory = BuildFactory(new NullCredentialAccessor());
+        var node = new IfNode();
+        var config = new Dictionary<string, object> { ["condition"] = "$json.status === " }; // 语法错误
+
+        await Assert.ThrowsAsync<ScriptErrorException>(() =>
+            BuildContextAsync(factory, node, config, JsonNode.Parse("{\"status\":\"active\"}")));
     }
 
     private sealed class NullCredentialAccessor : ICredentialAccessor

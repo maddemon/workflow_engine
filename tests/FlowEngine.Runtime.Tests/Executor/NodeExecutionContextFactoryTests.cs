@@ -1,5 +1,7 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Runtime.Credentials;
@@ -29,6 +31,22 @@ public sealed class NodeExecutionContextFactoryTests
                     new ParameterDefinition { Name = "message", DisplayName = "Message", Required = true },
                     new ParameterDefinition { Name = "count", DisplayName = "Count", DefaultValue = 1 },
                     new ParameterDefinition { Name = "url", DisplayName = "URL" },
+                ],
+                Ports =
+                [
+                    new PortDefinition { Name = "input", Direction = PortDirection.Input, Type = PortType.Main },
+                    new PortDefinition { Name = "output", Direction = PortDirection.Output, Type = PortType.Main },
+                ],
+            },
+            new NodeTypeDescriptor
+            {
+                TypeName = "scriptNode",
+                DisplayName = "Script Node",
+                Parameters =
+                [
+                    new ParameterDefinition { Name = "expression", DisplayName = "Expression", Type = ParameterType.Script, Hint = PresentationHint.Expression },
+                    new ParameterDefinition { Name = "code", DisplayName = "Code", Type = ParameterType.Script, Hint = PresentationHint.Script },
+                    new ParameterDefinition { Name = "mapping", DisplayName = "Mapping", Type = ParameterType.Json, Hint = PresentationHint.Expression },
                 ],
                 Ports =
                 [
@@ -217,6 +235,105 @@ public sealed class NodeExecutionContextFactoryTests
                 0, ct));
     }
 
+    [Fact]
+    public async Task CreateAsync_PreEvaluatesExpressionScriptParameter()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var workflow = new Workflow { Id = Guid.NewGuid(), Name = "Test" };
+        var execution = new ExecutionRecord { Id = Guid.NewGuid(), WorkflowDefinitionId = workflow.Id };
+        var node = new NodeDefinition
+        {
+            Id = Guid.NewGuid(),
+            TypeName = "scriptNode",
+            Name = "ScriptNode",
+            Parameters = new Dictionary<string, object>
+            {
+                ["expression"] = new Script { Source = "1 + 1", ReturnType = ScriptReturnType.Number }
+            }
+        };
+        var instance = new ScriptNodeInstance();
+
+        var context = await _factory.CreateAsync(
+            workflow, execution, node, instance,
+            new Dictionary<string, DataBatch>(),
+            new Dictionary<string, DataBatch>(),
+            new Dictionary<string, DataBatch>(),
+            0, ct);
+
+        Assert.True(context.RawParameters.ContainsKey("expression"));
+        var rawScript = Assert.IsType<Script>(context.RawParameters["expression"]);
+        Assert.NotNull(rawScript.ResolvedValue);
+        Assert.Equal(2, rawScript.ResolvedValue.GetValue<int>());
+
+        Assert.True(context.ResolvedParameters.ContainsKey("expression"));
+        var resolvedScript = Assert.IsType<Script>(context.ResolvedParameters["expression"]);
+        Assert.NotNull(resolvedScript.ResolvedValue);
+        Assert.Equal(2, resolvedScript.ResolvedValue.GetValue<int>());
+    }
+
+    [Fact]
+    public async Task CreateAsync_DoesNotPreEvaluateScriptHintParameter()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var workflow = new Workflow { Id = Guid.NewGuid(), Name = "Test" };
+        var execution = new ExecutionRecord { Id = Guid.NewGuid(), WorkflowDefinitionId = workflow.Id };
+        var node = new NodeDefinition
+        {
+            Id = Guid.NewGuid(),
+            TypeName = "scriptNode",
+            Name = "ScriptNode",
+            Parameters = new Dictionary<string, object>
+            {
+                ["code"] = new Script { Source = "return 42;", ReturnType = ScriptReturnType.Number }
+            }
+        };
+        var instance = new ScriptNodeInstance();
+
+        var context = await _factory.CreateAsync(
+            workflow, execution, node, instance,
+            new Dictionary<string, DataBatch>(),
+            new Dictionary<string, DataBatch>(),
+            new Dictionary<string, DataBatch>(),
+            0, ct);
+
+        var rawScript = Assert.IsType<Script>(context.RawParameters["code"]);
+        Assert.Null(rawScript.ResolvedValue);
+    }
+
+    [Fact]
+    public async Task CreateAsync_PreEvaluatesDictionaryOfScriptWithExpressionHint()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var workflow = new Workflow { Id = Guid.NewGuid(), Name = "Test" };
+        var execution = new ExecutionRecord { Id = Guid.NewGuid(), WorkflowDefinitionId = workflow.Id };
+        var mapping = new Dictionary<string, Script>
+        {
+            ["a"] = new Script { Source = "1 + 1", ReturnType = ScriptReturnType.Number }
+        };
+        var node = new NodeDefinition
+        {
+            Id = Guid.NewGuid(),
+            TypeName = "scriptNode",
+            Name = "ScriptNode",
+            Parameters = new Dictionary<string, object>
+            {
+                ["mapping"] = mapping
+            }
+        };
+        var instance = new ScriptNodeInstance();
+
+        var context = await _factory.CreateAsync(
+            workflow, execution, node, instance,
+            new Dictionary<string, DataBatch>(),
+            new Dictionary<string, DataBatch>(),
+            new Dictionary<string, DataBatch>(),
+            0, ct);
+
+        var rawDict = Assert.IsType<Dictionary<string, Script>>(context.RawParameters["mapping"]);
+        Assert.NotNull(rawDict["a"].ResolvedValue);
+        Assert.Equal(2, rawDict["a"].ResolvedValue!.GetValue<int>());
+    }
+
     private sealed class TestNodeInstance : INodeType
     {
         public string TypeName => "testNode";
@@ -230,6 +347,26 @@ public sealed class NodeExecutionContextFactoryTests
             new PortDefinition { Name = "output", Direction = PortDirection.Output, Type = PortType.Main },
         ];
         public bool DefaultIsEntry => false;
+        public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken ct) =>
+            Task.FromResult(new NodeExecutionResult { Success = true });
+    }
+
+    private sealed class ScriptNodeInstance : INodeType
+    {
+        public string TypeName => "scriptNode";
+        public string DisplayName => "Script Node";
+        public string Category => "Test";
+        public string Icon => "test";
+        public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
+        public IReadOnlyList<PortDefinition> Ports =>
+        [
+            new PortDefinition { Name = "input", Direction = PortDirection.Input, Type = PortType.Main },
+            new PortDefinition { Name = "output", Direction = PortDirection.Output, Type = PortType.Main },
+        ];
+        public bool DefaultIsEntry => false;
+        public Script Expression { get; set; } = Script.Empty;
+        public Script Code { get; set; } = Script.Empty;
+        public Dictionary<string, Script> Mapping { get; set; } = [];
         public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken ct) =>
             Task.FromResult(new NodeExecutionResult { Success = true });
     }

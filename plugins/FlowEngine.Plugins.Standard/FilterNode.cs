@@ -6,13 +6,13 @@ using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Scripting;
-using Jint;
+using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
 /// 过滤节点，根据条件保留或丢弃数据项。
-/// <c>Condition</c> 为 JS 表达式，在逐项求值时支持 <c>$json</c>/<c>$input</c>/<c>$credentials</c> 等所有 <c>$</c> 前缀变量。
+/// <c>Condition</c> 为 <see cref="Script"/> 类型（Hint=Script），在逐项求值时支持 <c>$json</c>/<c>$input</c>/<c>$credentials</c> 等所有 <c>$</c> 前缀变量。
 /// <c>Conditions</c> 列表为结构化条件（LeftValue/Operation/RightValue），独立于表达式求值。
 /// </summary>
 public sealed class FilterNode : INodeType
@@ -34,11 +34,11 @@ public sealed class FilterNode : INodeType
 
     /// <summary>
     /// 过滤条件表达式（逐项求值）。支持 <c>$json.field === 'value'</c>、<c>$input.item().count > 10</c> 等。
-    /// 由节点在执行时逐项求值（不经 ParameterResolver 预求值）。
+    /// 类型为 <see cref="Script"/>，由节点在执行时逐项求值（不经工厂预求值）。
     /// </summary>
     [Description("Condition expression evaluated per item (e.g. $json.status === 'active').")]
     [Hint(PresentationHint.Script)]
-    public string Condition { get; set; } = string.Empty;
+    public Script Condition { get; set; } = Script.Empty;
 
     /// <summary>
     /// 条件组合方式。
@@ -64,7 +64,7 @@ public sealed class FilterNode : INodeType
     public bool DefaultIsEntry => false;
 
     /// <inheritdoc />
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
         var inputBatch = context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch)
             ? batch
@@ -73,23 +73,17 @@ public sealed class FilterNode : INodeType
         var keptItems = new List<DataItem>();
         var discardedItems = new List<DataItem>();
 
-        // 预编译主条件表达式
-        Prepared<Acornima.Ast.Script>? preparedCondition = null;
-        if (!string.IsNullOrWhiteSpace(Condition))
-        {
-            preparedCondition = JsEngine.PrepareExpression(Condition);
-        }
-
-        var allItems = inputBatch.Items.Select(i => (object?)i.Data).ToList();
-
         // 单引擎复用：全局变量只注入一次，逐项变量在循环内覆盖。
         using var engine = JsEngine.Create();
         engine.ApplyGlobalVariables(context);
 
+        var scriptCache = context.ScriptCache ?? new ScriptCache(Options.Create(new JsEngineOptions()));
+        var scriptContext = ScriptContext.From(context);
+
         for (var itemIndex = 0; itemIndex < inputBatch.Items.Count; itemIndex++)
         {
             var item = inputBatch.Items[itemIndex];
-            var matches = EvaluateItemCondition(engine, item.Data, allItems, itemIndex, preparedCondition, context);
+            var matches = await EvaluateItemConditionAsync(engine, item.Data, itemIndex, scriptCache, scriptContext, context, cancellationToken).ConfigureAwait(false);
             if (matches)
             {
                 keptItems.Add(item);
@@ -100,28 +94,33 @@ public sealed class FilterNode : INodeType
             }
         }
 
-        return Task.FromResult(new NodeExecutionResult
+        return new NodeExecutionResult
         {
             Success = true,
             Output = new DataBatch { Items = keptItems }
-        });
+        };
     }
 
     /// <summary>
     /// 逐项求值：对单个数据项评估主条件 + 结构化条件组合。
     /// </summary>
-    private bool EvaluateItemCondition(
+    private async Task<bool> EvaluateItemConditionAsync(
         JsEngine engine,
         JsonNode? data,
-        List<object?> allItems,
         int itemIndex,
-        Prepared<Acornima.Ast.Script>? preparedCondition,
-        NodeExecutionContext context)
+        IScriptCache scriptCache,
+        ScriptContext scriptContext,
+        NodeExecutionContext context,
+        CancellationToken cancellationToken)
     {
         // 主条件（表达式）
-        if (preparedCondition is not null)
+        if (!string.IsNullOrWhiteSpace(Condition.Source))
         {
-            var mainResult = EvaluateExpressionForItem(engine, data, allItems, itemIndex, preparedCondition.Value, context);
+            var prepared = scriptCache.GetOrPrepare(Condition);
+            using var session = prepared.CreateSession(engine);
+            var result = await session.RunForItemAsync(prepared, scriptContext, data, itemIndex, cancellationToken).ConfigureAwait(false);
+            var mainResult = result.ToBoolean();
+
             if (Conditions.Count == 0)
             {
                 return mainResult;
@@ -148,50 +147,6 @@ public sealed class FilterNode : INodeType
         return Combinator == FilterCombinator.And
             ? results.All(r => r)
             : results.Any(r => r);
-    }
-
-    /// <summary>
-    /// 用 JsEngine 对单个数据项求值表达式。引擎由调用方复用，此处仅覆盖逐项变量。
-    /// </summary>
-    private bool EvaluateExpressionForItem(
-        JsEngine engine,
-        JsonNode? data,
-        List<object?> allItems,
-        int itemIndex,
-        Prepared<Acornima.Ast.Script> preparedCondition,
-        NodeExecutionContext context)
-    {
-        engine.ApplyItemScope(context, data, allItems, itemIndex);
-
-        try
-        {
-            var result = engine.EvaluatePrepared(preparedCondition);
-            var clrValue = JsEngine.ToClrValue(result);
-            return ToBoolean(clrValue);
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
-    /// <summary>
-    /// 将 JsEngine 求值结果转换为布尔值。
-    /// </summary>
-    private static bool ToBoolean(object? value)
-    {
-        if (value is bool b) return b;
-        if (value is int i) return i != 0;
-        if (value is long l) return l != 0;
-        if (value is double d) return d != 0;
-        if (value is string s)
-        {
-            if (bool.TryParse(s, out var boolResult)) return boolResult;
-            if (s.Equals("true", StringComparison.OrdinalIgnoreCase)) return true;
-            if (s.Equals("false", StringComparison.OrdinalIgnoreCase)) return false;
-            return !string.IsNullOrEmpty(s);
-        }
-        return value is not null;
     }
 
     /// <summary>

@@ -11,14 +11,19 @@ namespace FlowEngine.Core.Scripting;
 public sealed class PreparedScriptSession : IDisposable
 {
     private readonly JsEngine _engine;
+    private readonly bool _ownsEngine;
     private bool _disposed;
 
     /// <summary>
     /// 初始化 <see cref="PreparedScriptSession"/>。
     /// </summary>
-    public PreparedScriptSession(JsEngine engine)
+    /// <param name="engine">要绑定的 JS 引擎。</param>
+    /// <param name="ownsEngine">为 <c>true</c> 时 disposing 会话将同时释放引擎；
+    /// 为 <c>false</c> 时引擎由调用方负责释放（用于逐 item 复用同一引擎的场景）。</param>
+    public PreparedScriptSession(JsEngine engine, bool ownsEngine = false)
     {
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
+        _ownsEngine = ownsEngine;
     }
 
     /// <summary>
@@ -124,7 +129,10 @@ public sealed class PreparedScriptSession : IDisposable
         if (!_disposed)
         {
             _disposed = true;
-            _engine.Dispose();
+            if (_ownsEngine)
+            {
+                _engine.Dispose();
+            }
         }
     }
 }

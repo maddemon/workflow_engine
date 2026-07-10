@@ -1,7 +1,9 @@
 using System.ComponentModel;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Scripting;
 using FlowEngine.Runtime.Registry;
 
 namespace FlowEngine.Runtime.Tests.Registry;
@@ -37,6 +39,32 @@ public class ParameterDiscovererTests
         }
     }
 
+    private class ScriptNode : INodeType
+    {
+        public string TypeName => "scriptNode";
+        public string DisplayName => "Script Node";
+        public string Category => "Core";
+        public string Icon => "code";
+        public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
+        public IReadOnlyList<PortDefinition> Ports { get; } = [];
+        public bool DefaultIsEntry => false;
+
+        [Hint(PresentationHint.Expression)]
+        public Script Expression { get; set; } = Script.Empty;
+
+        [Hint(PresentationHint.Script)]
+        public Script Code { get; set; } = Script.Empty;
+
+        public Dictionary<string, Script> Mappings { get; set; } = [];
+
+        public Task<NodeExecutionResult> ExecuteAsync(
+            NodeExecutionContext context,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(new NodeExecutionResult { Success = true });
+        }
+    }
+
     [Fact]
     public void Discover_Array_Of_ComplexType_Generates_ItemDefinition()
     {
@@ -63,5 +91,33 @@ public class ParameterDiscovererTests
         var tagsParam = parameters.Single(p => p.Name == "tags");
         Assert.Equal(ParameterType.Array, tagsParam.Type);
         Assert.Null(tagsParam.ItemDefinition);
+    }
+
+    [Fact]
+    public void Discover_ScriptProperty_ReturnsScriptTypeAndHint()
+    {
+        var discoverer = new ParameterDiscoverer();
+
+        var parameters = discoverer.Discover(typeof(ScriptNode));
+
+        var expressionParam = parameters.Single(p => p.Name == "expression");
+        Assert.Equal(ParameterType.Script, expressionParam.Type);
+        Assert.Equal(PresentationHint.Expression, expressionParam.Hint);
+
+        var codeParam = parameters.Single(p => p.Name == "code");
+        Assert.Equal(ParameterType.Script, codeParam.Type);
+        Assert.Equal(PresentationHint.Script, codeParam.Hint);
+    }
+
+    [Fact]
+    public void Discover_DictionaryOfScriptProperty_ReturnsJsonTypeAndKeyValueEditorHint()
+    {
+        var discoverer = new ParameterDiscoverer();
+
+        var parameters = discoverer.Discover(typeof(ScriptNode));
+
+        var mappingsParam = parameters.Single(p => p.Name == "mappings");
+        Assert.Equal(ParameterType.Json, mappingsParam.Type);
+        Assert.Equal(PresentationHint.KeyValueEditor, mappingsParam.Hint);
     }
 }
