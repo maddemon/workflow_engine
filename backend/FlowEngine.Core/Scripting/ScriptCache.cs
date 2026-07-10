@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Security.Cryptography;
 using System.Text;
+using Acornima;
 using FlowEngine.Core.Exceptions;
 using Microsoft.Extensions.Options;
 
@@ -105,220 +106,41 @@ public sealed class ScriptCache : IScriptCache
             return;
         }
 
-        foreach (var identifier in _options.ForbiddenIdentifiers)
+        var tokenizer = new Tokenizer(source);
+        var context = new TokenizerContext();
+
+        try
         {
-            if (ContainsWord(source, identifier))
+            while (true)
             {
-                throw new ScriptErrorException(script, $"脚本包含禁止使用的标识符 '{identifier}'");
-            }
-        }
-    }
-
-    private static bool ContainsWord(string text, string word)
-    {
-        var inSingle = false;
-        var inDouble = false;
-        var inTemplate = false;
-        var i = 0;
-
-        while (i < text.Length)
-        {
-            var c = text[i];
-
-            if (inSingle || inDouble || inTemplate)
-            {
-                if (c == '\\')
+                tokenizer.Next(in context);
+                var token = tokenizer.Current;
+                if (token.Kind == TokenKind.EOF)
                 {
-                    i += 2;
-                    continue;
+                    break;
                 }
 
-                if (inSingle && c == '\'') inSingle = false;
-                else if (inDouble && c == '"') inDouble = false;
-                else if (inTemplate && c == '`') inTemplate = false;
-                i++;
-                continue;
-            }
-
-            if (c == '/' && i + 1 < text.Length && text[i + 1] == '/')
-            {
-                while (i < text.Length && text[i] != '\n') i++;
-                continue;
-            }
-
-            if (c == '/' && i + 1 < text.Length && text[i + 1] == '*')
-            {
-                i += 2;
-                while (i < text.Length && !(text[i] == '*' && i + 1 < text.Length && text[i + 1] == '/'))
+                if (token.Kind is TokenKind.Identifier or TokenKind.Keyword
+                    && token.Value is string name)
                 {
-                    i++;
-                }
-
-                if (i < text.Length) i += 2;
-                continue;
-            }
-
-            // 正则字面量：/.../flags；跳过其内容避免误判禁止标识符。
-            if (c == '/' && IsRegexStart(text, i))
-            {
-                i++; // 跳过起始 /
-                while (i < text.Length && text[i] != '/')
-                {
-                    if (text[i] == '\\' && i + 1 < text.Length)
+                    foreach (var identifier in _options.ForbiddenIdentifiers)
                     {
-                        i += 2;
-                        continue;
+                        if (name.Equals(identifier, StringComparison.OrdinalIgnoreCase))
+                        {
+                            throw new ScriptErrorException(script, $"脚本包含禁止使用的标识符 '{identifier}'");
+                        }
                     }
-                    i++;
-                }
-
-                if (i < text.Length) i++; // 跳过结束 /
-                while (i < text.Length && IsRegexFlag(text[i])) i++; // 跳过 flags
-                continue;
-            }
-
-            if (c == '\'') { inSingle = true; i++; continue; }
-            if (c == '"') { inDouble = true; i++; continue; }
-            if (c == '`') { inTemplate = true; i++; continue; }
-
-            if (text.Length - i >= word.Length
-                && string.Equals(text.Substring(i, word.Length), word, StringComparison.OrdinalIgnoreCase))
-            {
-                var before = i == 0 || !IsIdentifierChar(text[i - 1]);
-                var after = i + word.Length == text.Length || !IsIdentifierChar(text[i + word.Length]);
-                if (before && after)
-                {
-                    return true;
                 }
             }
-
-            i++;
         }
-
-        return false;
+        catch (ScriptErrorException)
+        {
+            throw;
+        }
+        catch
+        {
+            // 源码语法错误时 tokenizer 可能抛出异常；安全校验只关注真实标识符，
+            // 语法错误交给后续编译阶段处理。
+        }
     }
-
-    private static bool IsRegexStart(string text, int i)
-    {
-        if (i + 1 >= text.Length)
-        {
-            return false;
-        }
-
-        var next = text[i + 1];
-        if (next == '/' || next == '*')
-        {
-            return false; // 注释，不是正则
-        }
-
-        // 向前查找前一个非注释、非空白的有效字符，判断当前是否处于期望表达式的上下文。
-        var j = i - 1;
-        while (j >= 0)
-        {
-            // 先处理行注释边界：从当前位置回退到同一行的 // 之前。
-            if (text[j] == '\n')
-            {
-                var linePos = j - 1;
-                var foundLineComment = false;
-                while (linePos >= 0 && text[linePos] != '\n')
-                {
-                    if (linePos >= 1 && text[linePos] == '/' && text[linePos - 1] == '/')
-                    {
-                        j = linePos - 2;
-                        foundLineComment = true;
-                        break;
-                    }
-
-                    linePos--;
-                }
-
-                if (foundLineComment)
-                {
-                    continue;
-                }
-
-                break;
-            }
-
-            // 跳过空白字符（不跳过换行，换行在上面单独处理）。
-            while (j >= 0 && text[j] != '\n' && char.IsWhiteSpace(text[j]))
-            {
-                j--;
-            }
-
-            if (j < 0)
-            {
-                return true;
-            }
-
-            // 跳过块注释：回退到 /* 之前。
-            if (text[j] == '/' && j - 1 >= 0 && text[j - 1] == '*')
-            {
-                j -= 2;
-                while (j >= 1 && !(text[j] == '*' && text[j - 1] == '/'))
-                {
-                    j--;
-                }
-
-                if (j >= 1)
-                {
-                    j -= 2;
-                    continue;
-                }
-
-                return false; // 找不到匹配的 /*，保守地不视为正则
-            }
-
-            break;
-        }
-
-        if (j < 0)
-        {
-            return true;
-        }
-
-        var prev = text[j];
-
-        // 这些操作符/标点之后通常开始一个表达式，因此 / 更可能是正则。
-        if (prev is '(' or '[' or '{' or ',' or ':' or ';' or '?' or '!' or '~'
-            or '+' or '-' or '*' or '%' or '|' or '&' or '^' or '<' or '>' or '=')
-        {
-            return true;
-        }
-
-        // 如果前一个是标识符，需要判断是否为期望表达式的关键字（如 return /.../）。
-        if (IsIdentifierChar(prev))
-        {
-            var keywordStart = j;
-            while (keywordStart >= 0 && IsIdentifierChar(text[keywordStart]))
-            {
-                keywordStart--;
-            }
-
-            var keyword = text.Substring(keywordStart + 1, j - keywordStart).AsSpan();
-            return keyword.Equals("return", StringComparison.OrdinalIgnoreCase)
-                || keyword.Equals("throw", StringComparison.OrdinalIgnoreCase)
-                || keyword.Equals("case", StringComparison.OrdinalIgnoreCase)
-                || keyword.Equals("yield", StringComparison.OrdinalIgnoreCase)
-                || keyword.Equals("await", StringComparison.OrdinalIgnoreCase)
-                || keyword.Equals("typeof", StringComparison.OrdinalIgnoreCase)
-                || keyword.Equals("void", StringComparison.OrdinalIgnoreCase)
-                || keyword.Equals("delete", StringComparison.OrdinalIgnoreCase)
-                || keyword.Equals("new", StringComparison.OrdinalIgnoreCase)
-                || keyword.Equals("instanceof", StringComparison.OrdinalIgnoreCase)
-                || keyword.Equals("in", StringComparison.OrdinalIgnoreCase)
-                || keyword.Equals("of", StringComparison.OrdinalIgnoreCase)
-                || keyword.Equals("do", StringComparison.OrdinalIgnoreCase)
-                || keyword.Equals("else", StringComparison.OrdinalIgnoreCase);
-        }
-
-        return false;
-    }
-
-    private static bool IsRegexFlag(char c)
-    {
-        return c is 'g' or 'i' or 'm' or 's' or 'u' or 'y' or 'd' or 'v';
-    }
-
-    private static bool IsIdentifierChar(char c) => char.IsLetterOrDigit(c) || c == '_' || c == '$';
 }

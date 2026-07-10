@@ -132,4 +132,35 @@ public sealed class ScriptCacheTests
         Assert.NotNull(prepared);
     }
 
+    [Fact]
+    public void GetOrPrepare_ForbiddenIdentifierInRegexLiteralAfterStatement_IsAllowed()
+    {
+        var cache = CreateCache();
+        var script = new Script { Source = "var x = 1;\n/eval/gi.test('hello')" };
+
+        var prepared = cache.GetOrPrepare(script);
+
+        Assert.NotNull(prepared);
+    }
+
+    [Fact]
+    public void GetOrPrepare_ForbiddenIdentifierInRegexLiteralAfterStringWithSlashes_IsAllowed()
+    {
+        var cache = CreateCache();
+        var script = new Script { Source = "var url = \"https://example.com//path\";\n/eval/gi.test(url)" };
+
+        var prepared = cache.GetOrPrepare(script);
+
+        Assert.NotNull(prepared);
+    }
+
+    [Fact]
+    public void GetOrPrepare_ForbiddenIdentifierInReturnStatement_ThrowsScriptErrorException()
+    {
+        var cache = CreateCache();
+        var script = new Script { Source = "return process.env" };
+
+        Assert.Throws<ScriptErrorException>(() => cache.GetOrPrepare(script));
+    }
+
 }
