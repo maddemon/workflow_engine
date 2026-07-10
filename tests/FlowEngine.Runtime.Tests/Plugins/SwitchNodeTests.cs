@@ -3,6 +3,7 @@ using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Scripting;
 using FlowEngine.Plugins.Standard;
 using FlowEngine.Runtime.Expressions;
@@ -13,110 +14,123 @@ using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Runtime.Tests.Plugins;
 
-public class CodeSnippetToolNodeTests
+public class SwitchNodeTests
 {
-    private readonly CodeSnippetToolNode _node = new();
-
     [Fact]
-    public async Task Execute_MissingCode_ReturnsError()
+    public async Task Execute_ResolvedValue_RoutesToMatchingCase()
     {
-        var node = new CodeSnippetToolNode { Code = "" };
-        var context = CreateContext(new JsonObject());
-
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
-
-        Assert.False(result.Success);
-        Assert.Equal("MissingCode", result.Error?.Code);
-    }
-
-    [Fact]
-    public async Task Execute_SimpleCode_ReturnsResult()
-    {
-        var node = new CodeSnippetToolNode
+        var node = new SwitchNode
         {
-            Code = "return 42;"
+            Expression = new Script
+            {
+                Source = "$json.category",
+                Language = ScriptLanguage.JavaScript,
+                ReturnType = ScriptReturnType.String
+            }.WithResolvedValue(JsonValue.Create("b")),
+            Cases =
+            [
+                new SwitchCase { Name = "a", Label = "A", Value = "a" },
+                new SwitchCase { Name = "b", Label = "B", Value = "b" }
+            ]
         };
-        var context = CreateContext(new JsonObject());
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
-
-        Assert.True(result.Success, result.Error?.Message);
-        var data = result.Output.Items[0].Data;
-        Assert.NotNull(data);
-        Assert.Equal(42, data!.GetValue<int>());
-    }
-
-    [Fact]
-    public async Task Execute_CodeWithInput_AccessesInput()
-    {
-        var node = new CodeSnippetToolNode
-        {
-            Code = "return input;"
-        };
-        var input = new JsonObject { ["name"] = "Alice" };
-        var context = CreateContext(input);
-
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
-
-        Assert.True(result.Success, result.Error?.Message);
-        Assert.NotEmpty(result.Output.Items);
-        Assert.NotNull(result.Output.Items[0].Data);
-    }
-
-    [Fact]
-    public async Task Execute_CodeReturningObject_ReturnsJsonObject()
-    {
-        var node = new CodeSnippetToolNode
-        {
-            Code = "return { message: 'ok', count: 5 };"
-        };
-        var context = CreateContext(new JsonObject());
-
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
-
-        Assert.True(result.Success, result.Error?.Message);
-        var json = result.Output.Items[0].Data?.ToJsonString();
-        Assert.Contains("\"message\":\"ok\"", json!);
-        Assert.Contains("\"count\":5", json);
-    }
-
-    [Fact]
-    public async Task Execute_ScriptError_ReturnsCodeError()
-    {
-        var node = new CodeSnippetToolNode
-        {
-            Code = "throw new Error('test error');"
-        };
-        var context = CreateContext(new JsonObject());
-
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
-
-        Assert.False(result.Success);
-        Assert.Equal("CodeError", result.Error?.Code);
-    }
-
-    [Fact]
-    public async Task Execute_FactoryHydration_CodeParameterAsScript_Works()
-    {
-        var factory = BuildFactory();
-        var node = new CodeSnippetToolNode();
-        var config = new Dictionary<string, object>
-        {
-            ["code"] = "return input.value * 2;"
-        };
-        var context = await BuildContextAsync(factory, node, config, JsonNode.Parse("{\"value\":21}"));
+        var context = CreateContext(JsonNode.Parse("{\"category\":\"b\"}")!);
 
         var result = await node.ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
-        var data = result.Output.Items[0].Data;
-        Assert.NotNull(data);
-        Assert.Equal(42, data!.GetValue<int>());
+        Assert.Equal(1, result.BranchIndex);
+    }
+
+    [Fact]
+    public async Task Execute_ResolvedExpression_RoutesToMatchingCase()
+    {
+        var node = new SwitchNode
+        {
+            Expression = new Script
+            {
+                Source = "$json.category",
+                Language = ScriptLanguage.JavaScript,
+                ReturnType = ScriptReturnType.String
+            }.WithResolvedValue(JsonValue.Create("a")),
+            Cases =
+            [
+                new SwitchCase { Name = "a", Label = "A", Value = "a" },
+                new SwitchCase { Name = "b", Label = "B", Value = "b" }
+            ]
+        };
+
+        var context = CreateContext(JsonNode.Parse("{\"category\":\"a\"}")!);
+
+        var result = await node.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.True(result.Success, result.Error?.Message);
+        Assert.Equal(0, result.BranchIndex);
+    }
+
+    [Fact]
+    public async Task Execute_NoMatch_RoutesToDefault()
+    {
+        var node = new SwitchNode
+        {
+            Expression = new Script
+            {
+                Source = "$json.category",
+                Language = ScriptLanguage.JavaScript,
+                ReturnType = ScriptReturnType.String
+            }.WithResolvedValue(JsonValue.Create("z")),
+            Cases =
+            [
+                new SwitchCase { Name = "a", Label = "A", Value = "a" }
+            ]
+        };
+
+        var context = CreateContext(JsonNode.Parse("{\"category\":\"z\"}")!);
+
+        var result = await node.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.True(result.Success, result.Error?.Message);
+        Assert.Equal(1, result.BranchIndex); // default port index == Cases.Count
+    }
+
+    [Fact]
+    public async Task Execute_FactoryPreEvaluation_SyntaxError_ThrowsScriptErrorException()
+    {
+        var factory = BuildFactory();
+        var node = new SwitchNode();
+        var config = new Dictionary<string, object>
+        {
+            ["expression"] = "$json.invalid === ",
+            ["cases"] = "[{\"name\":\"a\",\"label\":\"A\",\"value\":\"a\"}]"
+        };
+
+        var ex = await Assert.ThrowsAsync<ScriptErrorException>(() =>
+            BuildContextAsync(factory, node, config, JsonNode.Parse("{\"invalid\":\"x\"}")));
+
+        Assert.Contains("预求值失败", ex.Message);
+    }
+
+    [Fact]
+    public async Task Execute_FactoryPreEvaluation_RoutesToMatchingCase()
+    {
+        var factory = BuildFactory();
+        var node = new SwitchNode();
+        var config = new Dictionary<string, object>
+        {
+            ["expression"] = "$json.category",
+            ["cases"] = "[{\"name\":\"a\",\"label\":\"A\",\"value\":\"a\"},{\"name\":\"b\",\"label\":\"B\",\"value\":\"b\"}]"
+        };
+        var context = await BuildContextAsync(factory, node, config, JsonNode.Parse("{\"category\":\"b\"}"));
+
+        var result = await node.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.True(result.Success, result.Error?.Message);
+        Assert.Equal(1, result.BranchIndex);
     }
 
     private static NodeExecutionContextFactory BuildFactory() =>
         new(
-            new NodeRegistry(new List<INodeType> { new CodeSnippetToolNode() }, NullLogger<NodeRegistry>.Instance),
+            new NodeRegistry(new List<INodeType> { new SwitchNode() }, NullLogger<NodeRegistry>.Instance),
             new ScriptCache(Options.Create(new JsEngineOptions())),
             new ParameterResolver(
                 NullLogger<ParameterResolver>.Instance,
@@ -127,7 +141,7 @@ public class CodeSnippetToolNodeTests
 
     private static async Task<NodeExecutionContext> BuildContextAsync(
         NodeExecutionContextFactory factory,
-        CodeSnippetToolNode nodeInstance,
+        SwitchNode nodeInstance,
         Dictionary<string, object> config,
         JsonNode? inputData)
     {
@@ -141,8 +155,8 @@ public class CodeSnippetToolNodeTests
         var nodeDef = new NodeDefinition
         {
             Id = Guid.NewGuid(),
-            TypeName = "codeTool",
-            Name = "codeTool1",
+            TypeName = "switch",
+            Name = "switch1",
             Parameters = config
         };
         return await factory.CreateAsync(
@@ -166,15 +180,15 @@ public class CodeSnippetToolNodeTests
             => Task.FromResult<CredentialValue?>(null);
     }
 
-    private static NodeExecutionContext CreateContext(JsonObject inputPayload)
+    private static NodeExecutionContext CreateContext(JsonNode inputPayload)
     {
         return new NodeExecutionContext
         {
             Node = new NodeDefinition
             {
                 Id = Guid.NewGuid(),
-                TypeName = "codeSnippetTool",
-                Name = "Test CodeSnippet",
+                TypeName = "switch",
+                Name = "Test Switch",
                 Parameters = [],
                 Ports = [],
                 ErrorStrategy = ErrorStrategy.Terminate
@@ -197,6 +211,11 @@ public class CodeSnippetToolNodeTests
             },
             RawParameters = new Dictionary<string, object>(),
             ResolvedParameters = new Dictionary<string, object>(),
+            GlobalVariables = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["$json"] = inputPayload,
+                ["input"] = inputPayload
+            },
             CancellationToken = CancellationToken.None
         };
     }

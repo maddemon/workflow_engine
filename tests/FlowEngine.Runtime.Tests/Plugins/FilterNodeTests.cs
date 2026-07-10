@@ -36,7 +36,10 @@ public sealed class FilterNodeTests
         var factory = new NodeExecutionContextFactory(
             registry,
             new ScriptCache(Options.Create(new JsEngineOptions())),
-            new ParameterResolver(NullLogger<ParameterResolver>.Instance),
+            new ParameterResolver(
+            NullLogger<ParameterResolver>.Instance,
+            Options.Create(new JsEngineOptions()),
+            new ScriptCache(Options.Create(new JsEngineOptions()))),
             new NullCredentialAccessor(),
             new HashSet<string>(StringComparer.OrdinalIgnoreCase));
         var nodeDef = new NodeDefinition

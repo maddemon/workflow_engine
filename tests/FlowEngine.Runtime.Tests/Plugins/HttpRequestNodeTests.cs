@@ -5,6 +5,7 @@ using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Scripting;
 using FlowEngine.Plugins.Standard;
 
 namespace FlowEngine.Runtime.Tests.Plugins;
@@ -22,7 +23,7 @@ public sealed class HttpRequestNodeTests
 
         var node = new HttpRequestNode
         {
-            Url = "'http://example.com/api'",
+            Url = ResolvedUrl("http://example.com/api"),
             Method = HttpMethodOption.Get,
             Authentication = HttpRequestAuthMode.BearerToken,
             CredentialId = credentialId.ToString()
@@ -49,7 +50,7 @@ public sealed class HttpRequestNodeTests
 
         var node = new HttpRequestNode
         {
-            Url = "'http://example.com/api'",
+            Url = ResolvedUrl("http://example.com/api"),
             Method = HttpMethodOption.Get,
             Authentication = HttpRequestAuthMode.BearerToken,
             CredentialId = credentialId.ToString()
@@ -200,6 +201,16 @@ public sealed class HttpRequestNodeTests
 
         public Task<CredentialValue?> GetCredentialByNameAsync(string name, CancellationToken ct = default) =>
             Task.FromResult<CredentialValue?>(null);
+    }
+
+    private static Script ResolvedUrl(string url)
+    {
+        return new Script
+        {
+            Source = $"'{url}'",
+            Language = ScriptLanguage.JavaScript,
+            ReturnType = ScriptReturnType.String
+        }.WithResolvedValue(JsonValue.Create(url));
     }
 
     private sealed class NullCredentialAccessor : ICredentialAccessor

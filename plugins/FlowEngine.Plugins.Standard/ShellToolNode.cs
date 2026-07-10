@@ -6,6 +6,7 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Scripting;
 
 namespace FlowEngine.Plugins.Standard;
@@ -48,11 +49,12 @@ public sealed class ShellToolNode : INodeType
 
     /// <summary>
     /// 要执行的命令，支持 JS 表达式（如 <c>'ls -la ' + input.path</c>）。
+    /// 纯命令需用引号包裹为 JS 字符串（如 <c>'echo hello'</c>）。
     /// </summary>
     [DisplayName("Command")]
-    [Description("Command to execute. Use JS expression to build command dynamically (e.g. 'echo ' + input.message).")]
+    [Description("Command to execute. Use JS expression to build command dynamically (e.g. 'echo ' + input.message). Plain commands must be quoted as a JS string.")]
     [Hint(PresentationHint.Expression)]
-    public string Command { get; set; } = string.Empty;
+    public Script Command { get; set; } = Script.Empty;
 
     /// <summary>
     /// Shell 类型。
@@ -102,13 +104,16 @@ public sealed class ShellToolNode : INodeType
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(Command))
+            if (Command is null || string.IsNullOrWhiteSpace(Command.Source))
             {
                 return context.ErrorResult("MissingCommand", "Command is required.");
             }
 
-            var inputData = context.InputData;
-            var resolvedCommand = ScriptEngine.EvaluateAsString(Command, inputData) ?? Command;
+            var resolvedCommand = Command.GetResult<string>();
+            if (string.IsNullOrWhiteSpace(resolvedCommand))
+            {
+                return context.ErrorResult("MissingCommand", "Command resolution failed.");
+            }
 
             var result = await ExecuteCommandAsync(resolvedCommand, cancellationToken).ConfigureAwait(false);
 
@@ -124,6 +129,10 @@ public sealed class ShellToolNode : INodeType
         catch (OperationCanceledException)
         {
             return context.ErrorResult("Cancelled", "Command execution was cancelled.");
+        }
+        catch (ScriptErrorException ex)
+        {
+            return context.ErrorResult("ScriptError", $"Command expression evaluation failed: {ex.Message}");
         }
         catch (Exception ex)
         {

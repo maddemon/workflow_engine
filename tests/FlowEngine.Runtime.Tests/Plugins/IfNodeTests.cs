@@ -29,7 +29,10 @@ public sealed class IfNodeTests
         new(
             new NodeRegistry(new List<INodeType> { new IfNode() }, NullLogger<NodeRegistry>.Instance),
             new ScriptCache(Options.Create(new JsEngineOptions())),
-            new ParameterResolver(NullLogger<ParameterResolver>.Instance),
+            new ParameterResolver(
+            NullLogger<ParameterResolver>.Instance,
+            Options.Create(new JsEngineOptions()),
+            new ScriptCache(Options.Create(new JsEngineOptions()))),
             creds,
             new HashSet<string>(StringComparer.OrdinalIgnoreCase));
 
@@ -138,8 +141,10 @@ public sealed class IfNodeTests
         var node = new IfNode();
         var config = new Dictionary<string, object> { ["condition"] = "$json.status === " }; // 语法错误
 
-        await Assert.ThrowsAsync<ScriptErrorException>(() =>
+        var ex = await Assert.ThrowsAsync<ScriptErrorException>(() =>
             BuildContextAsync(factory, node, config, JsonNode.Parse("{\"status\":\"active\"}")));
+
+        Assert.Contains("Unexpected end of input", ex.Message);
     }
 
     private sealed class NullCredentialAccessor : ICredentialAccessor

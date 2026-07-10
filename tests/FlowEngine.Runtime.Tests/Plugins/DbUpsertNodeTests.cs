@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Scripting;
 using FlowEngine.Plugins.Standard;
 using FlowEngine.Plugins.Standard.Data;
 using Microsoft.Data.Sqlite;
@@ -254,48 +255,7 @@ public sealed class DbUpsertNodeTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_Connection_ResolvedParameters_UsesEvaluatedValue()
-    {
-        const string connectionString = "Data Source=shared_resolved;Mode=Memory;Cache=Shared";
-        using var holder = CreateSharedMemoryConnection(connectionString);
-        await CreateUsersTableAsync(holder);
-
-        var node = new DbUpsertNode
-        {
-            Connection = "$credentials.db.connectionString",
-            Table = "users",
-            Mode = "insert",
-            Columns = new Dictionary<string, string>
-            {
-                ["id"] = "$json.id",
-                ["name"] = "$json.name",
-                ["email"] = "$json.email"
-            }
-        };
-
-        var resolvedParameters = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase)
-        {
-            ["connection"] = connectionString
-        };
-
-        var result = await node.ExecuteAsync(
-            CreateContext(new DataBatch
-            {
-                Items =
-                [
-                    new DataItem { Data = CreateUser(10, "Resolved", "resolved@example.com"), Success = true }
-                ]
-            }, resolvedParameters),
-            CancellationToken.None);
-
-        Assert.True(result.Success, result.Error?.Message);
-        var data = result.Output.Items[0].Data;
-        Assert.Equal(1, GetInt(data, "affectedRows"));
-        Assert.Equal(1, GetInt(data, "inserted"));
-    }
-
-    [Fact]
-    public async Task ExecuteAsync_Connection_ExpressionEvaluation_UsesEvaluatedValue()
+    public async Task ExecuteAsync_ResolvedConnection_UsesValue()
     {
         const string connectionString = "Data Source=shared_expr_eval;Mode=Memory;Cache=Shared";
         using var holder = CreateSharedMemoryConnection(connectionString);
@@ -303,15 +263,15 @@ public sealed class DbUpsertNodeTests
 
         var node = new DbUpsertNode
         {
-            Connection = "'Data Source=shared_expr_eval;Mode=Memory;Cache=Shared'",
+            Connection = ResolvedConnection(connectionString),
             Table = "users",
             Mode = "insert",
-            Columns = new Dictionary<string, string>
+            Columns = ToScriptColumns(new Dictionary<string, string>
             {
                 ["id"] = "$json.id",
                 ["name"] = "$json.name",
                 ["email"] = "$json.email"
-            }
+            })
         };
 
         var result = await node.ExecuteAsync(
@@ -337,7 +297,7 @@ public sealed class DbUpsertNodeTests
         {
             Table = "users",
             Mode = "insert",
-            Columns = new Dictionary<string, string> { ["id"] = "$json.id" }
+            Columns = ToScriptColumns(new Dictionary<string, string> { ["id"] = "$json.id" })
         };
 
         var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
@@ -351,9 +311,9 @@ public sealed class DbUpsertNodeTests
     {
         var node = new DbUpsertNode
         {
-            Connection = "Data Source=:memory:",
+            Connection = ResolvedConnection("Data Source=:memory:"),
             Mode = "insert",
-            Columns = new Dictionary<string, string> { ["id"] = "$json.id" }
+            Columns = ToScriptColumns(new Dictionary<string, string> { ["id"] = "$json.id" })
         };
 
         var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
@@ -367,7 +327,7 @@ public sealed class DbUpsertNodeTests
     {
         var node = new DbUpsertNode
         {
-            Connection = "Data Source=:memory:",
+            Connection = ResolvedConnection("Data Source=:memory:"),
             Table = "users",
             Mode = "insert"
         };
@@ -383,10 +343,10 @@ public sealed class DbUpsertNodeTests
     {
         var node = new DbUpsertNode
         {
-            Connection = "Data Source=:memory:",
+            Connection = ResolvedConnection("Data Source=:memory:"),
             Table = "users; DROP TABLE users--",
             Mode = "insert",
-            Columns = new Dictionary<string, string> { ["id"] = "$json.id" }
+            Columns = ToScriptColumns(new Dictionary<string, string> { ["id"] = "$json.id" })
         };
 
         var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
@@ -400,14 +360,14 @@ public sealed class DbUpsertNodeTests
     {
         var node = new DbUpsertNode
         {
-            Connection = "Data Source=:memory:",
+            Connection = ResolvedConnection("Data Source=:memory:"),
             Table = "users",
             Mode = "insert",
-            Columns = new Dictionary<string, string>
+            Columns = ToScriptColumns(new Dictionary<string, string>
             {
                 ["id"] = "$json.id",
                 ["name; DROP TABLE users--"] = "$json.name"
-            }
+            })
         };
 
         var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
@@ -421,15 +381,15 @@ public sealed class DbUpsertNodeTests
     {
         var node = new DbUpsertNode
         {
-            Connection = "Data Source=:memory:",
+            Connection = ResolvedConnection("Data Source=:memory:"),
             Table = "users",
             Mode = "upsert",
             KeyColumns = "id; DROP TABLE users--",
-            Columns = new Dictionary<string, string>
+            Columns = ToScriptColumns(new Dictionary<string, string>
             {
                 ["id"] = "$json.id",
                 ["name"] = "$json.name"
-            }
+            })
         };
 
         var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
@@ -443,15 +403,15 @@ public sealed class DbUpsertNodeTests
     {
         var node = new DbUpsertNode
         {
-            Connection = "Data Source=:memory:",
+            Connection = ResolvedConnection("Data Source=:memory:"),
             Table = "users",
             Mode = "upsert",
             KeyColumns = "missing",
-            Columns = new Dictionary<string, string>
+            Columns = ToScriptColumns(new Dictionary<string, string>
             {
                 ["id"] = "$json.id",
                 ["name"] = "$json.name"
-            }
+            })
         };
 
         var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
@@ -508,13 +468,31 @@ public sealed class DbUpsertNodeTests
     {
         return new DbUpsertNode
         {
-            Connection = connectionString,
+            Connection = ResolvedConnection(connectionString),
             Table = "users",
             Mode = mode,
             KeyColumns = keyColumns,
-            Columns = columns,
+            Columns = ToScriptColumns(columns),
             Dialect = dialect
         };
+    }
+
+    private static Script ResolvedConnection(string connectionString)
+    {
+        return new Script
+        {
+            Source = $"'{connectionString}'",
+            Language = ScriptLanguage.JavaScript,
+            ReturnType = ScriptReturnType.String
+        }.WithResolvedValue(JsonValue.Create(connectionString));
+    }
+
+    private static Dictionary<string, Script> ToScriptColumns(Dictionary<string, string> columns)
+    {
+        return columns.ToDictionary(
+            c => c.Key,
+            c => (Script)c.Value,
+            StringComparer.OrdinalIgnoreCase);
     }
 
     private static NodeExecutionContext CreateContext(DataBatch input, IReadOnlyDictionary<string, object>? resolvedParameters = null)

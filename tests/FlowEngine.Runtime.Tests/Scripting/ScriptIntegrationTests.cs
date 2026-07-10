@@ -29,7 +29,10 @@ public sealed class ScriptIntegrationTests
         return new NodeExecutionContextFactory(
             registry,
             new ScriptCache(Options.Create(new JsEngineOptions())),
-            new ParameterResolver(NullLogger<ParameterResolver>.Instance),
+            new ParameterResolver(
+            NullLogger<ParameterResolver>.Instance,
+            Options.Create(new JsEngineOptions()),
+            new ScriptCache(Options.Create(new JsEngineOptions()))),
             creds,
             new HashSet<string>(StringComparer.OrdinalIgnoreCase));
     }
@@ -135,6 +138,136 @@ public sealed class ScriptIntegrationTests
         var prepared2 = cache.GetOrPrepare(script);
 
         Assert.Equal(prepared1.CacheKey, prepared2.CacheKey);
+    }
+
+    [Fact]
+    public async Task HttpRequestNode_UrlExpression_IsPreEvaluated()
+    {
+        var factory = BuildFactory(new NullCredentialAccessor(), new HttpRequestNode());
+        var config = new Dictionary<string, object>
+        {
+            ["url"] = new Script { Source = "$json.base + '/api'", ReturnType = ScriptReturnType.String }
+        };
+        var items = new List<DataItem>
+        {
+            new() { Data = JsonNode.Parse("{\"base\":\"http://example.com\"}"), Success = true, SourceIndex = 0 }
+        };
+        var inputs = new Dictionary<string, DataBatch>
+        {
+            [FlowConstants.PortNames.Input] = new DataBatch { Items = items }
+        };
+        var nodeDef = new NodeDefinition
+        {
+            Id = Guid.NewGuid(),
+            TypeName = "httpRequest",
+            Name = "http1",
+            Parameters = config
+        };
+
+        var nodeInstance = new HttpRequestNode();
+        var context = await factory.CreateAsync(
+            new Workflow { Id = Guid.NewGuid(), Name = "t" },
+            new ExecutionRecord { Id = Guid.NewGuid() },
+            nodeDef,
+            nodeInstance,
+            inputs,
+            new Dictionary<string, DataBatch>(),
+            new Dictionary<string, DataBatch>(),
+            0,
+            CancellationToken.None);
+
+        Assert.Equal("$json.base + '/api'", nodeInstance.Url.Source);
+        Assert.NotNull(nodeInstance.Url.ResolvedValue);
+        Assert.Equal("http://example.com/api", nodeInstance.Url.GetResult<string>());
+        Assert.True(context.ResolvedParameters["url"] is Script resolved && resolved.GetResult<string>() == "http://example.com/api");
+    }
+
+    [Fact]
+    public async Task HttpToolNode_UrlExpression_IsPreEvaluated()
+    {
+        var factory = BuildFactory(new NullCredentialAccessor(), new HttpToolNode());
+        var config = new Dictionary<string, object>
+        {
+            ["url"] = new Script { Source = "'https://api.example.com/' + $json.segment", ReturnType = ScriptReturnType.String }
+        };
+        var items = new List<DataItem>
+        {
+            new() { Data = JsonNode.Parse("{\"segment\":\"users\"}"), Success = true, SourceIndex = 0 }
+        };
+        var inputs = new Dictionary<string, DataBatch>
+        {
+            [FlowConstants.PortNames.Input] = new DataBatch { Items = items }
+        };
+        var nodeDef = new NodeDefinition
+        {
+            Id = Guid.NewGuid(),
+            TypeName = "httpTool",
+            Name = "httpTool1",
+            Parameters = config
+        };
+
+        var nodeInstance = new HttpToolNode();
+        var context = await factory.CreateAsync(
+            new Workflow { Id = Guid.NewGuid(), Name = "t" },
+            new ExecutionRecord { Id = Guid.NewGuid() },
+            nodeDef,
+            nodeInstance,
+            inputs,
+            new Dictionary<string, DataBatch>(),
+            new Dictionary<string, DataBatch>(),
+            0,
+            CancellationToken.None);
+
+        Assert.Equal("'https://api.example.com/' + $json.segment", nodeInstance.Url.Source);
+        Assert.NotNull(nodeInstance.Url.ResolvedValue);
+        Assert.Equal("https://api.example.com/users", nodeInstance.Url.GetResult<string>());
+        Assert.True(context.ResolvedParameters["url"] is Script resolved && resolved.GetResult<string>() == "https://api.example.com/users");
+    }
+
+    [Fact]
+    public async Task SwitchNode_Expression_IsPreEvaluatedAndRoutesCorrectly()
+    {
+        var factory = BuildFactory(new NullCredentialAccessor(), new SwitchNode());
+        var config = new Dictionary<string, object>
+        {
+            ["expression"] = new Script { Source = "$json.category", ReturnType = ScriptReturnType.String },
+            ["cases"] = "[{\"name\":\"a\",\"label\":\"A\",\"value\":\"a\"},{\"name\":\"b\",\"label\":\"B\",\"value\":\"b\"}]"
+        };
+        var items = new List<DataItem>
+        {
+            new() { Data = JsonNode.Parse("{\"category\":\"b\"}"), Success = true, SourceIndex = 0 }
+        };
+        var inputs = new Dictionary<string, DataBatch>
+        {
+            [FlowConstants.PortNames.Input] = new DataBatch { Items = items }
+        };
+        var nodeDef = new NodeDefinition
+        {
+            Id = Guid.NewGuid(),
+            TypeName = "switch",
+            Name = "switch1",
+            Parameters = config
+        };
+
+        var nodeInstance = new SwitchNode();
+        var context = await factory.CreateAsync(
+            new Workflow { Id = Guid.NewGuid(), Name = "t" },
+            new ExecutionRecord { Id = Guid.NewGuid() },
+            nodeDef,
+            nodeInstance,
+            inputs,
+            new Dictionary<string, DataBatch>(),
+            new Dictionary<string, DataBatch>(),
+            0,
+            CancellationToken.None);
+
+        Assert.Equal("$json.category", nodeInstance.Expression.Source);
+        Assert.NotNull(nodeInstance.Expression.ResolvedValue);
+        Assert.Equal("b", nodeInstance.Expression.GetResult<string>());
+
+        var result = await nodeInstance.ExecuteAsync(context, CancellationToken.None);
+        Assert.True(result.Success, result.Error?.Message);
+        Assert.Equal(1, result.BranchIndex);
     }
 
     private sealed class NullCredentialAccessor : ICredentialAccessor

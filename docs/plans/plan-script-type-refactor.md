@@ -331,8 +331,22 @@ graph TD
 - [docs/architecture/expression-system.md](../architecture/expression-system.md)
 - [docs/tasks/task-script-type-design-review.md](../tasks/task-script-type-design-review.md)
 
-## 8. 变更记录
+## 8. 实施状态
+
+| 阶段 | 状态 | 任务文档 | 备注 |
+| ---- | ---- | -------- | ---- |
+| 阶段一：Core 类型与序列化 | 已完成 | - | 由前序任务交付 |
+| 阶段二：单节点试点（IfNode + FilterNode） | 已完成 | [task-script-type-phase2.md](../tasks/task-script-type-phase2.md) | 由前序任务交付 |
+| 阶段三：通用逻辑归位 | 已完成 | [task-script-type-phase3.md](../tasks/task-script-type-phase3.md) | `ScriptResult.ToClr()` / `JsonPath` / `ScriptEngine` Obsolete |
+| 阶段四：中间层完善 | 已完成 | [task-script-type-phase4.md](../tasks/task-script-type-phase4.md) | `ParameterResolver` / `JsEngineOptions.ForbiddenIdentifiers` / `NodeExecutionContextFactory` 适配 |
+| 阶段五：全量节点迁移 | 已完成 | [task-script-type-phase5.md](../tasks/task-script-type-phase5.md) | 全部节点已迁移，Code Review 修复项已完成，测试 724 个全部通过 |
+| 阶段六：DataQualityNode.Rules 类型变更 | 未开始 | - | 待实施 |
+| 阶段七：前端 DTO 与编辑器 | 未开始 | - | 待实施 |
+
+## 9. 变更记录
 
 | 日期 | 修改人 | 修改内容 |
 |------|--------|----------|
 | 2026-07-10 | Agent | 基于 script-type.md v7 制定分阶段开发计划 |
+| 2026-07-10 | Agent | 更新实施状态：阶段三已完成 |
+| 2026-07-10 | Agent | 完成阶段五 Code Review 修复项：统一脚本管线、补充工厂预求值集成测试，724 个测试全部通过 |

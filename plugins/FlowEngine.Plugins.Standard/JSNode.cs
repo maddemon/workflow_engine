@@ -6,8 +6,9 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Scripting;
-using Jint;
+using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -45,7 +46,7 @@ public sealed class JSNode : INodeType
     /// </summary>
     [Description("JavaScript code to execute. Access input via $input.all() or $input.first().")]
     [Hint(PresentationHint.CodeEditor)]
-    public string Code { get; set; } = string.Empty;
+    public Script Code { get; set; } = Script.Empty;
 
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
@@ -58,98 +59,127 @@ public sealed class JSNode : INodeType
     public bool DefaultIsEntry => false;
 
     /// <inheritdoc />
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(Code))
+            if (Code is null || string.IsNullOrWhiteSpace(Code.Source))
             {
-                return Task.FromResult(context.ErrorResult("MissingCode", "Code parameter is required."));
+                return context.ErrorResult("MissingCode", "Code parameter is required.");
             }
 
             var inputBatch = context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch)
                 ? batch
                 : new DataBatch();
 
+            var scriptCache = context.ScriptCache ?? new ScriptCache(Options.Create(new JsEngineOptions()));
+            var prepared = scriptCache.GetOrPrepare(Code);
+
             if (CodeMode == CodeExecutionMode.RunOnceForEachItem)
             {
-                return ExecuteForEachItem(inputBatch, context, cancellationToken);
+                return await ExecuteForEachItem(inputBatch, context, prepared, cancellationToken).ConfigureAwait(false);
             }
 
-            return ExecuteForAllItems(inputBatch, context, cancellationToken);
+            return await ExecuteForAllItems(inputBatch, context, prepared, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            return Task.FromResult(context.ErrorResult("Cancelled", "Code execution was cancelled."));
+            return context.ErrorResult("Cancelled", "Code execution was cancelled.");
         }
-        catch (Jint.Runtime.JavaScriptException ex)
+        catch (ScriptErrorException ex)
         {
-            return Task.FromResult(context.ErrorResult("CodeError", $"JavaScript execution error: {ex.Message}"));
+            return context.ErrorResult("CodeError", $"JavaScript execution error: {ex.Message}");
         }
         catch (Exception ex) when (ex.GetType().Name.Contains("Timeout"))
         {
-            return Task.FromResult(context.ErrorResult("Timeout", "Code execution timed out."));
+            return context.ErrorResult("Timeout", "Code execution timed out.");
         }
         catch (Exception ex)
         {
-            return Task.FromResult(context.ErrorResult("UnexpectedError", $"Unexpected error: {ex.Message}"));
+            return context.ErrorResult("UnexpectedError", $"Unexpected error: {ex.Message}");
         }
     }
 
-    private Task<NodeExecutionResult> ExecuteForAllItems(
+    private async Task<NodeExecutionResult> ExecuteForAllItems(
         DataBatch inputBatch,
         NodeExecutionContext context,
+        PreparedScript prepared,
         CancellationToken cancellationToken)
     {
-        using var js = JsEngine.Create();
+        var allItems = inputBatch.Items.Select(i => (object?)i.Data).ToList();
+        var currentItem = allItems.Count > 0 ? allItems[0] as JsonNode : null;
 
-        // Provide $input helper as a simple object
-        var inputItems = inputBatch.Items.Select(i => (object?)i.Data).ToList();
-        var inputHelper = new InputHelper(inputItems);
-        js.SetValue("$input", inputHelper);
+        var inputContext = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["executionId"] = context.ExecutionId,
+            ["runIndex"] = context.RunIndex,
+            ["nodeName"] = context.Node.Name,
+            ["nodeType"] = context.Node.TypeName,
+            ["workflowId"] = context.Workflow.Id,
+        };
 
-        var result = js.Run(Code);
-        var outputItem = js.ToDataItem(result);
+        var extraGlobals = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["$json"] = currentItem,
+            ["$input"] = new InputContainer(allItems, currentItem, context.RawParameters, inputContext),
+        };
 
-        return Task.FromResult(new NodeExecutionResult
+        var scriptContext = new ScriptContext(context, extraGlobals);
+        var result = await prepared.RunAsync(scriptContext, cancellationToken).ConfigureAwait(false);
+        var outputItem = ToDataItem(result);
+
+        return new NodeExecutionResult
         {
             Success = true,
             Output = new DataBatch { Items = [outputItem] }
-        });
+        };
     }
 
-    private Task<NodeExecutionResult> ExecuteForEachItem(
+    private async Task<NodeExecutionResult> ExecuteForEachItem(
         DataBatch inputBatch,
         NodeExecutionContext context,
+        PreparedScript prepared,
         CancellationToken cancellationToken)
     {
         var outputItems = new List<DataItem>();
 
-        foreach (var item in inputBatch.Items)
+        using var engine = JsEngine.Create();
+        engine.ApplyGlobalVariables(context);
+
+        using var session = prepared.CreateSession(engine);
+        var scriptContext = ScriptContext.From(context);
+
+        for (var itemIndex = 0; itemIndex < inputBatch.Items.Count; itemIndex++)
         {
-            using var js = JsEngine.Create();
-
-            // Provide $input helper for current item
-            var allItems = inputBatch.Items.Select(i => (object?)i.Data).ToList();
-            var inputHelper = new InputHelper(allItems, item.Data);
-            js.SetValue("$input", inputHelper);
-
-            var result = js.Run(Code);
-            var outputItem = js.ToDataItem(result);
-            outputItems.Add(outputItem);
+            var item = inputBatch.Items[itemIndex];
+            var result = await session.RunForItemAsync(
+                prepared, scriptContext, item.Data, itemIndex, cancellationToken).ConfigureAwait(false);
+            outputItems.Add(ToDataItem(result));
         }
 
-        return Task.FromResult(new NodeExecutionResult
+        return new NodeExecutionResult
         {
             Success = true,
             Output = new DataBatch { Items = outputItems }
-        });
+        };
+    }
+
+    private static DataItem ToDataItem(ScriptResult result)
+    {
+        var json = result.ToJson();
+        return new DataItem
+        {
+            Data = json,
+            Success = true,
+            SourceIndex = 0
+        };
     }
 }
 
 /// <summary>
 /// Helper class for $input in JS code.
 /// </summary>
+[Obsolete("JSNode 已迁移到 InputContainer，请使用 $input.all()/first()/item()/count()")]
 public sealed class InputHelper
 {
     private readonly List<object?> _allItems;

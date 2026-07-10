@@ -4,6 +4,8 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
+using FlowEngine.Core.Scripting;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -33,8 +35,8 @@ public sealed class SwitchNode : INodeType
     /// </summary>
     [DisplayName("Value")]
     [Description("Value to match against cases. Use JS expression to access input data (e.g. input.category).")]
-    [Hint(PresentationHint.Script)]
-    public string Expression { get; set; } = string.Empty;
+    [Hint(PresentationHint.Expression)]
+    public Script Expression { get; set; } = Script.Empty;
 
     /// <summary>
     /// Case 列表，每个 Case 路由到一个独立的输出端口。
@@ -63,17 +65,26 @@ public sealed class SwitchNode : INodeType
     /// <inheritdoc />
     public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
-            var match = Cases.FindIndex(c =>
-                string.Equals(c.Value, Expression, StringComparison.OrdinalIgnoreCase));
-
-        var inputBatch = context.Inputs.Values.FirstOrDefault() ?? new DataBatch();
-
-        return Task.FromResult(new NodeExecutionResult
+        try
         {
-            Success = true,
-            Output = inputBatch,
-            BranchIndex = match >= 0 ? match : Cases.Count
-        });
+            var value = Expression.GetResult<string>();
+
+            var match = Cases.FindIndex(c =>
+                string.Equals(c.Value, value, StringComparison.OrdinalIgnoreCase));
+
+            var inputBatch = context.Inputs.Values.FirstOrDefault() ?? new DataBatch();
+
+            return Task.FromResult(new NodeExecutionResult
+            {
+                Success = true,
+                Output = inputBatch,
+                BranchIndex = match >= 0 ? match : Cases.Count
+            });
+        }
+        catch (Exception ex)
+        {
+            return Task.FromResult(context.ErrorResult("UnexpectedError", $"Unexpected switch error: {ex.Message}"));
+        }
     }
 }
 

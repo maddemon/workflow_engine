@@ -3,7 +3,9 @@ using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Scripting;
+using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -39,7 +41,7 @@ public sealed class CalculatorToolNode : INodeType
     public bool DefaultIsEntry => false;
 
     /// <inheritdoc />
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
         try
         {
@@ -47,13 +49,20 @@ public sealed class CalculatorToolNode : INodeType
             var expression = GetExpression(context);
             if (string.IsNullOrWhiteSpace(expression))
             {
-                return Task.FromResult(context.ErrorResult("MissingExpression", "Math expression is required."));
+                return context.ErrorResult("MissingExpression", "Math expression is required.");
             }
 
-            // Evaluate expression using Jint
-            using var js = JsEngine.Create();
-            var result = js.Evaluate(expression);
-            var value = JsEngine.ToClrValue(result);
+            // Evaluate expression through the unified IScriptCache pipeline.
+            var scriptCache = context.ScriptCache ?? new ScriptCache(Options.Create(new JsEngineOptions()));
+            var script = new Script
+            {
+                Source = expression,
+                Language = ScriptLanguage.JavaScript,
+                ReturnType = ScriptReturnType.Number
+            };
+            var prepared = scriptCache.GetOrPrepare(script);
+            var result = await prepared.RunAsync(ScriptContext.From(context), cancellationToken).ConfigureAwait(false);
+            var value = result.ToClr();
 
             var outputBatch = new DataBatch
             {
@@ -72,15 +81,23 @@ public sealed class CalculatorToolNode : INodeType
                 ]
             };
 
-            return Task.FromResult(new NodeExecutionResult
+            return new NodeExecutionResult
             {
                 Success = true,
                 Output = outputBatch
-            });
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            return context.ErrorResult("Cancelled", "Calculation was cancelled.");
+        }
+        catch (ScriptErrorException ex)
+        {
+            return context.ErrorResult("ScriptError", $"Expression evaluation failed: {ex.Message}");
         }
         catch (Exception ex)
         {
-            return Task.FromResult(context.ErrorResult("CalculationError", $"Calculation failed: {ex.Message}"));
+            return context.ErrorResult("CalculationError", $"Calculation failed: {ex.Message}");
         }
     }
 

@@ -1,23 +1,24 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
+using FlowEngine.Core.Entities;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Expressions;
-using FlowEngine.Runtime.Expressions.Exceptions;
 using FlowEngine.Core.Scripting;
+using FlowEngine.Runtime.Expressions.Exceptions;
 using Jint;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Runtime.Expressions;
 
-using PreparedScript = Jint.Prepared<Acornima.Ast.Script>;
-
 /// <summary>
-/// 节点参数解析器，对字符串参数执行 JavaScript 表达式求值。
-/// 非表达式字符串保持原样返回。
+/// 节点参数解析器，对字符串参数中的旧式表达式进行求值。
+/// Script 类型参数由 <see cref="NodeExecutionContextFactory"/> 统一预求值，
+/// 本类仅保留对遗留字符串参数的兼容处理。
 /// </summary>
 public sealed class ParameterResolver
 {
-    private static readonly TimeSpan DefaultCacheExpiration = TimeSpan.FromHours(1);
     private static readonly HashSet<string> s_knownIdentifiers = new(StringComparer.OrdinalIgnoreCase)
     {
         // 旧式裸全局（向后兼容，后续实现按 plan-004 收敛到 $ 前缀）
@@ -25,7 +26,7 @@ public sealed class ParameterResolver
         "workflow", "execution", "env", "runIndex", "run_index",
         "this", "true", "false", "null", "undefined",
         "now", "nowIso", "jmespath", "length", "trim",
-        // n8n 式 $ 前缀内建（plan-004 评审5：命名铁律 $ 前缀=引擎内建）
+        // $ 前缀内建（plan-004 评审5：命名铁律 $ 前缀=引擎内建）
         "$json", "$input", "$items", "$node",
         "$workflow", "$execution", "$env", "$vars", "$now", "$today",
         "$runIndex", "$itemIndex", "$credentials", "$ctx",
@@ -33,38 +34,35 @@ public sealed class ParameterResolver
         "$cursor", "$nextCursor", "$page", "$response", "$payload", "$tool"
     };
 
-    private static readonly HashSet<string> s_forbiddenIdentifiers = new(StringComparer.OrdinalIgnoreCase)
-    {
-        "require", "process", "fs", "path", "os", "net", "http", "https",
-        "fetch", "XMLHttpRequest", "WebSocket", "eval",
-        "setTimeout", "setInterval", "setImmediate", "clearTimeout", "clearInterval",
-        "globalThis", "window", "document", "constructor", "prototype", "__proto__",
-        "import", "export", "module", "exports"
-    };
-
     private readonly ILogger<ParameterResolver> _logger;
-    private readonly IMemoryCache? _cache;
+    private readonly IScriptCache _scriptCache;
 
     /// <summary>
     /// 初始化 <see cref="ParameterResolver"/>。
     /// </summary>
-    public ParameterResolver(ILogger<ParameterResolver> logger, IMemoryCache? cache = null)
+    public ParameterResolver(
+        ILogger<ParameterResolver> logger,
+        IOptions<JsEngineOptions> options,
+        IScriptCache scriptCache)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
-        _cache = cache;
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(scriptCache);
+        _ = options.Value; // 确保配置可用；安全策略由 IScriptCache 在编译时读取
+        _scriptCache = scriptCache;
     }
 
     /// <summary>
-    /// 解析参数字典，对字符串值中的表达式进行求值。
+    /// 解析参数字典，对字符串值中的旧式表达式进行求值。
     /// </summary>
     /// <param name="rawParameters">原始参数字典。</param>
     /// <param name="jsEngine">JsEngine 实例（已设置上下文变量）。</param>
-    /// <param name="cacheKey">可选的表达式缓存键（不含具体表达式文本）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>解析后的参数字典。</returns>
-    public Dictionary<string, object> Resolve(
+    public async Task<Dictionary<string, object>> ResolveAsync(
         IReadOnlyDictionary<string, object> rawParameters,
         JsEngine jsEngine,
-        ExpressionCacheKey? cacheKey = null)
+        CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(rawParameters);
         ArgumentNullException.ThrowIfNull(jsEngine);
@@ -75,7 +73,7 @@ public sealed class ParameterResolver
         {
             try
             {
-                resolved[key] = ResolveValue(value!, jsEngine, cacheKey);
+                resolved[key] = await ResolveValueAsync(value!, jsEngine, cancellationToken).ConfigureAwait(false);
             }
             catch (ExpressionEvaluationException)
             {
@@ -91,12 +89,12 @@ public sealed class ParameterResolver
         return resolved;
     }
 
-    private object ResolveValue(object value, JsEngine jsEngine, ExpressionCacheKey? cacheKey)
+    private async Task<object> ResolveValueAsync(object value, JsEngine jsEngine, CancellationToken cancellationToken)
     {
         if (value is string str)
         {
             return IsExpression(str)
-                ? EvaluateExpression(str, jsEngine, cacheKey)
+                ? await EvaluateExpressionAsync(str, jsEngine, cancellationToken).ConfigureAwait(false)
                 : str;
         }
 
@@ -104,7 +102,7 @@ public sealed class ParameterResolver
         {
             return element.ValueKind switch
             {
-                JsonValueKind.String => ResolveValue(element.GetString() ?? string.Empty, jsEngine, cacheKey),
+                JsonValueKind.String => await ResolveValueAsync(element.GetString() ?? string.Empty, jsEngine, cancellationToken).ConfigureAwait(false),
                 JsonValueKind.Number => element.TryGetInt32(out var i) ? i : element.GetDouble(),
                 JsonValueKind.True => true,
                 JsonValueKind.False => false,
@@ -115,29 +113,54 @@ public sealed class ParameterResolver
 
         if (value is IEnumerable<KeyValuePair<string, object>> dict && value is not string)
         {
-            return dict.ToDictionary(
-                x => x.Key,
-                x => ResolveValue(x.Value!, jsEngine, cacheKey),
-                StringComparer.OrdinalIgnoreCase);
+            var resolvedDict = new Dictionary<string, object>(StringComparer.OrdinalIgnoreCase);
+            foreach (var (key, item) in dict)
+            {
+                resolvedDict[key] = await ResolveValueAsync(item!, jsEngine, cancellationToken).ConfigureAwait(false);
+            }
+
+            return resolvedDict;
         }
 
         if (value is IEnumerable<object> list && value is not string)
         {
-            return list.Select(item => ResolveValue(item!, jsEngine, cacheKey)).ToList();
+            var resolvedList = new List<object>();
+            foreach (var item in list)
+            {
+                resolvedList.Add(await ResolveValueAsync(item!, jsEngine, cancellationToken).ConfigureAwait(false));
+            }
+
+            return resolvedList;
         }
 
         return value!;
     }
 
-    private object EvaluateExpression(string expression, JsEngine jsEngine, ExpressionCacheKey? cacheKey)
+    private async Task<object> EvaluateExpressionAsync(string expression, JsEngine jsEngine, CancellationToken cancellationToken)
     {
-        ValidateSecurity(expression);
+        var script = new Script
+        {
+            Source = expression,
+            Language = ScriptLanguage.JavaScript,
+            ReturnType = ScriptReturnType.String
+        };
 
         try
         {
-            var prepared = GetOrPrepare(expression, cacheKey);
-            var result = jsEngine.EvaluatePrepared(prepared);
-            return JsEngine.ToClrValue(result) ?? string.Empty;
+            var prepared = _scriptCache.GetOrPrepare(script);
+            var scriptContext = new ScriptContext(new NodeExecutionContext());
+            var result = await prepared.RunAsync(scriptContext, jsEngine, cancellationToken).ConfigureAwait(false);
+
+            if (!result.Success)
+            {
+                throw WrapException(expression, result.Error?.InnerException ?? new Exception(result.Error?.Message ?? "脚本执行失败"));
+            }
+
+            return result.ToClr() ?? string.Empty;
+        }
+        catch (ScriptSecurityException ex)
+        {
+            throw new SecurityViolationException(expression, ex.Message, ex);
         }
         catch (ExpressionEvaluationException)
         {
@@ -148,105 +171,6 @@ public sealed class ParameterResolver
             throw WrapException(expression, ex);
         }
     }
-
-    private PreparedScript GetOrPrepare(string expression, ExpressionCacheKey? cacheKey)
-    {
-        if (cacheKey is not null && _cache is not null)
-        {
-            var key = cacheKey with { Expression = expression };
-            if (_cache.TryGetValue(key, out PreparedScript prepared))
-            {
-                return prepared;
-            }
-
-            prepared = JsEngine.PrepareExpression(expression);
-            _cache.Set(key, prepared, DefaultCacheExpiration);
-            return prepared;
-        }
-
-        return JsEngine.PrepareExpression(expression);
-    }
-
-    private static void ValidateSecurity(string expression)
-    {
-        foreach (var identifier in s_forbiddenIdentifiers)
-        {
-            if (ContainsWord(expression, identifier))
-            {
-                throw new SecurityViolationException(expression, $"表达式包含禁止使用的标识符 '{identifier}'");
-            }
-        }
-    }
-
-    private static bool ContainsWord(string text, string word)
-    {
-        // 逐字符扫描，跳过字符串/模板字面量与注释内容，
-        // 避免把 "http://..." 这类字面量中的子串误判为禁止标识符。
-        var inSingle = false;
-        var inDouble = false;
-        var inTemplate = false;
-        var i = 0;
-        while (i < text.Length)
-        {
-            var c = text[i];
-
-            if (inSingle || inDouble || inTemplate)
-            {
-                if (c == '\\')
-                {
-                    i += 2;
-                    continue;
-                }
-
-                if (inSingle && c == '\'') inSingle = false;
-                else if (inDouble && c == '"') inDouble = false;
-                else if (inTemplate && c == '`') inTemplate = false;
-                i++;
-                continue;
-            }
-
-            // 行注释：跳过至行尾
-            if (c == '/' && i + 1 < text.Length && text[i + 1] == '/')
-            {
-                while (i < text.Length && text[i] != '\n') i++;
-                continue;
-            }
-
-            // 块注释：跳过至 */
-            if (c == '/' && i + 1 < text.Length && text[i + 1] == '*')
-            {
-                i += 2;
-                while (i < text.Length && !(text[i] == '*' && i + 1 < text.Length && text[i + 1] == '/'))
-                {
-                    i++;
-                }
-
-                if (i < text.Length) i += 2;
-                continue;
-            }
-
-            if (c == '\'') { inSingle = true; i++; continue; }
-            if (c == '"') { inDouble = true; i++; continue; }
-            if (c == '`') { inTemplate = true; i++; continue; }
-
-            if (text.Length - i >= word.Length
-                && string.Equals(text.Substring(i, word.Length), word, StringComparison.OrdinalIgnoreCase))
-            {
-                var before = i == 0 || !IsIdentifierChar(text[i - 1]);
-                var after = i + word.Length == text.Length || !IsIdentifierChar(text[i + word.Length]);
-                if (before && after)
-                {
-                    return true;
-                }
-            }
-
-            i++;
-        }
-
-        return false;
-    }
-
-    private static bool IsIdentifierChar(char c) => char.IsLetterOrDigit(c) || c == '_' || c == '$';
 
     private static ExpressionEvaluationException WrapException(string expression, Exception ex)
     {

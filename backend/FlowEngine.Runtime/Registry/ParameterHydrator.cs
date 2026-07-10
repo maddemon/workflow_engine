@@ -406,9 +406,9 @@ public sealed class ParameterHydrator(ICredentialAccessor? credentialAccessor = 
             return value switch
             {
                 JsonElement element when element.ValueKind == JsonValueKind.Array
-                    => JsonSerializer.Deserialize(element.GetRawText(), listType),
-                string s => JsonSerializer.Deserialize(s, listType),
-                JsonNode node => JsonSerializer.Deserialize(node.ToJsonString(), listType),
+                    => JsonSerializer.Deserialize(element.GetRawText(), listType, JsonDefaults.Options),
+                string s => JsonSerializer.Deserialize(s, listType, JsonDefaults.Options),
+                JsonNode node => JsonSerializer.Deserialize(node.ToJsonString(), listType, JsonDefaults.Options),
                 _ when listType.IsInstanceOfType(value) => value,
                 _ => ConvertEnumerableToList(value, listType, elementType)
             };

@@ -127,7 +127,7 @@ public sealed class ScriptCache : IScriptCache
                     {
                         if (name.Equals(identifier, StringComparison.OrdinalIgnoreCase))
                         {
-                            throw new ScriptErrorException(script, $"脚本包含禁止使用的标识符 '{identifier}'");
+                            throw new ScriptSecurityException(script, identifier);
                         }
                     }
                 }

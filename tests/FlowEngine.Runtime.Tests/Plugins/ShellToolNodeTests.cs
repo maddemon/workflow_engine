@@ -7,68 +7,63 @@ using FlowEngine.Plugins.Standard;
 
 namespace FlowEngine.Runtime.Tests.Plugins;
 
-public class HttpToolNodeTests
+public class ShellToolNodeTests
 {
     [Fact]
-    public async Task Execute_MissingUrl_ReturnsError()
+    public async Task Execute_MissingCommand_ReturnsError()
     {
-        var node = new HttpToolNode { Url = "" };
+        var node = new ShellToolNode { Command = "" };
         var context = CreateContext(new JsonObject { ["path"] = "test" });
 
         var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
-        Assert.Equal("MissingUrl", result.Error?.Code);
+        Assert.Equal("MissingCommand", result.Error?.Code);
     }
 
     [Fact]
-    public async Task Execute_WithResolvedUrl_DoesNotReturnMissingUrl()
+    public async Task Execute_ResolvedValue_UsesResolvedCommand()
     {
-        var node = new HttpToolNode
+        var node = new ShellToolNode
         {
-            Url = ResolvedUrl("https://httpbin.org/get"),
-            Method = HttpMethodOption.Get
+            Command = new Script
+            {
+                Source = "dotnet --version",
+                Language = ScriptLanguage.JavaScript,
+                ReturnType = ScriptReturnType.String
+            }.WithResolvedValue(JsonValue.Create("dotnet --version")),
+            Shell = ShellType.Cmd,
+            RunInShell = false
         };
         var context = CreateContext(new JsonObject());
 
-        // Execute - may succeed or fail depending on network
         var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
 
-        // Verify URL was resolved correctly
-        // The request may succeed or fail depending on network, just verify no URL error
-        if (!result.Success)
-        {
-            Assert.NotEqual("MissingUrl", result.Error?.Code);
-        }
-    }
-
-    private static Script ResolvedUrl(string url)
-    {
-        return new Script
-        {
-            Source = $"'{url}'",
-            Language = ScriptLanguage.JavaScript,
-            ReturnType = ScriptReturnType.String
-        }.WithResolvedValue(JsonValue.Create(url));
+        Assert.True(result.Success, result.Error?.Message);
+        Assert.Equal(0, result.Output.Items[0].Data?["exitCode"]?.GetValue<int>());
+        Assert.False(string.IsNullOrWhiteSpace(result.Output.Items[0].Data?["stdout"]?.GetValue<string>()));
     }
 
     [Fact]
-    public void ToolNode_HasCorrectMetadata()
+    public async Task Execute_ResolvedExpression_UsesCommand()
     {
-        var node = new HttpToolNode();
-        Assert.Equal("httpTool", node.TypeName);
-        Assert.Equal("HTTP Tool", node.DisplayName);
-        Assert.Equal("AI", node.Category);
-        Assert.False(node.DefaultIsEntry);
-    }
+        var node = new ShellToolNode
+        {
+            Command = new Script
+            {
+                Source = "'dotnet --version'",
+                Language = ScriptLanguage.JavaScript,
+                ReturnType = ScriptReturnType.String
+            }.WithResolvedValue(JsonValue.Create("dotnet --version")),
+            Shell = ShellType.Cmd,
+            RunInShell = false
+        };
+        var context = CreateContext(new JsonObject());
 
-    [Fact]
-    public void ToolNode_HasInputAndOutputPorts()
-    {
-        var node = new HttpToolNode();
-        Assert.Equal(3, node.Ports.Count);
-        Assert.Contains(node.Ports, p => p.Name == FlowConstants.PortNames.Input && p.Direction == PortDirection.Input);
-        Assert.Contains(node.Ports, p => p.Name == FlowConstants.PortNames.Output && p.Direction == PortDirection.Output);
+        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success, result.Error?.Message);
+        Assert.Equal(0, result.Output.Items[0].Data?["exitCode"]?.GetValue<int>());
     }
 
     private static NodeExecutionContext CreateContext(JsonObject inputPayload)
@@ -78,8 +73,8 @@ public class HttpToolNodeTests
             Node = new NodeDefinition
             {
                 Id = Guid.NewGuid(),
-                TypeName = "httpTool",
-                Name = "Test Http",
+                TypeName = "shellTool",
+                Name = "Test Shell",
                 Parameters = [],
                 Ports = [],
                 ErrorStrategy = ErrorStrategy.Terminate

@@ -3,11 +3,11 @@ using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Expressions;
+using FlowEngine.Core.Scripting;
 using FlowEngine.Runtime.Expressions;
 using FlowEngine.Runtime.Expressions.Exceptions;
-using FlowEngine.Core.Scripting;
-using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Jint;
 
 namespace FlowEngine.Runtime.Tests.Expressions;
@@ -18,11 +18,14 @@ public class ParameterResolverTests
 
     public ParameterResolverTests()
     {
-        _resolver = new ParameterResolver(NullLogger<ParameterResolver>.Instance);
+        _resolver = new ParameterResolver(
+            NullLogger<ParameterResolver>.Instance,
+            Microsoft.Extensions.Options.Options.Create(new JsEngineOptions()),
+            new ScriptCache(Microsoft.Extensions.Options.Options.Create(new JsEngineOptions())));
     }
 
     [Fact]
-    public void Resolve_String_Parameter_Evaluates_Expression()
+    public async Task Resolve_String_Parameter_Evaluates_Expression()
     {
         using var js = CreateJsEngine(new JsonObject { ["statusCode"] = 200 });
         var raw = new Dictionary<string, object>
@@ -30,13 +33,13 @@ public class ParameterResolverTests
             ["condition"] = "input.statusCode === 200"
         };
 
-        var result = _resolver.Resolve(raw, js);
+        var result = await _resolver.ResolveAsync(raw, js);
 
         Assert.Equal(true, result["condition"]);
     }
 
     [Fact]
-    public void Resolve_JsonElement_String_Evaluates_Expression()
+    public async Task Resolve_JsonElement_String_Evaluates_Expression()
     {
         using var js = CreateJsEngine(new JsonObject { ["statusCode"] = 200 });
 
@@ -46,13 +49,13 @@ public class ParameterResolverTests
             kv => kv.Key,
             kv => (object)kv.Value);
 
-        var result = _resolver.Resolve(rawAsObjects, js);
+        var result = await _resolver.ResolveAsync(rawAsObjects, js);
 
         Assert.Equal(true, result["condition"]);
     }
 
     [Fact]
-    public void Resolve_JsonElement_NonString_Passes_Through()
+    public async Task Resolve_JsonElement_NonString_Passes_Through()
     {
         using var js = CreateJsEngine();
         var jsonStr = """{"count": 42}""";
@@ -61,13 +64,13 @@ public class ParameterResolverTests
             kv => kv.Key,
             kv => (object)kv.Value);
 
-        var result = _resolver.Resolve(rawAsObjects, js);
+        var result = await _resolver.ResolveAsync(rawAsObjects, js);
 
         Assert.Equal(42, Convert.ToInt32(result["count"]));
     }
 
     [Fact]
-    public void Resolve_Empty_String_Returns_Empty()
+    public async Task Resolve_Empty_String_Returns_Empty()
     {
         using var js = CreateJsEngine();
         var jsonStr = """{"url": ""}""";
@@ -76,22 +79,22 @@ public class ParameterResolverTests
             kv => kv.Key,
             kv => (object)kv.Value);
 
-        var result = _resolver.Resolve(rawAsObjects, js);
+        var result = await _resolver.ResolveAsync(rawAsObjects, js);
 
         Assert.Equal("", result["url"]);
     }
 
     [Fact]
-    public void Resolve_ForbiddenIdentifier_ThrowsSecurityViolationException()
+    public async Task Resolve_ForbiddenIdentifier_ThrowsSecurityViolationException()
     {
         using var js = CreateJsEngine();
         var raw = new Dictionary<string, object> { ["expr"] = "eval('1+1')" };
 
-        Assert.Throws<SecurityViolationException>(() => _resolver.Resolve(raw, js));
+        await Assert.ThrowsAsync<SecurityViolationException>(() => _resolver.ResolveAsync(raw, js));
     }
 
     [Fact]
-    public void Resolve_UrlStringContainingHttp_IsNotBlocked()
+    public async Task Resolve_UrlStringContainingHttp_IsNotBlocked()
     {
         // 字面量中的 "http"/"https" 不应被安全扫描误判为禁止标识符
         using var js = CreateJsEngine();
@@ -100,41 +103,22 @@ public class ParameterResolverTests
             ["url"] = "\"https://oapi.dingtalk.com/topapi/v2/user/list?access_token=\" + $credentials.testCred.accessToken"
         };
 
-        var result = _resolver.Resolve(raw, js);
+        var result = await _resolver.ResolveAsync(raw, js);
 
         Assert.Equal("https://oapi.dingtalk.com/topapi/v2/user/list?access_token=tok-xxx", result["url"]);
     }
 
     [Fact]
-    public void Resolve_InvalidSyntax_ThrowsSyntaxErrorException()
+    public async Task Resolve_InvalidSyntax_ThrowsSyntaxErrorException()
     {
         using var js = CreateJsEngine();
         var raw = new Dictionary<string, object> { ["expr"] = "input.status ===" };
 
-        Assert.Throws<SyntaxErrorException>(() => _resolver.Resolve(raw, js));
-    }
-
-
-
-    [Fact]
-    public void Resolve_WithCacheKey_CachesPreparedScript()
-    {
-        var cache = new MemoryCache(new MemoryCacheOptions());
-        var resolver = new ParameterResolver(NullLogger<ParameterResolver>.Instance, cache);
-        using var js = CreateJsEngine(new JsonObject { ["value"] = 2 });
-        var raw = new Dictionary<string, object> { ["expr"] = "input.value * 2" };
-        var cacheKey = new ExpressionCacheKey(string.Empty, "schema-a", "schema-b");
-
-        var first = resolver.Resolve(raw, js, cacheKey);
-        var second = resolver.Resolve(raw, js, cacheKey);
-
-        Assert.Equal(4, Convert.ToInt32(first["expr"]));
-        Assert.Equal(4, Convert.ToInt32(second["expr"]));
-        Assert.True(cache.TryGetValue(cacheKey with { Expression = "input.value * 2" }, out _));
+        await Assert.ThrowsAsync<SyntaxErrorException>(() => _resolver.ResolveAsync(raw, js));
     }
 
     [Fact]
-    public void Resolve_DollarInputItem_Evaluates_From_InputContainer()
+    public async Task Resolve_DollarInputItem_Evaluates_From_InputContainer()
     {
         // 验证 $input.item() 经 Jint 求值的 camelCase 兼容性
         var data = new JsonObject { ["userid"] = "abc123", ["name"] = "张三" };
@@ -151,7 +135,14 @@ public class ParameterResolverTests
         js.SetValue("$execution", new Dictionary<string, object?>());
         js.SetValue("$env", new Dictionary<string, object?>());
         js.SetValue("$vars", new Dictionary<string, object?>());
-        js.SetValue("$credentials", new Dictionary<string, object?>());
+        js.SetValue("$credentials", new Dictionary<string, object?>
+        {
+            ["testCred"] = new Dictionary<string, object?>
+            {
+                ["apiKey"] = "sk-test",
+                ["accessToken"] = "tok-xxx",
+            }
+        });
 
         var raw = new Dictionary<string, object>
         {
@@ -159,14 +150,14 @@ public class ParameterResolverTests
             ["from_json"] = "$json.name",
         };
 
-        var result = _resolver.Resolve(raw, js);
+        var result = await _resolver.ResolveAsync(raw, js);
 
         Assert.Equal("abc123", result["from_item"]);
         Assert.Equal("张三", result["from_json"]);
     }
 
     [Fact]
-    public void Resolve_DollarCredentials_PropertyAccess_Evaluates_NestedFields()
+    public async Task Resolve_DollarCredentials_PropertyAccess_Evaluates_NestedFields()
     {
         // 验证 $credentials.<name>.<field> 经 Jint 属性式访问求值（plan-004 / draft 用法）
         using var js = CreateJsEngine();
@@ -176,7 +167,7 @@ public class ParameterResolverTests
             ["key"] = "$credentials.testCred.apiKey",
         };
 
-        var result = _resolver.Resolve(raw, js);
+        var result = await _resolver.ResolveAsync(raw, js);
 
         Assert.Equal("tok-xxx", result["token"]);
         Assert.Equal("sk-test", result["key"]);

@@ -53,12 +53,36 @@ public sealed class ScriptResult
     }
 
     /// <summary>
-    /// 将结果转换为与 <see cref="JsEngine.ToClrValue"/> 一致的 CLR 对象。
+    /// 将结果转换为 CLR 对象（原 <see cref="JsEngine.ToClrValue"/> 语义）。
     /// </summary>
     public object? ToClr()
     {
         EnsureSuccess();
-        return JsEngine.ToClrValue(Raw);
+
+        if (Raw.IsUndefined() || Raw.IsNull())
+        {
+            return null;
+        }
+
+        if (Raw.IsBoolean())
+        {
+            return Raw.AsBoolean();
+        }
+
+        if (Raw.IsNumber())
+        {
+            var num = Raw.AsNumber();
+            return num == Math.Floor(num) && num is >= int.MinValue and <= int.MaxValue
+                ? (int)num
+                : num;
+        }
+
+        if (Raw.IsString())
+        {
+            return Raw.AsString();
+        }
+
+        return ToJson();
     }
 
     /// <summary>

@@ -1,4 +1,3 @@
-using Acornima.Ast;
 using System.ComponentModel;
 using System.Data.Common;
 using System.Text.Json.Nodes;
@@ -7,9 +6,10 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Scripting;
 using FlowEngine.Plugins.Standard.Data;
-using Jint;
+using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -38,7 +38,7 @@ public sealed class DbUpsertNode : INodeType
     /// </summary>
     [Hint(PresentationHint.Expression)]
     [Description("Connection string or expression (e.g. $credentials.db.connectionString).")]
-    public string Connection { get; set; } = string.Empty;
+    public Script Connection { get; set; } = Script.Empty;
 
     /// <summary>
     /// 目标表名。
@@ -63,7 +63,7 @@ public sealed class DbUpsertNode : INodeType
     /// </summary>
     [Hint(PresentationHint.Script)]
     [Description("Column mapping: key = DB column, value = JS expression evaluated per row.")]
-    public Dictionary<string, string> Columns { get; set; } = [];
+    public Dictionary<string, Script> Columns { get; set; } = [];
 
     /// <summary>
     /// 可选方言；留空时从连接字符串推断。
@@ -86,8 +86,8 @@ public sealed class DbUpsertNode : INodeType
     {
         try
         {
-            var connectionString = ResolveConnection(context);
-            if (connectionString is null)
+            var connectionString = Connection.GetResult<string>();
+            if (string.IsNullOrWhiteSpace(connectionString))
             {
                 return context.ErrorResult("MissingConnection", "Connection string is required.");
             }
@@ -131,8 +131,11 @@ public sealed class DbUpsertNode : INodeType
                 return CreateResult(context, true, 0, 0, 0);
             }
 
-            var allItems = inputBatch.Items.Select(i => (object?)i.Data).ToList();
-            var preparedExpressions = Columns.Values.Select(JsEngine.PrepareExpression).ToList();
+            var scriptCache = context.ScriptCache ?? new ScriptCache(Microsoft.Extensions.Options.Options.Create(new JsEngineOptions()));
+            var preparedColumns = Columns.ToDictionary(
+                c => c.Key,
+                c => scriptCache.GetOrPrepare(c.Value),
+                StringComparer.OrdinalIgnoreCase);
 
             // 单引擎复用：全局变量只注入一次，逐项变量在循环内覆盖。
             using var engine = JsEngine.Create();
@@ -147,6 +150,7 @@ public sealed class DbUpsertNode : INodeType
             var inserted = 0;
             var updated = 0;
             var isUpsert = mode.Equals("upsert", StringComparison.OrdinalIgnoreCase);
+            var allItems = inputBatch.Items.Select(i => (object?)i.Data).ToList();
 
             try
             {
@@ -155,7 +159,7 @@ public sealed class DbUpsertNode : INodeType
                     cancellationToken.ThrowIfCancellationRequested();
 
                     var item = inputBatch.Items[itemIndex];
-                    var values = EvaluateRowValues(engine, preparedExpressions, allItems, item.Data, itemIndex, context);
+                    var values = EvaluateRowValues(engine, preparedColumns, allItems, item.Data, itemIndex, context);
 
                     if (mode.Equals("update", StringComparison.OrdinalIgnoreCase))
                     {
@@ -237,41 +241,14 @@ public sealed class DbUpsertNode : INodeType
         {
             return context.ErrorResult("DbError", $"Database error: {ex.Message}");
         }
+        catch (ScriptErrorException ex)
+        {
+            return context.ErrorResult("ScriptError", $"Column expression evaluation failed: {ex.Message}");
+        }
         catch (Exception ex)
         {
             return context.ErrorResult("UnexpectedError", $"Unexpected database error: {ex.Message}");
         }
-    }
-
-    private string? ResolveConnection(NodeExecutionContext context)
-    {
-        if (context.ResolvedParameters.TryGetValue("connection", out var resolved) && resolved is string resolvedString && !string.IsNullOrWhiteSpace(resolvedString))
-        {
-            return resolvedString;
-        }
-
-        if (string.IsNullOrWhiteSpace(Connection))
-        {
-            return null;
-        }
-
-        var trimmed = Connection.TrimStart();
-        if (trimmed.StartsWith('$') || trimmed.StartsWith('\'') || trimmed.StartsWith('"'))
-        {
-            try
-            {
-                using var engine = JsEngine.Create();
-                var result = engine.Evaluate(Connection);
-                var value = JsEngine.ToClrValue(result) as string;
-                return string.IsNullOrWhiteSpace(value) ? null : value;
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        return Connection;
     }
 
     private NodeExecutionResult? Validate(NodeExecutionContext context, string connectionString, out List<string>? keyColumnList, out List<string>? columnList)
@@ -337,7 +314,7 @@ public sealed class DbUpsertNode : INodeType
 
     private List<object?> EvaluateRowValues(
         JsEngine engine,
-        IReadOnlyList<Jint.Prepared<Acornima.Ast.Script>> preparedExpressions,
+        IReadOnlyDictionary<string, PreparedScript> preparedColumns,
         List<object?> allItems,
         JsonNode? currentItem,
         int itemIndex,
@@ -345,11 +322,13 @@ public sealed class DbUpsertNode : INodeType
     {
         engine.ApplyItemScope(context, currentItem, allItems, itemIndex);
 
+        var scriptContext = ScriptContext.From(context);
         var values = new List<object?>();
-        foreach (var prepared in preparedExpressions)
+        foreach (var columnName in preparedColumns.Keys)
         {
-            var result = engine.EvaluatePrepared(prepared);
-            values.Add(JsEngine.ToClrValue(result));
+            var prepared = preparedColumns[columnName];
+            var result = prepared.RunAsync(scriptContext, engine, context.CancellationToken).GetAwaiter().GetResult();
+            values.Add(result.ToClr());
         }
 
         return values;

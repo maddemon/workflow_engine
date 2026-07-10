@@ -6,8 +6,10 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Http;
 using FlowEngine.Core.Scripting;
+using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -82,7 +84,7 @@ public sealed class HttpRequestNode : INodeType
     [DisplayName("URL")]
     [Description("Target URL. Use JS expression to build URL dynamically (e.g. 'https://api.com/' + input.path).")]
     [Hint(PresentationHint.Expression)]
-    public string Url { get; set; } = string.Empty;
+    public Script Url { get; set; } = Script.Empty;
 
     /// <summary>
     /// 认证方式。
@@ -105,13 +107,13 @@ public sealed class HttpRequestNode : INodeType
     public bool SendHeaders { get; set; } = false;
 
     /// <summary>
-    /// 请求头，JS 表达式，返回对象。
+    /// 请求头，JS 脚本，返回对象。
     /// </summary>
     [DisplayName("Headers")]
-    [Description("Headers expression. Must return an object. Example: { 'Authorization': 'Bearer ' + input.token }")]
-    [Hint(PresentationHint.Script, "language", ScriptLanguage.JavaScript, "returnType", "object")]
+    [Description("Headers script. Must return an object. Example: { 'Authorization': 'Bearer ' + input.token }")]
+    [Hint(PresentationHint.Script)]
     [DisplayCondition(nameof(SendHeaders), true)]
-    public string? HeadersExpression { get; set; }
+    public Script? HeadersExpression { get; set; }
 
     /// <summary>
     /// 是否发送请求体（仅 POST/PUT/PATCH 时显示）。
@@ -124,13 +126,13 @@ public sealed class HttpRequestNode : INodeType
     public bool SendBody { get; set; } = false;
 
     /// <summary>
-    /// 请求体，JS 表达式，返回对象。
+    /// 请求体，JS 脚本，返回对象。
     /// </summary>
     [DisplayName("Body")]
-    [Description("Body expression. Must return an object. Example: { name: input.name, count: input.count }")]
-    [Hint(PresentationHint.Script, "language", ScriptLanguage.JavaScript, "returnType", "object")]
+    [Description("Body script. Must return an object. Example: { name: input.name, count: input.count }")]
+    [Hint(PresentationHint.Script)]
     [DisplayCondition(nameof(SendBody), true)]
-    public string? BodyExpression { get; set; }
+    public Script? BodyExpression { get; set; }
 
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
@@ -147,14 +149,12 @@ public sealed class HttpRequestNode : INodeType
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(Url))
+            if (Url is null || string.IsNullOrWhiteSpace(Url.Source))
             {
                 return context.ErrorResult("MissingUrl", "URL is required.");
             }
 
-            var inputData = context.InputData;
-
-            var resolvedUrl = ScriptEngine.EvaluateAsString(Url, inputData);
+            var resolvedUrl = Url.GetResult<string>();
             if (string.IsNullOrWhiteSpace(resolvedUrl))
             {
                 return context.ErrorResult("MissingUrl", "URL resolution failed.");
@@ -189,23 +189,40 @@ public sealed class HttpRequestNode : INodeType
                 }
             }
 
-            if (SendHeaders && !string.IsNullOrEmpty(HeadersExpression))
+            var scriptCache = context.ScriptCache ?? new ScriptCache(Options.Create(new JsEngineOptions()));
+            var scriptContext = ScriptContext.From(context);
+
+            var preparedHeaders = SendHeaders && HeadersExpression is not null && !string.IsNullOrWhiteSpace(HeadersExpression.Source)
+                ? scriptCache.GetOrPrepare(HeadersExpression)
+                : null;
+            var preparedBody = SendBody && BodyExpression is not null && !string.IsNullOrWhiteSpace(BodyExpression.Source) &&
+                Method is HttpMethodOption.Post or HttpMethodOption.Put or HttpMethodOption.Patch
+                ? scriptCache.GetOrPrepare(BodyExpression)
+                : null;
+
+            if (preparedHeaders is not null || preparedBody is not null)
             {
-                var headers = ScriptEngine.EvaluateAsDictionary(HeadersExpression, inputData);
-                if (headers is not null)
+                using var session = (preparedHeaders ?? preparedBody)!.CreateSession(JsEngine.Create());
+
+                if (preparedHeaders is not null)
                 {
-                    foreach (var (key, value) in headers)
+                    var headersResult = await session.RunAsync(preparedHeaders, scriptContext, cancellationToken).ConfigureAwait(false);
+                    var headers = headersResult.To<Dictionary<string, string>>();
+                    if (headers is not null)
                     {
-                        request.Headers.TryAddWithoutValidation(key, value);
+                        foreach (var (key, value) in headers)
+                        {
+                            request.Headers.TryAddWithoutValidation(key, value);
+                        }
                     }
                 }
-            }
 
-            if (SendBody && !string.IsNullOrEmpty(BodyExpression) &&
-                Method is HttpMethodOption.Post or HttpMethodOption.Put or HttpMethodOption.Patch)
-            {
-                var bodyJson = ScriptEngine.EvaluateAsString(BodyExpression, inputData) ?? string.Empty;
-                request.Content = new StringContent(bodyJson, Encoding.UTF8, new System.Net.Http.Headers.MediaTypeHeaderValue("application/json"));
+                if (preparedBody is not null)
+                {
+                    var bodyResult = await session.RunAsync(preparedBody, scriptContext, cancellationToken).ConfigureAwait(false);
+                    var bodyJson = bodyResult.ToJson()?.ToJsonString() ?? string.Empty;
+                    request.Content = new StringContent(bodyJson, Encoding.UTF8, new System.Net.Http.Headers.MediaTypeHeaderValue("application/json"));
+                }
             }
 
             var client = context.HttpClientPool?.GetClient();
@@ -225,11 +242,16 @@ public sealed class HttpRequestNode : INodeType
         {
             return context.ErrorResult("HttpRequestFailed", $"HTTP request failed: {ex.Message}");
         }
+        catch (ScriptErrorException ex)
+        {
+            return context.ErrorResult("ScriptError", $"Script evaluation failed: {ex.Message}");
+        }
         catch (Exception ex)
         {
             return context.ErrorResult("UnexpectedError", $"Unexpected HTTP error: {ex.Message}");
         }
     }
+
 }
 
 // HttpPlaceholder is defined in HttpToolNode.cs

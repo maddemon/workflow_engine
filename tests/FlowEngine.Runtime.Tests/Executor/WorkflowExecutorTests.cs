@@ -43,7 +43,9 @@ public class WorkflowExecutorTests
             NullLogger<NodeRegistry>.Instance);
 
         var resolver = new ParameterResolver(
-            NullLogger<ParameterResolver>.Instance);
+            NullLogger<ParameterResolver>.Instance,
+            Options.Create(new JsEngineOptions()),
+            new ScriptCache(Options.Create(new JsEngineOptions())));
         var contextFactory = new NodeExecutionContextFactory(
             _nodeRegistry,
             new ScriptCache(Options.Create(new JsEngineOptions())),
@@ -491,7 +493,10 @@ public class WorkflowExecutorTests
             Inputs = new Dictionary<string, DataBatch>()
         };
 
-        var resolver = new ParameterResolver(NullLogger<ParameterResolver>.Instance);
+        var resolver = new ParameterResolver(
+            NullLogger<ParameterResolver>.Instance,
+            Options.Create(new JsEngineOptions()),
+            new ScriptCache(Options.Create(new JsEngineOptions())));
         var contextFactory = new NodeExecutionContextFactory(
             _nodeRegistry,
             new ScriptCache(Options.Create(new JsEngineOptions())),

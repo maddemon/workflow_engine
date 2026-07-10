@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Dynamic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
@@ -6,8 +7,9 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Scripting;
-using Jint;
+using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -39,7 +41,7 @@ public sealed class CodeSnippetToolNode : INodeType
     /// </summary>
     [Description("JavaScript code to execute. Access LLM input via the 'input' variable.")]
     [Hint(PresentationHint.CodeEditor)]
-    public string Code { get; set; } = string.Empty;
+    public Script Code { get; set; } = Script.Empty;
 
     /// <summary>
     /// 工具描述（帮助 LLM 理解何时调用此工具）。
@@ -59,51 +61,53 @@ public sealed class CodeSnippetToolNode : INodeType
     public bool DefaultIsEntry => false;
 
     /// <inheritdoc />
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(Code))
+            if (Code is null || string.IsNullOrWhiteSpace(Code.Source))
             {
-                return Task.FromResult(context.ErrorResult("MissingCode", "Code is required. Please define the code to execute."));
+                return context.ErrorResult("MissingCode", "Code is required. Please define the code to execute.");
             }
 
             // Get input from LLM
             var inputPayload = GetInputPayload(context);
             var inputData = GetInputData(inputPayload);
 
-            using var js = JsEngine.Create();
+            var scriptCache = context.ScriptCache ?? new ScriptCache(Options.Create(new JsEngineOptions()));
+            var prepared = scriptCache.GetOrPrepare(Code);
 
-            // Provide input to JS code
+            var extraGlobals = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
             if (inputData is not null)
             {
-                js.SetValue("input", inputData);
+                extraGlobals["input"] = inputData;
             }
 
-            var result = js.Run(Code);
-            var outputItem = js.ToDataItem(result);
+            var scriptContext = new ScriptContext(context, extraGlobals);
+            var result = await prepared.RunAsync(scriptContext, cancellationToken).ConfigureAwait(false);
+            var outputItem = ToDataItem(result);
 
-            return Task.FromResult(new NodeExecutionResult
+            return new NodeExecutionResult
             {
                 Success = true,
                 Output = new DataBatch { Items = [outputItem] }
-            });
+            };
         }
         catch (OperationCanceledException)
         {
-            return Task.FromResult(context.ErrorResult("Cancelled", "Code execution was cancelled."));
+            return context.ErrorResult("Cancelled", "Code execution was cancelled.");
         }
-        catch (Jint.Runtime.JavaScriptException ex)
+        catch (ScriptErrorException ex)
         {
-            return Task.FromResult(context.ErrorResult("CodeError", $"JavaScript execution error: {ex.Message}"));
+            return context.ErrorResult("CodeError", $"JavaScript execution error: {ex.Message}");
         }
         catch (Exception ex) when (ex.GetType().Name.Contains("Timeout"))
         {
-            return Task.FromResult(context.ErrorResult("Timeout", "Code execution timed out."));
+            return context.ErrorResult("Timeout", "Code execution timed out.");
         }
         catch (Exception ex)
         {
-            return Task.FromResult(context.ErrorResult("UnexpectedError", $"Unexpected error during code execution: {ex.Message}"));
+            return context.ErrorResult("UnexpectedError", $"Unexpected error during code execution: {ex.Message}");
         }
     }
 
@@ -124,8 +128,19 @@ public sealed class CodeSnippetToolNode : INodeType
             return null;
         }
 
-        // Convert JsonNode to object for Jint
+        // Convert JsonNode to a JS-friendly ExpandoObject so properties can be accessed via dot notation.
         var json = payload.ToJsonString();
-        return JsonSerializer.Deserialize<object>(json);
+        return JsonSerializer.Deserialize<ExpandoObject>(json, JsonDefaults.Options);
+    }
+
+    private static DataItem ToDataItem(ScriptResult result)
+    {
+        var json = result.ToJson();
+        return new DataItem
+        {
+            Data = json,
+            Success = true,
+            SourceIndex = 0
+        };
     }
 }

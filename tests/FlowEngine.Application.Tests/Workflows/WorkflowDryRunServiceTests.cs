@@ -54,7 +54,10 @@ public sealed class WorkflowDryRunServiceTests : IDisposable
         _contextFactory = new NodeExecutionContextFactory(
             _nodeRegistry,
             new ScriptCache(Options.Create(new JsEngineOptions())),
-            new FlowEngine.Runtime.Expressions.ParameterResolver(NullLogger<FlowEngine.Runtime.Expressions.ParameterResolver>.Instance),
+            new FlowEngine.Runtime.Expressions.ParameterResolver(
+            NullLogger<FlowEngine.Runtime.Expressions.ParameterResolver>.Instance,
+            Options.Create(new JsEngineOptions()),
+            new ScriptCache(Options.Create(new JsEngineOptions()))),
             new FakeCredentialAccessor(),
             new HashSet<string>(StringComparer.OrdinalIgnoreCase),
             NullLogger<ParameterHydrator>.Instance,

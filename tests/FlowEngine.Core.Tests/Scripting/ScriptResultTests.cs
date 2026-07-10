@@ -1,19 +1,19 @@
 using System.Text.Json.Nodes;
+using FlowEngine.Core.Entities;
 using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Scripting;
-using Jint;
+using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Core.Tests.Scripting;
 
 public sealed class ScriptResultTests
 {
-    private static ScriptResult Evaluate(string source)
+    private static ScriptResult Evaluate(string source, ScriptReturnType returnType = ScriptReturnType.Object)
     {
-        using var engine = JsEngine.Create();
-        var script = new Script { Source = source };
-        var prepared = JsEngine.PrepareExpression(source);
-        var raw = engine.EvaluatePrepared(prepared);
-        return new ScriptResult(script, raw);
+        var script = new Script { Source = source, ReturnType = returnType };
+        var cache = new ScriptCache(Options.Create(new JsEngineOptions()));
+        var prepared = cache.GetOrPrepare(script);
+        return prepared.RunAsync(ScriptContext.From(new NodeExecutionContext())).GetAwaiter().GetResult();
     }
 
     [Fact]
@@ -59,6 +59,31 @@ public sealed class ScriptResultTests
     }
 
     [Fact]
+    public void ToClr_Object_ReturnsJsonObject()
+    {
+        var result = Evaluate("({a:1,b:'two'})");
+
+        var clr = result.ToClr();
+
+        Assert.IsType<JsonObject>(clr);
+        var obj = (JsonObject)clr;
+        Assert.Equal(1, obj["a"]!.GetValue<int>());
+        Assert.Equal("two", obj["b"]!.GetValue<string>());
+    }
+
+    [Fact]
+    public void ToClr_Array_ReturnsJsonArray()
+    {
+        var result = Evaluate("[1, 2, 3]");
+
+        var clr = result.ToClr();
+
+        Assert.IsType<JsonArray>(clr);
+        var arr = (JsonArray)clr;
+        Assert.Equal(3, arr.Count);
+    }
+
+    [Fact]
     public void ToBoolean_FalsyValues_AreFalse()
     {
         Assert.False(Evaluate("false").ToBoolean());
@@ -100,14 +125,12 @@ public sealed class ScriptResultTests
         Assert.Equal(3.14, Evaluate("3.14").To<double>());
     }
 
+
+
     [Fact]
     public void To_Dictionary_ReturnsStringDictionary()
     {
-        var script = new Script { Source = "({a:1,b:2})", ReturnType = ScriptReturnType.Dictionary };
-        using var engine = JsEngine.Create();
-        var prepared = JsEngine.PrepareExpression(script.Source);
-        var raw = engine.EvaluatePrepared(prepared);
-        var result = new ScriptResult(script, raw);
+        var result = Evaluate("({a:1,b:2})", ScriptReturnType.Dictionary);
 
         var dict = result.To<Dictionary<string, string>>();
 

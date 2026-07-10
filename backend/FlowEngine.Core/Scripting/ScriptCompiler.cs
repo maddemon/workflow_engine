@@ -28,6 +28,12 @@ internal static class ScriptCompiler
             return Prepare("(function(){ return undefined; })()", source);
         }
 
+        // `{}` 会被解析为空块语句；在表达式/脚本上下文中统一视为空对象字面量。
+        if (source.Trim() == "{}")
+        {
+            return Prepare("return ({});", source);
+        }
+
         // Parser 不是线程安全的，每次编译新建实例。
         // 允许顶层 return，以便识别含 return 的脚本并正确包裹为 IIFE。
         var parser = new Parser(new ParserOptions { AllowReturnOutsideFunction = true });

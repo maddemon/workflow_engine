@@ -59,7 +59,10 @@ public sealed class NodeExecutionContextFactoryTests
         _factory = new NodeExecutionContextFactory(
             _registry,
             new ScriptCache(Options.Create(new JsEngineOptions())),
-            new ParameterResolver(NullLogger<ParameterResolver>.Instance),
+            new ParameterResolver(
+                NullLogger<ParameterResolver>.Instance,
+                Options.Create(new JsEngineOptions()),
+                new ScriptCache(Options.Create(new JsEngineOptions()))),
             _credentialAccessor,
             new HashSet<string>(StringComparer.OrdinalIgnoreCase),
             tokenService: new StubOAuth2TokenService());

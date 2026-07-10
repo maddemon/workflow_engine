@@ -10,6 +10,7 @@ namespace FlowEngine.Core.Scripting;
 /// 脚本执行引擎，统一处理 JS 表达式求值。
 /// 支持不同的返回类型：string、object、bool、number。
 /// </summary>
+[Obsolete("使用 PreparedScript / ScriptResult")]
 public static class ScriptEngine
 {
     /// <summary>
@@ -26,6 +27,7 @@ public static class ScriptEngine
     /// <param name="input">输入数据（绑定到 input 变量）。</param>
     /// <param name="language">脚本语言。</param>
     /// <returns>执行结果。</returns>
+    [Obsolete("使用 PreparedScript / ScriptResult")]
     public static T? Evaluate<T>(string? expression, object? input, ScriptLanguage language = ScriptLanguage.JavaScript)
     {
         if (string.IsNullOrWhiteSpace(expression))
@@ -54,6 +56,7 @@ public static class ScriptEngine
     /// <summary>
     /// 执行脚本并返回字符串。
     /// </summary>
+    [Obsolete("使用 PreparedScript / ScriptResult")]
     public static string? EvaluateAsString(string? expression, object? input, ScriptLanguage language = ScriptLanguage.JavaScript)
     {
         return Evaluate<string>(expression, input, language);
@@ -62,6 +65,7 @@ public static class ScriptEngine
     /// <summary>
     /// 执行脚本并返回 JSON 对象（Dictionary&lt;string, string&gt;）。
     /// </summary>
+    [Obsolete("使用 PreparedScript / ScriptResult")]
     public static Dictionary<string, string>? EvaluateAsDictionary(string? expression, object? input, ScriptLanguage language = ScriptLanguage.JavaScript)
     {
         if (string.IsNullOrWhiteSpace(expression))
@@ -97,6 +101,7 @@ public static class ScriptEngine
     /// <summary>
     /// 执行脚本并返回 JsonObject。
     /// </summary>
+    [Obsolete("使用 PreparedScript / ScriptResult")]
     public static JsonObject? EvaluateAsJsonObject(string? expression, object? input, ScriptLanguage language = ScriptLanguage.JavaScript)
     {
         if (string.IsNullOrWhiteSpace(expression))
@@ -121,6 +126,7 @@ public static class ScriptEngine
     /// <summary>
     /// 执行脚本并返回布尔值。
     /// </summary>
+    [Obsolete("使用 PreparedScript / ScriptResult")]
     public static bool EvaluateAsBool(string? expression, object? input, ScriptLanguage language = ScriptLanguage.JavaScript)
     {
         return Evaluate<bool>(expression, input, language);

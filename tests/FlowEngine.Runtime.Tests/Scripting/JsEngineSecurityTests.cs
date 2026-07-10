@@ -2,6 +2,8 @@ using System.Text.Json.Nodes;
 using FlowEngine.Core.Scripting;
 using Microsoft.Extensions.Logging.Abstractions;
 
+#pragma warning disable CS0618 // 本文件直接验证 JsEngine 内置函数，沿用 ToClrValue 直到阶段五迁移完成
+
 namespace FlowEngine.Runtime.Tests.Scripting;
 
 public class JsEngineSecurityTests
@@ -139,3 +141,5 @@ public class JsEngineSecurityTests
         Assert.Null(ex);
     }
 }
+
+#pragma warning restore CS0618

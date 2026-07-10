@@ -154,7 +154,7 @@ public sealed class FilterNode : INodeType
     /// </summary>
     private static bool EvaluateStructuredCondition(FilterCondition condition, JsonNode? data)
     {
-        var leftValue = GetJsonValue(data, condition.LeftValue);
+        var leftValue = JsonPath.GetValue(data, condition.LeftValue);
         var rightValue = condition.RightValue;
 
         return condition.Operation switch
@@ -172,36 +172,6 @@ public sealed class FilterNode : INodeType
             FilterOperation.IsNotEmpty => !string.IsNullOrEmpty(leftValue),
             _ => false
         };
-    }
-
-    private static string? GetJsonValue(JsonNode? data, string? path)
-    {
-        if (data is null || string.IsNullOrEmpty(path))
-        {
-            return null;
-        }
-
-        if (data is not JsonObject obj)
-        {
-            return null;
-        }
-
-        var parts = path.Split('.');
-        JsonNode? current = obj;
-
-        foreach (var part in parts)
-        {
-            if (current is JsonObject currentObj && currentObj.TryGetPropertyValue(part, out var next))
-            {
-                current = next;
-            }
-            else
-            {
-                return null;
-            }
-        }
-
-        return current?.ToString();
     }
 
     private static int CompareValues(string? left, string? right, bool ignoreCase)

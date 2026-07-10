@@ -99,32 +99,10 @@ public sealed class JsEngine : IDisposable
     /// <summary>
     /// JsValue → System.Text.Json 兼容类型转换（用于参数求值结果）。
     /// </summary>
+    [Obsolete("使用 ScriptResult.ToClr()")]
     public static object? ToClrValue(JsValue value)
     {
-        if (value.IsUndefined() || value.IsNull())
-        {
-            return null;
-        }
-
-        if (value.IsBoolean())
-        {
-            return value.AsBoolean();
-        }
-
-        if (value.IsNumber())
-        {
-            var num = value.AsNumber();
-            return num == Math.Floor(num) && num is >= int.MinValue and <= int.MaxValue
-                ? (int)num
-                : num;
-        }
-
-        if (value.IsString())
-        {
-            return value.AsString();
-        }
-
-        return JsonNode.Parse(value.ToString());
+        return new ScriptResult(Script.Empty, value).ToClr();
     }
 
     /// <summary>
@@ -254,7 +232,7 @@ public sealed class JsEngine : IDisposable
             // 统一返回 JSON 字符串，避免标量与对象返回类型不一致
             try
             {
-                var result = NavigateJsonPath(data, query.AsSpan());
+                var result = JsonPath.GetNode(data, query);
                 return result?.ToJsonString();
             }
             catch (Exception ex)
@@ -284,64 +262,4 @@ public sealed class JsEngine : IDisposable
         engine.SetValue("trim", new Func<string?, string?>(value => value?.Trim()));
     }
 
-    private static JsonNode? NavigateJsonPath(JsonNode node, ReadOnlySpan<char> path)
-    {
-        if (path.Length == 0) return node;
-
-        var current = node;
-        var remaining = path;
-
-        while (remaining.Length > 0)
-        {
-            remaining = remaining.TrimStart('.');
-
-            if (remaining.Length == 0) break;
-
-            // 数组索引: [0]
-            if (remaining[0] == '[')
-            {
-                var end = remaining.IndexOf(']');
-                if (end < 0) return null;
-
-                if (current is JsonArray arr)
-                {
-                    var indexStr = remaining[1..end].ToString();
-                    if (int.TryParse(indexStr, out var idx) && idx >= 0 && idx < arr.Count)
-                    {
-                        current = arr[idx];
-                    }
-                    else
-                    {
-                        return null;
-                    }
-                }
-                else
-                {
-                    return null;
-                }
-
-                remaining = remaining[(end + 1)..];
-                continue;
-            }
-
-            // 属性名
-            var dotOrBracket = remaining.IndexOfAny('.', '[');
-            var key = dotOrBracket < 0
-                ? remaining.ToString()
-                : remaining[..dotOrBracket].ToString();
-
-            if (current is JsonObject obj && obj.TryGetPropertyValue(key, out var child))
-            {
-                current = child;
-            }
-            else
-            {
-                return null;
-            }
-
-            remaining = dotOrBracket < 0 ? [] : remaining[dotOrBracket..];
-        }
-
-        return current;
-    }
 }

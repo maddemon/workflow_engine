@@ -1,5 +1,4 @@
 using System;
-using System.Security.Cryptography;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
@@ -7,6 +6,7 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Expressions;
 using FlowEngine.Runtime.Credentials;
 using FlowEngine.Runtime.Expressions;
@@ -51,7 +51,6 @@ public sealed class NodeExecutionContextFactory(
         var nodeDefinition = node;
         var descriptor = registry.GetDescriptor(node.TypeName);
         var rawParameters = MergeParameters(nodeDefinition, descriptor);
-        var cacheKey = BuildCacheKey(descriptor);
 
         // CodeEditor/Script 的非 Script 字符串参数仍由节点自己执行，先抽出避免被 ParameterResolver 误求值
         var codeParamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -202,7 +201,8 @@ public sealed class NodeExecutionContextFactory(
         await PreEvaluateScriptParametersAsync(rawParameters, descriptor, scriptContext, js, scriptCache, cancellationToken)
             .ConfigureAwait(false);
 
-        var resolvedParameters = parameterResolver.Resolve(rawParameters, js, cacheKey);
+        var resolvedParameters = await parameterResolver.ResolveAsync(rawParameters, js, cancellationToken)
+            .ConfigureAwait(false);
 
         // 将 CodeEditor/Script 字符串参数原样放回
         foreach (var (name, val) in rawCodeParams)
@@ -233,47 +233,6 @@ public sealed class NodeExecutionContextFactory(
             ScriptCache = scriptCache,
             GlobalVariables = BuildGlobalVariables(credentialsDict, workflow, execution.Id, nodeDefinition, runIndex, rawParameters, environmentWhitelist),
         };
-    }
-
-    private static ExpressionCacheKey? BuildCacheKey(NodeTypeDescriptor descriptor)
-    {
-        var inputPort = descriptor.Ports.FirstOrDefault(p =>
-            p.Name.Equals(FlowConstants.PortNames.Input, StringComparison.OrdinalIgnoreCase)
-            && p.Direction == PortDirection.Input
-            && p.Type == PortType.Main);
-
-        var inputSchemaHash = ComputeHash(inputPort?.ExpectedSchema);
-        var parameterSchemaHash = ComputeHash(descriptor.Parameters);
-
-        if (string.IsNullOrEmpty(inputSchemaHash) && string.IsNullOrEmpty(parameterSchemaHash))
-        {
-            return null;
-        }
-
-        return new ExpressionCacheKey(string.Empty, inputSchemaHash, parameterSchemaHash);
-    }
-
-    private static string ComputeHash(object? value)
-    {
-        if (value is null)
-        {
-            return string.Empty;
-        }
-
-        var json = JsonSerializer.Serialize(value, JsonDefaults.Options);
-        if (string.IsNullOrEmpty(json) || json == "{}")
-        {
-            return string.Empty;
-        }
-
-        var bytes = System.Text.Encoding.UTF8.GetBytes(json);
-#if NET8_0_OR_GREATER
-        var hash = SHA256.HashData(bytes);
-#else
-        using var sha = SHA256.Create();
-        var hash = sha.ComputeHash(bytes);
-#endif
-        return Convert.ToHexString(hash);
     }
 
     private static object? GetCurrentInput(IReadOnlyDictionary<string, DataBatch> inputs, int runIndex)
@@ -418,9 +377,14 @@ public sealed class NodeExecutionContextFactory(
             {
                 if (definition?.Hint == PresentationHint.Expression)
                 {
-                    var result = await EvaluateScriptAsync(script, scriptContext, js, scriptCache, cancellationToken)
+                    var expressionResult = await EvaluateScriptAsync(script, scriptContext, js, scriptCache, cancellationToken)
                         .ConfigureAwait(false);
-                    rawParameters[name] = script.WithResolvedValue(result.ToJson());
+                    if (!expressionResult.Success)
+                    {
+                        throw new ScriptErrorException(script, $"参数表达式预求值失败: {expressionResult.Error?.Reason}", expressionResult.Error);
+                    }
+
+                    rawParameters[name] = script.WithResolvedValue(expressionResult.ToJson());
                 }
 
                 continue;
@@ -433,9 +397,14 @@ public sealed class NodeExecutionContextFactory(
                     var evaluated = new Dictionary<string, Script>(StringComparer.OrdinalIgnoreCase);
                     foreach (var (key, itemScript) in dict)
                     {
-                        var result = await EvaluateScriptAsync(itemScript, scriptContext, js, scriptCache, cancellationToken)
+                        var itemResult = await EvaluateScriptAsync(itemScript, scriptContext, js, scriptCache, cancellationToken)
                             .ConfigureAwait(false);
-                        evaluated[key] = itemScript.WithResolvedValue(result.ToJson());
+                        if (!itemResult.Success)
+                        {
+                            throw new ScriptErrorException(itemScript, $"列映射表达式预求值失败: {itemResult.Error?.Reason}", itemResult.Error);
+                        }
+
+                        evaluated[key] = itemScript.WithResolvedValue(itemResult.ToJson());
                     }
 
                     rawParameters[name] = evaluated;
@@ -458,9 +427,14 @@ public sealed class NodeExecutionContextFactory(
 
                 if (definition.Hint == PresentationHint.Expression)
                 {
-                    var result = await EvaluateScriptAsync(converted, scriptContext, js, scriptCache, cancellationToken)
+                    var expressionResult = await EvaluateScriptAsync(converted, scriptContext, js, scriptCache, cancellationToken)
                         .ConfigureAwait(false);
-                    converted = converted.WithResolvedValue(result.ToJson());
+                    if (!expressionResult.Success)
+                    {
+                        throw new ScriptErrorException(converted, $"参数表达式预求值失败: {expressionResult.Error?.Reason}", expressionResult.Error);
+                    }
+
+                    converted = converted.WithResolvedValue(expressionResult.ToJson());
                 }
 
                 rawParameters[name] = converted;
@@ -478,6 +452,8 @@ public sealed class NodeExecutionContextFactory(
         var prepared = scriptCache.GetOrPrepare(script);
         return await prepared.RunAsync(context, js, cancellationToken).ConfigureAwait(false);
     }
+
+
 
     private static Script? ConvertToScript(object? value)
     {

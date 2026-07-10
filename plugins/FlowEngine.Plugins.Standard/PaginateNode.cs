@@ -10,8 +10,10 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Http;
 using FlowEngine.Core.Scripting;
+using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -96,7 +98,16 @@ public sealed class PaginateNode : INodeType
         JsonNode? lastResponse = null;
         var allItems = new List<DataItem>();
 
+        var scriptCache = context.ScriptCache ?? new ScriptCache(Options.Create(new JsEngineOptions()));
+        var terminateScript = new Script
+        {
+            Source = terminateWhen,
+            Language = ScriptLanguage.JavaScript,
+            ReturnType = ScriptReturnType.Bool
+        };
+        var preparedTerminate = scriptCache.GetOrPrepare(terminateScript);
         using var termEngine = JsEngine.Create();
+        using var termSession = preparedTerminate.CreateSession(termEngine);
 
         for (var page = 0; page < maxPages; page++)
         {
@@ -216,17 +227,22 @@ public sealed class PaginateNode : INodeType
             }
 
             // 终止判断：以新游标作为 $nextCursor 求值 terminateWhen
-            termEngine.SetValue("$cursor", cursor);
-            termEngine.SetValue("$nextCursor", nextCursor);
-            termEngine.SetValue("$page", page);
-            termEngine.SetValue("$response", httpBody);
+            var terminateGlobals = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["$cursor"] = cursor,
+                ["$nextCursor"] = nextCursor,
+                ["$page"] = page,
+                ["$response"] = httpBody
+            };
+            var terminateContext = new ScriptContext(context, terminateGlobals);
 
             bool stop;
             try
             {
-                stop = JsEngine.ToClrValue(termEngine.Evaluate(terminateWhen)) is true;
+                var terminateResult = await termSession.RunAsync(preparedTerminate, terminateContext, cancellationToken).ConfigureAwait(false);
+                stop = terminateResult.ToBoolean();
             }
-            catch
+            catch (ScriptErrorException)
             {
                 stop = false;
             }

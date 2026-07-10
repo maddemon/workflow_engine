@@ -26,7 +26,10 @@ public class QueueDiagnosticTests
             [new PassThroughNode()],
             NullLogger<NodeRegistry>.Instance);
 
-        var resolver = new ParameterResolver(NullLogger<ParameterResolver>.Instance);
+        var resolver = new ParameterResolver(
+            NullLogger<ParameterResolver>.Instance,
+            Options.Create(new JsEngineOptions()),
+            new ScriptCache(Options.Create(new JsEngineOptions())));
         var contextFactory = new NodeExecutionContextFactory(
             nodeRegistry,
             new ScriptCache(Options.Create(new JsEngineOptions())),

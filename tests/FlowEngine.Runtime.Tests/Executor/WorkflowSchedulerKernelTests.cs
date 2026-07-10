@@ -41,7 +41,10 @@ public sealed class WorkflowSchedulerKernelTests
             },
             NullLogger<NodeRegistry>.Instance);
 
-        var resolver = new ParameterResolver(NullLogger<ParameterResolver>.Instance);
+        var resolver = new ParameterResolver(
+            NullLogger<ParameterResolver>.Instance,
+            Options.Create(new JsEngineOptions()),
+            new ScriptCache(Options.Create(new JsEngineOptions())));
         _contextFactory = new NodeExecutionContextFactory(
             _nodeRegistry,
             new ScriptCache(Options.Create(new JsEngineOptions())),

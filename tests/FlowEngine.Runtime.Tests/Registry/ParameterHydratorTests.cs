@@ -41,7 +41,7 @@ public class ParameterHydratorTests
         await _hydrator.HydrateAsync(node, resolved);
 
         Assert.NotNull(node.BodyExpression);
-        Assert.Equal("{'key': 'value'}", node.BodyExpression);
+        Assert.Equal("{'key': 'value'}", node.BodyExpression.Source);
     }
 
     [Fact]
@@ -56,7 +56,7 @@ public class ParameterHydratorTests
 
         await _hydrator.HydrateAsync(node, resolved);
 
-        Assert.Equal("https://example.com", node.Url);
+        Assert.Equal("https://example.com", node.Url.Source);
         Assert.Equal(HttpMethodOption.Get, node.Method);
     }
 
@@ -70,7 +70,7 @@ public class ParameterHydratorTests
 
         await _hydrator.HydrateAsync(node, resolved);
 
-        Assert.Equal("https://example.com", node.Url);
+        Assert.Equal("https://example.com", node.Url.Source);
     }
 
     [Fact]

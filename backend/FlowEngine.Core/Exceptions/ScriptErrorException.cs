@@ -5,7 +5,7 @@ namespace FlowEngine.Core.Exceptions;
 /// <summary>
 /// 脚本执行失败异常。
 /// </summary>
-public sealed class ScriptErrorException : Exception
+public class ScriptErrorException : Exception
 {
     /// <summary>
     /// 失败脚本。

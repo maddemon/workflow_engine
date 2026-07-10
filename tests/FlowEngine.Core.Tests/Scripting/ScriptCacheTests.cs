@@ -38,12 +38,13 @@ public sealed class ScriptCacheTests
     }
 
     [Fact]
-    public void GetOrPrepare_ForbiddenIdentifier_ThrowsScriptErrorException()
+    public void GetOrPrepare_ForbiddenIdentifier_ThrowsScriptSecurityException()
     {
         var cache = CreateCache();
         var script = new Script { Source = "eval('1')" };
 
-        Assert.Throws<ScriptErrorException>(() => cache.GetOrPrepare(script));
+        var ex = Assert.Throws<ScriptSecurityException>(() => cache.GetOrPrepare(script));
+        Assert.Equal("eval", ex.Identifier);
     }
 
     [Fact]
@@ -155,12 +156,13 @@ public sealed class ScriptCacheTests
     }
 
     [Fact]
-    public void GetOrPrepare_ForbiddenIdentifierInReturnStatement_ThrowsScriptErrorException()
+    public void GetOrPrepare_ForbiddenIdentifierInReturnStatement_ThrowsScriptSecurityException()
     {
         var cache = CreateCache();
         var script = new Script { Source = "return process.env" };
 
-        Assert.Throws<ScriptErrorException>(() => cache.GetOrPrepare(script));
+        var ex = Assert.Throws<ScriptSecurityException>(() => cache.GetOrPrepare(script));
+        Assert.Equal("process", ex.Identifier);
     }
 
 }
