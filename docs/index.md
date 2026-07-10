@@ -32,6 +32,7 @@ Flow Engine 是一个节点可热插拔的工作流自动化引擎。后端用 C
 | [node-system.md](architecture/node-system.md)                         | 节点接口、注册流程、参数驱动 UI、节点分类、开发规范         |
 | [execution-engine.md](architecture/execution-engine.md)               | 执行循环、多输入等待、错误处理、执行状态机、执行记录          |
 | [expression-system.md](architecture/expression-system.md)             | 表达式语法、变量、求值流程、安全限制、错误处理             |
+| [script-type.md](architecture/script-type.md)                       | Script 类型设计：脚本承载类型、求值封装、通用逻辑归位       |
 | [credentials.md](architecture/credentials.md)                         | 凭据模型、加密方案、运行时注入、安全红线                |
 | [trigger-system.md](architecture/trigger-system.md)                   | 触发器类型、调度、轮询去重、生命周期、状态持久化            |
 | [webhook.md](architecture/webhook.md)                                 | Webhook 类型、生命周期、路由注册、请求校验、响应模式      |

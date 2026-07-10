@@ -22,6 +22,7 @@ docs/
 │   ├── node-system.md
 │   ├── execution-engine.md
 │   ├── expression-system.md
+│   ├── script-type.md
 │   ├── credentials.md
 │   ├── trigger-system.md
 │   ├── webhook.md

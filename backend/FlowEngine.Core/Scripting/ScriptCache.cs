@@ -137,7 +137,7 @@ public sealed class ScriptCache : IScriptCache
         {
             throw;
         }
-        catch
+        catch (ParseErrorException)
         {
             // 源码语法错误时 tokenizer 可能抛出异常；安全校验只关注真实标识符，
             // 语法错误交给后续编译阶段处理。
