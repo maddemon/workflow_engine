@@ -7,7 +7,7 @@ using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Core.Scripting;
 
-using PreparedScript = Jint.Prepared<Acornima.Ast.Script>;
+using JintPreparedScript = Jint.Prepared<Acornima.Ast.Script>;
 
 /// <summary>
 /// Jint JavaScript 引擎封装。
@@ -130,7 +130,7 @@ public sealed class JsEngine : IDisposable
     /// <summary>
     /// 预编译表达式，返回可缓存的 AST。
     /// </summary>
-    public static PreparedScript PrepareExpression(string expression)
+    public static JintPreparedScript PrepareExpression(string expression)
     {
         return Engine.PrepareScript($"return ({expression})", expression, strict: true);
     }
@@ -138,7 +138,7 @@ public sealed class JsEngine : IDisposable
     /// <summary>
     /// 执行已预编译的表达式 AST。
     /// </summary>
-    public JsValue EvaluatePrepared(PreparedScript prepared)
+    public JsValue EvaluatePrepared(JintPreparedScript prepared)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         return _engine.Evaluate(in prepared);

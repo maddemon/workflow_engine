@@ -18,7 +18,7 @@ public static class ScriptEngine
     /// 表达式预编译缓存：按表达式字符串缓存 AST，避免每次求值都重新解析（P2）。
     /// 预编译产物可在多个独立沙箱引擎间复用。
     /// </summary>
-    private static readonly ConcurrentDictionary<string, Jint.Prepared<Script>> ExpressionCache = new(StringComparer.Ordinal);
+    private static readonly ConcurrentDictionary<string, Jint.Prepared<Acornima.Ast.Script>> ExpressionCache = new(StringComparer.Ordinal);
 
     /// <summary>
     /// 执行脚本并返回指定类型的结果。

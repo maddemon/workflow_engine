@@ -29,6 +29,7 @@ using FlowEngine.Runtime.Executor;
 using FlowEngine.Runtime.Expressions;
 using FlowEngine.Runtime.Http;
 using FlowEngine.Runtime.Registry;
+using FlowEngine.Core.DependencyInjection;
 using FlowEngine.Core.Scripting;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -114,7 +115,7 @@ public static class ServiceCollectionExtensions
 
         // ── Engine Defaults ────────────────────────────────────────
         services.Configure<EngineDefaultsOptions>(configuration.GetSection(EngineDefaultsOptions.SectionName));
-        services.AddSingleton(new JsEngineOptions());
+        services.AddFlowEngineCoreScripting();
 
         // ── Database ────────────────────────────────────────────────
         AddDbContext(services, configuration);

@@ -1,3 +1,4 @@
+using System.Text.Encodings.Web;
 using System.Text.Json;
 
 namespace FlowEngine.Core;
@@ -8,11 +9,12 @@ namespace FlowEngine.Core;
 public static class JsonDefaults
 {
     /// <summary>
-    /// 标准选项：camelCase 命名策略，非缩进。
+    /// 标准选项：camelCase 命名策略，非缩进，保留可读字符（+、' 等）不转义。
     /// </summary>
     public static JsonSerializerOptions Options { get; } = new()
     {
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        WriteIndented = false
+        WriteIndented = false,
+        Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
     };
 }

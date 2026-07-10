@@ -5,6 +5,15 @@ namespace FlowEngine.Core.Scripting;
 /// </summary>
 public sealed class JsEngineOptions
 {
+    private static readonly HashSet<string> s_defaultForbiddenIdentifiers = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "require", "process", "fs", "path", "os", "net", "http", "https",
+        "fetch", "XMLHttpRequest", "WebSocket", "eval",
+        "setTimeout", "setInterval", "setImmediate", "clearTimeout", "clearInterval",
+        "globalThis", "window", "document", "constructor", "prototype", "__proto__",
+        "import", "export", "module", "exports",
+    };
+
     /// <summary>
     /// 脚本执行超时（毫秒）。默认 5000ms。
     /// </summary>
@@ -34,4 +43,10 @@ public sealed class JsEngineOptions
     /// 数组大小限制。默认 100000。
     /// </summary>
     public int ArraySizeLimit { get; set; } = 100_000;
+
+    /// <summary>
+    /// 表达式/脚本中禁止使用的标识符集合。
+    /// 默认包含 require、process、fs、fetch、eval 等可能用于逃逸沙箱的符号。
+    /// </summary>
+    public IReadOnlySet<string> ForbiddenIdentifiers { get; set; } = s_defaultForbiddenIdentifiers;
 }
