@@ -8,8 +8,10 @@ using FlowEngine.Core.ValueObjects;
 using FlowEngine.Runtime.Executor;
 using FlowEngine.Runtime.Expressions;
 using FlowEngine.Runtime.Registry;
+using FlowEngine.Core.Scripting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Runtime.Tests.Executor;
 
@@ -42,7 +44,12 @@ public class WorkflowExecutorTests
 
         var resolver = new ParameterResolver(
             NullLogger<ParameterResolver>.Instance);
-        var contextFactory = new NodeExecutionContextFactory(_nodeRegistry, resolver, new TestCredentialAccessor(), new HashSet<string>());
+        var contextFactory = new NodeExecutionContextFactory(
+            _nodeRegistry,
+            new ScriptCache(Options.Create(new JsEngineOptions())),
+            resolver,
+            new TestCredentialAccessor(),
+            new HashSet<string>());
         var errorHandler = new ErrorStrategyHandler();
 
         _executionQueue = new WorkflowExecutionQueue();
@@ -485,7 +492,12 @@ public class WorkflowExecutorTests
         };
 
         var resolver = new ParameterResolver(NullLogger<ParameterResolver>.Instance);
-        var contextFactory = new NodeExecutionContextFactory(_nodeRegistry, resolver, new TestCredentialAccessor(), new HashSet<string>());
+        var contextFactory = new NodeExecutionContextFactory(
+            _nodeRegistry,
+            new ScriptCache(Options.Create(new JsEngineOptions())),
+            resolver,
+            new TestCredentialAccessor(),
+            new HashSet<string>());
         var errorHandler = new ErrorStrategyHandler();
         var kernel = new WorkflowSchedulerKernel(
             _nodeRegistry,

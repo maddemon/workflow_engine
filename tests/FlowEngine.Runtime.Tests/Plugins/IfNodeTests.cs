@@ -6,11 +6,13 @@ using System.Threading.Tasks;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
+using FlowEngine.Core.Scripting;
 using FlowEngine.Plugins.Standard;
 using FlowEngine.Runtime.Expressions;
 using FlowEngine.Runtime.Executor;
 using FlowEngine.Runtime.Registry;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace FlowEngine.Runtime.Tests.Plugins;
@@ -25,6 +27,7 @@ public sealed class IfNodeTests
     private static NodeExecutionContextFactory BuildFactory(ICredentialAccessor creds) =>
         new(
             new NodeRegistry(new List<INodeType> { new IfNode() }, NullLogger<NodeRegistry>.Instance),
+            new ScriptCache(Options.Create(new JsEngineOptions())),
             new ParameterResolver(NullLogger<ParameterResolver>.Instance),
             creds,
             new HashSet<string>(StringComparer.OrdinalIgnoreCase));

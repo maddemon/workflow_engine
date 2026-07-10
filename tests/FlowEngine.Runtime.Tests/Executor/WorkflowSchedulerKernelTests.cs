@@ -10,6 +10,7 @@ using FlowEngine.Runtime.Expressions;
 using FlowEngine.Runtime.Registry;
 using FlowEngine.Runtime.Security;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Runtime.Tests.Executor;
 
@@ -42,7 +43,11 @@ public sealed class WorkflowSchedulerKernelTests
 
         var resolver = new ParameterResolver(NullLogger<ParameterResolver>.Instance);
         _contextFactory = new NodeExecutionContextFactory(
-            _nodeRegistry, resolver, new StubCredentialAccessor(), new HashSet<string>());
+            _nodeRegistry,
+            new ScriptCache(Options.Create(new JsEngineOptions())),
+            resolver,
+            new StubCredentialAccessor(),
+            new HashSet<string>());
         _kernel = new WorkflowSchedulerKernel(
             _nodeRegistry, _contextFactory, new ErrorStrategyHandler(), new SecretMasker(), NullLogger<WorkflowSchedulerKernel>.Instance);
     }

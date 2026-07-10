@@ -6,11 +6,13 @@ using System.Threading.Tasks;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
+using FlowEngine.Core.Scripting;
 using FlowEngine.Plugins.Standard;
 using FlowEngine.Runtime.Expressions;
 using FlowEngine.Runtime.Executor;
 using FlowEngine.Runtime.Registry;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace FlowEngine.Runtime.Tests.Plugins;
@@ -32,6 +34,7 @@ public sealed class FilterNodeTests
         var registry = new NodeRegistry(new List<INodeType> { new FilterNode() }, NullLogger<NodeRegistry>.Instance);
         var factory = new NodeExecutionContextFactory(
             registry,
+            new ScriptCache(Options.Create(new JsEngineOptions())),
             new ParameterResolver(NullLogger<ParameterResolver>.Instance),
             new NullCredentialAccessor(),
             new HashSet<string>(StringComparer.OrdinalIgnoreCase));

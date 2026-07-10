@@ -2,12 +2,14 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Scripting;
 using FlowEngine.Core.ValueObjects;
 using FlowEngine.Runtime.Executor;
 using FlowEngine.Runtime.Expressions;
 using FlowEngine.Runtime.Registry;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Runtime.Tests.Executor;
 
@@ -25,7 +27,12 @@ public class QueueDiagnosticTests
             NullLogger<NodeRegistry>.Instance);
 
         var resolver = new ParameterResolver(NullLogger<ParameterResolver>.Instance);
-        var contextFactory = new NodeExecutionContextFactory(nodeRegistry, resolver, new TestCredentialAccessor(), new HashSet<string>());
+        var contextFactory = new NodeExecutionContextFactory(
+            nodeRegistry,
+            new ScriptCache(Options.Create(new JsEngineOptions())),
+            resolver,
+            new TestCredentialAccessor(),
+            new HashSet<string>());
         var errorHandler = new ErrorStrategyHandler();
         var queue = new WorkflowExecutionQueue();
 

@@ -2,9 +2,11 @@ using System.Collections;
 using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
+using FlowEngine.Core.Scripting;
 using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Runtime.Registry;
@@ -139,6 +141,34 @@ public sealed class ParameterHydrator(ICredentialAccessor? credentialAccessor = 
         if (underlying == typeof(CredentialValue))
         {
             return value is CredentialValue cv ? cv : await ConvertToCredentialAsync(value).ConfigureAwait(false);
+        }
+
+        if (underlying == typeof(Script))
+        {
+            return value switch
+            {
+                Script s => s,
+                string str => new Script { Source = str, Language = ScriptLanguage.JavaScript, ReturnType = ScriptReturnType.String },
+                JsonElement element => element.Deserialize<Script>(JsonDefaults.Options),
+                JsonNode node => node.Deserialize<Script>(JsonDefaults.Options),
+                _ => null
+            };
+        }
+
+        if (underlying.IsGenericType
+            && underlying.GetGenericTypeDefinition() == typeof(Dictionary<,>)
+            && underlying.GetGenericArguments() is Type[] args
+            && args.Length == 2
+            && args[0] == typeof(string)
+            && args[1] == typeof(Script))
+        {
+            return value switch
+            {
+                JsonElement element => element.Deserialize<Dictionary<string, Script>>(JsonDefaults.Options),
+                JsonNode node => node.Deserialize<Dictionary<string, Script>>(JsonDefaults.Options),
+                string str => JsonSerializer.Deserialize<Dictionary<string, Script>>(str, JsonDefaults.Options),
+                _ => null
+            };
         }
 
         if (IsGenericList(underlying, out var elementType))

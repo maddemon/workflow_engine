@@ -72,7 +72,7 @@ public sealed class Script : IEquatable<Script>
     /// <summary>
     /// 创建携带运行时解析值的新 <see cref="Script"/> 实例。
     /// </summary>
-    internal Script WithResolvedValue(JsonNode? value)
+    public Script WithResolvedValue(JsonNode? value)
     {
         return new Script(Source, Language, ReturnType, value);
     }

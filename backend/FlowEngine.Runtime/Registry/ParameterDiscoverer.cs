@@ -7,6 +7,7 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Scripting;
 using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Runtime.Registry;
@@ -268,6 +269,22 @@ public sealed class ParameterDiscoverer(ILogger? logger = null)
                 PresentationHint.CodeEditor => (ParameterType.Code, PresentationHint.CodeEditor),
                 _ => (ParameterType.String, null)
             };
+        }
+
+        if (effectiveType == typeof(Script))
+        {
+            var hint = hintAttr?.Component ?? PresentationHint.Expression;
+            return (ParameterType.Script, hint);
+        }
+
+        if (effectiveType.IsGenericType
+            && effectiveType.GetGenericTypeDefinition() == typeof(Dictionary<,>)
+            && effectiveType.GetGenericArguments() is Type[] args
+            && args.Length == 2
+            && args[0] == typeof(string)
+            && args[1] == typeof(Script))
+        {
+            return (ParameterType.Json, PresentationHint.KeyValueEditor);
         }
 
         if (effectiveType == typeof(bool))

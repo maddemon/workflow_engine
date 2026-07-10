@@ -16,6 +16,7 @@ using FlowEngine.Runtime.Registry;
 using FlowEngine.Core.Scripting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Application.Tests.Workflows;
 
@@ -52,6 +53,7 @@ public sealed class WorkflowDryRunServiceTests : IDisposable
 
         _contextFactory = new NodeExecutionContextFactory(
             _nodeRegistry,
+            new ScriptCache(Options.Create(new JsEngineOptions())),
             new FlowEngine.Runtime.Expressions.ParameterResolver(NullLogger<FlowEngine.Runtime.Expressions.ParameterResolver>.Instance),
             new FakeCredentialAccessor(),
             new HashSet<string>(StringComparer.OrdinalIgnoreCase),

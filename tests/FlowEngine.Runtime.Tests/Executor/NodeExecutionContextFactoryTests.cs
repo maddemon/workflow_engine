@@ -7,6 +7,7 @@ using FlowEngine.Runtime.Executor;
 using FlowEngine.Runtime.Expressions;
 using FlowEngine.Core.Scripting;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Runtime.Tests.Executor;
 
@@ -39,6 +40,7 @@ public sealed class NodeExecutionContextFactoryTests
         _credentialAccessor = new StubCredentialAccessor();
         _factory = new NodeExecutionContextFactory(
             _registry,
+            new ScriptCache(Options.Create(new JsEngineOptions())),
             new ParameterResolver(NullLogger<ParameterResolver>.Instance),
             _credentialAccessor,
             new HashSet<string>(StringComparer.OrdinalIgnoreCase),

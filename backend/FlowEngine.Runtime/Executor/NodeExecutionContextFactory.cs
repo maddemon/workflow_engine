@@ -1,6 +1,7 @@
 using System;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Data;
@@ -20,6 +21,7 @@ namespace FlowEngine.Runtime.Executor;
 /// </summary>
 public sealed class NodeExecutionContextFactory(
     INodeRegistry registry,
+    IScriptCache scriptCache,
     ParameterResolver parameterResolver,
     ICredentialAccessor credentialAccessor,
     IReadOnlySet<string> environmentWhitelist,
@@ -51,11 +53,11 @@ public sealed class NodeExecutionContextFactory(
         var rawParameters = MergeParameters(nodeDefinition, descriptor);
         var cacheKey = BuildCacheKey(descriptor);
 
-        // CodeEditor/Script 参数由节点自己执行，跳过表达式求值
+        // CodeEditor/Script 的非 Script 字符串参数仍由节点自己执行，先抽出避免被 ParameterResolver 误求值
         var codeParamNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var p in descriptor.Parameters)
         {
-            if (p.Hint is PresentationHint.CodeEditor or PresentationHint.Script)
+            if (p.Type != ParameterType.Script && p.Hint is PresentationHint.CodeEditor or PresentationHint.Script)
             {
                 codeParamNames.Add(p.Name);
             }
@@ -75,36 +77,7 @@ public sealed class NodeExecutionContextFactory(
 
         using var js = JsEngine.Create(options: jsEngineOptions, logger: jsLogger);
 
-        // --- 旧式裸名全局（plan-004 迁移期向后兼容） ---
         var currentInput = GetCurrentInput(inputs, runIndex);
-        js.SetValue("input", currentInput);
-        js.SetValue("inputs", inputs);
-        js.SetValue("parameter", rawParameters);
-        js.SetValue("nodes", successfulOutputs);
-        js.SetValue("items", latestBatches);
-        js.SetValue("workflow", new Dictionary<string, object?>
-        {
-            ["id"] = workflow.Id,
-            ["name"] = workflow.Name,
-            ["projectId"] = workflow.ProjectId,
-            ["version"] = workflow.Version,
-            ["isActive"] = workflow.IsActive,
-        });
-        js.SetValue("execution", new Dictionary<string, object?>
-        {
-            ["id"] = execution.Id,
-        });
-        js.SetValue("runIndex", runIndex);
-        js.SetValue("run_index", runIndex);
-        js.SetValue("env", new EnvironmentAccessor(environmentWhitelist));
-        js.SetValue("now", DateTime.UtcNow);
-
-        // --- $ 前缀内建变量（plan-004 评审5：$ 前缀 = 引擎内建，裸名 = 用户数据） ---
-
-        // $json：当前 item 数据（等价于旧 input，但带 $ 前缀避免与用户字段冲突）
-        js.SetValue("$json", currentInput);
-
-        // $input：n8n 式输入容器
         var inputItems = GetInputItemList(inputs);
         var inputContext = new Dictionary<string, object?>
         {
@@ -115,55 +88,14 @@ public sealed class NodeExecutionContextFactory(
             ["workflowId"] = workflow.Id,
         };
         var inputContainer = new InputContainer(inputItems, currentInput, rawParameters, inputContext);
-        js.SetValue("$input", inputContainer);
 
-        // $items(name?)：获取指定节点全部 item；无参时等价 $input.All()
-        js.SetValue("$items", new Func<string?, object?>(nodeName =>
-        {
-            if (string.IsNullOrEmpty(nodeName))
-                return inputItems;
-            if (latestBatches.TryGetValue(nodeName, out var batch))
-                return batch.Items.Select(i => (object?)i.Data).ToList();
-            return null;
-        }));
-
-        // $node['Name']：指定节点输出（含 .json / .params / .context / .runIndex）
-        // 注：successfulOutputs 仅有 DataBatch，params/context 需跨节点存储扩展字段；当前只填 .json
         var nodeDict = new Dictionary<string, NodeOutput>(StringComparer.OrdinalIgnoreCase);
         foreach (var (name, batch) in successfulOutputs)
         {
             nodeDict[name] = new NodeOutput(
                 batch.Items.Select(i => (object?)i.Data).ToList());
         }
-        js.SetValue("$node", nodeDict);
 
-        // $workflow / $execution（复用旧式对象，加 $ 前缀注入）
-        js.SetValue("$workflow", new Dictionary<string, object?>
-        {
-            ["id"] = workflow.Id,
-            ["name"] = workflow.Name,
-            ["projectId"] = workflow.ProjectId,
-            ["version"] = workflow.Version,
-            ["isActive"] = workflow.IsActive,
-        });
-        js.SetValue("$execution", new Dictionary<string, object?>
-        {
-            ["id"] = execution.Id,
-        });
-
-        // $env / $vars（vars = 可写工作流级状态，暂为空对象）
-        js.SetValue("$env", new EnvironmentAccessor(environmentWhitelist));
-        js.SetValue("$vars", new Dictionary<string, object?>());
-
-        // $now / $today
-        js.SetValue("$now", DateTime.UtcNow);
-        js.SetValue("$today", DateTime.UtcNow.Date);
-
-        // $runIndex / $itemIndex（itemIndex 与 runIndex 在当前上下文中一致）
-        js.SetValue("$runIndex", runIndex);
-        js.SetValue("$itemIndex", runIndex);
-
-        // $credentials：多字段凭据容器，支持属性式访问 $credentials.<name>.<field>
         var credsAccessor = credentialAccessorOverride ?? credentialAccessor;
         if (_tokenService is not null)
         {
@@ -171,11 +103,20 @@ public sealed class NodeExecutionContextFactory(
         }
         var credentialsDict = await PreloadCredentialsAsync(rawParameters, credsAccessor, hydratorLogger, cancellationToken)
             .ConfigureAwait(false);
-        js.SetValue("$credentials", credentialsDict);
 
-        // $ctx：上下文 bundle 自身（与函数式 ctx => 的 ctx 参数等价）。
-        // 各字段已单独设为 $ 全局，此处作为集合容器注入。函数式：function(ctx){ return ctx.$json; }
-        js.SetValue("$ctx", new Dictionary<string, object?>
+        var workflowDict = new Dictionary<string, object?>
+        {
+            ["id"] = workflow.Id,
+            ["name"] = workflow.Name,
+            ["projectId"] = workflow.ProjectId,
+            ["version"] = workflow.Version,
+            ["isActive"] = workflow.IsActive,
+        };
+        var executionDict = new Dictionary<string, object?>
+        {
+            ["id"] = execution.Id,
+        };
+        var ctxDict = new Dictionary<string, object?>
         {
             ["$json"] = currentInput,
             ["$input"] = inputContainer,
@@ -184,24 +125,86 @@ public sealed class NodeExecutionContextFactory(
             ["$itemIndex"] = runIndex,
             ["$credentials"] = credentialsDict,
             ["parameter"] = rawParameters,
-        });
+        };
+
+        // 统一全局变量表：既注入 JsEngine（供 ParameterResolver 与 Script 管线复用），
+        // 也作为 ScriptContext.ExtraGlobals 传入，保证两种求值路径变量集一致。
+        var globals = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            // 旧式裸名全局（plan-004 迁移期向后兼容）
+            ["input"] = currentInput,
+            ["inputs"] = inputs,
+            ["parameter"] = rawParameters,
+            ["nodes"] = successfulOutputs,
+            ["items"] = latestBatches,
+            ["workflow"] = workflowDict,
+            ["execution"] = executionDict,
+            ["runIndex"] = runIndex,
+            ["run_index"] = runIndex,
+            ["env"] = new EnvironmentAccessor(environmentWhitelist),
+            ["now"] = DateTime.UtcNow,
+
+            // $ 前缀内建变量（plan-004 评审5）
+            ["$json"] = currentInput,
+            ["$input"] = inputContainer,
+            ["$items"] = new Func<string?, object?>(nodeName =>
+            {
+                if (string.IsNullOrEmpty(nodeName))
+                    return inputItems;
+                if (latestBatches.TryGetValue(nodeName, out var batch))
+                    return batch.Items.Select(i => (object?)i.Data).ToList();
+                return null;
+            }),
+            ["$node"] = nodeDict,
+            ["$workflow"] = workflowDict,
+            ["$execution"] = executionDict,
+            ["$env"] = new EnvironmentAccessor(environmentWhitelist),
+            ["$vars"] = new Dictionary<string, object?>(),
+            ["$now"] = DateTime.UtcNow,
+            ["$today"] = DateTime.UtcNow.Date,
+            ["$runIndex"] = runIndex,
+            ["$itemIndex"] = runIndex,
+            ["$credentials"] = credentialsDict,
+            ["$ctx"] = ctxDict,
+        };
+
+        foreach (var (key, value) in globals)
+        {
+            js.SetValue(key, value);
+        }
 
         // 节点私有全局（plan-004：由各自节点本地注入，工厂不感知具体变量名，避免顶层全局膨胀）。
-        // 例如 PaginateNode 每轮迭代注入 $cursor/$nextCursor/$page/$response。
         if (extraGlobals is not null)
         {
             foreach (var (key, value) in extraGlobals)
             {
                 if (!string.IsNullOrEmpty(key))
                 {
+                    globals[key] = value;
                     js.SetValue(key, value);
                 }
             }
         }
 
+        // Script 类型参数预求值：Expression 脚本在 Hydrate 前完成求值并写入 ResolvedValue。
+        var preEvalContext = new NodeExecutionContext
+        {
+            Workflow = workflow,
+            ExecutionId = execution.Id,
+            Node = nodeDefinition,
+            RunIndex = runIndex,
+            Inputs = inputs,
+            RawParameters = rawParameters,
+            Credentials = credsAccessor,
+            CancellationToken = cancellationToken,
+        };
+        var scriptContext = new ScriptContext(preEvalContext, globals);
+        await PreEvaluateScriptParametersAsync(rawParameters, descriptor, scriptContext, js, scriptCache, cancellationToken)
+            .ConfigureAwait(false);
+
         var resolvedParameters = parameterResolver.Resolve(rawParameters, js, cacheKey);
 
-        // 将 CodeEditor/Script 参数原样放回
+        // 将 CodeEditor/Script 字符串参数原样放回
         foreach (var (name, val) in rawCodeParams)
         {
             resolvedParameters[name] = val;
@@ -391,6 +394,130 @@ public sealed class NodeExecutionContextFactory(
         }
 
         return merged;
+    }
+
+    /// <summary>
+    /// 对 Script 类型参数执行预求值：Expression 脚本直接求值并写入 ResolvedValue，
+    /// Script/CodeEditor 脚本保持原样；递归处理 Dictionary&lt;string, Script&gt;。
+    /// </summary>
+    private static async Task PreEvaluateScriptParametersAsync(
+        Dictionary<string, object> rawParameters,
+        NodeTypeDescriptor descriptor,
+        ScriptContext scriptContext,
+        JsEngine js,
+        IScriptCache scriptCache,
+        CancellationToken cancellationToken)
+    {
+        foreach (var (name, value) in rawParameters.ToList())
+        {
+            var definition = descriptor.Parameters.FirstOrDefault(
+                p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+
+            if (value is Script script)
+            {
+                if (definition?.Hint == PresentationHint.Expression)
+                {
+                    var result = await EvaluateScriptAsync(script, scriptContext, js, scriptCache, cancellationToken)
+                        .ConfigureAwait(false);
+                    rawParameters[name] = script.WithResolvedValue(result.ToJson());
+                }
+
+                continue;
+            }
+
+            if (TryConvertToDictionaryOfScript(value, out var dict) && dict is not null)
+            {
+                if (definition?.Hint == PresentationHint.Expression)
+                {
+                    var evaluated = new Dictionary<string, Script>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var (key, itemScript) in dict)
+                    {
+                        var result = await EvaluateScriptAsync(itemScript, scriptContext, js, scriptCache, cancellationToken)
+                            .ConfigureAwait(false);
+                        evaluated[key] = itemScript.WithResolvedValue(result.ToJson());
+                    }
+
+                    rawParameters[name] = evaluated;
+                }
+                else
+                {
+                    rawParameters[name] = dict;
+                }
+
+                continue;
+            }
+
+            if (definition?.Type == ParameterType.Script)
+            {
+                var converted = ConvertToScript(value);
+                if (converted is null)
+                {
+                    continue;
+                }
+
+                if (definition.Hint == PresentationHint.Expression)
+                {
+                    var result = await EvaluateScriptAsync(converted, scriptContext, js, scriptCache, cancellationToken)
+                        .ConfigureAwait(false);
+                    converted = converted.WithResolvedValue(result.ToJson());
+                }
+
+                rawParameters[name] = converted;
+            }
+        }
+    }
+
+    private static async Task<ScriptResult> EvaluateScriptAsync(
+        Script script,
+        ScriptContext context,
+        JsEngine js,
+        IScriptCache scriptCache,
+        CancellationToken cancellationToken)
+    {
+        var prepared = scriptCache.GetOrPrepare(script);
+        return await prepared.RunAsync(context, js, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static Script? ConvertToScript(object? value)
+    {
+        return value switch
+        {
+            Script s => s,
+            string str => new Script { Source = str, Language = ScriptLanguage.JavaScript, ReturnType = ScriptReturnType.String },
+            JsonElement element => element.Deserialize<Script>(JsonDefaults.Options),
+            JsonNode node => node.Deserialize<Script>(JsonDefaults.Options),
+            _ => null
+        };
+    }
+
+    private static bool TryConvertToDictionaryOfScript(object? value, out Dictionary<string, Script>? dict)
+    {
+        if (value is Dictionary<string, Script> d)
+        {
+            dict = d;
+            return true;
+        }
+
+        if (value is JsonElement element)
+        {
+            dict = element.Deserialize<Dictionary<string, Script>>(JsonDefaults.Options);
+            return dict is not null;
+        }
+
+        if (value is JsonNode node)
+        {
+            dict = node.Deserialize<Dictionary<string, Script>>(JsonDefaults.Options);
+            return dict is not null;
+        }
+
+        if (value is string str)
+        {
+            dict = JsonSerializer.Deserialize<Dictionary<string, Script>>(str, JsonDefaults.Options);
+            return dict is not null;
+        }
+
+        dict = null;
+        return false;
     }
 
     /// <summary>

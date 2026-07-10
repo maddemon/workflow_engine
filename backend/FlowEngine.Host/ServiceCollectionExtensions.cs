@@ -274,6 +274,7 @@ public static class ServiceCollectionExtensions
             var whitelist = configuration.GetSection("Expression:EnvironmentWhitelist").Get<string[]>() ?? [];
             return new NodeExecutionContextFactory(
                 provider.GetRequiredService<INodeRegistry>(),
+                provider.GetRequiredService<IScriptCache>(),
                 provider.GetRequiredService<ParameterResolver>(),
                 provider.GetRequiredService<ICredentialAccessor>(),
                 new HashSet<string>(whitelist, StringComparer.OrdinalIgnoreCase),

@@ -15,6 +15,7 @@ using FlowEngine.Runtime.Expressions;
 using FlowEngine.Runtime.Executor;
 using FlowEngine.Runtime.Registry;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Xunit;
 
 namespace FlowEngine.Runtime.Tests.Plugins;
@@ -33,6 +34,7 @@ public sealed class PaginateNodeTests
         var registry = new NodeRegistry(new List<INodeType> { new PaginateNode() }, NullLogger<NodeRegistry>.Instance);
         var factory = new NodeExecutionContextFactory(
             registry,
+            new ScriptCache(Options.Create(new JsEngineOptions())),
             new ParameterResolver(NullLogger<ParameterResolver>.Instance),
             credentialAccessor,
             new HashSet<string>(StringComparer.OrdinalIgnoreCase));
@@ -102,6 +104,7 @@ public sealed class PaginateNodeTests
         var registry = new NodeRegistry(new List<INodeType> { new PaginateNode() }, NullLogger<NodeRegistry>.Instance);
         var factory = new NodeExecutionContextFactory(
             registry,
+            new ScriptCache(Options.Create(new JsEngineOptions())),
             new ParameterResolver(NullLogger<ParameterResolver>.Instance),
             credentialAccessor,
             new HashSet<string>(StringComparer.OrdinalIgnoreCase));
@@ -162,6 +165,7 @@ public sealed class PaginateNodeTests
         var registry = new NodeRegistry(new List<INodeType> { new PaginateNode() }, NullLogger<NodeRegistry>.Instance);
         var factory = new NodeExecutionContextFactory(
             registry,
+            new ScriptCache(Options.Create(new JsEngineOptions())),
             new ParameterResolver(NullLogger<ParameterResolver>.Instance),
             credentialAccessor,
             new HashSet<string>(StringComparer.OrdinalIgnoreCase));
