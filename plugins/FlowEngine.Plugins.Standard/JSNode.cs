@@ -162,66 +162,6 @@ public sealed class JSNode : INodeType
 }
 
 /// <summary>
-/// Helper class for $input in JS code.
-/// </summary>
-[Obsolete("JSNode 已迁移到 InputContainer，请使用 $input.all()/first()/item()/count()")]
-public sealed class InputHelper
-{
-    private readonly List<object?> _allItems;
-    private readonly object? _currentItem;
-
-    /// <summary>
-    /// All input items.
-    /// </summary>
-    public List<object?> All() => _allItems;
-
-    /// <summary>
-    /// First input item.
-    /// </summary>
-    public object? First() => _allItems.FirstOrDefault();
-
-    /// <summary>
-    /// Current item (in RunOnceForEachItem mode).
-    /// </summary>
-    public object? Item() => _currentItem;
-
-    /// <summary>
-    /// Item count.
-    /// </summary>
-    public int Count() => _allItems.Count;
-
-    /// <summary>
-    /// Create InputHelper with all items.
-    /// </summary>
-    public InputHelper(List<object?> allItems)
-    {
-        _allItems = allItems.Select(ConvertToClr).ToList();
-        _currentItem = null;
-    }
-
-    /// <summary>
-    /// Create InputHelper with all items and current item.
-    /// </summary>
-    public InputHelper(List<object?> allItems, object? currentItem)
-    {
-        _allItems = allItems.Select(ConvertToClr).ToList();
-        _currentItem = ConvertToClr(currentItem);
-    }
-
-    private static object? ConvertToClr(object? value)
-    {
-        return value switch
-        {
-            JsonObject obj => obj.ToDictionary(p => p.Key, p => ConvertToClr(p.Value)),
-            JsonArray arr => arr.Select(ConvertToClr).ToList(),
-            JsonValue val => val.GetValue<object?>(),
-            JsonNode node => node.ToJsonString(),
-            _ => value
-        };
-    }
-}
-
-/// <summary>
 /// 代码执行模式。
 /// </summary>
 public enum CodeExecutionMode

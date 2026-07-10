@@ -13,7 +13,6 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Tests.Projects;
 
-#pragma warning disable CS0618 // 测试覆盖已废弃的项目成员 API。
 public sealed class ProjectServiceTests : IDisposable
 {
     private readonly FlowEngineDbContext _dbContext;
@@ -51,10 +50,6 @@ public sealed class ProjectServiceTests : IDisposable
         Assert.Equal("Test Project", result.Name);
         Assert.Equal("A test project", result.Description);
         Assert.Equal(userId, result.CreatedBy);
-
-        var memberCount = await _dbContext.ProjectMembers
-            .CountAsync(m => m.ProjectId == result.Id, ct);
-        Assert.Equal(0, memberCount);
     }
 
     [Fact]
@@ -194,134 +189,6 @@ public sealed class ProjectServiceTests : IDisposable
         Assert.False(result);
     }
 
-    [Fact]
-    public async Task AddMemberAsync_ValidMember_AddsMember()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        _userContext.Roles = ["Admin"];
-        var project = new Project { Name = "Test", CreatedBy = Guid.NewGuid() };
-        _dbContext.Projects.Add(project);
-        await _dbContext.SaveChangesAsync(ct);
-
-        var dto = new AddProjectMemberDto { UserId = Guid.NewGuid(), Role = "Editor" };
-
-        var result = await _service.AddMemberAsync(project.Id, dto, ct);
-
-        Assert.NotNull(result);
-        Assert.Equal(dto.UserId, result.UserId);
-        Assert.Equal("Editor", result.Role);
-    }
-
-    [Fact]
-    public async Task AddMemberAsync_DuplicateMember_Throws()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        _userContext.Roles = ["Admin"];
-        var userId = Guid.NewGuid();
-        var project = new Project { Name = "Test", CreatedBy = Guid.NewGuid() };
-        _dbContext.Projects.Add(project);
-        _dbContext.ProjectMembers.Add(new ProjectMember
-        {
-            ProjectId = project.Id,
-            UserId = userId,
-            Role = "Viewer",
-        });
-        await _dbContext.SaveChangesAsync(ct);
-
-        var dto = new AddProjectMemberDto { UserId = userId, Role = "Editor" };
-
-        await Assert.ThrowsAsync<BusinessException>(() => _service.AddMemberAsync(project.Id, dto, ct));
-    }
-
-    [Fact]
-    public async Task AddMemberAsync_NonExistingProject_ReturnsNull()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        _userContext.Roles = ["Admin"];
-        var dto = new AddProjectMemberDto { UserId = Guid.NewGuid(), Role = "Viewer" };
-        var result = await _service.AddMemberAsync(Guid.NewGuid(), dto, ct);
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public async Task RemoveMemberAsync_ExistingMember_RemovesMember()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var project = new Project { Name = "Test", CreatedBy = Guid.NewGuid() };
-        _dbContext.Projects.Add(project);
-        var member = new ProjectMember
-        {
-            ProjectId = project.Id,
-            UserId = Guid.NewGuid(),
-            Role = "Viewer",
-        };
-        _dbContext.ProjectMembers.Add(member);
-        await _dbContext.SaveChangesAsync(ct);
-
-        var result = await _service.RemoveMemberAsync(project.Id, member.Id, ct);
-
-        Assert.True(result);
-        var removed = await _dbContext.ProjectMembers.FindAsync([member.Id], ct);
-        Assert.NotNull(removed);
-        Assert.True(removed.Deleted);
-    }
-
-    [Fact]
-    public async Task RemoveMemberAsync_NonExistingMember_ReturnsFalse()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var result = await _service.RemoveMemberAsync(Guid.NewGuid(), Guid.NewGuid(), ct);
-        Assert.False(result);
-    }
-
-    [Fact]
-    public async Task UpdateMemberRoleAsync_ExistingMember_UpdatesRole()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var project = new Project { Name = "Test", CreatedBy = Guid.NewGuid() };
-        _dbContext.Projects.Add(project);
-        var member = new ProjectMember
-        {
-            ProjectId = project.Id,
-            UserId = Guid.NewGuid(),
-            Role = "Viewer",
-        };
-        _dbContext.ProjectMembers.Add(member);
-        await _dbContext.SaveChangesAsync(ct);
-
-        var dto = new UpdateProjectMemberDto { Role = "Admin" };
-
-        var result = await _service.UpdateMemberRoleAsync(project.Id, member.Id, dto, ct);
-
-        Assert.NotNull(result);
-        Assert.Equal("Admin", result.Role);
-    }
-
-    [Fact]
-    public async Task UpdateMemberRoleAsync_NonExistingMember_ReturnsNull()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var dto = new UpdateProjectMemberDto { Role = "Admin" };
-        var result = await _service.UpdateMemberRoleAsync(Guid.NewGuid(), Guid.NewGuid(), dto, ct);
-        Assert.Null(result);
-    }
-
-    [Fact]
-    public async Task GetMembersAsync_ReturnsProjectMembers()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        _userContext.Roles = ["Admin"];
-        var project = new Project { Name = "Test", CreatedBy = Guid.NewGuid() };
-        _dbContext.Projects.Add(project);
-        _dbContext.ProjectMembers.AddRange(
-            new ProjectMember { ProjectId = project.Id, UserId = Guid.NewGuid(), Role = "Admin" },
-            new ProjectMember { ProjectId = project.Id, UserId = Guid.NewGuid(), Role = "Editor" });
-        await _dbContext.SaveChangesAsync(ct);
-
-        var result = await _service.GetMembersAsync(project.Id, ct);
-
-        Assert.Equal(2, result.Count);
-    }
 
     private sealed class InMemoryEventBus : IEventBus
     {
@@ -389,4 +256,3 @@ public sealed class ProjectServiceTests : IDisposable
         public bool ShouldMaskCredentialValues(IReadOnlyList<string> roles) => false;
     }
 }
-#pragma warning restore CS0618

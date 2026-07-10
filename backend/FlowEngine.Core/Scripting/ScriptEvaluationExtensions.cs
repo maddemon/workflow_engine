@@ -82,10 +82,7 @@ public static class ScriptEvaluationExtensions
             return ScriptResult.FromResolved(script);
         }
 
-#pragma warning disable CS0618
-        var scriptCache = context.GetScriptCache();
-#pragma warning restore CS0618
-        var prepared = scriptCache.GetOrPrepare(script);
+        var prepared = GetOrCreateScriptCache(context).GetOrPrepare(script);
         var engine = context.GetOrCreateEngine();
 
         if (item is not null || itemIndex != 0)
@@ -120,6 +117,11 @@ public static class ScriptEvaluationExtensions
         return dict;
     }
 
+    private static IScriptCache GetOrCreateScriptCache(NodeExecutionContext context)
+    {
+        return context.ScriptCache ?? new ScriptCache(Options.Create(new JsEngineOptions()));
+    }
+
     private static List<object?> GetInputItems(NodeExecutionContext context)
     {
         if (!context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch) || batch.Items.Count == 0)
@@ -131,27 +133,4 @@ public static class ScriptEvaluationExtensions
     }
 }
 
-/// <summary>
-/// <see cref="NodeExecutionContext"/> 获取 <see cref="IScriptCache"/> 的扩展。
-/// </summary>
-public static class ScriptCacheContextExtensions
-{
-    /// <summary>
-    /// 获取上下文中的脚本缓存。工厂保证 <see cref="NodeExecutionContext.ScriptCache"/> 非空；
-    /// 此分支仅用于脱离工厂的单元测试上下文，回退到默认选项（含标准安全黑名单）。
-    /// </summary>
-    /// <remarks>
-    /// 已过时：节点不应直接获取脚本缓存。请使用 <see cref="ScriptEvaluationExtensions.EvaluateAsync{T}"/>
-    /// 或 <see cref="ScriptEvaluationExtensions.ExecuteAsync"/> 门面，缓存/引擎复用由其内部透明承担。
-    /// </remarks>
-    [Obsolete("节点不应直接获取脚本缓存，请改用 Script.EvaluateAsync/ExecuteAsync 门面。")]
-    public static IScriptCache GetScriptCache(this NodeExecutionContext context)
-    {
-        if (context.ScriptCache is not null)
-        {
-            return context.ScriptCache;
-        }
 
-        return new ScriptCache(Options.Create(new JsEngineOptions()));
-    }
-}

@@ -330,22 +330,7 @@ export interface UpdateProjectDto {
   description?: string;
 }
 
-export interface ProjectMemberDto {
-  id: string;
-  projectId: string;
-  userId: string;
-  role: string;
-  createdAt: string;
-}
 
-export interface AddProjectMemberDto {
-  userId: string;
-  role: string;
-}
-
-export interface UpdateProjectMemberDto {
-  role: string;
-}
 
 export interface CreateCredentialDto {
   projectId?: string;

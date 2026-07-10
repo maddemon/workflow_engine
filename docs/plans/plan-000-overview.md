@@ -51,6 +51,7 @@ docs/plans/
 - 阶段说明文件：`plan-{stage}-00-readme.md`，描述本阶段的子阶段划分、模块依赖、整体验收。
 - 模块计划文件：`plan-{stage}-NN-module-name.md`，`NN` 为两位序号，`module-name` 为英文小写连字符。
 - 任务记录文件：`task-NNN-*.md`，序号独立编排，按 [docs-rules.md](../../.agents/rules/docs-rules.md#22-任务文档) 第 2.2 节。
+- 基础设施/交叉清理计划：`plan-cleanup-NN-name.md`，置于 `docs/plans/` 顶层（无阶段前缀），用于跨阶段的技术债/死代码清理，在 §4.6 单独收录。
 
 ### 3.2 模块计划文档结构
 
@@ -139,6 +140,14 @@ docs/plans/
 | [plan-enterprise-05-ai-builder.md](enterprise/plan-enterprise-05-ai-builder.md) | 自然语言生成工作流、校验纠错循环、人工确认 | natural-language-to-dsl, roadmap §6 |
 | [plan-enterprise-06-compliance.md](enterprise/plan-enterprise-06-compliance.md) | 安全扫描、违规检测、执行脱敏、合规导出 | roadmap §6, audit-log §7 |
 
+### 4.6 基础设施/交叉清理计划（`plans/`，顶层，无阶段前缀）
+
+跨阶段的技术债/死代码清理，不归属任何 MVP/Alpha/Beta/GA/Enterprise 阶段，直接置于 `docs/plans/` 下。
+
+| 文件 | 内容 | 对应架构 |
+|------|------|----------|
+| [plan-cleanup-01-obsolete-markers.md](plan-cleanup-01-obsolete-markers.md) | 清理全仓 `[Obsolete]` 标记及其废弃实现（InputHelper / ScriptEngine / GetScriptCache / ToClrValue / ProjectMember） | script-type.md 归位清单 |
+
 ## 5. 阶段依赖关系图
 
 ```mermaid
@@ -215,3 +224,4 @@ flowchart LR
 | 2026-06-18 | Agent | 创建全量开发计划总览，建立分阶段目录结构 | 计划编写 |
 | 2026-06-18 | Agent | 新增 plan-alpha-09 用户系统，修正 Beta/Enterprise/MVP 边界与依赖 | 计划 review 修复 |
 | 2026-07-04 | Agent | 将多租户/项目调整为项目分类，关闭自助注册 | task-align-no-saas-multitenant |
+| 2026-07-10 | Agent | 新增 §4.6 基础设施/交叉清理计划，收录 plan-cleanup-01-obsolete-markers.md；补充 cleanup 类命名规范 | plan-cleanup-01-obsolete-markers.md |

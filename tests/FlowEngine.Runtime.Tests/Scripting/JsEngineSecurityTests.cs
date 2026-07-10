@@ -2,8 +2,6 @@ using System.Text.Json.Nodes;
 using FlowEngine.Core.Scripting;
 using Microsoft.Extensions.Logging.Abstractions;
 
-#pragma warning disable CS0618 // 本文件直接验证 JsEngine 内置函数，沿用 ToClrValue 直到阶段五迁移完成
-
 namespace FlowEngine.Runtime.Tests.Scripting;
 
 public class JsEngineSecurityTests
@@ -12,7 +10,7 @@ public class JsEngineSecurityTests
     public void Evaluate_Now_Returns_DateString()
     {
         using var js = JsEngine.Create();
-        var result = JsEngine.ToClrValue(js.Evaluate("now()"));
+        var result = new ScriptResult(Script.Empty, js.Evaluate("now()")).ToClr();
         Assert.NotNull(result);
         Assert.IsType<string>(result);
         Assert.Matches(@"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}", (string)result);
@@ -22,7 +20,7 @@ public class JsEngineSecurityTests
     public void Evaluate_NowIso_Returns_IsoString()
     {
         using var js = JsEngine.Create();
-        var result = JsEngine.ToClrValue(js.Evaluate("nowIso()"));
+        var result = new ScriptResult(Script.Empty, js.Evaluate("nowIso()")).ToClr();
         var str = Assert.IsType<string>(result);
         Assert.Matches(@"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}", str);
     }
@@ -34,7 +32,7 @@ public class JsEngineSecurityTests
         var data = new JsonObject { ["name"] = "test" };
         js.SetValue("data", data);
 
-        var result = JsEngine.ToClrValue(js.Evaluate(@"jmespath(data, ""name"")"));
+        var result = new ScriptResult(Script.Empty, js.Evaluate(@"jmespath(data, ""name"")")).ToClr();
         Assert.Equal("\"test\"", result);
     }
 
@@ -48,7 +46,7 @@ public class JsEngineSecurityTests
         };
         js.SetValue("data", data);
 
-        var result = JsEngine.ToClrValue(js.Evaluate(@"jmespath(data, ""user.profile.age"")"));
+        var result = new ScriptResult(Script.Empty, js.Evaluate(@"jmespath(data, ""user.profile.age"")")).ToClr();
         Assert.Equal("30", result);
     }
 
@@ -62,7 +60,7 @@ public class JsEngineSecurityTests
         };
         js.SetValue("data", data);
 
-        var result = JsEngine.ToClrValue(js.Evaluate(@"jmespath(data, ""items[1]"")"));
+        var result = new ScriptResult(Script.Empty, js.Evaluate(@"jmespath(data, ""items[1]"")")).ToClr();
         Assert.Equal("\"b\"", result);
     }
 
@@ -72,7 +70,7 @@ public class JsEngineSecurityTests
         using var js = JsEngine.Create();
         js.SetValue("data", null);
 
-        var result = JsEngine.ToClrValue(js.Evaluate(@"jmespath(data, ""name"")"));
+        var result = new ScriptResult(Script.Empty, js.Evaluate(@"jmespath(data, ""name"")")).ToClr();
         Assert.Null(result);
     }
 
@@ -83,7 +81,7 @@ public class JsEngineSecurityTests
         var data = new JsonObject { ["name"] = "test" };
         js.SetValue("data", data);
 
-        var result = JsEngine.ToClrValue(js.Evaluate(@"jmespath(data, ""nonexistent"")"));
+        var result = new ScriptResult(Script.Empty, js.Evaluate(@"jmespath(data, ""nonexistent"")")).ToClr();
         Assert.Null(result);
     }
 
@@ -92,7 +90,7 @@ public class JsEngineSecurityTests
     {
         using var js = JsEngine.Create();
         js.SetValue("s", "hello");
-        var result = JsEngine.ToClrValue(js.Evaluate("s.length"));
+        var result = new ScriptResult(Script.Empty, js.Evaluate("s.length")).ToClr();
         Assert.Equal(5, Convert.ToInt32(result));
     }
 
@@ -101,7 +99,7 @@ public class JsEngineSecurityTests
     {
         using var js = JsEngine.Create();
         js.SetValue("s", "  hello  ");
-        var result = JsEngine.ToClrValue(js.Evaluate("s.trim()"));
+        var result = new ScriptResult(Script.Empty, js.Evaluate("s.trim()")).ToClr();
         Assert.Equal("hello", result);
     }
 
@@ -111,7 +109,7 @@ public class JsEngineSecurityTests
         using var js = JsEngine.Create();
         js.SetValue("a", 10);
         js.SetValue("b", 20);
-        var result = JsEngine.ToClrValue(js.Evaluate("a + b"));
+        var result = new ScriptResult(Script.Empty, js.Evaluate("a + b")).ToClr();
         Assert.Equal(30d, result);
     }
 
@@ -120,7 +118,7 @@ public class JsEngineSecurityTests
     {
         using var js = JsEngine.Create();
         js.SetValue("x", 42);
-        var result = JsEngine.ToClrValue(js.Evaluate("x > 40"));
+        var result = new ScriptResult(Script.Empty, js.Evaluate("x > 40")).ToClr();
         Assert.True((bool)result!);
     }
 
@@ -141,5 +139,3 @@ public class JsEngineSecurityTests
         Assert.Null(ex);
     }
 }
-
-#pragma warning restore CS0618

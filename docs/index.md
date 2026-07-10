@@ -54,6 +54,7 @@ Flow Engine 是一个节点可热插拔的工作流自动化引擎。后端用 C
 | [plans/beta/plan-beta-00-readme.md](plans/beta/plan-beta-00-readme.md) | Beta 阶段说明（RBAC/项目分类/Agent 增强，10 个模块计划） |
 | [plans/ga/plan-ga-00-readme.md](plans/ga/plan-ga-00-readme.md) | GA 阶段说明（队列/Worker/监控/SSO，8 个模块计划） |
 | [plans/enterprise/plan-enterprise-00-readme.md](plans/enterprise/plan-enterprise-00-readme.md) | Enterprise 阶段说明（Git/协作/MCP/AI Builder，7 个模块计划） |
+| [plans/plan-cleanup-01-obsolete-markers.md](plans/plan-cleanup-01-obsolete-markers.md) | 基础设施/交叉清理：清理全仓 `[Obsolete]` 标记及其废弃实现 |
 
 ### 项目规则
 

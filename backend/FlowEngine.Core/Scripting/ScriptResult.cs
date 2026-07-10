@@ -104,7 +104,7 @@ public sealed class ScriptResult
     [ThreadStatic] private static Engine? _convertEngine;
 
     /// <summary>
-    /// 将结果转换为 CLR 对象（原 <see cref="JsEngine.ToClrValue"/> 语义）。
+    /// 将结果转换为 CLR 对象（JsValue → System.Text.Json 兼容类型）。
     /// </summary>
     public object? ToClr()
     {

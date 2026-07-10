@@ -340,22 +340,7 @@ export interface UpdateProjectDto {
   description?: string | null;
 }
 
-export interface ProjectMemberDto {
-  id: string;
-  projectId: string;
-  userId: string;
-  role: string;
-  createdAt: string;
-}
 
-export interface AddProjectMemberDto {
-  userId: string;
-  role: string;
-}
-
-export interface UpdateProjectMemberDto {
-  role: string;
-}
 
 // --- Workflow Import/Export ---
 

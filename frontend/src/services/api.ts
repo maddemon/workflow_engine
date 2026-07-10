@@ -22,9 +22,6 @@ import type {
   ProjectDto,
   CreateProjectDto,
   UpdateProjectDto,
-  ProjectMemberDto,
-  AddProjectMemberDto,
-  UpdateProjectMemberDto,
   WorkflowExportResult,
   ImportResult,
   BatchImportResult,
@@ -228,31 +225,7 @@ export async function deleteProject(id: string): Promise<void> {
   await api.delete(`/projects/${id}`);
 }
 
-export async function getProjectMembers(id: string): Promise<ProjectMemberDto[]> {
-  const res = await api.get<ProjectMemberDto[]>(`/projects/${id}/members`);
-  return res.data;
-}
 
-export async function addProjectMember(
-  projectId: string,
-  data: AddProjectMemberDto,
-): Promise<ProjectMemberDto> {
-  const res = await api.post<ProjectMemberDto>(`/projects/${projectId}/members`, data);
-  return res.data;
-}
-
-export async function updateProjectMemberRole(
-  projectId: string,
-  memberId: string,
-  data: UpdateProjectMemberDto,
-): Promise<ProjectMemberDto> {
-  const res = await api.put<ProjectMemberDto>(`/projects/${projectId}/members/${memberId}`, data);
-  return res.data;
-}
-
-export async function removeProjectMember(projectId: string, memberId: string): Promise<void> {
-  await api.delete(`/projects/${projectId}/members/${memberId}`);
-}
 
 // --- Workflow Import/Export ---
 

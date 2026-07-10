@@ -97,15 +97,6 @@ public sealed class JsEngine : IDisposable
     }
 
     /// <summary>
-    /// JsValue → System.Text.Json 兼容类型转换（用于参数求值结果）。
-    /// </summary>
-    [Obsolete("使用 ScriptResult.ToClr()")]
-    public static object? ToClrValue(JsValue value)
-    {
-        return new ScriptResult(Script.Empty, value).ToClr();
-    }
-
-    /// <summary>
     /// 预编译表达式，返回可缓存的 AST。
     /// </summary>
     public static JintPreparedScript PrepareExpression(string expression)

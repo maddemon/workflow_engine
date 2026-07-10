@@ -639,7 +639,7 @@ Hint 仍保留，用于框架决定预求值行为（Expression → 预求值，
 | FilterNode + IfNode | `ToBoolean`                           | `ScriptResult.ToBoolean()`                                                                            |
 | JsEngine            | `ToClrValue`                          | `ScriptResult.ToClr()`                                                                                |
 | FilterNode          | `GetJsonValue`                        | Core 新增 `JsonPath`                                                                                  |
-| ScriptEngine 全部   | `Evaluate*` 系列                      | 标记 `[Obsolete]`，由 `PreparedScript.RunAsync` + `ScriptResult.To*` 替代；不物理删除（遵循项目规则） |
+| ScriptEngine 全部   | `Evaluate*` 系列                      | 已由 `PreparedScript.RunAsync` + `ScriptResult.To*` 替代；`ScriptEngine` 已物理删除（见 plan-cleanup-01-obsolete-markers.md） |
 | ParameterResolver   | `EvaluateExpression` + `IsExpression` | 简化为"Script 参数 + ScriptCache"；保留处理非 Script 字符串的旧逻辑作为兼容层                         |
 | ScriptEvaluationExtensions | `EvaluateExpressionAsync<T>`   | 删除，由主入口 `Script.EvaluateAsync<T>(...)`（直接返回 `T?`）取代；`ExecuteAsync` 作次要入口返回 `ScriptResult` |
 | Script              | `GetResult<T>`（public）              | 降为 `internal`，仅供 `ScriptResult.FromResolved` 复用；节点改用 `EvaluateAsync<T>`                    |
@@ -674,7 +674,7 @@ Hint 仍保留，用于框架决定预求值行为（Expression → 预求值，
 - **InputHelper 分歧**：统一走 ExecutionScope（InputContainer）是单独任务。
 - **函数式写法**：`ctx => expr` 目标写法不在本期范围。
 - **SetNode 删除**：保留 SetNode，如需移除需先设计等价替代节点。
-- **物理删除 ScriptEngine**：先标记 `[Obsolete]`，不物理删除，除非用户明确授权。
+- **物理删除 ScriptEngine**：已随 plan-cleanup-01-obsolete-markers.md 物理删除（用户明确授权：开发阶段无需向后兼容）。
 
 ## 13. 落地阶段
 
@@ -701,3 +701,4 @@ Hint 仍保留，用于框架决定预求值行为（Expression → 预求值，
 | 2026-07-10 | Agent  | v7：源码调研后修订——弱化 ReturnType 为渲染/转换提示；删除移除 SetNode 提议；明确 Source/ResolvedValue 分离；预求值失败直接失败；补充 ParameterHydrator/ParameterDiscoverer/NodeExecutionContextFactory/JsEngineOptions 改造细节；前端 ParameterType 扩展；阶段划分为基础设施→单节点试点→全量迁移；ScriptEngine 标记 Obsolete 而非删除 |
 | 2026-07-10 | Agent  | v8：新增节点求值门面 `Script.EvaluateAsync`/`ExecuteAsync`，收敛节点对 `IScriptCache`/`PreparedScript`/`PreparedScriptSession`/`JsEngine` 的直接依赖；新增 `ScriptResult.FromResolved` 统一取值语义；`GetResult<T>` 降为 internal、删除 `EvaluateExpressionAsync<T>`；引擎复用改由 `NodeExecutionContext` 托管、运行时执行后释放；节点无需感知任何作用域类型（逐项传 `JsonNode`、额外全局直接传键值对，按第二个参数类型自动区分）；§4.4 示例与 §4.2 取值方式、§9 归位清单同步更新 |
 | 2026-07-10 | Agent  | v9：门面主入口改为泛型 `EvaluateAsync<T>` 直接返回 `T?`（节点绝大多数只要返回值），`ScriptResult` 经次要入口 `ExecuteAsync` 返回（仅判定成败/多次取值时用）；§2、§4.2、§4.4、§9 全部示例统一为 `await script.EvaluateAsync<T>(...)` |
+| 2026-07-10 | Agent  | v10：物理删除 `ScriptEngine` 整类（用户明确授权，开发阶段无需向后兼容）；归位清单与待定项同步更新为"已删除"，详见 plan-cleanup-01-obsolete-markers.md |
