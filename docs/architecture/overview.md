@@ -72,7 +72,7 @@ Flow Engine 是一个节点可热插拔的工作流自动化引擎：前端负�
 | 审计日志 | 记录执行、登录、保存等事件，支持回放和外部转发。通过 `IEventBus` 接口接收事件，单机内存实现 |
 | 触发器系统 | Schedule、Webhook、轮询触发器，启动工作流执行。Schedule 与轮询调度由 Quartz.NET 实现。详见 [trigger-system.md](trigger-system.md) |
 | AI Agent 层 | 意图识别、工具收集、LLM 调用、子工作流/子 Agent 协调 |
-| 语义解析层 | 自然语言转工作流 DSL、生成-校验-纠错循环、人工确认。详见 [natural-language-to-dsl.md](natural-language-to-dsl.md) |
+| 语义解析层（Agent IDE 驱动） | 自然语言转工作流 DSL，由 Agent IDE 经 CLI skill 生成 JSON 草案并经 CLI 校验/提交；后端不再保留生成实现。详见 [natural-language-to-dsl.md](natural-language-to-dsl.md) |
 | 部署宿主 | 单一 .NET 后台服务进程，同时承载 HTTP API、前端静态文件、执行引擎、Quartz 调度器、Webhook 路由。详见 [deployment.md](deployment.md) |
 
 ## 4. 核心数据流
@@ -80,7 +80,7 @@ Flow Engine 是一个节点可热插拔的工作流自动化引擎：前端负�
 ### 4.1 编辑阶段
 
 ```
-用户拖拽节点 或 自然语言输入 → 前端/语义解析层生成工作流定义 JSON 草案
+用户拖拽节点（前端）或 Agent IDE 自然语言生成 → CLI 校验/提交生成工作流定义 JSON 草案
                                                   ↓
                                           校验 + 人工确认 + 版本化
                                                   ↓
@@ -137,7 +137,7 @@ flowchart TD
 
     A --> C[前端节点面板]
 
-    I[语义解析层<br/>设计时] -.-> A
+    I[Agent IDE<br/>语义解析·设计时] -.-> A
     I -.-> D
     I -.-> C
 ```
@@ -146,7 +146,7 @@ flowchart TD
 - 触发器系统调用执行引擎启动执行。
 - AI Agent 层调用执行引擎执行 tool；执行引擎在执行 Agent 节点时回调 AI Agent 层（虚线表示调用回环）。
 - 节点注册中心向前端节点面板提供节点类型描述。
-- 语义解析层位于设计时，通过虚线依赖节点注册中心（获取可用节点类型）、表达式引擎（校验表达式）、前端节点面板（渲染草案），不参与运行时执行。
+- Agent IDE（语义解析层）位于设计时，位于后端之外，通过 CLI skill 掌握节点注册中心提供的节点类型（获取可用节点类型）、表达式引擎约束（校验表达式），不参与运行时执行。
 
 ## 6. 持久化设计
 

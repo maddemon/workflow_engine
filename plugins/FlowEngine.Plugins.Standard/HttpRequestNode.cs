@@ -44,7 +44,14 @@ public enum HttpRequestAuthMode
     ApiKey,
 
     /// <summary>Basic Auth</summary>
-    BasicAuth
+    BasicAuth,
+
+    /// <summary>
+    /// 查询参数认证：将凭据值（OAuth2 的 accessToken 或 API Key）作为 URL 查询参数附加，
+    /// 参数名由 <see cref="HttpRequestNode.QueryParameterName"/> 指定（默认 access_token）。
+    /// 适用于钉钉 / 企业微信 / 飞书等 token 走 query 的 API。
+    /// </summary>
+    QueryParameter
 }
 
 /// <summary>
@@ -74,10 +81,10 @@ public sealed class HttpRequestNode : INodeType
     public HttpMethodOption Method { get; set; } = HttpMethodOption.Get;
 
     /// <summary>
-    /// 目标 URL，支持 JS 表达式（如 <c>"https://api.example.com/" + input.path</c>）。
+    /// 目标 URL，支持 JS 表达式（如 <c>"https://api.example.com/" + $json.path</c>）。
     /// </summary>
     [DisplayName("URL")]
-    [Description("Target URL. Use JS expression to build URL dynamically (e.g. 'https://api.com/' + input.path).")]
+    [Description("Target URL. Use JS expression to build URL dynamically (e.g. 'https://api.com/' + $json.path).")]
     [Hint(PresentationHint.Expression)]
     public Script Url { get; set; } = Script.Empty;
 
@@ -88,11 +95,17 @@ public sealed class HttpRequestNode : INodeType
     public HttpRequestAuthMode Authentication { get; set; } = HttpRequestAuthMode.None;
 
     /// <summary>
-    /// 凭据 ID（用于 Bearer Token 或 API Key）。
+    /// 凭据 ID（用于 Bearer Token、API Key 或 QueryParameter）。
     /// </summary>
     [Credential(FlowConstants.CredentialFields.ApiKey)]
     [Description("Credential ID for authentication.")]
     public string? CredentialId { get; set; }
+
+    /// <summary>
+    /// QueryParameter 认证模式下的查询参数名（如 access_token）。默认 access_token。
+    /// </summary>
+    [Description("Query parameter name for QueryParameter auth mode (default: access_token).")]
+    public string QueryParameterName { get; set; } = "access_token";
 
     /// <summary>
     /// 是否发送自定义请求头。
@@ -105,7 +118,7 @@ public sealed class HttpRequestNode : INodeType
     /// 请求头，JS 脚本，返回对象。
     /// </summary>
     [DisplayName("Headers")]
-    [Description("Headers script. Must return an object. Example: { 'Authorization': 'Bearer ' + input.token }")]
+    [Description("Headers script. Must return an object. Example: { 'Authorization': 'Bearer ' + $json.token }")]
     [Hint(PresentationHint.Script)]
     [DisplayCondition(nameof(SendHeaders), true)]
     public Script? HeadersExpression { get; set; }
@@ -124,7 +137,7 @@ public sealed class HttpRequestNode : INodeType
     /// 请求体，JS 脚本，返回对象。
     /// </summary>
     [DisplayName("Body")]
-    [Description("Body script. Must return an object. Example: { name: input.name, count: input.count }")]
+    [Description("Body script. Must return an object. Example: { name: $json.name, count: $json.count }")]
     [Hint(PresentationHint.Script)]
     [DisplayCondition(nameof(SendBody), true)]
     public Script? BodyExpression { get; set; }
@@ -157,6 +170,7 @@ public sealed class HttpRequestNode : INodeType
             Method,
             Authentication,
             CredentialId,
+            QueryParameterName,
             SendHeaders,
             HeadersExpression,
             SendBody,

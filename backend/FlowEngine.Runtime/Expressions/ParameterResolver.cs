@@ -29,6 +29,11 @@ public sealed class ParameterResolver
         "$cursor", "$nextCursor", "$page", "$response", "$payload", "$tool"
     };
 
+    // 固定值形态：GUID / URL 不应被当作表达式求值（避免 credentialId、url 等被误判）
+    private static readonly Regex s_guidRegex = new(
+        @"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+        RegexOptions.Compiled);
+
     private readonly ILogger<ParameterResolver> _logger;
     private readonly IScriptCache _scriptCache;
 
@@ -228,9 +233,28 @@ public sealed class ParameterResolver
         if (int.TryParse(trimmed, out _) || long.TryParse(trimmed, out _) || double.TryParse(trimmed, out _))
             return true;
 
+        // 现代约定：表达式必须含 $ 前缀内建变量（plan-004 评审5 命名铁律）
         var firstWord = GetFirstWord(trimmed);
         if (s_knownIdentifiers.Contains(firstWord)) return true;
 
+        // 扫描整个字符串，定位任意位置的 $xxx 内建变量（如 "url" + $credentials.x）
+        for (int i = 0; i < trimmed.Length - 1; i++)
+        {
+            if (trimmed[i] != '$') continue;
+            int j = i + 1;
+            while (j < trimmed.Length && (char.IsLetterOrDigit(trimmed[j]) || trimmed[j] == '_')) j++;
+            if (j > i + 1 && s_knownIdentifiers.Contains(trimmed[i..j].ToString()))
+            {
+                return true;
+            }
+        }
+
+        // 固定值（GUID / URL）直接作为字面量，不参与表达式求值
+        if (s_guidRegex.IsMatch(trimmed.ToString())) return false;
+        if (trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
+            || trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) return false;
+
+        // 遗留兼容：含运算符的裸字符串仍按表达式处理（如 input.xxx、now()）
         foreach (var ch in trimmed)
         {
             if (ch is '=' or '+' or '-' or '*' or '/' or '%' or '>' or '<' or '!' or '?' or ':' or '(' or ')' or '[' or ']' or '&' or '|')

@@ -1,7 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { notifications } from '@mantine/notifications';
 import { Modal, Stack, Text, Table, ActionIcon, Button, Group, TextInput, Select, Badge, Divider, Loader, Center, Alert } from '@mantine/core';
 import { Plus, Trash2, Edit, AlertCircle } from 'lucide-react';
+import { useRequest } from 'ahooks';
 import { getCredentials, createCredential, deleteCredential, updateCredential, getCredentialTypes } from '../../services/api.ts';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
 import type { CredentialDto, CredentialTypeDefinition } from '../../types/workflow.ts';
@@ -19,42 +20,25 @@ interface CredentialListModalProps {
 }
 
 export function CredentialListModal({ opened, onClose }: CredentialListModalProps) {
-  const [credentials, setCredentials] = useState<CredentialDto[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formName, setFormName] = useState('');
   const [formType, setFormType] = useState('apiKey');
   const [formFields, setFormFields] = useState<{ key: string; value: string }[]>([{ key: '', value: '' }]);
-  const [typeOptions, setTypeOptions] = useState<CredentialTypeDefinition[]>(defaultTypeOptions);
 
-  const loadCredentials = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const list = await getCredentials();
-      setCredentials(list);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load credentials');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const { data: credentials = [], loading, error, refresh: refreshCredentials } = useRequest(
+    getCredentials,
+    { ready: opened },
+  );
 
   useEffect(() => {
     if (opened) {
-      loadCredentials();
       setShowForm(false);
       setEditingId(null);
     }
-  }, [opened, loadCredentials]);
+  }, [opened]);
 
-  useEffect(() => {
-    getCredentialTypes()
-      .then(setTypeOptions)
-      .catch(() => setTypeOptions(defaultTypeOptions));
-  }, []);
+  const { data: typeOptions = defaultTypeOptions } = useRequest(getCredentialTypes);
 
   const handleCreate = async () => {
     const fields: Record<string, string> = {};
@@ -69,7 +53,7 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
       setFormName('');
       setFormType('apiKey');
       setFormFields([{ key: '', value: '' }]);
-      await loadCredentials();
+      await refreshCredentials();
       useWorkflowStore.getState().bumpCredentialRevision();
     } catch (err) {
       notifications.show({
@@ -84,7 +68,7 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
     if (!confirm('Delete this credential?')) return;
     try {
       await deleteCredential(id);
-      await loadCredentials();
+      await refreshCredentials();
       useWorkflowStore.getState().bumpCredentialRevision();
     } catch (err) {
       notifications.show({
@@ -119,7 +103,7 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
       setFormName('');
       setFormType('apiKey');
       setFormFields([{ key: '', value: '' }]);
-      await loadCredentials();
+      await refreshCredentials();
       useWorkflowStore.getState().bumpCredentialRevision();
     } catch (err) {
       notifications.show({
@@ -202,7 +186,7 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
         <Center py="md"><Loader size="sm" /></Center>
       ) : error ? (
         <Alert icon={<AlertCircle size={16} />} title="Error" color="red">
-          {error}
+          {error.message ?? 'Failed to load credentials'}
         </Alert>
       ) : (
         <Stack gap="sm">

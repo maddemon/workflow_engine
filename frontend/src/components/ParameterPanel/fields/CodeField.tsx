@@ -1,6 +1,7 @@
 import { Textarea, Group, Text } from '@mantine/core';
 import { InfoTooltip } from './InfoTooltip.tsx';
 import type { ParameterDefinition } from '../../../types/workflow.ts';
+import { extractScriptSource } from '../../../utils/scriptValue.ts';
 
 interface CodeFieldProps {
   definition: ParameterDefinition;
@@ -21,7 +22,7 @@ export function CodeField({ definition, value, onChange, error }: CodeFieldProps
       </Group>
       <Textarea
         error={error}
-        value={String(value ?? '')}
+        value={extractScriptSource(value)}
         onChange={(e) => onChange(e.target.value)}
         autosize
         minRows={6}

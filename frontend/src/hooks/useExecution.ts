@@ -22,6 +22,7 @@ function applyNodeStatuses(records: NodeExecutionRecordDto[]) {
 }
 
 const TERMINAL_STATUSES = new Set(['Completed', 'Failed', 'Cancelled']);
+const POLLING_INTERVAL_MS = 2000;
 
 export function useExecution() {
   const [executionMeta, setExecutionMeta] = useState<ExecutionDto | null>(null);
@@ -59,7 +60,7 @@ export function useExecution() {
       } catch {
         // 忽略轮询错误
       }
-    }, 2000);
+    }, POLLING_INTERVAL_MS);
 
     return () => {
       cancelled = true;

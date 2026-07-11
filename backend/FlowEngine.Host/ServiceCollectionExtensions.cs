@@ -179,7 +179,6 @@ public static class ServiceCollectionExtensions
         services.AddScoped<WorkflowImportService>();
         services.AddScoped<WorkflowDryRunService>();
         services.AddScoped<WorkflowDraftValidator>();
-        services.AddScoped<WorkflowGenerationService>();
         services.AddScoped<ProjectService>();
         services.AddScoped<ProjectCascadeDeleter>();
         services.AddScoped<TriggerService>();
@@ -221,29 +220,11 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<WebSocketReplayService>();
         services.AddScoped<ExecutionWebSocketHandler>();
 
-        // ── LLM 系统级集成 ──────────────────────────────────────────
-        // 依据 appsettings 的 "Ai" 节点注册系统级 ILlmClient 单例。
-        // 配置缺失（ApiKey 为空）时，解析 ILlmClient 会抛出友好错误，不阻塞宿主启动。
-        services.Configure<AiOptions>(configuration.GetSection(AiOptions.SectionName));
-        services.AddSingleton(sp => sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AiOptions>>().Value);
-        services.AddSingleton<ILlmClient>(sp =>
-        {
-            var options = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<AiOptions>>().Value;
-            return SystemLlmClientFactory.Create(options);
-        });
-
-        // 插件（如 LlmNode）按运行时参数创建 LLM 客户端的工厂，抽象定义于 Core，实现位于 Infrastructure。
-        // 通过执行上下文注入，使插件仅依赖 Core 抽象而不直接引用 Infrastructure 具体类型。
+        // ── LLM 客户端工厂（运行时节点）─────────────────────────────
+        // 插件（如 LlmNode、AgentNode）按运行时参数创建 LLM 客户端的工厂，
+        // 抽象定义于 Core，实现位于 Infrastructure。通过执行上下文注入，
+        // 使插件仅依赖 Core 抽象而不直接引用 Infrastructure 具体类型。
         services.AddSingleton<ILlmClientFactory, OpenAiLlmClientFactory>();
-
-        // 显式注册延迟解析委托：仅当真正调用生成端点时才解析 ILlmClient，
-        // 若 Ai:ApiKey 未配置，SystemLlmClientFactory 在调用处抛出友好错误（不阻塞宿主启动）。
-        // 注意：MS DI 不会自动提供 Func<T>，需显式注册以满足构建期校验。
-        services.AddSingleton<Func<ILlmClient>>(sp =>
-        {
-            var provider = sp;
-            return () => provider.GetRequiredService<ILlmClient>();
-        });
 
         // ── CORS ────────────────────────────────────────────────────
         services.AddCors(options =>

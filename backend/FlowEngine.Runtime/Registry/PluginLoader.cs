@@ -56,14 +56,15 @@ public sealed class PluginLoader
                 var context = new PluginLoadContext(dllPath);
                 var assembly = context.LoadFromAssemblyPath(Path.GetFullPath(dllPath));
 
-                // B9：拦截与宿主目标框架不一致的陈旧插件，给出明确告警而非晦涩的类型加载异常。
+                // B9：拦截与宿主目标框架不兼容的陈旧插件，给出明确告警而非晦涩的类型加载异常。
+                // .NETStandard 插件始终兼容；.NETCoreApp 低版本向前兼容（RollForward）。
                 var pluginFramework = assembly.GetCustomAttribute<TargetFrameworkAttribute>()?.FrameworkName;
                 if (!string.IsNullOrEmpty(pluginFramework) &&
                     !string.IsNullOrEmpty(HostFrameworkName) &&
-                    !string.Equals(pluginFramework, HostFrameworkName, StringComparison.OrdinalIgnoreCase))
+                    !IsFrameworkCompatible(pluginFramework, HostFrameworkName))
                 {
                     _logger.LogWarning(
-                        "跳过插件 {DllPath}：目标框架 {PluginFramework} 与宿主 {HostFramework} 不一致，可能是陈旧插件。",
+                        "跳过插件 {DllPath}：目标框架 {PluginFramework} 与宿主 {HostFramework} 不兼容。",
                         dllPath, pluginFramework, HostFrameworkName);
                     continue;
                 }
@@ -107,5 +108,66 @@ public sealed class PluginLoader
 
         _logger.LogInformation("插件扫描完成，成功加载 {Count} 个节点类型", nodes.Count);
         return nodes;
+    }
+
+    /// <summary>
+    /// 判断插件目标框架是否与宿主兼容。
+    /// </summary>
+    /// <remarks>
+    /// 兼容规则：
+    /// 1. .NETStandard 插件始终兼容（设计为跨框架）。
+    /// 2. 同一系列（如 .NETCoreApp）低版本向前兼容（RollForward 机制）。
+    /// 3. 完全相同框架名兼容。
+    /// </remarks>
+    private static bool IsFrameworkCompatible(string pluginFramework, string hostFramework)
+    {
+        // 完全匹配
+        if (string.Equals(pluginFramework, hostFramework, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // 解析框架：格式如 ".NETCoreApp,Version=v10.0" 或 ".NETStandard,Version=v2.0"
+        if (!TryParseFramework(pluginFramework, out var pluginId, out var pluginVersion) ||
+            !TryParseFramework(hostFramework, out var hostId, out var hostVersion) ||
+            pluginVersion is null || hostVersion is null)
+            return false;
+
+        // .NETStandard 始终兼容
+        if (pluginId.Equals(".NETStandard", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // 同一系列且插件版本 <= 宿主版本时向前兼容
+        if (pluginId.Equals(hostId, StringComparison.OrdinalIgnoreCase))
+            return pluginVersion <= hostVersion;
+
+        return false;
+    }
+
+    /// <summary>
+    /// 解析 TFM 字符串，提取标识符和版本号。
+    /// </summary>
+    private static bool TryParseFramework(string frameworkName, out string identifier, out Version? version)
+    {
+        identifier = string.Empty;
+        version = null;
+
+        // 格式：".NETCoreApp,Version=v10.0"
+        var parts = frameworkName.Split(',', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length < 2)
+            return false;
+
+        identifier = parts[0].Trim();
+
+        // 查找 Version=vX.Y.Z
+        foreach (var part in parts)
+        {
+            var trimmed = part.Trim();
+            if (trimmed.StartsWith("Version=", StringComparison.OrdinalIgnoreCase))
+            {
+                var versionStr = trimmed["Version=".Length..].TrimStart('v');
+                return Version.TryParse(versionStr, out version);
+            }
+        }
+
+        return false;
     }
 }

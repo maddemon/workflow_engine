@@ -3,6 +3,7 @@ import { Textarea, Text, Group, Stack, Code as MantineCode, ActionIcon, Tooltip,
 import { HelpCircle, Code as CodeIcon, Braces } from 'lucide-react';
 import { InfoTooltip } from './InfoTooltip.tsx';
 import type { ParameterDefinition } from '../../../types/workflow.ts';
+import { extractScriptSource } from '../../../utils/scriptValue.ts';
 
 interface ExpressionFieldProps {
   definition: ParameterDefinition;
@@ -41,19 +42,21 @@ const DEFAULT_HELP_CONTENT = {
   sections: [
     {
       label: 'Simple expression (implicit return)',
-      code: 'input.name',
+      code: '$json.name',
     },
     {
       label: 'Arrow function',
-      code: '({ input }) => input.name',
+      code: '({ $json }) => $json.name',
     },
     {
       label: 'Full function',
-      code: 'function ({ input }) {\n  return input.name;\n}',
+      code: 'function ({ $json }) {\n  return $json.name;\n}',
     },
   ],
   variables: [
-    { name: '{ input }', description: 'Input data from previous node' },
+    { name: '$json', description: 'Current item data' },
+    { name: '$input', description: 'Input container (item(), all(), first(), last())' },
+    { name: "$node['Name']", description: 'Output of a specific node' },
   ],
 };
 
@@ -62,7 +65,7 @@ export function ExpressionField({ definition, value, onChange, error }: Expressi
   const [helpOpened, setHelpOpened] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const currentValue = String(value ?? '');
+  const currentValue = extractScriptSource(value);
   const scriptLanguage = getScriptLanguage(definition);
   const LanguageIcon = getLanguageIcon(scriptLanguage);
 
@@ -163,7 +166,7 @@ export function ExpressionField({ definition, value, onChange, error }: Expressi
         minRows={isFullscreen ? 20 : 1}
         maxRows={isFullscreen ? 50 : 8}
         spellCheck={false}
-        placeholder="input.name"
+        placeholder="$json.name"
         rightSection={
           <Tooltip label={isFullscreen ? 'Exit Fullscreen' : `Fullscreen (${scriptLanguage})`}>
             <ActionIcon

@@ -1,8 +1,8 @@
 # 工作流稳定运行并行修复计划
 
-> **目标**：补齐 AI 生成的工作流 DSL 能"完整稳定运行"所需的剩余短板。
+> **目标**：补齐 Agent IDE 生成的工作流 DSL 能"完整稳定运行"所需的剩余短板。
 
-**背景**：DSL 生成计划（plan-ai-dsl-generation.md）解决"怎么生成"，本计划解决"生成后能不能跑通"。
+**背景**：DSL 生成已转移到 Agent IDE（见 [task-007-agent-ide-driven-dsl.md](task-007-agent-ide-driven-dsl.md) 与已退役的 [plan-ai-dsl-generation.md](plan-ai-dsl-generation.md)）。Agent IDE 通过 CLI skill 直接产出 DSL JSON，本计划解决"生成后能不能跑通"。
 
 ## 调研结论：原短板状态更新
 
@@ -31,7 +31,7 @@
 - SetNode 表达式支持（S5）
 - 凭据类型枚举与校验（S8，后端已解决；仅前端下拉缺 `connectionString`，见阶段五 5.2）
 - CLI guide 变量参考文档（S9 残留）
-- Dry-Run 集成：AI 生成 DSL 后可一键试运行
+- Dry-Run 集成：Agent IDE 生成 DSL 后可一键试运行
 - 界面途径缺口收口：Dry-Run 按钮、凭据类型/内联新建、节点超时等（见阶段五）
 
 ### 不覆盖范围
@@ -53,7 +53,7 @@
 | 后端凭据类型端点（新增，可选） | `Host/Controllers/CredentialsController.cs` | `GET /api/v1/credential-types` 暴露类型清单，供前端动态拉取（替代前端硬编码类型） |
 | CLI credential types 命令（已存在） | `cli/src/commands/credentials.ts:492` | 已能列出已知类型；补测试断言输出 4 种预置类型 |
 | CLI guide 变量参考 | `cli/src/commands/guide.ts` | 新增"表达式变量参考"章节 |
-| Dry-Run 集成到 generate 流程 | `cli/src/commands/workflows.ts` | `workflow generate --dry-run` 生成后自动试运行 |
+| Dry-Run 集成到 Agent IDE 生成流程 | `cli/src/commands/test.ts` / `workflow create --dry-run` | Agent IDE 生成 DSL 后通过 `test` 或 `workflow create --dry-run` 试运行 |
 
 ---
 
@@ -231,35 +231,37 @@
 
 ---
 
-### 阶段四：Dry-Run 集成到 generate 流程
+### 阶段四：Dry-Run 集成到 Agent IDE 生成流程
 
-**目标**：AI 生成 DSL 后可直接试运行验证可执行性。
+**目标**：Agent IDE 生成 DSL 后可直接试运行验证可执行性。
 
-**当前问题**：DSL 结构校验通过不代表能跑通（如凭据缺失、HTTP 404、表达式运行时错误）。
+**当前问题**：DSL 结构校验通过不代表能跑通（如凭据缺失、HTTP 404、表达式运行时错误）。后端 `POST /api/v1/workflows/dry-run` 与 CLI `test` 命令均已存在，只需在 Agent IDE 工作流中明确推荐该步骤。
 
 | 任务 | 文件 | 验收标准 |
 |------|------|---------|
-| CLI `--dry-run` 标志 | `cli/src/commands/workflows.ts` | `workflow generate --dry-run` 生成后自动调用 `POST /api/v1/workflows/dry-run` |
-| 输出试运行结果 | 同上 | 显示每个节点执行状态、错误信息 |
+| CLI `test` 命令能力 | `cli/src/commands/test.ts` | 接受 DSL JSON + 临时凭据，调用后端 dry-run 端点 |
+| CLI `workflow create --dry-run` 能力 | `cli/src/commands/workflows.ts` | 结构校验后打印请求体，不创建真实工作流 |
+| Skill 文档标注 Dry-Run 步骤 | `cli/skill/claude.md` / `cursor.md` / `skill.json` | Agent IDE 工作流中包含 dry-run 校验步骤 |
 | 失败时保留草案 | 同上 | Dry-Run 失败仍输出 DSL 草案 + 错误信息，供用户修正 |
-| CLI 测试 | `cli/src/__tests__/workflows-commands.test.ts` | Mock generate + dry-run 响应 |
 
-**CLI 流程**：
+**Agent IDE 流程**：
 
 ```bash
-# 生成 + 试运行
-flowengine workflow generate --description "..." --dry-run
+# 1. Agent IDE 根据 skill/schema/节点类型直接生成 DSL JSON
+# 2. 结构校验
+flowengine workflow validate workflow.json
 
-# 输出：
-# 1. DSL 草案（JSON）
-# 2. Dry-Run 结果：每个节点状态、输出/错误
-# 3. 如失败：提示用户修正描述或手动调整 DSL
+# 3. 试运行验证
+flowengine test --file workflow.json --credentials '{"name":"api","type":"oauth2","fields":{...}}' --json
+
+# 4. 创建
+flowengine workflow create --file workflow.json --json
 ```
 
 **实现要点**：
-- `--dry-run` 先调用 `POST /api/v1/workflows/generate`，拿到草案后自动调用 `POST /api/v1/workflows/dry-run`
-- Dry-Run 请求中 `nodes`/`connections` 直接使用生成的草案
-- 凭据参数：如 DSL 引用了 `$credentials.dingtalk`，用户需通过 `--credential` 参数传入临时凭据（CLI 已有此能力）
+- Agent IDE 负责生成 DSL；CLI 不再提供 `workflow generate`。
+- `test` 调用 `POST /api/v1/workflows/dry-run`，请求中 `nodes`/`connections` 直接使用生成的草案。
+- 凭据参数：如 DSL 引用了 `$credentials.dingtalk`，用户需通过 `--credentials` 参数传入临时凭据（CLI 已有此能力）。
 
 ---
 
@@ -359,7 +361,7 @@ flowchart TD
 - [ ] `credential types` 命令列出 4 种预置凭据类型（apiKey/connectionString/basicAuth/oauth2）及字段 schema
 - [ ] 创建凭据时 Type 为已知类型但缺必填字段 → 返回校验错误
 - [ ] `flowengine guide` 输出包含完整的表达式变量参考
-- [ ] `workflow generate --dry-run` 生成 DSL 后自动试运行
+- [ ] Agent IDE 生成 DSL 后可通过 `flowengine test --file workflow.json` 或 `flowengine workflow create --file workflow.json --dry-run` 试运行
 - [ ] 界面 `CanvasToolbar` 提供"试运行"按钮，调用 `POST /api/v1/workflows/dry-run` 展示结果（阶段五 5.1）
 - [ ] 前端凭据创建弹窗含 `connectionString` 类型（或从后端动态拉取类型，阶段五 5.2）
 - [ ] （非阻塞增强）节点参数面板 `CredentialField` 支持内联新建凭据并自动刷新（阶段五 5.3）
@@ -374,7 +376,7 @@ flowchart TD
 
 ### 端到端验收
 
-- [ ] AI 生成"钉钉员工同步到数据库"DSL → `--dry-run` 试运行 → 结构校验通过 → 创建工作流 → 执行成功
+- [ ] Agent IDE 生成"第三方 API 分页同步到数据库"DSL → `test --file` 试运行 → 结构校验通过 → `workflow create` 成功 → `execute` 执行成功
 - [ ] DSL 中使用 SetNode 做字段映射（`$json.userid` → `userId`）
 - [ ] DSL 中使用 `$credentials.dingtalk.accessToken` 引用 OAuth2 令牌
 
@@ -383,7 +385,8 @@ flowchart TD
 ## 7. 相关文档
 
 - [task-003-dingtalk-sync-via-cli.md](task-003-dingtalk-sync-via-cli.md) — 原始短板清单
-- [plan-ai-dsl-generation.md](plan-ai-dsl-generation.md) — DSL 生成计划（并行）
+- [task-007-agent-ide-driven-dsl.md](task-007-agent-ide-driven-dsl.md) — Agent IDE 驱动 DSL 生成改造
+- [plan-ai-dsl-generation.md](plan-ai-dsl-generation.md) — 原后端 DSL 生成计划（已退役）
 - [expression-system.md](../architecture/expression-system.md) §2.2.1 — 变量参考
 - [script-type.md](../architecture/script-type.md) — Script 类型设计
 
@@ -397,7 +400,7 @@ flowchart TD
 | 阶段一：SetNode 表达式支持 | 已完成 | - | SetField.Value→Script、逐项表达式求值、ScriptJsonConverter 兼容旧值，测试通过 |
 | 阶段二：凭据类型注册表 | 已完成 | - | CredentialTypeRegistry 4 种类型 + CredentialService 校验 + GET /api/v1/credentials/types 端点 + 测试通过 |
 | 阶段三：CLI guide 变量参考 | 已完成 | - | guide.ts variableReference 章节 + 测试断言通过 |
-| 阶段四：Dry-Run 集成 | 已完成 | - | CLI `workflow generate --dry-run` + 后端 POST /api/v1/workflows/dry-run + 测试通过 |
+| 阶段四：Dry-Run 集成 | 已完成 | - | CLI `test --file workflow.json` / `workflow create --file workflow.json --dry-run` + 后端 POST /api/v1/workflows/dry-run + Skill 文档标注 Dry-Run 步骤；`workflow generate` 已随 task-007 移除 |
 | 阶段五：界面途径缺口 | 已完成 | - | 5.1 Dry-Run 按钮、5.2 connectionString 下拉、5.3 凭据内联新建+刷新、5.4 timeout 编辑、5.5 复制/粘贴均已落地（前端构建+新增 store 测试通过） |
 
 > 注：路由以代码为准——凭据类型端点真实路由为 `GET /api/v1/credentials/types`（计划交付物表原写的 `/api/v1/credential-types` 缺复数 s，已按代码实现）。
@@ -414,4 +417,4 @@ flowchart TD
 | 2026-07-11 | Agent | 代码复核修正：S8 后端已解决（CredentialTypeRegistry 已存在并接入校验），阶段二重写为"仅收口"（删冗余新建项、类型以代码实际 4 种为准、补 GET /credential-types 可选端点）；阶段五 5.3/5.4/5.5 标注非阻塞增强；successWhen 判定优先级与 OAuth2 provider 策略字段归属澄清 |
 | 2026-07-11 | Agent | 实施收口：经 code-explorer 子 agent 并行侦察确认阶段零/一/二/三/四 后端与 CLI 均已在工作区落地并测试通过；前端阶段五 5.1–5.5 全部实现（Dry-Run 按钮、connectionString 下拉、凭据内联新建+自动刷新、timeout 编辑、节点复制/粘贴），前端 `npm run build` 与新增 workflowStore 测试通过。凭据类型端点真实路由为 `/api/v1/credentials/types` |
 | 2026-07-11 | Agent | 代码评审（requesting-code-review，3 个 code-reviewer 子 agent 分 backend/cli/frontend 并行）：后端 verdict With fixes（HttpNodeExecution 加 Output 空守卫、OAuth2TokenService 令牌提取改为安全 `ExtractStringToken` 且缺失时抛非重试业务异常，793 测试全绿）；CLI verdict 原 No→With fixes（修复 Stage 三 guide.ts 变量参考补全 $items/$node/$workflow/$env/$vars/$now/$today/$runIndex/$itemIndex/$cursor/$nextCursor + 新增 Script 类型语法说明与 SetNode 表达式示例、workflows.ts `--create`+dry-run 失败时仍输出草案、增 `--credentials` 选项）；前端 verdict With fixes（Dry Run 按钮改为不依赖 workflowId 可在未保存流程预演、alert 改 notifications、新建凭据名非空校验）。三端 build+test 全绿 |
-| 2026-07-11 | Agent | 已知债务（非本期范围，未改）：① 前端 2 个既存失败测试 `useWebSocketExecution.sse.test.ts`、`FieldResolver.test.tsx`（文件未改动，属仓库原有红灯）；② 后端 `plugins/FlowEngine.Plugins.Standard/LlmNode.cs` 直接引用 `FlowEngine.Infrastructure.Ai`，违反 `.agents/rules/backend-code-rules.md` 插件只依赖 Core 的边界约束，需另立任务将 `ILlmClient`/`OpenAiLlmClient` 下沉或抽象到 Core |
+| 2026-07-11 | Agent | 已知债务（非本期范围，未改）：前端 2 个既存失败测试 `useWebSocketExecution.sse.test.ts`、`FieldResolver.test.tsx`（文件未改动，属仓库原有红灯）。`LlmNode.cs` 实际仅依赖 `FlowEngine.Core.Abstractions` 中的 `ILlmClient`/`ILlmClientFactory`，不存在插件依赖 Infrastructure 的边界违规，该债务项不成立 |

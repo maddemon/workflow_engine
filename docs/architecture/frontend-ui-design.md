@@ -165,3 +165,73 @@ interface NodeInstance {
 | **P1** | 节点备注字段 | 后端 + 前端 |
 | **P2** | 工作流搜索/筛选 | 列表页 |
 | **P2** | 工作流卡片样式美化 | 列表页 |
+
+---
+
+## 6. 凭据选择器 UX 设计
+
+### 6.1 当前问题
+
+当前凭据选择器是一个简单的下拉框，存在以下不足：
+
+- 用户选择凭据后，不知道该凭据有哪些可用字段
+- 不同凭据类型（apiKey、oauth2、connectionString）的字段差异大，用户难以记忆
+- 缺少按项目（projectId）过滤的能力
+
+### 6.2 改进方案
+
+**选择器结构：**
+
+```
+┌─────────────────────────────────────────┐
+│ 凭据选择                                │
+├─────────────────────────────────────────┤
+│ [下拉框：选择凭据名称 ▾]                │
+│                                         │
+│ 已选凭据：dingtalk (oauth2)             │
+│ ┌─────────────────────────────────────┐ │
+│ │ 可用字段：                          │ │
+│ │ • accessToken  ← 点击插入到表达式   │ │
+│ │ • tokenType                        │ │
+│ │ • expiresIn                        │ │
+│ │ • expiresAt                        │ │
+│ │ • refreshToken                     │ │
+│ └─────────────────────────────────────┘ │
+│                                         │
+│ 表达式示例：                            │
+│ $credentials.dingtalk.accessToken       │
+└─────────────────────────────────────────┘
+```
+
+**交互流程：**
+
+1. 用户点击凭据选择器
+2. 下拉框显示匹配节点 `[Credential("xxx")]` 声明类型的凭据
+3. 选择凭据后，下方展示该凭据的所有可用字段
+4. 点击字段名，自动插入到表达式编辑器中
+
+### 6.3 后端支持
+
+前端需要以下后端支持：
+
+1. **凭据列表 API**：支持按 `type` 和 `projectId` 过滤
+   ```
+   GET /api/v1/credentials?type=oauth2&projectId=xxx
+   ```
+
+2. **凭据字段元数据**：从 `/api/v1/credentials/types` 获取每种类型的字段定义
+   ```json
+   [
+     {
+       "name": "oauth2",
+       "displayName": "OAuth2",
+       "fields": [
+         { "name": "tokenUrl", "displayName": "Token URL", "isRequired": true, "secret": false },
+         { "name": "clientId", "displayName": "Client ID", "isRequired": true, "secret": false },
+         { "name": "clientSecret", "displayName": "Client Secret", "isRequired": true, "secret": true }
+       ]
+     }
+   ]
+   ```
+
+3. **OAuth2 运行时字段**：告知前端 OAuth2 凭据会自动注入 `accessToken`、`tokenType`、`expiresIn` 等字段

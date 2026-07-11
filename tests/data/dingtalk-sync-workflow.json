@@ -1,0 +1,150 @@
+{
+  "name": "钉钉组织架构同步",
+  "nodes": [
+    {
+      "id": "trigger",
+      "typeName": "manualTrigger",
+      "name": "手动触发",
+      "parameters": {},
+      "ports": [
+        { "name": "Output", "direction": "Output", "type": "Main" }
+      ],
+      "positionX": 100,
+      "positionY": 100,
+      "isEntry": true
+    },
+    {
+      "id": "fetchDepts",
+      "typeName": "httpRequest",
+      "name": "拉取部门列表",
+      "parameters": {
+        "method": "POST",
+        "url": { "source": "'https://oapi.dingtalk.com/topapi/v2/department/listsub'" },
+        "authentication": "QueryParameter",
+        "credentialId": "019f50f5-8fa9-7157-9f04-b2aeeeaf0009",
+        "queryParameterName": "access_token",
+        "sendHeaders": false,
+        "sendBody": true,
+        "bodyExpression": { "source": "({ \"dept_id\": 1 })" },
+        "successWhen": { "source": "$json.errcode == 0" }
+      },
+      "ports": [
+        { "name": "Input", "direction": "Input", "type": "Main" },
+        { "name": "Output", "direction": "Output", "type": "Main" }
+      ],
+      "positionX": 300,
+      "positionY": 100
+    },
+    {
+      "id": "fetchUsers",
+      "typeName": "httpRequest",
+      "name": "拉取部门员工",
+      "parameters": {
+        "method": "POST",
+        "url": { "source": "'https://oapi.dingtalk.com/topapi/v2/user/list'" },
+        "authentication": "QueryParameter",
+        "credentialId": "019f50f5-8fa9-7157-9f04-b2aeeeaf0009",
+        "queryParameterName": "access_token",
+        "sendHeaders": false,
+        "sendBody": true,
+        "bodyExpression": { "source": "({ \"dept_id\": 1, \"cursor\": 0, \"size\": 100 })" },
+        "successWhen": { "source": "$json.errcode == 0" }
+      },
+      "ports": [
+        { "name": "Input", "direction": "Input", "type": "Main" },
+        { "name": "Output", "direction": "Output", "type": "Main" }
+      ],
+      "positionX": 300,
+      "positionY": 300
+    },
+    {
+      "id": "mapDepts",
+      "typeName": "script",
+      "name": "映射部门数据",
+      "parameters": {
+        "codeMode": "js",
+        "code": "const input = $input.first();\nconst deptList = input.body.result?.dept_list || [];\nreturn deptList.map(d => ({\n  dingtalk_dept_id: Number(d.dept_id),\n  name: d.name,\n  parent_id: Number(d.parent_id || 0)\n}));"
+      },
+      "ports": [
+        { "name": "Input", "direction": "Input", "type": "Main" },
+        { "name": "Output", "direction": "Output", "type": "Main" }
+      ],
+      "positionX": 500,
+      "positionY": 100
+    },
+    {
+      "id": "mapUsers",
+      "typeName": "script",
+      "name": "映射员工数据",
+      "parameters": {
+        "codeMode": "js",
+        "code": "const input = $input.first();\nconst userList = input.body.result?.list || [];\nreturn userList.map(u => ({\n  dingtalk_user_id: u.userid,\n  name: u.name,\n  email: u.email || '',\n  mobile: u.mobile || '',\n  department_id: Number(u.dept_id_list?.[0] || 0),\n  position: u.title || ''\n}));"
+      },
+      "ports": [
+        { "name": "Input", "direction": "Input", "type": "Main" },
+        { "name": "Output", "direction": "Output", "type": "Main" }
+      ],
+      "positionX": 500,
+      "positionY": 300
+    },
+    {
+      "id": "saveDepts",
+      "typeName": "dbUpsert",
+      "name": "写入部门表",
+      "parameters": {
+        "connection": "$credentials['sync-db'].connectionString",
+        "table": "departments",
+        "mode": "upsert",
+        "keyColumns": "dingtalk_dept_id",
+        "columns": {
+          "dingtalk_dept_id": "$json.dingtalk_dept_id",
+          "name": "$json.name",
+          "parent_id": "$json.parent_id",
+          "sync_status": "'synced'",
+          "updated_at": "datetime('now')"
+        }
+      },
+      "ports": [
+        { "name": "Input", "direction": "Input", "type": "Main" },
+        { "name": "Output", "direction": "Output", "type": "Main" }
+      ],
+      "positionX": 700,
+      "positionY": 100
+    },
+    {
+      "id": "saveUsers",
+      "typeName": "dbUpsert",
+      "name": "写入员工表",
+      "parameters": {
+        "connection": "$credentials['sync-db'].connectionString",
+        "table": "employees",
+        "mode": "upsert",
+        "keyColumns": "dingtalk_user_id",
+        "columns": {
+          "dingtalk_user_id": "$json.dingtalk_user_id",
+          "name": "$json.name",
+          "email": "$json.email",
+          "mobile": "$json.mobile",
+          "department_id": "$json.department_id",
+          "position": "$json.position",
+          "sync_status": "'synced'",
+          "updated_at": "datetime('now')"
+        }
+      },
+      "ports": [
+        { "name": "Input", "direction": "Input", "type": "Main" },
+        { "name": "Output", "direction": "Output", "type": "Main" }
+      ],
+      "positionX": 700,
+      "positionY": 300
+    }
+  ],
+  "connections": [
+    { "id": "c1", "sourceNodeId": "trigger", "sourcePortName": "Output", "targetNodeId": "fetchDepts", "targetPortName": "Input" },
+    { "id": "c2", "sourceNodeId": "trigger", "sourcePortName": "Output", "targetNodeId": "fetchUsers", "targetPortName": "Input" },
+    { "id": "c3", "sourceNodeId": "fetchDepts", "sourcePortName": "Output", "targetNodeId": "mapDepts", "targetPortName": "Input" },
+    { "id": "c4", "sourceNodeId": "fetchUsers", "sourcePortName": "Output", "targetNodeId": "mapUsers", "targetPortName": "Input" },
+    { "id": "c5", "sourceNodeId": "mapDepts", "sourcePortName": "Output", "targetNodeId": "saveDepts", "targetPortName": "Input" },
+    { "id": "c6", "sourceNodeId": "mapUsers", "sourcePortName": "Output", "targetNodeId": "saveUsers", "targetPortName": "Input" }
+  ]
+}

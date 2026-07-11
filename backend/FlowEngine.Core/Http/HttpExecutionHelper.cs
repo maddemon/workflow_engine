@@ -96,9 +96,7 @@ public static class HttpExecutionHelper
             return true;
         }
 
-        try
-        {
-            var script = new Script
+        var script = new Script
             {
                 Source = successWhen.Source,
                 Language = ScriptLanguage.JavaScript,
@@ -111,16 +109,6 @@ public static class HttpExecutionHelper
                 ("$json", responseBody),
                 ("$statusCode", statusCode),
                 ("$statusText", statusText)).ConfigureAwait(false);
-        }
-        catch (ScriptErrorException)
-        {
-            return false;
-        }
-        catch (Exception)
-        {
-            // 表达式求值失败视为业务未满足，交由调用方标记节点失败
-            return false;
-        }
     }
 
     private static bool TryParseJson(string json, out JsonNode? node)

@@ -1,11 +1,12 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { notifications } from '@mantine/notifications';
 import { Select, Group, Text, Button, Modal, Stack, TextInput, ActionIcon } from '@mantine/core';
 import { Plus, Trash2 } from 'lucide-react';
+import { useRequest } from 'ahooks';
 import { InfoTooltip } from './InfoTooltip.tsx';
 import { getCredentials, createCredential, getCredentialTypes } from '../../../services/api.ts';
 import { useWorkflowStore } from '../../../stores/workflowStore.ts';
-import type { CredentialDto, ParameterDefinition, CredentialTypeDefinition } from '../../../types/workflow.ts';
+import type { ParameterDefinition } from '../../../types/workflow.ts';
 
 interface CredentialFieldProps {
   definition: ParameterDefinition;
@@ -15,9 +16,6 @@ interface CredentialFieldProps {
 }
 
 export function CredentialField({ definition, value, onChange, error }: CredentialFieldProps) {
-  const [credentials, setCredentials] = useState<CredentialDto[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [types, setTypes] = useState<CredentialTypeDefinition[]>([]);
   const credentialRevision = useWorkflowStore((s) => s.credentialRevision);
   const bumpCredentialRevision = useWorkflowStore((s) => s.bumpCredentialRevision);
 
@@ -26,38 +24,18 @@ export function CredentialField({ definition, value, onChange, error }: Credenti
   const [formType, setFormType] = useState('apiKey');
   const [formFields, setFormFields] = useState<{ key: string; value: string }[]>([{ key: '', value: '' }]);
 
-  const load = useCallback(() => {
-    let cancelled = false;
-    setLoading(true);
-    getCredentials()
-      .then((data) => {
-        if (cancelled) return;
-        const filtered = definition.credentialType
-          ? data.filter((c) => c.type === definition.credentialType)
-          : data;
-        setCredentials(filtered);
-        setLoading(false);
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setCredentials([]);
-          setLoading(false);
-        }
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [definition.credentialType]);
+  const { data: allCredentials = [], loading } = useRequest(getCredentials, {
+    refreshDeps: [credentialRevision, definition.credentialType],
+  });
 
-  useEffect(() => {
-    load();
-  }, [load, credentialRevision]);
+  const credentials = useMemo(
+    () => definition.credentialType
+      ? allCredentials.filter((c) => c.type === definition.credentialType)
+      : allCredentials,
+    [allCredentials, definition.credentialType],
+  );
 
-  useEffect(() => {
-    getCredentialTypes()
-      .then(setTypes)
-      .catch(() => setTypes([]));
-  }, []);
+  const { data: types = [] } = useRequest(getCredentialTypes);
 
   const typeOptions = types.length > 0
     ? types.map((t) => ({ label: t.displayName, value: t.name }))

@@ -28,19 +28,21 @@ DSL（Domain Specific Language，领域特定语言）是面向特定领域的�
 
 自然语言转 DSL 位于**设计阶段**，而不是**运行时执行层**。执行引擎只接受已经校验通过的 DSL，不直接执行自然语言。
 
+> **实现归属变更**：早期本层由后端服务实现（`WorkflowGenerationService` + `PromptTemplates` + `POST /api/v1/workflows/generate`，见已退役的 [plan-ai-dsl-generation.md](../plans/plan-ai-dsl-generation.md)）。现 DSL 生成已转移到 **Agent IDE**（Cursor / Claude Code / Claude Desktop 等）：Agent IDE 通过 CLI skill 文件掌握 DSL schema 与节点类型定义，直接生成合法的 DSL JSON，再由 CLI 负责校验（`workflow validate` / `workflow create --dry-run`）与提交（`workflow create`）。后端不再保留任何生成相关的 Prompt 或系统级 LLM 配置。
+
 ```
-用户自然语言
+用户自然语言（在 Agent IDE 中）
     ↓
 ┌─────────────────┐
-│  语义解析层      │  ← 本章节描述的范围
-│  (设计时)        │
+│  Agent IDE       │  ← 本章节描述的范围（设计时，位于后端之外）
+│  语义解析层       │     通过 CLI skill 掌握 schema / 节点类型
 └────────┬────────┘
          ↓ 输出 JSON DSL 草案
-    Schema/规则校验
+    CLI Schema/规则校验（workflow validate / --dry-run）
          ↓
     人工确认 / 版本化
          ↓
-    保存为工作流版本
+    保存为工作流版本（workflow create）
          ↓
 ┌─────────────────┐
 │   执行引擎       │  ← 不感知自然语言
@@ -57,6 +59,8 @@ DSL（Domain Specific Language，领域特定语言）是面向特定领域的�
 ## 3. 语义解析层的工作流程
 
 ### 3.1 生成阶段
+
+> 以下 `SemanticParser` 为设计示意（非当前后端实现）。当前由 Agent IDE 承担该角色：它依据 CLI skill 提供的节点类型清单与 DSL 约束，直接构造 Prompt 并调用 LLM 生成 JSON 草案，或等价地直接产出 JSON。
 
 语义解析层构造一个结构化 Prompt，把以下信息提供给 LLM：
 

@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Stack,
@@ -15,6 +15,7 @@ import {
   Box,
 } from '@mantine/core';
 import { ArrowLeft, RefreshCw, Eye, ChevronDown, ChevronRight } from 'lucide-react';
+import { useRequest } from 'ahooks';
 import { getWorkflowExecutions, getExecution } from '../services/api.ts';
 import type { ExecutionDto, ExecutionSummaryDto } from '../types/workflow.ts';
 import { statusConfig, formatDuration } from '../utils/execution.tsx';
@@ -27,33 +28,16 @@ function formatDate(dateStr: string | null): string {
 export function ExecutionHistoryPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [executions, setExecutions] = useState<ExecutionSummaryDto[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [selectedExecution, setSelectedExecution] = useState<ExecutionDto | null>(null);
-  const [detailLoading, setDetailLoading] = useState(false);
 
-  const [refreshKey, setRefreshKey] = useState(0);
   const [page, setPage] = useState(1);
   const [expandedOutputs, setExpandedOutputs] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    const fetchData = async () => {
-      if (!id) return;
-      setLoading(true);
-      setError(null);
-      try {
-        const data = await getWorkflowExecutions(id);
-        setExecutions(data);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : 'Failed to fetch executions');
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchData();
-  }, [id, refreshKey]);
+  const { data: executions = [], loading, error, refresh: refreshExecutions } = useRequest(
+    () => getWorkflowExecutions(id!),
+    { ready: !!id },
+  );
 
   const PAGE_SIZE = 20;
 
@@ -68,18 +52,13 @@ export function ExecutionHistoryPage() {
     return filteredExecutions.slice(start, start + PAGE_SIZE);
   }, [filteredExecutions, page]);
 
-  const handleViewExecution = async (execution: ExecutionSummaryDto) => {
-    setDetailLoading(true);
-    try {
-      const detailed = await getExecution(execution.id);
+  const { loading: detailLoading, run: handleViewExecution } = useRequest(
+    (execution: ExecutionSummaryDto) => getExecution(execution.id).then((detailed) => {
       setSelectedExecution(detailed);
       setExpandedOutputs(new Set());
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to fetch execution details');
-    } finally {
-      setDetailLoading(false);
-    }
-  };
+    }),
+    { manual: true },
+  );
 
   const toggleOutput = (recordId: string) => {
     setExpandedOutputs((prev) => {
@@ -120,7 +99,7 @@ export function ExecutionHistoryPage() {
               size="xs"
               w={140}
             />
-            <ActionIcon variant="subtle" onClick={() => setRefreshKey(k => k + 1)}>
+            <ActionIcon variant="subtle" onClick={refreshExecutions}>
               <RefreshCw size={16} />
             </ActionIcon>
           </Group>
@@ -136,7 +115,7 @@ export function ExecutionHistoryPage() {
 
         {error && (
           <Text c="red" size="sm" ta="center" py="md">
-            {error}
+            {error.message ?? 'Failed to fetch executions'}
           </Text>
         )}
 

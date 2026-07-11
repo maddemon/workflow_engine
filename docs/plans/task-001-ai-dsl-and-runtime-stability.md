@@ -1,7 +1,9 @@
 # 任务：AI DSL 生成 + 运行时稳定性 并行实施
 
-> 关联计划：`plan-ai-dsl-generation.md`（Plan 1）、`plan-runtime-stability.md`（Plan 2）。
+> 关联计划：`plan-ai-dsl-generation.md`（Plan 1，已退役）、`plan-runtime-stability.md`（Plan 2，已按 Agent IDE 方案更新）。
 > 本任务文档跟踪两计划的并行实施，重点记录跨计划共享根因（S2 钉钉令牌）与冲突协调。
+>
+> **后续变更**：Plan 1 实现的后端 DSL 生成能力（`PromptTemplates` / `WorkflowGenerationService` / `POST /api/v1/workflows/generate` / 全局 `AiOptions` / 系统级 `ILlmClient`）已由 [task-007-agent-ide-driven-dsl.md](task-007-agent-ide-driven-dsl.md) 移除。DSL 生成职责现转移到 Agent IDE，通过 CLI skill 直接生成 DSL 并由 CLI 校验/提交。
 
 ## 目标
 

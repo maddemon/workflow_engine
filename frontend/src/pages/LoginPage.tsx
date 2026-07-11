@@ -1,33 +1,32 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { TextInput, PasswordInput, Button, Paper, Text, Stack, Title, Center, Box, Anchor } from '@mantine/core';
+import { useRequest } from 'ahooks';
 import { useAuth } from '../hooks/AuthContext.tsx';
 
 export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
-    setLoading(true);
-    try {
+  const { loading, run: handleSubmit } = useRequest(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      setError('');
       const result = await login({ email, password });
       if (result.success) {
         navigate('/');
       } else {
         setError(result.error ?? 'Login failed');
       }
-    } catch {
-      setError('An unexpected error occurred');
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+    {
+      manual: true,
+      onError: () => setError('An unexpected error occurred'),
+    },
+  );
 
   return (
     <Center style={{ height: '100vh' }}>

@@ -120,6 +120,28 @@ public sealed class JSNode : INodeType
                 ("$input", new InputContainer(allItems, currentItem, context.RawParameters, inputContext)),
             },
             cancellationToken: cancellationToken).ConfigureAwait(false);
+        // 返回值为 JsonArray 时，每个元素展开为一个独立 DataItem（对齐 n8n normalizeItems），
+        // 使下游节点（如 dbUpsert）能逐 item 处理，而非把整个数组当成单个 item 的 Data。
+        if (result is JsonArray array)
+        {
+            var items = new List<DataItem>(array.Count);
+            for (var i = 0; i < array.Count; i++)
+            {
+                items.Add(new DataItem
+                {
+                    Data = array[i]?.DeepClone(),
+                    Success = true,
+                    SourceIndex = i
+                });
+            }
+
+            return new NodeExecutionResult
+            {
+                Success = true,
+                Output = new DataBatch { Items = items }
+            };
+        }
+
         var outputItem = ToDataItem(result);
 
         return new NodeExecutionResult

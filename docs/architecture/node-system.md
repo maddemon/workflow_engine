@@ -394,3 +394,49 @@ manualTrigger → Paginate($credentials.<name>.accessToken + 分页拉取)
               → script/map-fields ($input.item().userid)
               → dbUpsert
 ```
+
+## 12. ScriptNode 返回格式说明
+
+### 12.1 设计原则
+
+ScriptNode（`typeName: "script"`）的返回值格式应保持灵活，不应强制特定结构。原因：
+
+- **下游节点未知**：编写 ScriptNode 时，不一定知道下一个节点是什么，需要什么数据结构
+- **数据转换自由**：用户应能根据业务需求自由组织输出格式
+- **引擎统一处理**：无论返回什么格式，引擎都将其包装为 `DataItem.Data`
+
+### 12.2 返回值处理
+
+ScriptNode 的 JS 代码通过 `return` 语句返回值，引擎处理流程：
+
+1. JS 返回值通过 Jint 引擎转换为 `JsonNode`
+2. 包装为 `DataItem { Data = json, Success = true }`
+3. 作为 `NodeExecutionResult.Output` 传递给下游节点
+
+### 12.3 示例
+
+```javascript
+// 示例 1：返回扁平对象（推荐，下游可直接访问 $json.field）
+const input = $input.first();
+const list = input.body?.result?.list || [];
+return list.map(item => ({
+  id: item.id,
+  name: item.name,
+  email: item.email || ''
+}));
+
+// 示例 2：返回嵌套对象（下游需通过 $json.data.field 访问）
+return {
+  data: { id: 1, name: "Alice" },
+  metadata: { timestamp: Date.now() }
+};
+
+// 示例 3：返回单个值
+return { success: true, count: 42 };
+```
+
+### 12.4 注意事项
+
+- **不要包裹 `{json: {...}}`**：这是 n8n 的遗留约定，Flow Engine 不需要此包装层
+- **输入访问**：HTTP 节点的输出信封包含 `body` 字段，访问方式为 `$input.first().body`
+- **下游兼容**：确保输出格式与下游节点的列映射或字段引用匹配

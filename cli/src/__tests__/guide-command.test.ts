@@ -109,7 +109,6 @@ describe('commands/guide', () => {
     expect(output).toContain('ManualTrigger');
     expect(output).toContain('HttpRequest');
     expect(output).toContain('常见校验错误');
-    expect(output).toContain('AI 生成工作流');
     expect(output).toContain('表达式变量参考');
     expect(output).toContain('$node[\'GetUser\']');
     expect(output).toContain('$items(\'GetUser\')');
@@ -118,7 +117,7 @@ describe('commands/guide', () => {
     expect(output).toContain('Script 类型');
     expect(output).toContain('纯字符串简写');
     expect(output).toContain('SetNode 表达式字段映射');
-    expect(output).toContain('钉钉员工同步到数据库');
+    expect(output).toContain('第三方 API 分页同步到数据库');
   });
 
   it('JSON mode outputs structured guide', async () => {
@@ -147,9 +146,9 @@ describe('commands/guide', () => {
     expect(parsed.examples).toBeDefined();
     expect(parsed.commonErrors).toBeDefined();
     expect(parsed.nodeTypes).toBeDefined();
-    expect(parsed.aiGeneration).toBeDefined();
     expect(parsed.variableReference).toBeDefined();
     expect(Array.isArray(parsed.variableReference.variables)).toBe(true);
+    expect(parsed.variableReference.variables.length).toBeGreaterThan(0);
     expect(parsed.variableReference.variables[0].example).toBeDefined();
     expect(parsed.expressionSyntax).toBeDefined();
     expect(parsed.expressionSyntax.scriptType).toContain('source');

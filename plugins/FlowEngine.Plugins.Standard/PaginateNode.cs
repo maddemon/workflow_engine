@@ -217,7 +217,16 @@ public sealed class PaginateNode : INodeType
                     cancellationToken).ConfigureAwait(false);
                 if (!businessOk)
                 {
-                    return context.ErrorResult("SuccessWhenFailed", $"successWhen 表达式判定为失败：{successWhenExpr}");
+                    var errcode = body?["errcode"]?.GetValue<int>();
+                    var errmsg = body?["errmsg"]?.GetValue<string>();
+                    var subMsg = body?["sub_msg"]?.GetValue<string>();
+                    var detail = errcode.HasValue ? $"，实际 errcode={errcode}" : "";
+                    if (!string.IsNullOrEmpty(subMsg))
+                        detail += $"，{subMsg}";
+                    else if (!string.IsNullOrEmpty(errmsg))
+                        detail += $"，{errmsg}";
+                    return context.ErrorResult("SuccessWhenFailed",
+                        $"业务条件未满足：{successWhenExpr}{detail}");
                 }
             }
 

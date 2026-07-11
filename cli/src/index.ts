@@ -34,7 +34,6 @@ import {
 import { guide } from './commands/guide.js';
 import { nodeTypesGet, nodeTypesList } from './commands/node-types.js';
 import { projectGet, projectList } from './commands/projects.js';
-import type { DryRunCredentialDto } from './types.js';
 import { skill } from './commands/skill.js';
 import { test } from './commands/test.js';
 import {
@@ -48,7 +47,6 @@ import {
   workflowCreate,
   workflowDelete,
   workflowExport,
-  workflowGenerate,
   workflowGet,
   workflowImport,
   workflowList,
@@ -667,59 +665,6 @@ workflowCmd
     await workflowValidate({ file, profile: opts.profile });
   });
 
-workflowCmd
-  .command('generate')
-  .description('根据自然语言描述生成工作流 DSL 草案')
-  .requiredOption('--description <description>', '工作流的自然语言描述')
-  .option('--output <file>', '将生成的草案保存到文件')
-  .option('--create', '生成并直接创建工作流（会先询问确认）')
-  .option('--dry-run', '生成后调用后端 dry-run 验证可运行性')
-  .option('--project-id <id>', '所属项目')
-  .option('--credentials <json>', 'Dry-Run 使用的临时凭据 JSON 数组，如 [{"name":"db","type":"connectionString","fields":{"connectionString":"..."}}]')
-  .action(async function () {
-    const command = this;
-    const opts = command.optsWithGlobals<{
-      description: string;
-      output?: string;
-      create?: boolean;
-      dryRun?: boolean;
-      projectId?: string;
-      credentials?: string;
-      profile?: string;
-    }>();
-    let parsedCredentials: DryRunCredentialDto[] | undefined;
-    if (opts.credentials !== undefined && opts.credentials.length > 0) {
-      try {
-        const parsed = JSON.parse(opts.credentials) as unknown;
-        if (Array.isArray(parsed)) {
-          parsedCredentials = parsed as DryRunCredentialDto[];
-        } else {
-          throw new CLIError(
-            '--credentials 必须是 JSON 数组',
-            ErrorCode.ValidationError,
-            ExitCode.InvocationError,
-          );
-        }
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        throw new CLIError(
-          `解析 --credentials 失败：${message}`,
-          ErrorCode.ValidationError,
-          ExitCode.InvocationError,
-          err,
-        );
-      }
-    }
-    await workflowGenerate({
-      description: opts.description,
-      output: opts.output,
-      create: opts.create,
-      dryRun: opts.dryRun,
-      projectId: opts.projectId,
-      credentials: parsedCredentials,
-      profile: opts.profile,
-    });
-  });
 
 workflowCmd
   .command('update [id]')

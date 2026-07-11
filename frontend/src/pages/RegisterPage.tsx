@@ -3,6 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { TextInput, PasswordInput, Button, Paper, Text, Stack, Title, Anchor, Center, Box, List, ThemeIcon } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { Check, X } from 'lucide-react';
+import { useRequest } from 'ahooks';
 import { useAuth } from '../hooks/AuthContext.tsx';
 
 interface PasswordRequirement {
@@ -16,7 +17,6 @@ export function RegisterPage() {
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
   const { register } = useAuth();
   const navigate = useNavigate();
 
@@ -30,22 +30,21 @@ export function RegisterPage() {
 
   const allRequirementsMet = requirements.every((r) => r.met);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError('');
+  const { loading, run: handleSubmit } = useRequest(
+    async (e: React.FormEvent) => {
+      e.preventDefault();
+      setError('');
 
-    if (password !== confirmPassword) {
-      setError('Passwords do not match');
-      return;
-    }
+      if (password !== confirmPassword) {
+        setError('Passwords do not match');
+        return;
+      }
 
-    if (!allRequirementsMet) {
-      setError('Password does not meet all strength requirements');
-      return;
-    }
+      if (!allRequirementsMet) {
+        setError('Password does not meet all strength requirements');
+        return;
+      }
 
-    setLoading(true);
-    try {
       const result = await register({ email, password, userName });
       if (result.success) {
         notifications.show({
@@ -57,12 +56,12 @@ export function RegisterPage() {
       } else {
         setError(result.errorMessage ?? 'Registration failed');
       }
-    } catch {
-      setError('An unexpected error occurred');
-    } finally {
-      setLoading(false);
-    }
-  };
+    },
+    {
+      manual: true,
+      onError: () => setError('An unexpected error occurred'),
+    },
+  );
 
   return (
     <Center style={{ height: '100vh' }}>

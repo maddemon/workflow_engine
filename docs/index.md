@@ -17,7 +17,7 @@ Flow Engine 是一个节点可热插拔的工作流自动化引擎。后端用 C
    - [Webhook 系统](architecture/webhook.md)
    - [审计日志系统](architecture/audit-log.md)
    - [AI Agent 与工作流即工具](architecture/agent-and-tool.md)
-   - [自然语言转 DSL](architecture/natural-language-to-dsl.md) — AI 辅助生成工作流定义的语义解析层
+   - [自然语言转 DSL](architecture/natural-language-to-dsl.md) — Agent IDE 驱动的语义解析层：经 CLI skill 生成工作流 DSL 并校验/提交
 4. [部署架构](architecture/deployment.md) — 理解单机部署、运行方式与横向扩展路径。
 5. [项目路线图](architecture/roadmap.md) — 理解各阶段目标与模块依赖。
 

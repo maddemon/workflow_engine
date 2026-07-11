@@ -77,6 +77,43 @@ flowengine node-types list --json
 - `trigger create --workflow <id> --type <type> [--name <name>]`：创建触发器
 - `guide [--output <file>]`：生成 DSL 编写指南（含节点类型清单）
 
+## Agent IDE 驱动 DSL 生成工作流
+
+Flow Engine 不再通过后端 LLM 生成 DSL。Agent IDE（Cursor / Claude Code / Claude Desktop）应直接基于本 Skill 与 CLI 输出构造合法 DSL，再经 CLI 校验并提交。
+
+推荐步骤：
+
+1. **获取节点类型定义**
+
+   ```bash
+   flowengine node-types list --json
+   flowengine node-types get <typeName> --json
+   ```
+
+2. **获取 DSL 编写指南**
+
+   ```bash
+   flowengine guide --json
+   ```
+
+3. **生成 DSL JSON**（由 Agent IDE 根据上述 schema 与示例直接生成）
+
+4. **Dry-Run 校验**
+
+   ```bash
+   flowengine workflow create --file workflow.json --dry-run --json
+   # 或
+   flowengine test --file workflow.json --json
+   ```
+
+5. **提交工作流**
+
+   ```bash
+   flowengine workflow create --file workflow.json --json
+   ```
+
+> 注意：CLI 不再提供 `workflow generate` 命令，请勿调用后端 `/api/v1/workflows/generate`。
+
 ## 工作流 DSL 规范
 
 所有字段名为 camelCase。

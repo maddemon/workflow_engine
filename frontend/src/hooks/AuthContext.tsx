@@ -1,12 +1,11 @@
-import { createContext, useContext, useState, useCallback, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
 import { notifications } from '@mantine/notifications';
+import { useRequest } from 'ahooks';
 import type { UserDto, RegisterRequest, LoginRequest, RegisterResult } from '../types/workflow.ts';
 import * as api from '../services/api.ts';
-import { tokenStore } from '../utils/tokenStore.ts';
 
 interface AuthContextValue {
   user: UserDto | null;
-  token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (data: LoginRequest) => Promise<{ success: boolean; error?: string }>;
@@ -27,51 +26,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const stored = localStorage.getItem('auth_user');
     return stored ? JSON.parse(stored) : null;
   });
-  const [token, setToken] = useState<string | null>(() => tokenStore.getToken());
-  const [isLoading, setIsLoading] = useState(true);
 
-  useEffect(() => {
-    if (!token) {
-      setIsLoading(false);
-      return;
-    }
-    let cancelled = false;
-    api.getCurrentUser()
-      .then((u) => {
-        if (cancelled) return;
-        setUser(u);
-        localStorage.setItem('auth_user', JSON.stringify(u));
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setToken(null);
-        setUser(null);
-        tokenStore.clear();
-        localStorage.removeItem('auth_user');
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setIsLoading(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [token]);
+  const { loading: isLoading } = useRequest(api.getCurrentUser, {
+    onSuccess: (u) => {
+      setUser(u);
+      localStorage.setItem('auth_user', JSON.stringify(u));
+    },
+    onError: () => {
+      setUser(null);
+      localStorage.removeItem('auth_user');
+    },
+  });
 
   const login = useCallback(async (data: LoginRequest) => {
     try {
       const result = await api.login(data);
-      if (result.success && result.token && result.user) {
-        tokenStore.setToken(result.token);
-        setToken(result.token);
+      if (result.success && result.user) {
         setUser(result.user);
         localStorage.setItem('auth_user', JSON.stringify(result.user));
         return { success: true };
       }
       return { success: false, error: result.errorMessage ?? 'Login failed' };
-    } catch (err) {
+    } catch {
       return { success: false, error: 'Invalid credentials' };
     }
   }, []);
@@ -89,15 +65,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await api.logout();
     } catch { /* ignore */ }
-    tokenStore.clear();
-    setToken(null);
     setUser(null);
     localStorage.removeItem('auth_user');
     notifications.show({ title: 'Logged out', message: 'You have been logged out', color: 'blue' });
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, token, isAuthenticated: !!token && !!user, isLoading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );

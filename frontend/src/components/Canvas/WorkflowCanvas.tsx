@@ -49,11 +49,6 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
     [nodesData, nodePositions, hasPositionOverrides],
   )
 
-  const edgesRef = useRef(edges)
-  useEffect(() => {
-    edgesRef.current = edges
-  }, [edges])
-
   const onConnect = useCallback(
     (params: Connection) => {
       const { source, sourceHandle, target } = params
@@ -121,7 +116,7 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
         const maxConnections: Record<string, number> = { LLM: 1, Memory: 1 }
         const max = maxConnections[targetPort.type]
         if (max !== undefined) {
-          const existingCount = edgesRef.current.filter(
+          const existingCount = useWorkflowStore.getState().edges.filter(
             (e) => e.target === target && e.targetHandle === targetHandle,
           ).length
           if (existingCount >= max) {
@@ -135,7 +130,7 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
         }
       }
 
-      const isDuplicate = edgesRef.current.some(
+      const isDuplicate = useWorkflowStore.getState().edges.some(
         (e) =>
           e.source === source &&
           e.sourceHandle === sourceHandle &&

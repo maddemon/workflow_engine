@@ -29,6 +29,19 @@ public class JSNodeTests
     }
 
     [Fact]
+    public async Task Execute_Returns_Array_Expands_To_Multiple_Items()
+    {
+        var (node, context) = CreateContext(code: "return [{ id: 1 }, { id: 2 }]");
+
+        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success, result.Error?.Message ?? "Unknown error");
+        Assert.Equal(2, result.Output.Items.Count);
+        Assert.Contains("\"id\":1", result.Output.Items[0].Data!.ToJsonString());
+        Assert.Contains("\"id\":2", result.Output.Items[1].Data!.ToJsonString());
+    }
+
+    [Fact]
     public async Task Execute_Reads_Input_First_As_Object()
     {
         var inputData = new JsonObject

@@ -1,5 +1,4 @@
 import axios from 'axios';
-import { tokenStore } from '../utils/tokenStore.ts';
 import type {
   NodeTypeDescriptor,
   Workflow,
@@ -38,14 +37,6 @@ const api = axios.create({
   withCredentials: true,
 });
 
-api.interceptors.request.use((config) => {
-  const token = tokenStore.getToken();
-  if (token && config.headers) {
-    config.headers.Authorization = `Bearer ${token}`;
-  }
-  return config;
-});
-
 /** 结构化 API 错误，统一前端错误处理（R10）。 */
 export class ApiError extends Error {
   status: number;
@@ -73,7 +64,6 @@ api.interceptors.response.use(
       const code = data?.code ?? data?.type;
 
       if (status === 401) {
-        tokenStore.clear();
         localStorage.removeItem('auth_user');
         window.location.href = '/login';
       }
@@ -190,7 +180,7 @@ export async function deleteTrigger(_workflowId: string, triggerId: string): Pro
   await api.delete(`/triggers/${triggerId}`);
 }
 
-// --- Auth ---
+// -- Auth --
 
 export async function register(data: RegisterRequest): Promise<RegisterResult> {
   const res = await api.post<RegisterResult>('/auth/register', data);
@@ -214,8 +204,8 @@ export async function getCurrentUser(): Promise<UserDto> {
 // --- Projects ---
 
 export async function getProjects(): Promise<ProjectDto[]> {
-  const res = await api.get<ProjectDto[]>('/projects');
-  return res.data;
+  const res = await api.get<{ items: ProjectDto[] }>('/projects');
+  return res.data.items;
 }
 
 export async function getProject(id: string): Promise<ProjectDto> {
@@ -236,8 +226,6 @@ export async function updateProject(id: string, data: UpdateProjectDto): Promise
 export async function deleteProject(id: string): Promise<void> {
   await api.delete(`/projects/${id}`);
 }
-
-
 
 // --- Workflow Import/Export ---
 

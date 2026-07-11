@@ -39,7 +39,7 @@ public sealed class HttpToolNode : INodeType
     /// 目标 URL，JS 表达式，返回字符串。
     /// </summary>
     [DisplayName("URL")]
-    [Description("URL expression. Must return a string. Example: 'https://api.com/' + input.path")]
+    [Description("URL expression. Must return a string. Example: 'https://api.com/' + $json.path")]
     [Hint(PresentationHint.Expression)]
     public Script Url { get; set; } = Script.Empty;
 
@@ -57,6 +57,12 @@ public sealed class HttpToolNode : INodeType
     public string? CredentialId { get; set; }
 
     /// <summary>
+    /// QueryParameter 认证模式下的查询参数名（如 access_token）。默认 access_token。
+    /// </summary>
+    [Description("Query parameter name for QueryParameter auth mode (default: access_token).")]
+    public string QueryParameterName { get; set; } = "access_token";
+
+    /// <summary>
     /// 是否发送自定义请求头。
     /// </summary>
     [DisplayName("Send Headers")]
@@ -67,7 +73,7 @@ public sealed class HttpToolNode : INodeType
     /// 请求头，JS 脚本，返回对象。
     /// </summary>
     [DisplayName("Headers")]
-    [Description("Headers script. Must return an object. Example: { 'Authorization': 'Bearer ' + input.token }")]
+    [Description("Headers script. Must return an object. Example: { 'Authorization': 'Bearer ' + $json.token }")]
     [Hint(PresentationHint.Script)]
     [DisplayCondition(nameof(SendHeaders), true)]
     public Script? HeadersExpression { get; set; }
@@ -86,7 +92,7 @@ public sealed class HttpToolNode : INodeType
     /// 请求体，JS 脚本，返回对象。
     /// </summary>
     [DisplayName("Body")]
-    [Description("Body script. Must return an object. Example: { name: input.name, count: input.count }")]
+    [Description("Body script. Must return an object. Example: { name: $json.name, count: $json.count }")]
     [Hint(PresentationHint.Script)]
     [DisplayCondition(nameof(SendBody), true)]
     public Script? BodyExpression { get; set; }
@@ -111,6 +117,7 @@ public sealed class HttpToolNode : INodeType
             Method,
             Authentication,
             CredentialId,
+            QueryParameterName,
             SendHeaders,
             HeadersExpression,
             SendBody,

@@ -403,3 +403,7 @@ review_diff.patch
 .nuget-offline.tmp.config
 .agents/.cron-lock
 .superpowers/sdd/task-4-report.md
+tests/data/minimal-test.json
+tests/data/simple-test.json
+dingtalk_sync_copy.db
+flowengine_copy.db

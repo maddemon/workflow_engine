@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useRef } from 'react';
 import {
   Stack,
   Text,
@@ -37,6 +37,7 @@ import {
   Globe,
   Folder,
 } from 'lucide-react';
+import { useRequest } from 'ahooks';
 import { useNavigate } from 'react-router-dom';
 import {
   getWorkflows,
@@ -88,9 +89,6 @@ function readFileAsText(file: File): Promise<string> {
 }
 
 export function WorkflowListPage() {
-  const [workflows, setWorkflows] = useState<WorkflowSummary[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [exporting, setExporting] = useState(false);
   const [importOpen, setImportOpen] = useState(false);
@@ -104,22 +102,7 @@ export function WorkflowListPage() {
   const { user } = useAuth();
   const fileInputResetRef = useRef<number>(0);
 
-  const loadWorkflows = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const list = await getWorkflows();
-      setWorkflows(list);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load workflows');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    loadWorkflows();
-  }, [loadWorkflows]);
+  const { data: workflows = [], loading, error, refresh: refreshWorkflows } = useRequest(getWorkflows);
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -150,12 +133,12 @@ export function WorkflowListPage() {
     if (!confirm(`Delete workflow "${name}"?`)) return;
     try {
       await deleteWorkflow(id);
-      setWorkflows((prev) => prev.filter((w) => w.id !== id));
       setSelectedIds((prev) => {
         const next = new Set(prev);
         next.delete(id);
         return next;
       });
+      await refreshWorkflows();
       notifications.show({ title: 'Deleted', message: `Workflow "${name}" deleted.`, color: 'green' });
     } catch (err) {
       notifications.show({
@@ -246,13 +229,13 @@ export function WorkflowListPage() {
         setImportResult(result);
       }
       setImportFile(null);
-      await loadWorkflows();
+      await refreshWorkflows();
     } catch (err: unknown) {
       const response = (err as { response?: { data?: unknown } })?.response;
       const data = response?.data;
       if (data && typeof data === 'object' && ('success' in data || 'successCount' in data)) {
         setImportResult(data as ImportResult | BatchImportResult);
-        await loadWorkflows();
+        await refreshWorkflows();
         return;
       }
       notifications.show({
@@ -277,7 +260,7 @@ export function WorkflowListPage() {
     return (
       <Center h="100%" p="md" style={{ background: 'var(--bg-page)' }}>
         <Alert icon={<AlertCircle size={16} />} title="Error" color="red" w={400}>
-          {error}
+          {error.message ?? 'Failed to load workflows'}
         </Alert>
       </Center>
     );
@@ -295,7 +278,7 @@ export function WorkflowListPage() {
         </Group>
         <Group gap="xs">
           <Tooltip label="Refresh">
-            <Button variant="subtle" size="sm" onClick={loadWorkflows} disabled={loading}>
+            <Button variant="subtle" size="sm" onClick={refreshWorkflows} disabled={loading}>
               <RefreshCw size={16} />
             </Button>
           </Tooltip>

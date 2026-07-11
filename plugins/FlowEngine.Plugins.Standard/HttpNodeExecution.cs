@@ -25,6 +25,7 @@ internal static class HttpNodeExecution
         HttpMethodOption method,
         HttpRequestAuthMode authentication,
         string? credentialId,
+        string queryParameterName,
         bool sendHeaders,
         Script? headersExpression,
         bool sendBody,
@@ -58,7 +59,7 @@ internal static class HttpNodeExecution
                 var credentialValue = await context.ResolveApiKeyAsync(credentialId, cancellationToken).ConfigureAwait(false);
                 if (credentialValue is not null)
                 {
-                    ApplyAuthentication(request, authentication, credentialValue);
+                    ApplyAuthentication(request, authentication, credentialValue, queryParameterName);
                 }
             }
 
@@ -103,7 +104,16 @@ internal static class HttpNodeExecution
                     successWhen, body, statusCode, statusText, context, cancellationToken).ConfigureAwait(false);
                 if (!businessOk)
                 {
-                    return context.ErrorResult("SuccessWhenFailed", $"successWhen 表达式判定为失败：{successWhen.Source}");
+                    var errcode = body?["errcode"]?.GetValue<int>();
+                    var errmsg = body?["errmsg"]?.GetValue<string>();
+                    var subMsg = body?["sub_msg"]?.GetValue<string>();
+                    var detail = errcode.HasValue ? $"，实际 errcode={errcode}" : "";
+                    if (!string.IsNullOrEmpty(subMsg))
+                        detail += $"，{subMsg}";
+                    else if (!string.IsNullOrEmpty(errmsg))
+                        detail += $"，{errmsg}";
+                    return context.ErrorResult("SuccessWhenFailed",
+                        $"业务条件未满足：{successWhen.Source}{detail}");
                 }
             }
 
@@ -127,7 +137,11 @@ internal static class HttpNodeExecution
         }
     }
 
-    private static void ApplyAuthentication(HttpRequestMessage request, HttpRequestAuthMode authentication, string credentialValue)
+    private static void ApplyAuthentication(
+        HttpRequestMessage request,
+        HttpRequestAuthMode authentication,
+        string credentialValue,
+        string queryParameterName)
     {
         switch (authentication)
         {
@@ -140,6 +154,15 @@ internal static class HttpNodeExecution
             case HttpRequestAuthMode.BasicAuth:
                 var base64 = Convert.ToBase64String(Encoding.UTF8.GetBytes(credentialValue));
                 request.Headers.TryAddWithoutValidation("Authorization", $"Basic {base64}");
+                break;
+            case HttpRequestAuthMode.QueryParameter:
+                // 将凭据值作为 URL 查询参数附加（钉钉 / 企业微信 / 飞书等 token 走 query 的 API）。
+                // 自动判断使用 '?' 还是 '&' 连接，并对参数名/值做 URL 编码。
+                var separator = request.RequestUri!.Query.Length == 0 ? '?' : '&';
+                var encodedName = Uri.EscapeDataString(queryParameterName);
+                var encodedValue = Uri.EscapeDataString(credentialValue);
+                var newUri = $"{request.RequestUri.GetLeftPart(UriPartial.Path)}{request.RequestUri.Query}{separator}{encodedName}={encodedValue}{request.RequestUri.Fragment}";
+                request.RequestUri = new Uri(newUri);
                 break;
         }
     }

@@ -1,10 +1,11 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState } from 'react';
 import {
   Stack, TextInput, Select, Switch, Button, Group, Text,
   ActionIcon, Collapse, UnstyledButton, Modal, Paper,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { ChevronDown, ChevronRight, Plus, Trash, Edit, Clock, Webhook } from 'lucide-react';
+import { useRequest } from 'ahooks';
 import { InfoTooltip } from './fields/InfoTooltip.tsx';
 import { CronBuilder } from './fields/CronBuilder.tsx';
 import type { TriggerDto, TriggerSettingsDto } from '../../types/workflow.ts';
@@ -17,9 +18,7 @@ interface TriggerConfigProps {
 }
 
 export function TriggerConfig({ workflowId, isExecuting }: TriggerConfigProps) {
-  const [triggers, setTriggers] = useState<TriggerDto[]>([]);
   const workflowVersion = useWorkflowStore((s) => s.workflowVersion);
-  const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editTrigger, setEditTrigger] = useState<TriggerDto | null>(null);
   const [expanded, setExpanded] = useState(false);
@@ -36,23 +35,10 @@ export function TriggerConfig({ workflowId, isExecuting }: TriggerConfigProps) {
   const [allowedOrigins, setAllowedOrigins] = useState('');
   const [isSync, setIsSync] = useState(false);
 
-  const loadTriggers = useCallback(async () => {
-    if (!workflowId) return;
-    setLoading(true);
-    try {
-      const data = await api.getTriggers(workflowId);
-      setTriggers(data);
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to load triggers';
-      notifications.show({ title: 'Error', message: msg, color: 'red' });
-    } finally {
-      setLoading(false);
-    }
-  }, [workflowId]);
-
-  useEffect(() => {
-    loadTriggers();
-  }, [loadTriggers]);
+  const { data: triggers = [], loading, refresh: refreshTriggers } = useRequest(
+    () => api.getTriggers(workflowId),
+    { ready: !!workflowId },
+  );
 
   const resetForm = () => {
     setType('Schedule');
@@ -125,7 +111,7 @@ export function TriggerConfig({ workflowId, isExecuting }: TriggerConfigProps) {
       }
       setShowForm(false);
       resetForm();
-      loadTriggers();
+      refreshTriggers();
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Operation failed';
       notifications.show({ title: 'Error', message: msg, color: 'red' });
@@ -136,7 +122,7 @@ export function TriggerConfig({ workflowId, isExecuting }: TriggerConfigProps) {
     try {
       await api.deleteTrigger(workflowId, triggerId);
       notifications.show({ title: 'Deleted', message: 'Trigger deleted', color: 'orange' });
-      loadTriggers();
+      refreshTriggers();
     } catch {
       notifications.show({ title: 'Error', message: 'Failed to delete trigger', color: 'red' });
     }

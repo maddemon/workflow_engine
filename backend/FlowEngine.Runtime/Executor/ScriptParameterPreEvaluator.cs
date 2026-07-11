@@ -45,7 +45,8 @@ internal static class ScriptParameterPreEvaluator
                 continue;
             }
 
-            if (ScriptValueConverter.TryGetScriptDictionary(value, out var dict) && dict is not null)
+            if (definition?.Type != ParameterType.Script
+                && ScriptValueConverter.TryGetScriptDictionary(value, out var dict) && dict is not null)
             {
                 if (definition?.Hint == PresentationHint.Expression)
                 {

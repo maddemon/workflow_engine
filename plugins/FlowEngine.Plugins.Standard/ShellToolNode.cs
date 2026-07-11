@@ -48,11 +48,11 @@ public sealed class ShellToolNode : INodeType
     public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
 
     /// <summary>
-    /// 要执行的命令，支持 JS 表达式（如 <c>'ls -la ' + input.path</c>）。
+    /// 要执行的命令，支持 JS 表达式（如 <c>'ls -la ' + $json.path</c>）。
     /// 纯命令需用引号包裹为 JS 字符串（如 <c>'echo hello'</c>）。
     /// </summary>
     [DisplayName("Command")]
-    [Description("Command to execute. Use JS expression to build command dynamically (e.g. 'echo ' + input.message). Plain commands must be quoted as a JS string.")]
+    [Description("Command to execute. Use JS expression to build command dynamically (e.g. 'echo ' + $json.message). Plain commands must be quoted as a JS string.")]
     [Hint(PresentationHint.Expression)]
     public Script Command { get; set; } = Script.Empty;
 

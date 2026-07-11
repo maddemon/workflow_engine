@@ -111,7 +111,7 @@ describe('commands/skill', () => {
     spy.mockRestore();
   });
 
-  it('includes workflow generate command in cliCommands', async () => {
+  it('includes guide command in cliCommands', async () => {
     mockInstance.get.mockResolvedValue({ data: [] });
 
     const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -119,7 +119,7 @@ describe('commands/skill', () => {
 
     const parsed = JSON.parse(spy.mock.calls[0][0] as string);
     const commands = parsed.content.cliCommands as Array<{ command: string }>;
-    expect(commands.some((c) => c.command.startsWith('workflow generate'))).toBe(true);
+    expect(commands.some((c) => c.command.startsWith('guide'))).toBe(true);
     spy.mockRestore();
   });
 

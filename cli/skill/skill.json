@@ -93,6 +93,17 @@
     "loop": { "inputs": ["Input (Main)"], "outputs": ["Output (Main)", "Done (Main)"] },
     "merge": { "inputs": ["Input (Main)", "Input (Main)"], "outputs": ["Output (Main)"] }
   },
+  "agentIdeWorkflow": {
+    "description": "Flow Engine 不再通过后端 LLM 生成 DSL。Agent IDE 应直接基于本 Skill 与 CLI 输出构造合法 DSL，再经 CLI 校验并提交。",
+    "steps": [
+      { "order": 1, "action": "获取节点类型定义", "commands": ["node-types list --json", "node-types get <typeName> --json"] },
+      { "order": 2, "action": "获取 DSL 编写指南", "commands": ["guide --json"] },
+      { "order": 3, "action": "由 Agent IDE 直接生成 DSL JSON", "commands": [] },
+      { "order": 4, "action": "Dry-Run 校验", "commands": ["workflow create --file workflow.json --dry-run --json", "test --file workflow.json --json"] },
+      { "order": 5, "action": "提交工作流", "commands": ["workflow create --file workflow.json --json"] }
+    ],
+    "note": "CLI 不再提供 workflow generate 命令，请勿调用后端 /api/v1/workflows/generate。"
+  },
   "commonErrors": [
     { "error": "Port direction enum conversion failed", "cause": "direction used Out/In or number", "fix": "Use 'Input' / 'Output' string values" },
     { "error": "Port type enum conversion failed", "cause": "type used Flow", "fix": "Use 'Main' / 'AgentTool' / 'LLM' / 'Memory'" },

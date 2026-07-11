@@ -88,6 +88,10 @@ export function ExecutionPanel({ execution, onClose, onCancel, error }: Executio
     return map;
   }, [nodes]);
 
+  const isRunning = execution?.status === 'Pending' || execution?.status === 'Running';
+  const statusInfo = statusConfig[execution?.status ?? ''] ?? statusConfig.Pending;
+  const duration = useLiveDuration(execution?.startedAt ?? null, execution?.completedAt ?? null);
+
   if (!execution) {
     return error ? (
       <Stack gap="sm" p="sm">
@@ -114,10 +118,6 @@ export function ExecutionPanel({ execution, onClose, onCancel, error }: Executio
       </Stack>
     ) : null;
   }
-
-  const isRunning = execution.status === 'Pending' || execution.status === 'Running';
-  const statusInfo = statusConfig[execution.status] ?? statusConfig.Pending;
-  const duration = useLiveDuration(execution.startedAt, execution.completedAt);
 
   return (
     <Stack gap="sm" p="sm">

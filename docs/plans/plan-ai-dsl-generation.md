@@ -1,6 +1,8 @@
 # AI 驱动 DSL 生成实施计划
 
-> **目标**：让 AI 通过自然语言描述自动生成 Flow Engine 工作流 DSL，经校验-纠错循环后通过 CLI 创建并执行。
+> **⚠️ 已退役**：本计划实现的后端 DSL 生成能力（PromptTemplates / WorkflowGenerationService / `POST /api/v1/workflows/generate` / 全局 `AiOptions`）已由 [task-007-agent-ide-driven-dsl.md](task-007-agent-ide-driven-dsl.md) 移除。DSL 生成职责现转移到 **Agent IDE**（通过 CLI skill 掌握 DSL schema 与节点类型，直接生成 JSON，再由 CLI 校验/提交）。本文件仅作历史记录保留，不再反映当前架构。
+
+> **目标（原）**：让 AI 通过自然语言描述自动生成 Flow Engine 工作流 DSL，经校验-纠错循环后通过 CLI 创建并执行。
 
 **架构**：后端新增语义解析服务，将节点类型清单 + DSL Schema + Few-shot 示例构造为系统 Prompt，调用 LLM 生成工作流 JSON，经结构化校验后通过纠错循环修正。CLI 新增 `workflow generate` 命令调用后端 API，支持交互式确认后直接创建。
 
@@ -475,6 +477,7 @@ flowchart TD
 | 阶段四：后端 API 端点 | 已完成 | task-001 | `POST /api/v1/workflows/generate` + RBAC + 4 项集成测试通过 |
 | 阶段五：CLI generate 命令 | 已完成 | task-001 | `workflow generate --description/--output/--create` + 4 项 CLI 测试通过 |
 | 阶段六：Skill/Guide 更新 | 已完成 | task-001 | skill 含 `workflow generate`；guide 含 AI 生成能力 + 变量参考 + 钉钉示例 |
+| **整体能力退役** | **已退役** | **task-007** | 后端生成能力（PromptTemplates / WorkflowGenerationService / `generate` 端点 / `AiOptions` / 系统级 `ILlmClient`）全部移除；DSL 生成改由 Agent IDE 经 CLI skill 完成。运行时 `LlmNode`/`AgentNode` 凭据化能力不变。 |
 
 ---
 

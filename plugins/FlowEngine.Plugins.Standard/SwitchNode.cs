@@ -31,10 +31,10 @@ public sealed class SwitchNode : INodeType
     public ExecutionMode ExecutionMode => ExecutionMode.OncePerItem;
 
     /// <summary>
-    /// 要匹配的值，支持 JS 表达式（如 <c>input.category</c> 或 <c>"admin"</c>）。
+    /// 要匹配的值，支持 JS 表达式（如 <c>$json.category</c> 或 <c>"admin"</c>）。
     /// </summary>
     [DisplayName("Value")]
-    [Description("Value to match against cases. Use JS expression to access input data (e.g. input.category).")]
+    [Description("Value to match against cases. Use JS expression to access input data (e.g. $json.category).")]
     [Hint(PresentationHint.Expression)]
     public Script Expression { get; set; } = Script.Empty;
 

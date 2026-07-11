@@ -291,3 +291,42 @@ public class CredentialAccessedEvent : AuditEvent
 2. 前端根据 schema 渲染凭据编辑表单。
 3. 后端校验字段并加密敏感字段。
 4. 节点通过 `CredentialType` 限制可选择的凭据类型。
+
+## 8. 凭据选择 UX 改进方向
+
+### 8.1 当前问题
+
+当前凭据选择是一个简单的下拉框，存在以下不足：
+
+- **字段可见性差**：用户选了一个凭据，但不知道它有哪些可用字段（如 `accessToken`、`connectionString`、`apiKey`）
+- **类型过滤不足**：节点声明了需要特定类型（如 `apiKey`）的凭据，但下拉框可能显示所有凭据
+- **作用域问题**：不同 `projectId` 下的凭据应有隔离，当前可能未按 `projectId` 过滤
+
+### 8.2 改进方向
+
+1. **类型过滤**：下拉框只显示匹配节点 `[Credential("xxx")]` 声明的凭据类型
+2. **字段展示**：选择凭据后，展示该凭据的所有可用字段（如 `accessToken`、`tokenType`、`expiresIn`）
+3. **点击插入**：用户点击字段即可插入到表达式中（如 `$credentials.dingtalk.accessToken`）
+4. **作用域隔离**：按 `projectId` 过滤凭据列表
+
+### 8.3 OAuth2 自动注入字段
+
+`OAuth2CredentialAccessor` 会在运行时自动注入以下字段，用户可在表达式中直接使用：
+
+| 字段 | 说明 |
+|------|------|
+| `accessToken` | 访问令牌 |
+| `tokenType` | 令牌类型（通常为 `Bearer`） |
+| `expiresIn` | 过期时间（秒） |
+| `expiresAt` | 过期时间点（ISO 8601） |
+| `refreshToken` | 刷新令牌（如适用） |
+
+### 8.4 `$credentials` 变量使用示例
+
+```
+$credentials.dingtalk.accessToken          # 钉钉 OAuth2 令牌
+$credentials['sync-db'].connectionString   # 数据库连接字符串
+$credentials.myApiKey.apiKey               # API Key
+```
+
+注意：凭据名称中包含 `-` 等特殊字符时，必须使用方括号语法 `$credentials['name']`。
