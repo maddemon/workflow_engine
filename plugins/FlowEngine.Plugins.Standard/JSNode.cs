@@ -86,7 +86,7 @@ public sealed class JSNode : INodeType
         {
             return context.ErrorResult("CodeError", $"JavaScript execution error: {ex.Message}");
         }
-        catch (Exception ex) when (ex.GetType().Name.Contains("Timeout"))
+        catch (TimeoutException)
         {
             return context.ErrorResult("Timeout", "Code execution timed out.");
         }

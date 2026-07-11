@@ -1,4 +1,5 @@
 using FlowEngine.Core;
+using FlowEngine.Core.Scripting;
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -197,7 +198,7 @@ public sealed class DataQualityNode : INodeType
 
         var nullCount = batch.Items.Count(item =>
         {
-            var value = GetFieldValue(item.Data, field);
+            var value = JsonPath.GetValue(item.Data, field);
             return value is null;
         });
 
@@ -223,7 +224,7 @@ public sealed class DataQualityNode : INodeType
             var regex = new Regex(pattern, RegexOptions.NonBacktracking, TimeSpan.FromSeconds(5));
             var mismatchCount = batch.Items.Count(item =>
             {
-                var value = GetFieldValue(item.Data, field);
+                var value = JsonPath.GetValue(item.Data, field);
                 return value is null || !regex.IsMatch(value);
             });
 
@@ -253,7 +254,7 @@ public sealed class DataQualityNode : INodeType
 
         var outOfRangeCount = batch.Items.Count(item =>
         {
-            var valueStr = GetFieldValue(item.Data, field);
+            var valueStr = JsonPath.GetValue(item.Data, field);
             if (valueStr is null || !double.TryParse(valueStr, out var numValue))
                 return true; // Non-numeric treated as out of range
 
@@ -289,28 +290,6 @@ public sealed class DataQualityNode : INodeType
         // Full JS expression support would need Jint integration which is more complex
         // For now, return pass with a note that full expression support requires JSNode
         return (true, string.Empty);
-    }
-
-    private static string? GetFieldValue(JsonNode? data, string fieldPath)
-    {
-        if (data is null || string.IsNullOrEmpty(fieldPath))
-            return null;
-
-        if (data is not JsonObject obj)
-            return null;
-
-        var parts = fieldPath.Split('.');
-        JsonNode? current = obj;
-
-        foreach (var part in parts)
-        {
-            if (current is JsonObject currentObj && currentObj.TryGetPropertyValue(part, out var next))
-                current = next;
-            else
-                return null;
-        }
-
-        return current?.ToString();
     }
 
     private static JsonObject DeepCopy(JsonObject source)

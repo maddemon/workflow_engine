@@ -229,8 +229,9 @@ public sealed class WebSearchToolNode : INodeType
 
             return null;
         }
-        catch
+        catch (Exception ex)
         {
+            context.Logger?.LogWarning("解析 WebSearch API Key 失败：{Error}", ex.Message);
             return null;
         }
     }

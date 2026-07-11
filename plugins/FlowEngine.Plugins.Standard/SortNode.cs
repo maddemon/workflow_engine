@@ -1,7 +1,8 @@
 using FlowEngine.Core;
+using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Scripting;
 using System.ComponentModel;
 using System.Text.Json.Nodes;
-using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 
@@ -94,7 +95,7 @@ public sealed class SortNode : INodeType
 
     private IComparable GetSortKey(JsonNode? data, SortField field)
     {
-        var value = GetFieldValue(data, field.FieldName);
+        var value = JsonPath.GetValue(data, field.FieldName);
 
         if (value is null)
         {
@@ -117,35 +118,6 @@ public sealed class SortNode : INodeType
         return value;
     }
 
-    private static string? GetFieldValue(JsonNode? data, string fieldPath)
-    {
-        if (data is null || string.IsNullOrEmpty(fieldPath))
-        {
-            return null;
-        }
-
-        if (data is not JsonObject obj)
-        {
-            return null;
-        }
-
-        var parts = fieldPath.Split('.');
-        JsonNode? current = obj;
-
-        foreach (var part in parts)
-        {
-            if (current is JsonObject currentObj && currentObj.TryGetPropertyValue(part, out var next))
-            {
-                current = next;
-            }
-            else
-            {
-                return null;
-            }
-        }
-
-        return current?.ToString();
-    }
 }
 
 /// <summary>

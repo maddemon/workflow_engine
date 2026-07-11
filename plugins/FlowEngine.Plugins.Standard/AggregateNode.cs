@@ -1,7 +1,8 @@
 using FlowEngine.Core;
+using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Scripting;
 using System.ComponentModel;
 using System.Text.Json.Nodes;
-using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 
@@ -66,7 +67,7 @@ public sealed class AggregateNode : INodeType
         {
             AggregateMode.Concatenate => AggregateConcatenate(inputBatch),
             AggregateMode.GroupBy => AggregateGroupBy(inputBatch),
-            _ => AggregateConcatenate(inputBatch)
+            _ => throw new ArgumentOutOfRangeException(nameof(Mode), $"Unsupported aggregate mode: {Mode}")
         };
 
         return Task.FromResult(new NodeExecutionResult
@@ -115,7 +116,7 @@ public sealed class AggregateNode : INodeType
 
         foreach (var item in inputBatch.Items)
         {
-            var keyValue = GetFieldValue(item.Data, GroupByField) ?? string.Empty;
+            var keyValue = JsonPath.GetValue(item.Data, GroupByField) ?? string.Empty;
             if (!groups.ContainsKey(keyValue))
             {
                 groups[keyValue] = new List<DataItem>();
@@ -152,35 +153,6 @@ public sealed class AggregateNode : INodeType
         return new DataBatch { Items = outputItems };
     }
 
-    private static string? GetFieldValue(JsonNode? data, string fieldPath)
-    {
-        if (data is null || string.IsNullOrEmpty(fieldPath))
-        {
-            return null;
-        }
-
-        if (data is not JsonObject obj)
-        {
-            return null;
-        }
-
-        var parts = fieldPath.Split('.');
-        JsonNode? current = obj;
-
-        foreach (var part in parts)
-        {
-            if (current is JsonObject currentObj && currentObj.TryGetPropertyValue(part, out var next))
-            {
-                current = next;
-            }
-            else
-            {
-                return null;
-            }
-        }
-
-        return current?.ToString();
-    }
 }
 
 /// <summary>

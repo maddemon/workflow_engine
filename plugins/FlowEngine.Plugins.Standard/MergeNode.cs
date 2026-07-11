@@ -1,8 +1,10 @@
 using FlowEngine.Core;
-using System.ComponentModel;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Scripting;
+using System.ComponentModel;
+using System.Text.Json.Nodes;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -66,7 +68,7 @@ public sealed class MergeNode : INodeType
             MergeMode.Append => MergeAppend(batch1, batch2),
             MergeMode.Combine => MergeCombine(batch1, batch2),
             MergeMode.Multiplex => MergeMultiplex(batch1, batch2),
-            _ => MergeAppend(batch1, batch2)
+            _ => throw new ArgumentOutOfRangeException(nameof(Mode), $"Unsupported merge mode: {Mode}")
         };
 
         return Task.FromResult(new NodeExecutionResult
@@ -91,7 +93,7 @@ public sealed class MergeNode : INodeType
             CombineOperation.CombineByPosition => CombineByPosition(batch1, batch2),
             CombineOperation.CombineByField => CombineByField(batch1, batch2),
             CombineOperation.MergeByPosition => MergeByPosition(batch1, batch2),
-            _ => CombineByPosition(batch1, batch2)
+            _ => throw new ArgumentOutOfRangeException(nameof(CombineOperation), $"Unsupported combine operation: {CombineOperation}")
         };
     }
 
@@ -125,14 +127,14 @@ public sealed class MergeNode : INodeType
         }
 
         var lookup = batch2.Items.ToDictionary(
-            item => GetFieldValue(item.Data, MatchField) ?? string.Empty,
+            item => JsonPath.GetValue(item.Data, MatchField) ?? string.Empty,
             item => item);
 
         var items = new List<DataItem>();
 
         foreach (var item1 in batch1.Items)
         {
-            var key = GetFieldValue(item1.Data, MatchField) ?? string.Empty;
+            var key = JsonPath.GetValue(item1.Data, MatchField) ?? string.Empty;
             if (lookup.TryGetValue(key, out var item2))
             {
                 var merged = MergeJsonNodes(item1.Data, item2.Data);
@@ -194,14 +196,14 @@ public sealed class MergeNode : INodeType
         return new DataBatch { Items = items };
     }
 
-    private static System.Text.Json.Nodes.JsonNode? MergeJsonNodes(
-        System.Text.Json.Nodes.JsonNode? node1,
-        System.Text.Json.Nodes.JsonNode? node2)
+    private static JsonNode? MergeJsonNodes(
+        JsonNode? node1,
+        JsonNode? node2)
     {
         if (node1 is null) return node2;
         if (node2 is null) return node1;
 
-        if (node1 is System.Text.Json.Nodes.JsonObject obj1 && node2 is System.Text.Json.Nodes.JsonObject obj2)
+        if (node1 is JsonObject obj1 && node2 is JsonObject obj2)
         {
             var merged = obj1.DeepClone().AsObject();
             foreach (var prop in obj2)
@@ -215,36 +217,6 @@ public sealed class MergeNode : INodeType
         return node1;
     }
 
-    private static string? GetFieldValue(System.Text.Json.Nodes.JsonNode? data, string fieldPath)
-    {
-        if (data is null || string.IsNullOrEmpty(fieldPath))
-        {
-            return null;
-        }
-
-        if (data is not System.Text.Json.Nodes.JsonObject obj)
-        {
-            return null;
-        }
-
-        var parts = fieldPath.Split('.');
-        System.Text.Json.Nodes.JsonNode? current = obj;
-
-        foreach (var part in parts)
-        {
-            if (current is System.Text.Json.Nodes.JsonObject currentObj &&
-                currentObj.TryGetPropertyValue(part, out var next))
-            {
-                current = next;
-            }
-            else
-            {
-                return null;
-            }
-        }
-
-        return current?.ToString();
-    }
 }
 
 /// <summary>

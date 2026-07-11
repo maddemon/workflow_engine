@@ -291,9 +291,10 @@ public sealed class PaginateNode : INodeType
                     break;
             }
         }
-        catch
+        catch (Exception ex)
         {
             // 认证失败不阻断（token 可能已在 URL 内嵌）
+            context.Logger?.LogWarning("应用认证头失败，继续执行（token 可能已内嵌于 URL）：{Error}", ex.Message);
         }
     }
 
