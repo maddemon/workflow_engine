@@ -33,9 +33,13 @@ public sealed class WorkflowServiceAuthorizationTests : IDisposable
         var auditFactory = new AuditEventFactory(_userContext);
         var scheduleManager = new FakeScheduleManager();
         var resourceAuthorization = new RoleBasedResourceAuthorizationService(_userContext);
-        var triggerService = new TriggerService(_dbContext, eventBus, auditFactory, scheduleManager, AuthorizationGuardFactory.Create(_userContext, resourceAuthorization), new WebhookRouteService(_dbContext));
+        var authGuard = AuthorizationGuardFactory.Create(_userContext, resourceAuthorization);
+        var triggerService = new TriggerService(_dbContext, eventBus, auditFactory, scheduleManager, authGuard, new WebhookRouteService(_dbContext));
         var validator = new WorkflowValidator(new FakeNodeRegistry());
-        _service = new WorkflowService(_dbContext, validator, eventBus, auditFactory, triggerService, AuthorizationGuardFactory.Create(_userContext, resourceAuthorization));
+        var handler = new AuthorizedOperationHandler(authGuard, eventBus, auditFactory);
+        var statisticsLoader = new WorkflowStatisticsLoader(_dbContext);
+        var triggerSync = new WorkflowTriggerSync(triggerService, handler);
+        _service = new WorkflowService(_dbContext, validator, eventBus, auditFactory, triggerService, authGuard, handler, statisticsLoader, triggerSync);
     }
 
     public void Dispose()

@@ -30,9 +30,15 @@ public sealed class CredentialService(
     IUserContext userContext,
     WorkflowRepository workflowRepository,
     IAuthorizationGuard authGuard,
-    ICredentialTypeRegistry credentialTypeRegistry)
+    ICredentialTypeRegistry credentialTypeRegistry,
+    AuthorizedOperationHandler handler)
 {
     private const string KeyVersion = "v1";
+
+    private static readonly AuthorizationPolicy UpdatePolicy = new(
+        ResourceKind.Credential, Operation.Write, Scope.Credential, AdminPhase: false, ProjectScoped: false);
+    private static readonly AuthorizationPolicy DeletePolicy = new(
+        ResourceKind.Credential, Operation.Delete, Scope: null, AdminPhase: true, ProjectScoped: false);
 
     /// <summary>
     /// 创建凭据。
@@ -161,8 +167,7 @@ public sealed class CredentialService(
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        await authGuard.RequireAccessAsync(ResourceKind.Credential, id, Operation.Write, cancellationToken);
-        await authGuard.RequireScopeAsync(Scope.Credential, Operation.Write, cancellationToken);
+        await handler.AuthorizePreAsync(UpdatePolicy, id, cancellationToken);
 
         var credential = await dbContext.Credentials
             .FirstOrDefaultAsync(c => c.Id == id, cancellationToken)
@@ -190,8 +195,7 @@ public sealed class CredentialService(
     /// </summary>
     public async Task<CredentialDeleteResult> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        await authGuard.RequireAccessAsync(ResourceKind.Credential, id, Operation.Delete, cancellationToken);
-        await authGuard.RequireAdminAsync(Operation.Delete, cancellationToken);
+        await handler.AuthorizePreAsync(DeletePolicy, id, cancellationToken);
 
         var credential = await dbContext.Credentials
             .FirstOrDefaultAsync(c => c.Id == id, cancellationToken)
@@ -210,11 +214,11 @@ public sealed class CredentialService(
         dbContext.Credentials.Remove(credential);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+        await handler.PublishAuditAsync(
             AuditEventTypes.CredentialDeleted,
             "Credential",
-            id),
-            cancellationToken).ConfigureAwait(false);
+            id,
+            ct: cancellationToken).ConfigureAwait(false);
 
         return new CredentialDeleteResult { Deleted = true };
     }

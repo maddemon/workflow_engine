@@ -41,12 +41,7 @@ public class WorkflowsController(
     public async Task<ActionResult<WorkflowDto>> Get(Guid id, CancellationToken cancellationToken)
     {
         var workflow = await workflowService.GetAsync(id, cancellationToken).ConfigureAwait(false);
-        if (workflow is null)
-        {
-            return NotFound();
-        }
-
-        return Ok(workflow);
+        return this.OkOrNotFound(workflow);
     }
 
     /// <summary>
@@ -73,12 +68,7 @@ public class WorkflowsController(
         CancellationToken cancellationToken)
     {
         var result = await workflowService.UpdateAsync(id, workflow, cancellationToken).ConfigureAwait(false);
-        if (result is null)
-        {
-            return NotFound();
-        }
-
-        return Ok(result);
+        return this.OkOrNotFound(result);
     }
 
     /// <summary>
@@ -108,12 +98,12 @@ public class WorkflowsController(
     {
         if (request.Nodes is null || request.Nodes.Count == 0)
         {
-            return BadRequest(new { error = "BadRequest", message = "Nodes 不能为空。" });
+            return this.BadRequestError("Nodes 不能为空。");
         }
 
         if (request.Connections is null || request.Connections.Count == 0)
         {
-            return BadRequest(new { error = "BadRequest", message = "Connections 不能为空。" });
+            return this.BadRequestError("Connections 不能为空。");
         }
 
         var result = await dryRunService.DryRunAsync(request, cancellationToken).ConfigureAwait(false);
@@ -145,12 +135,7 @@ public class WorkflowsController(
     {
         var workflow = await workflowService.GetVersionAsync(id, version, cancellationToken)
             .ConfigureAwait(false);
-        if (workflow is null)
-        {
-            return NotFound();
-        }
-
-        return Ok(workflow);
+        return this.OkOrNotFound(workflow);
     }
 
     /// <summary>
@@ -165,12 +150,7 @@ public class WorkflowsController(
         var exportedBy = User.Identity?.Name ?? "unknown";
         var json = await exportService.ExportAsync(id, exportedBy, cancellationToken).ConfigureAwait(false);
         var result = System.Text.Json.JsonSerializer.Deserialize<WorkflowExportResult>(json);
-        if (result is null)
-        {
-            return NotFound();
-        }
-
-        return Ok(result);
+        return this.OkOrNotFound(result);
     }
 
     /// <summary>
@@ -184,7 +164,7 @@ public class WorkflowsController(
     {
         if (request.Ids is null || request.Ids.Count == 0)
         {
-            return BadRequest(new { error = "BadRequest", message = "工作流 ID 列表不能为空。" });
+            return this.BadRequestError("工作流 ID 列表不能为空。");
         }
 
         var exportedBy = User.Identity?.Name ?? "unknown";
@@ -193,16 +173,11 @@ public class WorkflowsController(
             var json = await exportService.ExportBatchAsync(request.Ids, exportedBy, cancellationToken)
                 .ConfigureAwait(false);
             var results = System.Text.Json.JsonSerializer.Deserialize<List<WorkflowExportResult>>(json);
-            if (results is null)
-            {
-                return NotFound();
-            }
-
-            return Ok(results);
+            return this.OkOrNotFound(results);
         }
         catch (InvalidOperationException ex)
         {
-            return BadRequest(new { error = "BadRequest", message = ex.Message });
+            return this.BadRequestError(ex.Message);
         }
     }
 

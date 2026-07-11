@@ -33,12 +33,7 @@ public class ProjectsController(ProjectService projectService) : ControllerBase
     public async Task<ActionResult<ProjectDto>> GetById(Guid id, CancellationToken cancellationToken)
     {
         var project = await projectService.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
-        if (project is null)
-        {
-            return NotFound();
-        }
-
-        return Ok(project);
+        return this.OkOrNotFound(project);
     }
 
     /// <summary>
@@ -65,12 +60,7 @@ public class ProjectsController(ProjectService projectService) : ControllerBase
         CancellationToken cancellationToken)
     {
         var result = await projectService.UpdateAsync(id, dto, cancellationToken).ConfigureAwait(false);
-        if (result is null)
-        {
-            return NotFound();
-        }
-
-        return Ok(result);
+        return this.OkOrNotFound(result);
     }
 
     /// <summary>

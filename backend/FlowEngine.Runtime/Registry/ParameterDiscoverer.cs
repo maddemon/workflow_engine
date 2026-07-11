@@ -1,13 +1,9 @@
 using System.Collections.Concurrent;
 using System.ComponentModel;
 using System.Reflection;
-using System.Text.Json.Serialization;
-using System.Text.Json.Nodes;
-using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
-using FlowEngine.Core.Scripting;
 using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Runtime.Registry;
@@ -52,7 +48,7 @@ public sealed class ParameterDiscoverer(ILogger? logger = null)
 
         foreach (var property in nodeType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
         {
-            if (ShouldSkip(property))
+            if (PropertyFilter.ShouldSkip(property))
             {
                 continue;
             }
@@ -62,7 +58,7 @@ public sealed class ParameterDiscoverer(ILogger? logger = null)
                 ?? property.Name;
 
             var hintAttr = property.GetCustomAttribute<HintAttribute>();
-            var (parameterType, inferredHint) = InferParameterType(property.PropertyType, hintAttr);
+            var (parameterType, inferredHint) = ParameterTypeInferrer.Infer(property.PropertyType, hintAttr);
 
             var credentialAttr = property.GetCustomAttribute<CredentialAttribute>();
             if (credentialAttr is not null)
@@ -90,7 +86,7 @@ public sealed class ParameterDiscoverer(ILogger? logger = null)
                 Name = camelName,
                 DisplayName = displayName,
                 Type = parameterType,
-                Required = IsRequired(property.PropertyType),
+                Required = ParameterTypeInferrer.IsRequired(property.PropertyType),
                 DefaultValue = instance is not null ? ReadPropertyDefault(instance, property) : null,
                 Hint = hintAttr?.Component ?? inferredHint,
                 HintProperties = hintProperties,
@@ -100,7 +96,7 @@ public sealed class ParameterDiscoverer(ILogger? logger = null)
 
             if (property.PropertyType.IsEnum)
             {
-                definition.Options = BuildEnumOptions(property.PropertyType);
+                definition.Options = EnumOptionsBuilder.Build(property.PropertyType);
             }
 
             var optionsProviderAttr = property.GetCustomAttribute<OptionsProviderAttribute>();
@@ -127,7 +123,7 @@ public sealed class ParameterDiscoverer(ILogger? logger = null)
             var conditionAttrs = property.GetCustomAttributes<DisplayConditionAttribute>().ToList();
             if (conditionAttrs.Count > 0)
             {
-                definition.DisplayRule = BuildDisplayRule(conditionAttrs);
+                definition.DisplayRule = DisplayRuleBuilder.Build(conditionAttrs);
             }
 
             // 处理数组子项定义（从 HintProperties 的 itemType 获取）
@@ -143,17 +139,17 @@ public sealed class ParameterDiscoverer(ILogger? logger = null)
 
                 if (itemType is not null)
                 {
-                    definition.ItemDefinition = BuildItemDefinition(itemType);
+                    definition.ItemDefinition = ArrayItemDefinitionBuilder.BuildItemDefinition(itemType);
                 }
             }
 
             // 未显式指定 itemType 时，对 List<T>/T[] 的复杂类型子项自动推断
             if (definition.Type == ParameterType.Array && definition.ItemDefinition is null)
             {
-                var itemType = GetArrayElementType(property.PropertyType);
-                if (itemType is not null && ShouldBuildItemDefinition(itemType))
+                var itemType = ArrayItemDefinitionBuilder.GetArrayElementType(property.PropertyType);
+                if (itemType is not null && ArrayItemDefinitionBuilder.ShouldBuildItemDefinition(itemType))
                 {
-                    var itemDef = BuildItemDefinition(itemType);
+                    var itemDef = ArrayItemDefinitionBuilder.BuildItemDefinition(itemType);
                     if (itemDef.Fields.Count > 0)
                     {
                         definition.ItemDefinition = itemDef;
@@ -165,71 +161,6 @@ public sealed class ParameterDiscoverer(ILogger? logger = null)
         }
 
         return parameters;
-    }
-
-    private static bool ShouldSkip(PropertyInfo property)
-    {
-        if (property.GetCustomAttribute<IgnoreParameterAttribute>() is not null)
-        {
-            return true;
-        }
-
-        if (property.GetCustomAttribute<JsonIgnoreAttribute>() is not null)
-        {
-            return true;
-        }
-
-        if (property.Name == nameof(INodeType.Ports))
-        {
-            return true;
-        }
-
-        if (property.DeclaringType == typeof(INodeType))
-        {
-            return true;
-        }
-
-        if (property.GetMethod is null || property.SetMethod is null)
-        {
-            return true;
-        }
-
-        if (property.GetIndexParameters().Length > 0)
-        {
-            return true;
-        }
-
-        if (!IsDeclaredOnNodeType(property))
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    private static bool IsDeclaredOnNodeType(PropertyInfo property)
-    {
-        var declaringType = property.DeclaringType;
-        if (declaringType is null)
-        {
-            return false;
-        }
-
-        if (declaringType.IsInterface)
-        {
-            return false;
-        }
-
-        var interfaceMap = declaringType.GetInterfaceMap(typeof(INodeType));
-        foreach (var interfaceMethod in interfaceMap.InterfaceMethods)
-        {
-            if (property.GetMethod == interfaceMap.TargetMethods[Array.IndexOf(interfaceMap.InterfaceMethods, interfaceMethod)])
-            {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     private object? ReadPropertyDefault(object instance, PropertyInfo property)
@@ -254,225 +185,6 @@ public sealed class ParameterDiscoverer(ILogger? logger = null)
             logger?.LogWarning(ex, "读取属性 {PropertyName} 默认值失败。", property.Name);
             return null;
         }
-    }
-
-    private static (ParameterType Type, PresentationHint? Hint) InferParameterType(
-        Type clrType, HintAttribute? hintAttr)
-    {
-        var underlying = Nullable.GetUnderlyingType(clrType);
-        var effectiveType = underlying ?? clrType;
-
-        if (effectiveType == typeof(string))
-        {
-            return hintAttr?.Component switch
-            {
-                PresentationHint.CodeEditor => (ParameterType.Code, PresentationHint.CodeEditor),
-                _ => (ParameterType.String, null)
-            };
-        }
-
-        if (effectiveType == typeof(Script))
-        {
-            var hint = hintAttr?.Component ?? PresentationHint.Expression;
-            return (ParameterType.Script, hint);
-        }
-
-        if (effectiveType.IsGenericType
-            && effectiveType.GetGenericTypeDefinition() == typeof(Dictionary<,>)
-            && effectiveType.GetGenericArguments() is Type[] args
-            && args.Length == 2
-            && args[0] == typeof(string)
-            && args[1] == typeof(Script))
-        {
-            return (ParameterType.Json, PresentationHint.KeyValueEditor);
-        }
-
-        if (effectiveType == typeof(bool))
-        {
-            return (ParameterType.Boolean, PresentationHint.Toggle);
-        }
-
-        if (effectiveType == typeof(int) || effectiveType == typeof(long)
-            || effectiveType == typeof(double) || effectiveType == typeof(float))
-        {
-            return (ParameterType.Number, null);
-        }
-
-        if (effectiveType.IsEnum)
-        {
-            var values = Enum.GetValues(effectiveType);
-            var hint = values.Length <= 4
-                ? PresentationHint.ButtonGroup
-                : PresentationHint.Select;
-            return (ParameterType.Options, hint);
-        }
-
-        if (typeof(JsonObject).IsAssignableFrom(effectiveType)
-            || typeof(JsonNode).IsAssignableFrom(effectiveType))
-        {
-            return (ParameterType.Json, PresentationHint.JsonEditor);
-        }
-
-        if (effectiveType == typeof(Uri) || effectiveType == typeof(System.Net.Mail.MailAddress))
-        {
-            return (ParameterType.String, null);
-        }
-
-        if (effectiveType.IsGenericType
-            && effectiveType.GetGenericTypeDefinition() == typeof(Dictionary<,>))
-        {
-            return (ParameterType.Json, PresentationHint.KeyValueEditor);
-        }
-
-        if (effectiveType.IsGenericType
-            && effectiveType.GetGenericTypeDefinition() == typeof(List<>))
-        {
-            return (ParameterType.Array, null);
-        }
-
-        if (effectiveType.IsArray)
-        {
-            return (ParameterType.Array, null);
-        }
-
-        if (effectiveType == typeof(CredentialValue))
-        {
-            return (ParameterType.Credential, PresentationHint.CredentialSelect);
-        }
-
-        if (effectiveType == typeof(DateTime) || effectiveType == typeof(DateTimeOffset))
-        {
-            return (ParameterType.String, PresentationHint.DateTime);
-        }
-
-        return (ParameterType.Json, null);
-    }
-
-    private static bool IsRequired(Type clrType)
-    {
-        if (!clrType.IsValueType)
-        {
-            return false;
-        }
-
-        return Nullable.GetUnderlyingType(clrType) is null;
-    }
-
-    private static List<Option> BuildEnumOptions(Type enumType)
-    {
-        var options = new List<Option>();
-        foreach (var value in Enum.GetValues(enumType))
-        {
-            var field = enumType.GetField(value.ToString()!);
-            var label = field?.GetCustomAttribute<DescriptionAttribute>()?.Description
-                ?? value.ToString()!;
-            options.Add(new Option { Label = label, Value = value.ToString()! });
-        }
-
-        return options;
-    }
-
-    private static DisplayRule BuildDisplayRule(List<DisplayConditionAttribute> conditions)
-    {
-        var fragments = new List<string>();
-        var dependencies = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-        foreach (var condition in conditions)
-        {
-            var camelProp = ToCamelCase(condition.PropertyName);
-            dependencies.Add(camelProp);
-
-            // Boolean 值转为小写字符串
-            var valueStr = condition.Value is bool b
-                ? b.ToString().ToLowerInvariant()
-                : condition.Value?.ToString() ?? string.Empty;
-
-            fragments.Add($"{{{{ $parameter.{camelProp} }}}} == '{valueStr}'");
-        }
-
-        return new DisplayRule
-        {
-            Condition = string.Join(" || ", fragments),
-            Dependencies = dependencies.ToList()
-        };
-    }
-
-    private static ParameterDefinition BuildItemDefinition(Type itemType)
-    {
-        var fieldDefs = new List<ParameterDefinition>();
-
-        foreach (var prop in itemType.GetProperties(BindingFlags.Public | BindingFlags.Instance))
-        {
-            if (prop.GetMethod is null || prop.SetMethod is null)
-            {
-                continue;
-            }
-
-            var hintAttr = prop.GetCustomAttribute<HintAttribute>();
-            var (paramType, inferredHint) = InferParameterType(prop.PropertyType, hintAttr);
-            var displayName = prop.GetCustomAttribute<DisplayNameAttribute>()?.DisplayName
-                ?? prop.Name;
-
-            fieldDefs.Add(new ParameterDefinition
-            {
-                Name = ToCamelCase(prop.Name),
-                DisplayName = displayName,
-                Type = paramType,
-                Hint = hintAttr?.Component ?? inferredHint,
-                Description = prop.GetCustomAttribute<DescriptionAttribute>()?.Description,
-                Required = IsRequired(prop.PropertyType)
-            });
-        }
-
-        return new ParameterDefinition
-        {
-            Name = "item",
-            DisplayName = "Item",
-            Type = ParameterType.Json,
-            Fields = fieldDefs
-        };
-    }
-
-    private static Type? GetArrayElementType(Type propertyType)
-    {
-        var effectiveType = Nullable.GetUnderlyingType(propertyType) ?? propertyType;
-
-        if (effectiveType.IsArray)
-        {
-            return effectiveType.GetElementType();
-        }
-
-        if (effectiveType.IsGenericType)
-        {
-            var genericDef = effectiveType.GetGenericTypeDefinition();
-            if (genericDef == typeof(List<>) || genericDef == typeof(IList<>) || genericDef == typeof(IReadOnlyList<>) || genericDef == typeof(ICollection<>) || genericDef == typeof(IEnumerable<>))
-            {
-                return effectiveType.GetGenericArguments()[0];
-            }
-        }
-
-        return null;
-    }
-
-    private static bool ShouldBuildItemDefinition(Type itemType)
-    {
-        if (!itemType.IsClass || itemType == typeof(string))
-        {
-            return false;
-        }
-
-        if (itemType.IsAbstract || itemType.IsInterface)
-        {
-            return false;
-        }
-        
-        if (typeof(JsonNode).IsAssignableFrom(itemType))
-        {
-            return false;
-        }
-
-        return itemType.GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Any(p => p.GetMethod is not null && p.SetMethod is not null);
     }
 
     internal static string ToCamelCase(string name)

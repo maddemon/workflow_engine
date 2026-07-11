@@ -38,7 +38,7 @@ public class UsersController(IUserRoleService userRoleService) : ControllerBase
         var (success, error) = await userRoleService.AssignRoleAsync(userId, request, cancellationToken).ConfigureAwait(false);
         if (!success)
         {
-            return BadRequest(new { error = "BadRequest", message = error });
+            return this.BadRequestError(error);
         }
 
         return Ok(new { userId, role = request.Role });
@@ -56,7 +56,7 @@ public class UsersController(IUserRoleService userRoleService) : ControllerBase
         var (success, error) = await userRoleService.RevokeRoleAsync(userId, role, cancellationToken).ConfigureAwait(false);
         if (!success)
         {
-            return BadRequest(new { error = "BadRequest", message = error });
+            return this.BadRequestError(error);
         }
 
         return NoContent();

@@ -1,10 +1,7 @@
 using System.Net.WebSockets;
-using System.Security.Claims;
 using System.Text;
-using System.Text.Json;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Identity;
-using FlowEngine.Core.Authorization;
 using Microsoft.AspNetCore.Http;
 
 namespace FlowEngine.Host.WebSocketHandlers;
@@ -15,17 +12,10 @@ namespace FlowEngine.Host.WebSocketHandlers;
 public sealed class ExecutionWebSocketHandler
 {
     private readonly WebSocketConnectionManager _connectionManager;
-    private readonly WebSocketReplayService _replayService;
-    private readonly IUserContext _userContext;
-    private readonly IResourceAuthorizationService _resourceAuthorization;
     private readonly ILogger<ExecutionWebSocketHandler> _logger;
-
-    private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan HeartbeatTimeout = TimeSpan.FromSeconds(60);
-    private static readonly JsonSerializerOptions JsonOpts = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
+    private readonly WebSocketAuthenticator _authenticator;
+    private readonly WebSocketSubscriptionManager _subscriptions;
+    private readonly WebSocketHeartbeatHandler _heartbeat;
 
     /// <summary>
     /// 初始化执行 WebSocket 端点处理器。
@@ -38,10 +28,11 @@ public sealed class ExecutionWebSocketHandler
         ILogger<ExecutionWebSocketHandler> logger)
     {
         _connectionManager = connectionManager;
-        _replayService = replayService;
-        _userContext = userContext;
-        _resourceAuthorization = resourceAuthorization;
         _logger = logger;
+        _authenticator = new WebSocketAuthenticator(userContext, resourceAuthorization);
+        _subscriptions = new WebSocketSubscriptionManager(
+            connectionManager, replayService, _authenticator, logger);
+        _heartbeat = new WebSocketHeartbeatHandler(logger);
     }
 
     /// <summary>
@@ -53,11 +44,11 @@ public sealed class ExecutionWebSocketHandler
     {
         if (!context.WebSockets.IsWebSocketRequest)
         {
-            await next();
+            await next().ConfigureAwait(false);
             return;
         }
 
-        if (!_userContext.IsAuthenticated)
+        if (!_authenticator.IsAuthenticated)
         {
             context.Response.StatusCode = StatusCodes.Status401Unauthorized;
             return;
@@ -66,7 +57,7 @@ public sealed class ExecutionWebSocketHandler
         var webSocket = await context.WebSockets.AcceptWebSocketAsync().ConfigureAwait(false);
         var connection = new WebSocketConnection(webSocket)
         {
-            UserId = _userContext.UserId,
+            UserId = _authenticator.UserId,
         };
 
         _logger.LogInformation(
@@ -101,7 +92,7 @@ public sealed class ExecutionWebSocketHandler
         var heartbeatCts = new CancellationTokenSource();
         cts.Token.Register(() => heartbeatCts.Cancel());
 
-        _ = RunHeartbeatAsync(connection, heartbeatCts.Token);
+        _ = _heartbeat.RunHeartbeatAsync(connection, heartbeatCts.Token);
 
         try
         {
@@ -118,7 +109,8 @@ public sealed class ExecutionWebSocketHandler
                 if (result.MessageType == WebSocketMessageType.Text)
                 {
                     var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
-                    await HandleClientMessageAsync(connection, message, cts.Token).ConfigureAwait(false);
+                    await _subscriptions.HandleMessageAsync(connection, message, _heartbeat, cts.Token)
+                        .ConfigureAwait(false);
                 }
 
                 connection.LastActivityAt = DateTime.UtcNow;
@@ -131,189 +123,6 @@ public sealed class ExecutionWebSocketHandler
         {
             heartbeatCts.Cancel();
             heartbeatCts.Dispose();
-        }
-    }
-
-    private async Task HandleClientMessageAsync(
-        WebSocketConnection connection,
-        string message,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var doc = JsonDocument.Parse(message);
-            var root = doc.RootElement;
-
-            if (!root.TryGetProperty("type", out var typeProp))
-            {
-                return;
-            }
-
-            var messageType = typeProp.GetString();
-            switch (messageType)
-            {
-                case "subscribe":
-                    var subscribeMsg = JsonSerializer.Deserialize<WebSocketSubscribeMessage>(message);
-                    if (subscribeMsg is { ExecutionId: var executionId })
-                    {
-                        if (!_userContext.IsAuthenticated || _userContext.UserId is not { } userId)
-                        {
-                            _logger.LogWarning(
-                                "Connection {ConnectionId} attempted to subscribe without authentication",
-                                connection.ConnectionId);
-                            break;
-                        }
-
-                        if (!await _resourceAuthorization.CanAccessExecutionAsync(userId, executionId, Operation.Read, cancellationToken).ConfigureAwait(false))
-                        {
-                            _logger.LogWarning(
-                                "Connection {ConnectionId} denied subscription to execution {ExecutionId}",
-                                connection.ConnectionId, executionId);
-                            break;
-                        }
-
-                        _connectionManager.Subscribe(executionId, connection);
-                        _logger.LogInformation(
-                            "Connection {ConnectionId} subscribed to execution {ExecutionId}",
-                            connection.ConnectionId, executionId);
-
-                        if (subscribeMsg.LastSequence.HasValue)
-                        {
-                            await SendMissingEventsAsync(connection, executionId, subscribeMsg.LastSequence.Value, cancellationToken)
-                                .ConfigureAwait(false);
-                        }
-                    }
-                    break;
-
-                case "unsubscribe":
-                    if (root.TryGetProperty("executionId", out var unsubExecId))
-                    {
-                        var execId = unsubExecId.GetGuid();
-                        _connectionManager.Unsubscribe(execId, connection);
-                        _logger.LogInformation(
-                            "Connection {ConnectionId} unsubscribed from execution {ExecutionId}",
-                            connection.ConnectionId, execId);
-                    }
-                    break;
-
-                case "ping":
-                    await SendPongAsync(connection, cancellationToken).ConfigureAwait(false);
-                    break;
-            }
-        }
-        catch (JsonException ex)
-        {
-            _logger.LogWarning(ex,
-                "Invalid JSON message from connection {ConnectionId}",
-                connection.ConnectionId);
-        }
-    }
-
-    private async Task SendPongAsync(WebSocketConnection connection, CancellationToken cancellationToken)
-    {
-        var pong = new WebSocketPushMessage
-        {
-            Type = "pong",
-            Timestamp = DateTime.UtcNow,
-        };
-        await SendMessageAsync(connection, pong, cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task SendMissingEventsAsync(
-        WebSocketConnection connection,
-        Guid executionId,
-        long lastSequence,
-        CancellationToken cancellationToken)
-    {
-        var missingEvents = _replayService.GetMissingEvents(executionId, lastSequence);
-        if (missingEvents.Count == 0)
-        {
-            missingEvents = await _replayService.GetPersistedEventsAsync(executionId, lastSequence, cancellationToken)
-                .ConfigureAwait(false);
-        }
-
-        if (missingEvents.Count == 0)
-        {
-            return;
-        }
-
-        _logger.LogInformation(
-            "Replaying {Count} events for execution {ExecutionId} to connection {ConnectionId}",
-            missingEvents.Count, executionId, connection.ConnectionId);
-
-        foreach (var evt in missingEvents)
-        {
-            if (connection.WebSocket.State != System.Net.WebSockets.WebSocketState.Open)
-            {
-                break;
-            }
-
-            var json = JsonSerializer.Serialize(evt, JsonOpts);
-            var bytes = System.Text.Encoding.UTF8.GetBytes(json);
-            await connection.WebSocket.SendAsync(
-                new ArraySegment<byte>(bytes),
-                System.Net.WebSockets.WebSocketMessageType.Text,
-                true,
-                cancellationToken).ConfigureAwait(false);
-        }
-    }
-
-    private async Task RunHeartbeatAsync(WebSocketConnection connection, CancellationToken cancellationToken)
-    {
-        try
-        {
-            while (!cancellationToken.IsCancellationRequested &&
-                   connection.WebSocket.State == WebSocketState.Open)
-            {
-                await Task.Delay(HeartbeatInterval, cancellationToken).ConfigureAwait(false);
-
-                var elapsed = DateTime.UtcNow - connection.LastActivityAt;
-                if (elapsed > HeartbeatTimeout)
-                {
-                    _logger.LogWarning(
-                        "Heartbeat timeout for connection {ConnectionId}, closing",
-                        connection.ConnectionId);
-                    break;
-                }
-
-                var ping = new WebSocketPushMessage
-                {
-                    Type = "ping",
-                    Timestamp = DateTime.UtcNow,
-                };
-                await SendMessageAsync(connection, ping, cancellationToken).ConfigureAwait(false);
-            }
-        }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-        {
-        }
-    }
-
-    internal async Task SendMessageAsync(
-        WebSocketConnection connection,
-        WebSocketPushMessage message,
-        CancellationToken cancellationToken)
-    {
-        if (connection.WebSocket.State != WebSocketState.Open)
-        {
-            return;
-        }
-
-        var json = JsonSerializer.Serialize(message, JsonOpts);
-        var bytes = Encoding.UTF8.GetBytes(json);
-        var segment = new ArraySegment<byte>(bytes);
-
-        try
-        {
-            await connection.WebSocket.SendAsync(
-                segment,
-                WebSocketMessageType.Text,
-                true,
-                cancellationToken).ConfigureAwait(false);
-        }
-        catch (WebSocketException)
-        {
-            // Connection already closed, will be cleaned up by the main loop
         }
     }
 }

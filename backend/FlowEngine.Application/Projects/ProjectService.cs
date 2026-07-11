@@ -20,8 +20,14 @@ public sealed class ProjectService(
     IUserContext userContext,
     IAuthorizationGuard authGuard,
     IEventBus eventBus,
-    AuditEventFactory auditFactory)
+    AuditEventFactory auditFactory,
+    AuthorizedOperationHandler handler,
+    ProjectCascadeDeleter cascadeDeleter)
 {
+    private static readonly AuthorizationPolicy UpdatePolicy = new(
+        Resource: null, Access: Operation.Write, Scope: null, AdminPhase: false, ProjectScoped: true);
+    private static readonly AuthorizationPolicy DeletePolicy = new(
+        Resource: null, Access: Operation.Delete, Scope: null, AdminPhase: true, ProjectScoped: false);
     /// <summary>
     /// 创建项目。项目仅用于分类，不再维护成员关系。
     /// </summary>
@@ -109,7 +115,7 @@ public sealed class ProjectService(
             return null;
         }
 
-        await EnsureCanAccessProjectAsync(id, Operation.Write, cancellationToken).ConfigureAwait(false);
+        await handler.AuthorizeProjectAccessAsync(id, Operation.Write, cancellationToken).ConfigureAwait(false);
 
         project.Name = dto.Name;
         project.Description = dto.Description;
@@ -117,11 +123,11 @@ public sealed class ProjectService(
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+        await handler.PublishAuditAsync(
             AuditEventTypes.ProjectUpdated,
             "Project",
             project.Id,
-            new Dictionary<string, object> { ["name"] = project.Name }),
+            new Dictionary<string, object> { ["name"] = project.Name },
             cancellationToken).ConfigureAwait(false);
 
         return MapToDto(project);
@@ -132,7 +138,7 @@ public sealed class ProjectService(
     /// </summary>
     public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        await authGuard.RequireAdminAsync(Operation.Delete, cancellationToken);
+        await handler.AuthorizePreAsync(DeletePolicy, id, cancellationToken);
 
         var project = await dbContext.Projects
             .FirstOrDefaultAsync(p => p.Id == id && !p.Deleted, cancellationToken)
@@ -145,42 +151,16 @@ public sealed class ProjectService(
         project.Deleted = true;
         project.UpdatedAt = DateTime.UtcNow;
 
-        // 级联软删关联数据，避免孤立数据（GAP-13）。
-        // 使用 ToListAsync + foreach 而非 ExecuteUpdateAsync，兼容 InMemory provider（测试环境）。
-        var now = DateTime.UtcNow;
-        var workflows = await dbContext.Workflows
-            .Where(w => w.ProjectId == id && !w.Deleted)
-            .ToListAsync(cancellationToken).ConfigureAwait(false);
-        foreach (var w in workflows) { w.Deleted = true; w.UpdatedAt = now; }
-
-        var triggers = await dbContext.Triggers
-            .Where(t => t.ProjectId == id && !t.Deleted)
-            .ToListAsync(cancellationToken).ConfigureAwait(false);
-        foreach (var t in triggers) { t.Deleted = true; t.UpdatedAt = now; }
-
-        var executions = await dbContext.ExecutionRecords
-            .Where(e => e.ProjectId == id && !e.Deleted)
-            .ToListAsync(cancellationToken).ConfigureAwait(false);
-        foreach (var e in executions) { e.Deleted = true; e.UpdatedAt = now; }
-
-        var files = await dbContext.StoredFiles
-            .Where(f => f.ProjectId == id && !f.Deleted)
-            .ToListAsync(cancellationToken).ConfigureAwait(false);
-        foreach (var f in files) { f.Deleted = true; f.UpdatedAt = now; }
-
-        // 级联软删凭据（Code Review C-1：原遗漏 Credentials 导致凭据成为孤儿数据，存在安全风险）。
-        var credentials = await dbContext.Credentials
-            .Where(c => c.ProjectId == id && !c.Deleted)
-            .ToListAsync(cancellationToken).ConfigureAwait(false);
-        foreach (var c in credentials) { c.Deleted = true; c.UpdatedAt = now; }
+        await cascadeDeleter.CascadeSoftDeleteAsync(id, project.UpdatedAt.Value, cancellationToken)
+            .ConfigureAwait(false);
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+        await handler.PublishAuditAsync(
             AuditEventTypes.ProjectDeleted,
             "Project",
-            project.Id),
-            cancellationToken).ConfigureAwait(false);
+            project.Id,
+            ct: cancellationToken).ConfigureAwait(false);
 
         return true;
     }

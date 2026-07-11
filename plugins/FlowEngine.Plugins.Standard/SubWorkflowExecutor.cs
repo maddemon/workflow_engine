@@ -34,92 +34,32 @@ internal sealed class SubWorkflowExecutor
         var nodeMap = workflow.Nodes.ToDictionary(n => n.Id);
         var connectionsBySource = workflow.Connections
             .ToLookup(c => (c.SourceNodeId, c.SourcePortName));
-
         var hasInputConnections = workflow.Connections
             .Select(c => c.TargetNodeId)
             .ToHashSet();
 
-        var nodeOutputs = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase);
-
-        var entryNodes = workflow.Nodes
-            .Where(n => n.IsEntry || !hasInputConnections.Contains(n.Id))
-            .ToList();
-
+        var entryNodes = ResolveEntryNodes(workflow, hasInputConnections);
         if (entryNodes.Count == 0)
         {
             return CreateErrorResult("NoEntryNode", "No entry node found in the sub-workflow.");
         }
 
-        NodeExecutionResult? lastResult = null;
-
+        var nodeOutputs = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase);
         var executed = new HashSet<Guid>();
         var queue = new Queue<Guid>(entryNodes.Select(n => n.Id));
+        NodeExecutionResult? lastResult = null;
 
         while (queue.Count > 0)
         {
             var nodeId = queue.Dequeue();
-            if (executed.Contains(nodeId))
-            {
-                continue;
-            }
-
-            if (!nodeMap.TryGetValue(nodeId, out var node))
+            if (executed.Contains(nodeId) || !nodeMap.TryGetValue(nodeId, out var node))
             {
                 continue;
             }
 
             var nodeType = _nodeRegistry.Get(node.TypeName);
-
-            var inputs = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase);
-
-            var incomingConnections = workflow.Connections
-                .Where(c => c.TargetNodeId == nodeId)
-                .ToList();
-
-            if (incomingConnections.Count > 0)
-            {
-                foreach (var conn in incomingConnections)
-                {
-                    if (nodeMap.TryGetValue(conn.SourceNodeId, out var sourceNode)
-                        && nodeOutputs.TryGetValue(sourceNode.Name, out var batch))
-                    {
-                        inputs[conn.TargetPortName] = batch;
-                    }
-                }
-            }
-            else if (entryNodes.Any(n => n.Id == nodeId) && triggerPayload is not null)
-            {
-                inputs[FlowConstants.PortNames.Input] = new DataBatch
-                {
-                    Items =
-                    [
-                        new DataItem
-                        {
-                            Data = triggerPayload,
-                            Success = true,
-                            SourceIndex = 0
-                        }
-                    ]
-                };
-            }
-
-            var context = new NodeExecutionContext
-            {
-                Workflow = workflow,
-                ExecutionId = Guid.NewGuid(),
-                Node = new NodeDefinition
-                {
-                    Id = node.Id,
-                    TypeName = node.TypeName,
-                    Name = node.Name,
-                    Parameters = node.Parameters,
-                    Ports = node.Ports
-                },
-                Inputs = inputs,
-                RawParameters = node.Parameters,
-                ResolvedParameters = node.Parameters,
-                CancellationToken = cancellationToken
-            };
+            var inputs = CollectInputs(node, workflow, nodeMap, nodeOutputs, entryNodes, triggerPayload);
+            var context = BuildNodeContext(workflow, node, inputs, cancellationToken);
 
             NodeExecutionResult result;
             try
@@ -129,16 +69,7 @@ internal sealed class SubWorkflowExecutor
             }
             catch (Exception ex)
             {
-                result = new NodeExecutionResult
-                {
-                    Success = false,
-                    Error = new NodeError
-                    {
-                        Code = ex.GetType().Name,
-                        Message = ex.Message,
-                        NodeDefinitionId = node.Id
-                    }
-                };
+                result = CreateExceptionResult(ex, node.Id);
             }
 
             executed.Add(nodeId);
@@ -149,16 +80,7 @@ internal sealed class SubWorkflowExecutor
                 nodeOutputs[node.Name] = result.Output;
             }
 
-            var sourcePortName = ResolveSourcePortName(nodeType, result);
-            var outgoingConnections = connectionsBySource[(node.Id, sourcePortName)];
-
-            foreach (var conn in outgoingConnections)
-            {
-                if (nodeMap.ContainsKey(conn.TargetNodeId) && !executed.Contains(conn.TargetNodeId))
-                {
-                    queue.Enqueue(conn.TargetNodeId);
-                }
-            }
+            EnqueueOutgoing(node, nodeType, result, connectionsBySource, nodeMap, executed, queue);
 
             if (!result.Success)
             {
@@ -167,6 +89,117 @@ internal sealed class SubWorkflowExecutor
         }
 
         return lastResult ?? CreateErrorResult("NoResult", "Sub-workflow produced no result.");
+    }
+
+    private static List<NodeDefinition> ResolveEntryNodes(Workflow workflow, HashSet<Guid> hasInputConnections)
+    {
+        return workflow.Nodes
+            .Where(n => n.IsEntry || !hasInputConnections.Contains(n.Id))
+            .ToList();
+    }
+
+    private static Dictionary<string, DataBatch> CollectInputs(
+        NodeDefinition node,
+        Workflow workflow,
+        Dictionary<Guid, NodeDefinition> nodeMap,
+        Dictionary<string, DataBatch> nodeOutputs,
+        List<NodeDefinition> entryNodes,
+        JsonNode? triggerPayload)
+    {
+        var inputs = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase);
+
+        var incomingConnections = workflow.Connections
+            .Where(c => c.TargetNodeId == node.Id)
+            .ToList();
+
+        if (incomingConnections.Count > 0)
+        {
+            foreach (var conn in incomingConnections)
+            {
+                if (nodeMap.TryGetValue(conn.SourceNodeId, out var sourceNode)
+                    && nodeOutputs.TryGetValue(sourceNode.Name, out var batch))
+                {
+                    inputs[conn.TargetPortName] = batch;
+                }
+            }
+        }
+        else if (entryNodes.Any(n => n.Id == node.Id) && triggerPayload is not null)
+        {
+            inputs[FlowConstants.PortNames.Input] = new DataBatch
+            {
+                Items =
+                [
+                    new DataItem
+                    {
+                        Data = triggerPayload,
+                        Success = true,
+                        SourceIndex = 0
+                    }
+                ]
+            };
+        }
+
+        return inputs;
+    }
+
+    private static NodeExecutionContext BuildNodeContext(
+        Workflow workflow,
+        NodeDefinition node,
+        Dictionary<string, DataBatch> inputs,
+        CancellationToken cancellationToken)
+    {
+        return new NodeExecutionContext
+        {
+            Workflow = workflow,
+            ExecutionId = Guid.NewGuid(),
+            Node = new NodeDefinition
+            {
+                Id = node.Id,
+                TypeName = node.TypeName,
+                Name = node.Name,
+                Parameters = node.Parameters,
+                Ports = node.Ports
+            },
+            Inputs = inputs,
+            RawParameters = node.Parameters,
+            ResolvedParameters = node.Parameters,
+            CancellationToken = cancellationToken
+        };
+    }
+
+    private static void EnqueueOutgoing(
+        NodeDefinition node,
+        INodeType nodeType,
+        NodeExecutionResult result,
+        ILookup<(Guid SourceNodeId, string SourcePortName), Connection> connectionsBySource,
+        Dictionary<Guid, NodeDefinition> nodeMap,
+        HashSet<Guid> executed,
+        Queue<Guid> queue)
+    {
+        var sourcePortName = ResolveSourcePortName(nodeType, result);
+        var outgoingConnections = connectionsBySource[(node.Id, sourcePortName)];
+
+        foreach (var conn in outgoingConnections)
+        {
+            if (nodeMap.ContainsKey(conn.TargetNodeId) && !executed.Contains(conn.TargetNodeId))
+            {
+                queue.Enqueue(conn.TargetNodeId);
+            }
+        }
+    }
+
+    private static NodeExecutionResult CreateExceptionResult(Exception ex, Guid nodeId)
+    {
+        return new NodeExecutionResult
+        {
+            Success = false,
+            Error = new NodeError
+            {
+                Code = ex.GetType().Name,
+                Message = ex.Message,
+                NodeDefinitionId = nodeId
+            }
+        };
     }
 
     private static string ResolveSourcePortName(INodeType nodeType, NodeExecutionResult result)
@@ -200,6 +233,9 @@ internal sealed class SubWorkflowExecutor
         };
     }
 
+    // 注：FlowEngine.Plugins.Standard 仅引用 FlowEngine.Core，无法注入 Runtime 层的
+    // ParameterHydrator。此处保留精简版属性注入，Script/Dictionary<string,Script> 已
+    // 委托给 Core 层 ScriptValueConverter，避免与 Runtime 重复实现转换逻辑。
     private static void HydrateParameters(INodeType nodeType, Dictionary<string, object> parameters)
     {
         var type = nodeType.GetType();
@@ -291,14 +327,7 @@ internal sealed class SubWorkflowExecutor
 
         if (underlying == typeof(Script))
         {
-            return value switch
-            {
-                Script s => s,
-                string str => new Script { Source = str, Language = ScriptLanguage.JavaScript, ReturnType = ScriptReturnType.String },
-                JsonElement element => element.Deserialize<Script>(JsonDefaults.Options),
-                JsonNode node => node.Deserialize<Script>(JsonDefaults.Options),
-                _ => null
-            };
+            return ScriptValueConverter.ToScript(value);
         }
 
         if (underlying.IsGenericType
@@ -308,13 +337,7 @@ internal sealed class SubWorkflowExecutor
             && args[0] == typeof(string)
             && args[1] == typeof(Script))
         {
-            return value switch
-            {
-                JsonElement element => element.Deserialize<Dictionary<string, Script>>(JsonDefaults.Options),
-                JsonNode node => node.Deserialize<Dictionary<string, Script>>(JsonDefaults.Options),
-                string str => JsonSerializer.Deserialize<Dictionary<string, Script>>(str, JsonDefaults.Options),
-                _ => null
-            };
+            return ScriptValueConverter.TryGetScriptDictionary(value, out var dict) ? dict : null;
         }
 
         try

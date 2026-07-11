@@ -1,12 +1,9 @@
-using System.Collections;
 using System.Reflection;
-using System.Text.Json;
-using System.Text.Json.Nodes;
-using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Scripting;
+using FlowEngine.Runtime.Registry.Converters;
 using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Runtime.Registry;
@@ -21,6 +18,35 @@ namespace FlowEngine.Runtime.Registry;
 /// <param name="logger">日志记录器（可选）。</param>
 public sealed class ParameterHydrator(ICredentialAccessor? credentialAccessor = null, ILogger<ParameterHydrator>? logger = null)
 {
+    private readonly ParameterHydratorContext _context = new(credentialAccessor, logger);
+
+    // 精确类型匹配：string/bool/int/long/double/float/CredentialValue/Script/DateTime/DateTimeOffset/Uri
+    private readonly Dictionary<Type, IValueConverter> _converters = new()
+    {
+        [typeof(string)] = new StringConverter(),
+        [typeof(bool)] = new BoolConverter(),
+        [typeof(int)] = new NumericConverter(),
+        [typeof(long)] = new NumericConverter(),
+        [typeof(double)] = new NumericConverter(),
+        [typeof(float)] = new NumericConverter(),
+        [typeof(CredentialValue)] = new CredentialConverter(),
+        [typeof(Script)] = new ScriptConverter(),
+        [typeof(DateTime)] = new DateTimeConverter(),
+        [typeof(DateTimeOffset)] = new DateTimeConverter(),
+        [typeof(Uri)] = new UriConverter(),
+    };
+
+    // 泛型/可分配类型：按顺序匹配（enum → JsonObject/JsonNode → Dictionary<string,Script> → List<T>/Array → Dictionary<,>）
+    private readonly List<IValueConverter> _genericConverters =
+    [
+        new EnumConverter(),
+        new JsonConverter(),
+        new ScriptConverter(),
+        new ListConverter(),
+        new DictionaryConverter(),
+    ];
+
+    private readonly FallbackConverter _fallbackConverter = new();
 
     /// <summary>
     /// 将已解析的参数值赋值到节点实例的对应属性上。
@@ -93,425 +119,19 @@ public sealed class ParameterHydrator(ICredentialAccessor? credentialAccessor = 
             return value;
         }
 
-        if (underlying == typeof(string))
+        if (_converters.TryGetValue(underlying, out var converter))
         {
-            return ConvertToString(value);
+            return await converter.ConvertAsync(value, underlying, _context).ConfigureAwait(false);
         }
 
-        if (underlying == typeof(bool))
+        foreach (var gc in _genericConverters)
         {
-            return ConvertToBool(value);
-        }
-
-        if (underlying == typeof(int))
-        {
-            return ConvertToInt(value);
-        }
-
-        if (underlying == typeof(long))
-        {
-            return ConvertToLong(value);
-        }
-
-        if (underlying == typeof(double))
-        {
-            return ConvertToDouble(value);
-        }
-
-        if (underlying == typeof(float))
-        {
-            return ConvertToFloat(value);
-        }
-
-        if (underlying.IsEnum)
-        {
-            return ConvertToEnum(value, underlying);
-        }
-
-        if (typeof(JsonObject).IsAssignableFrom(underlying))
-        {
-            return ConvertToJsonObject(value);
-        }
-
-        if (typeof(JsonNode).IsAssignableFrom(underlying))
-        {
-            return ConvertToJsonNode(value);
-        }
-
-        if (underlying == typeof(CredentialValue))
-        {
-            return value is CredentialValue cv ? cv : await ConvertToCredentialAsync(value).ConfigureAwait(false);
-        }
-
-        if (underlying == typeof(Script))
-        {
-            return value switch
+            if (gc.CanConvert(underlying))
             {
-                Script s => s,
-                string str => new Script { Source = str, Language = ScriptLanguage.JavaScript, ReturnType = ScriptReturnType.String },
-                JsonElement element => element.Deserialize<Script>(JsonDefaults.Options),
-                JsonNode node => node.Deserialize<Script>(JsonDefaults.Options),
-                _ => null
-            };
-        }
-
-        if (underlying.IsGenericType
-            && underlying.GetGenericTypeDefinition() == typeof(Dictionary<,>)
-            && underlying.GetGenericArguments() is Type[] args
-            && args.Length == 2
-            && args[0] == typeof(string)
-            && args[1] == typeof(Script))
-        {
-            return value switch
-            {
-                JsonElement element => element.Deserialize<Dictionary<string, Script>>(JsonDefaults.Options),
-                JsonNode node => node.Deserialize<Dictionary<string, Script>>(JsonDefaults.Options),
-                string str => JsonSerializer.Deserialize<Dictionary<string, Script>>(str, JsonDefaults.Options),
-                _ => null
-            };
-        }
-
-        if (IsGenericList(underlying, out var elementType))
-        {
-            return ConvertToList(value, underlying, elementType);
-        }
-
-        if (underlying.IsArray)
-        {
-            var listType = typeof(List<>).MakeGenericType(underlying.GetElementType()!);
-            var list = ConvertToList(value, listType, underlying.GetElementType()!);
-            if (list is not null)
-            {
-                var toArray = listType.GetMethod("ToArray");
-                return toArray?.Invoke(list, null);
-            }
-
-            return null;
-        }
-
-        if (underlying == typeof(DateTime) || underlying == typeof(DateTimeOffset))
-        {
-            return ConvertToDateTime(value, underlying);
-        }
-
-        if (underlying == typeof(Uri))
-        {
-            var str = ConvertToString(value);
-            return str is not null ? new Uri(str, UriKind.RelativeOrAbsolute) : null;
-        }
-
-        if (underlying.IsGenericType
-            && underlying.GetGenericTypeDefinition() == typeof(Dictionary<,>))
-        {
-            return ConvertToDictionary(value, underlying);
-        }
-
-        try
-        {
-            return Convert.ChangeType(value, underlying);
-        }
-        catch (Exception ex)
-        {
-            logger?.LogWarning(ex, "类型转换失败：{Value} → {TargetType}。", value, underlying.Name);
-            return null;
-        }
-    }
-
-    private static string? ConvertToString(object value)
-    {
-        return value switch
-        {
-            string s => s,
-            JsonNode node => node.ToJsonString(),
-            JsonElement element => element.ValueKind == JsonValueKind.String
-                ? element.GetString()
-                : element.GetRawText(),
-            _ => value.ToString()
-        };
-    }
-
-    private static bool? ConvertToBool(object value)
-    {
-        return value switch
-        {
-            bool b => b,
-            string s => bool.TryParse(s, out var result) ? result : s != "0",
-            int i => i != 0,
-            long l => l != 0,
-            double d => d != 0,
-            JsonElement element => element.ValueKind switch
-            {
-                JsonValueKind.True => true,
-                JsonValueKind.False => false,
-                JsonValueKind.String => bool.TryParse(element.GetString(), out var r) && r,
-                JsonValueKind.Number => element.GetInt32() != 0,
-                _ => false
-            },
-            _ => false
-        };
-    }
-
-    private static int ConvertToInt(object value)
-    {
-        return value switch
-        {
-            int i => i,
-            long l => ClampToInt(l),
-            double d => ClampToInt(d),
-            float f => ClampToInt(f),
-            string s => int.TryParse(s, out var r) ? r : 0,
-            JsonElement element => element.ValueKind == JsonValueKind.Number
-                ? ClampToInt(element.GetDouble())
-                : int.TryParse(element.GetString(), out var r) ? r : 0,
-            _ => Convert.ToInt32(value)
-        };
-    }
-
-    private static long ConvertToLong(object value)
-    {
-        return value switch
-        {
-            long l => l,
-            int i => i,
-            double d => (long)Math.Clamp(d, long.MinValue, long.MaxValue),
-            string s => long.TryParse(s, out var r) ? r : 0,
-            JsonElement element => element.ValueKind == JsonValueKind.Number
-                ? (long)element.GetDouble()
-                : long.TryParse(element.GetString(), out var r) ? r : 0,
-            _ => Convert.ToInt64(value)
-        };
-    }
-
-    private static double ConvertToDouble(object value)
-    {
-        return value switch
-        {
-            double d => d,
-            int i => i,
-            long l => l,
-            float f => f,
-            string s => double.TryParse(s, out var r) ? r : 0,
-            JsonElement element => element.ValueKind == JsonValueKind.Number
-                ? element.GetDouble()
-                : double.TryParse(element.GetString(), out var r) ? r : 0,
-            _ => Convert.ToDouble(value)
-        };
-    }
-
-    private static float ConvertToFloat(object value)
-    {
-        return value switch
-        {
-            float f => f,
-            double d => (float)d,
-            int i => i,
-            string s => float.TryParse(s, out var r) ? r : 0,
-            JsonElement element => element.ValueKind == JsonValueKind.Number
-                ? (float)element.GetDouble()
-                : float.TryParse(element.GetString(), out var r) ? r : 0,
-            _ => Convert.ToSingle(value)
-        };
-    }
-
-    private object? ConvertToEnum(object value, Type enumType)
-    {
-        try
-        {
-            return value switch
-            {
-                string s => Enum.Parse(enumType, s, ignoreCase: true),
-                int i => Enum.ToObject(enumType, i),
-                long l => Enum.ToObject(enumType, l),
-                JsonElement element when element.ValueKind == JsonValueKind.String
-                    => Enum.Parse(enumType, element.GetString()!, ignoreCase: true),
-                JsonElement element when element.ValueKind == JsonValueKind.Number
-                    => Enum.ToObject(enumType, element.GetInt32()),
-                _ => Enum.Parse(enumType, value.ToString()!, ignoreCase: true)
-            };
-        }
-        catch (Exception ex)
-        {
-            logger?.LogWarning(ex, "枚举类型 {EnumType} 解析失败，使用默认值。", enumType.Name);
-            return Enum.GetValues(enumType).GetValue(0);
-        }
-    }
-
-    private static JsonObject? ConvertToJsonObject(object value)
-    {
-        return value switch
-        {
-            JsonObject obj => obj,
-            JsonNode node => node is JsonObject jo ? jo : null,
-            string s when !string.IsNullOrWhiteSpace(s) => JsonNode.Parse(s)?.AsObject(),
-            JsonElement element => element.ValueKind == JsonValueKind.Object
-                ? JsonObject.Create(element)
-                : null,
-            _ => null
-        };
-    }
-
-    private static JsonNode? ConvertToJsonNode(object value)
-    {
-        return value switch
-        {
-            JsonNode node => node,
-            string s => JsonNode.Parse(s),
-            JsonElement element => JsonNode.Parse(element.GetRawText()),
-            _ => null
-        };
-    }
-
-    private async Task<CredentialValue?> ConvertToCredentialAsync(object value)
-    {
-        if (credentialAccessor is null)
-        {
-            return null;
-        }
-
-        if (value is string credentialIdStr)
-        {
-            if (Guid.TryParse(credentialIdStr, out var credentialId))
-            {
-                try
-                {
-                    return await credentialAccessor.GetCredentialAsync(credentialId, CancellationToken.None)
-                        .ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    logger?.LogWarning(ex, "凭据 {CredentialId} 解析失败", credentialIdStr);
-                    return null;
-                }
-            }
-
-            try
-            {
-                return await credentialAccessor.GetCredentialByNameAsync(credentialIdStr, CancellationToken.None)
-                    .ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                logger?.LogWarning(ex, "凭据 {CredentialName} 按名称解析失败", credentialIdStr);
-                return null;
+                return await gc.ConvertAsync(value, underlying, _context).ConfigureAwait(false);
             }
         }
 
-        return null;
-    }
-
-    private object? ConvertToList(object value, Type listType, Type elementType)
-    {
-        try
-        {
-            return value switch
-            {
-                JsonElement element when element.ValueKind == JsonValueKind.Array
-                    => JsonSerializer.Deserialize(element.GetRawText(), listType, JsonDefaults.Options),
-                string s => JsonSerializer.Deserialize(s, listType, JsonDefaults.Options),
-                JsonNode node => JsonSerializer.Deserialize(node.ToJsonString(), listType, JsonDefaults.Options),
-                _ when listType.IsInstanceOfType(value) => value,
-                _ => ConvertEnumerableToList(value, listType, elementType)
-            };
-        }
-        catch (Exception ex)
-        {
-            logger?.LogWarning(ex, "列表类型 {ListType} 反序列化失败。", listType.Name);
-            return null;
-        }
-    }
-
-    private static object? ConvertEnumerableToList(object value, Type listType, Type elementType)
-    {
-        if (value is not IEnumerable enumerable || value is string)
-        {
-            return null;
-        }
-
-        var list = (IList?)Activator.CreateInstance(listType);
-        if (list is null)
-        {
-            return null;
-        }
-
-        foreach (var item in enumerable)
-        {
-            if (item is null)
-            {
-                continue;
-            }
-
-            if (elementType.IsInstanceOfType(item))
-            {
-                list.Add(item);
-            }
-            else
-            {
-                return null;
-            }
-        }
-
-        return list;
-    }
-
-    private static object? ConvertToDateTime(object value, Type targetType)
-    {
-        var str = ConvertToString(value);
-        if (str is null)
-        {
-            return null;
-        }
-
-        if (targetType == typeof(DateTimeOffset))
-        {
-            return DateTimeOffset.TryParse(str, out var dto) ? dto : null;
-        }
-
-        return DateTime.TryParse(str, out var dt) ? dt : null;
-    }
-
-    private object? ConvertToDictionary(object value, Type dictType)
-    {
-        try
-        {
-            return value switch
-            {
-                JsonElement element => JsonSerializer.Deserialize(element.GetRawText(), dictType),
-                string s => JsonSerializer.Deserialize(s, dictType),
-                JsonNode node => JsonSerializer.Deserialize(node.ToJsonString(), dictType),
-                _ => null
-            };
-        }
-        catch (Exception ex)
-        {
-            logger?.LogWarning(ex, "字典类型 {DictType} 反序列化失败。", dictType.Name);
-            return null;
-        }
-    }
-
-    private static bool IsGenericList(Type type, out Type elementType)
-    {
-        if (type.IsGenericType && type.GetGenericTypeDefinition() == typeof(List<>))
-        {
-            elementType = type.GetGenericArguments()[0];
-            return true;
-        }
-
-        elementType = null!;
-        return false;
-    }
-
-    private static int ClampToInt(long value)
-    {
-        return (int)Math.Clamp(value, int.MinValue, int.MaxValue);
-    }
-
-    private static int ClampToInt(double value)
-    {
-        return (int)Math.Clamp(value, int.MinValue, int.MaxValue);
-    }
-
-    private static int ClampToInt(float value)
-    {
-        return (int)Math.Clamp(value, int.MinValue, int.MaxValue);
+        return await _fallbackConverter.ConvertAsync(value, underlying, _context).ConfigureAwait(false);
     }
 }

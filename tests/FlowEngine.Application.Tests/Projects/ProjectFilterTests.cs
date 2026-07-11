@@ -154,29 +154,44 @@ public sealed class ProjectFilterTests : IDisposable
     {
         var userContext = new FakeUserContext();
         var resourceAuthorization = new StubResourceAuthorizationService();
+        var eventBus = new InMemoryEventBus();
+        var auditFactory = new AuditEventFactory(userContext);
+        var authGuard = AuthorizationGuardFactory.Create(userContext, resourceAuthorization);
+        var handler = new AuthorizedOperationHandler(authGuard, eventBus, auditFactory);
+        var triggerService = CreateTriggerService();
+        var statisticsLoader = new WorkflowStatisticsLoader(_dbContext);
+        var triggerSync = new WorkflowTriggerSync(triggerService, handler);
         return new WorkflowService(
             _dbContext,
             new WorkflowValidator(new FakeNodeRegistry()),
-            new InMemoryEventBus(),
-            new AuditEventFactory(userContext),
-            CreateTriggerService(),
-            AuthorizationGuardFactory.Create(userContext, resourceAuthorization));
+            eventBus,
+            auditFactory,
+            triggerService,
+            authGuard,
+            handler,
+            statisticsLoader,
+            triggerSync);
     }
 
     private CredentialService CreateCredentialService()
     {
         var userContext = new FakeUserContext();
+        var eventBus = new InMemoryEventBus();
+        var auditFactory = new AuditEventFactory(userContext);
+        var authGuard = AuthorizationGuardFactory.Create(userContext, new StubResourceAuthorizationService());
+        var handler = new AuthorizedOperationHandler(authGuard, eventBus, auditFactory);
         return new CredentialService(
             _dbContext,
             new StubEncryptionService(),
             new StubKeyProvider(),
-            new InMemoryEventBus(),
-            new AuditEventFactory(userContext),
+            eventBus,
+            auditFactory,
             new StubResourceAuthorizationService(),
             userContext,
             new WorkflowRepository(_dbContext),
-            AuthorizationGuardFactory.Create(userContext, new StubResourceAuthorizationService()),
-            new CredentialTypeRegistry());
+            authGuard,
+            new CredentialTypeRegistry(),
+            handler);
     }
 
     private TriggerService CreateTriggerService()

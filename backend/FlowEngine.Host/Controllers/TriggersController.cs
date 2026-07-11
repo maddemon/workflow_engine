@@ -46,12 +46,7 @@ public class TriggersController(TriggerService triggerService) : ControllerBase
     public async Task<ActionResult<TriggerDto>> GetById(Guid id, CancellationToken cancellationToken)
     {
         var trigger = await triggerService.GetByIdAsync(id, cancellationToken).ConfigureAwait(false);
-        if (trigger is null)
-        {
-            return NotFound();
-        }
-
-        return Ok(trigger);
+        return this.OkOrNotFound(trigger);
     }
 
     /// <summary>
@@ -78,12 +73,7 @@ public class TriggersController(TriggerService triggerService) : ControllerBase
         CancellationToken cancellationToken)
     {
         var result = await triggerService.UpdateAsync(id, dto, cancellationToken).ConfigureAwait(false);
-        if (result is null)
-        {
-            return NotFound();
-        }
-
-        return Ok(result);
+        return this.OkOrNotFound(result);
     }
 
     /// <summary>

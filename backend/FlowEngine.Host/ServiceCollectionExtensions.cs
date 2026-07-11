@@ -149,6 +149,7 @@ public static class ServiceCollectionExtensions
             FlowEngine.Application.Authorization.ResourceAuthorizationService>();
         services.AddScoped<FlowEngine.Application.Authorization.IAuthorizationGuard,
             FlowEngine.Application.Authorization.AuthorizationGuard>();
+        services.AddScoped<FlowEngine.Application.Authorization.AuthorizedOperationHandler>();
         // ── Identity ────────────────────────────────────────────────
         services.AddScoped<IPasswordHasher, PasswordHasher>();
         services.AddScoped<IPasswordValidator, PasswordValidator>();
@@ -171,10 +172,13 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IOAuth2TokenService, OAuth2TokenService>();
         services.AddScoped<WorkflowValidator>();
         services.AddScoped<WorkflowService>();
+        services.AddScoped<WorkflowStatisticsLoader>();
+        services.AddScoped<WorkflowTriggerSync>();
         services.AddScoped<WorkflowExportService>();
         services.AddScoped<WorkflowImportService>();
         services.AddScoped<WorkflowDryRunService>();
         services.AddScoped<ProjectService>();
+        services.AddScoped<ProjectCascadeDeleter>();
         services.AddScoped<TriggerService>();
         services.AddScoped<WebhookRouteService>();
         services.AddScoped<IWebhookHandler, WebhookHandler>();

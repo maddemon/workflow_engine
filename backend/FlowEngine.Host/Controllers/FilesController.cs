@@ -77,12 +77,7 @@ public class FilesController(
     public async Task<ActionResult<StoredFileDto>> GetById(Guid id, CancellationToken cancellationToken)
     {
         var file = await fileService.GetAsync(id, cancellationToken).ConfigureAwait(false);
-        if (file is null)
-        {
-            return NotFound();
-        }
-
-        return Ok(file);
+        return this.OkOrNotFound(file);
     }
 
     /// <summary>

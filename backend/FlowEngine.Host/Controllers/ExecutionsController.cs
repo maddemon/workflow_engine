@@ -68,12 +68,7 @@ public class ExecutionsController(ExecutionService executionService) : Controlle
     public async Task<ActionResult<ExecutionDto>> Get(Guid id, CancellationToken cancellationToken)
     {
         var execution = await executionService.GetAsync(id, cancellationToken).ConfigureAwait(false);
-        if (execution is null)
-        {
-            return NotFound();
-        }
-
-        return Ok(execution);
+        return this.OkOrNotFound(execution);
     }
 
     /// <summary>

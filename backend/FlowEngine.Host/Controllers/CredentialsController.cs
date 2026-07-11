@@ -35,12 +35,7 @@ public class CredentialsController(CredentialService credentialService) : Contro
     public async Task<ActionResult<CredentialDto>> Get(Guid id, CancellationToken cancellationToken)
     {
         var credential = await credentialService.GetAsync(id, cancellationToken).ConfigureAwait(false);
-        if (credential is null)
-        {
-            return NotFound();
-        }
-
-        return Ok(credential);
+        return this.OkOrNotFound(credential);
     }
 
     /// <summary>
@@ -85,12 +80,7 @@ public class CredentialsController(CredentialService credentialService) : Contro
         CancellationToken cancellationToken)
     {
         var credential = await credentialService.UpdateAsync(id, dto, cancellationToken).ConfigureAwait(false);
-        if (credential is null)
-        {
-            return NotFound();
-        }
-
-        return Ok(credential);
+        return this.OkOrNotFound(credential);
     }
 
     /// <summary>

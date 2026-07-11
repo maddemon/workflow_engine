@@ -22,8 +22,16 @@ public sealed class WorkflowService(
     IEventBus eventBus,
     AuditEventFactory auditFactory,
     TriggerService _triggerService,
-    IAuthorizationGuard authGuard)
+    IAuthorizationGuard authGuard,
+    AuthorizedOperationHandler handler,
+    WorkflowStatisticsLoader statisticsLoader,
+    WorkflowTriggerSync triggerSync)
 {
+    private static readonly AuthorizationPolicy UpdatePolicy = new(
+        ResourceKind.Workflow, Operation.Write, Scope.Workflow, AdminPhase: false, ProjectScoped: false);
+    private static readonly AuthorizationPolicy DeletePolicy = new(
+        ResourceKind.Workflow, Operation.Delete, Scope: null, AdminPhase: true, ProjectScoped: false);
+
     /// <summary>
     /// 创建工作流。允许 ProjectId = null 作为未分类工作流；ProjectId 仅用于分类，不做隔离校验。
     /// </summary>
@@ -90,69 +98,36 @@ public sealed class WorkflowService(
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 200);
 
-        var query = dbContext.Workflows.AsQueryable();
-        if (projectId.HasValue)
-        {
-            query = query.Where(w => w.ProjectId == projectId.Value);
-        }
+        var query = projectId.HasValue
+            ? dbContext.Workflows.Where(w => w.ProjectId == projectId.Value)
+            : dbContext.Workflows.AsQueryable();
 
-        var totalCount = await query
-            .CountAsync(cancellationToken)
-            .ConfigureAwait(false);
-
+        var totalCount = await query.CountAsync(cancellationToken).ConfigureAwait(false);
         var workflows = await query
             .OrderBy(w => w.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
+            .ToListAsync(cancellationToken).ConfigureAwait(false);
 
-        // BE-01: 批量查询关联数据，避免每行 N+1。
-        var workflowIds = workflows.Select(w => w.Id).ToList();
+        // BE-01: 批量查询关联数据，避免每行 N+1（统计逻辑下沉至 WorkflowStatisticsLoader）。
+        var stats = await statisticsLoader.LoadAsync(
+            workflows.Select(w => w.Id).ToList(), cancellationToken).ConfigureAwait(false);
 
-        var lastExecutions = await dbContext.ExecutionRecords
-            .Where(e => workflowIds.Contains(e.WorkflowDefinitionId) && e.CompletedAt != null)
-            .GroupBy(e => e.WorkflowDefinitionId)
-            .Select(g => new { WorkflowId = g.Key, LastCompletedAt = g.Max(e => e.CompletedAt) })
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        var triggerStats = await dbContext.Triggers
-            .Where(t => workflowIds.Contains(t.WorkflowDefinitionId) && !t.Deleted)
-            .GroupBy(t => t.WorkflowDefinitionId)
-            .Select(g => new { WorkflowId = g.Key, Count = g.Count(), NextTriggerAt = g.Min(t => t.NextTriggerAt) })
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-
-        var lastExecMap = lastExecutions.ToDictionary(x => x.WorkflowId, x => x.LastCompletedAt);
-        var triggerMap = triggerStats.ToDictionary(x => x.WorkflowId);
-
-        var items = workflows.Select(w =>
+        var items = workflows.ConvertAll(w =>
         {
-            var lastExec = lastExecMap.GetValueOrDefault(w.Id);
-            var triggerStat = triggerMap.GetValueOrDefault(w.Id);
+            var stat = stats.GetValueOrDefault(w.Id);
             return new WorkflowSummaryDto
             {
-                Id = w.Id,
-                Name = w.Name,
-                Version = w.Version,
-                IsActive = w.IsActive,
-                ProjectId = w.ProjectId,
-                CreatedAt = w.CreatedAt,
-                UpdatedAt = w.UpdatedAt,
-                LastExecutionAt = lastExec,
-                TriggerCount = triggerStat?.Count ?? 0,
-                NextTriggerAt = triggerStat?.NextTriggerAt,
+                Id = w.Id, Name = w.Name, Version = w.Version, IsActive = w.IsActive,
+                ProjectId = w.ProjectId, CreatedAt = w.CreatedAt, UpdatedAt = w.UpdatedAt,
+                LastExecutionAt = stat?.LastExecutionAt,
+                TriggerCount = stat?.TriggerCount ?? 0,
+                NextTriggerAt = stat?.NextTriggerAt,
             };
-        }).ToList();
+        });
 
         return new PagedResult<WorkflowSummaryDto>
-        {
-            Items = items,
-            TotalCount = totalCount,
-            Page = page,
-            PageSize = pageSize
-        };
+        { Items = items, TotalCount = totalCount, Page = page, PageSize = pageSize };
     }
 
     /// <summary>
@@ -165,7 +140,7 @@ public sealed class WorkflowService(
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        await authGuard.RequireAccessAsync(ResourceKind.Workflow, id, Operation.Write, cancellationToken);
+        await handler.AuthorizePreAsync(UpdatePolicy, id, cancellationToken);
 
         var existing = await dbContext.Workflows
             .FirstOrDefaultAsync(w => w.Id == id, cancellationToken)
@@ -174,8 +149,6 @@ public sealed class WorkflowService(
         {
             return null;
         }
-
-        await authGuard.RequireScopeAsync(Scope.Workflow, Operation.Write, cancellationToken);
 
         var previousIsActive = existing.IsActive;
         var (nodes, connections, nodeIdMap) = ConvertFromDtos(dto.Nodes, dto.Connections);
@@ -190,32 +163,14 @@ public sealed class WorkflowService(
         ValidateOrThrow(existing);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        if (previousIsActive && !existing.IsActive)
-        {
-            await UnregisterTriggersAsync(existing.Id, cancellationToken).ConfigureAwait(false);
-            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
-                AuditEventTypes.WorkflowDeactivated,
-                "Workflow",
-                existing.Id,
-                new Dictionary<string, object> { ["name"] = existing.Name }),
-                cancellationToken).ConfigureAwait(false);
-        }
-        else if (!previousIsActive && existing.IsActive)
-        {
-            await RegisterTriggersAsync(existing.Id, cancellationToken).ConfigureAwait(false);
-            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
-                AuditEventTypes.WorkflowActivated,
-                "Workflow",
-                existing.Id,
-                new Dictionary<string, object> { ["name"] = existing.Name }),
-                cancellationToken).ConfigureAwait(false);
-        }
+        await triggerSync.SyncActivationAsync(
+            existing, previousIsActive, existing.IsActive, cancellationToken).ConfigureAwait(false);
 
-        await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+        await handler.PublishAuditAsync(
             AuditEventTypes.WorkflowUpdated,
             "Workflow",
             existing.Id,
-            new Dictionary<string, object> { ["name"] = existing.Name }),
+            new Dictionary<string, object> { ["name"] = existing.Name },
             cancellationToken).ConfigureAwait(false);
 
         return MapToDto(existing, dto.Nodes, dto.Connections, nodeIdMap);
@@ -226,7 +181,7 @@ public sealed class WorkflowService(
     /// </summary>
     public async Task<bool> DeleteAsync(Guid id, CancellationToken cancellationToken = default)
     {
-        await authGuard.RequireAccessAsync(ResourceKind.Workflow, id, Operation.Delete, cancellationToken);
+        await handler.AuthorizePreAsync(DeletePolicy, id, cancellationToken);
 
         var existing = await dbContext.Workflows
             .FirstOrDefaultAsync(w => w.Id == id, cancellationToken)
@@ -236,19 +191,17 @@ public sealed class WorkflowService(
             return false;
         }
 
-        await authGuard.RequireAdminAsync(Operation.Delete, cancellationToken);
-
         dbContext.Workflows.Remove(existing);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        await UnregisterTriggersAsync(id, cancellationToken).ConfigureAwait(false);
+        await triggerSync.UnregisterTriggersAsync(id, cancellationToken).ConfigureAwait(false);
         await _triggerService.DeleteByWorkflowDefinitionIdAsync(id, cancellationToken).ConfigureAwait(false);
 
-        await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+        await handler.PublishAuditAsync(
             AuditEventTypes.WorkflowDeleted,
             "Workflow",
-            id),
-            cancellationToken).ConfigureAwait(false);
+            id,
+            ct: cancellationToken).ConfigureAwait(false);
 
         return true;
     }
@@ -339,59 +292,50 @@ public sealed class WorkflowService(
     }
 
     /// <summary>
-    /// 将领域实体转换为 API 响应 DTO（从数据库加载时使用）。
-    /// </summary>
-    private static WorkflowDto MapToDto(Workflow workflow)
-    {
-        var nodeDtos = workflow.Nodes.Select(n => WorkflowMapper.ToDto(n, n.Id.ToString())).ToList();
-        var connectionDtos = workflow.Connections.Select(c =>
-            WorkflowMapper.ToDto(c, c.Id.ToString(), c.SourceNodeId.ToString(), c.TargetNodeId.ToString())).ToList();
-
-        return new WorkflowDto
-        {
-            Id = workflow.Id,
-            ProjectId = workflow.ProjectId,
-            Name = workflow.Name,
-            Version = workflow.Version,
-            CreatedBy = workflow.CreatedBy,
-            CreatedAt = workflow.CreatedAt,
-            UpdatedAt = workflow.UpdatedAt,
-            IsActive = workflow.IsActive,
-            StyleSettings = workflow.StyleSettings,
-            Nodes = nodeDtos,
-            Connections = connectionDtos,
-        };
-    }
-
-    /// <summary>
-    /// 将领域实体转换为 API 响应 DTO（保存后返回时使用，保持前端原始 ID）。
+    /// 将领域实体转换为 API 响应 DTO。
+    /// 当提供 originalNodeDtos/originalConnectionDtos/nodeIdMap 时，保留前端原始 ID（保存后返回）；
+    /// 否则使用实体 Guid（从数据库加载）。
     /// </summary>
     private static WorkflowDto MapToDto(
         Workflow workflow,
-        List<NodeDefinitionDto> originalNodeDtos,
-        List<ConnectionDto> originalConnectionDtos,
-        Dictionary<string, Guid> nodeIdMap)
+        List<NodeDefinitionDto>? originalNodeDtos = null,
+        List<ConnectionDto>? originalConnectionDtos = null,
+        Dictionary<string, Guid>? nodeIdMap = null)
     {
-        var reverseNodeIdMap = nodeIdMap.ToDictionary(kv => kv.Value, kv => kv.Key);
+        List<NodeDefinitionDto> nodeDtos;
+        List<ConnectionDto> connectionDtos;
 
-        // P5：预构建 (Source, Target) → ConnectionDto 映射，避免 O(N×M) 嵌套查找。
-        var connectionByEndpoints = originalConnectionDtos.ToDictionary(
-            cd => (cd.SourceNodeId, cd.TargetNodeId), cd => cd);
-
-        var nodeDtos = workflow.Nodes.Select(n =>
+        // 保存后返回时使用原始 DTO，保持前端原始 ID
+        if (originalNodeDtos is not null && originalConnectionDtos is not null && nodeIdMap is not null)
         {
-            var originalId = reverseNodeIdMap.TryGetValue(n.Id, out var origId) ? origId : n.Id.ToString();
-            return WorkflowMapper.ToDto(n, originalId);
-        }).ToList();
+            var reverseNodeIdMap = nodeIdMap.ToDictionary(kv => kv.Value, kv => kv.Key);
 
-        var connectionDtos = workflow.Connections.Select(c =>
+            // P5：预构建 (Source, Target) → ConnectionDto 映射，避免 O(N×M) 嵌套查找。
+            var connectionByEndpoints = originalConnectionDtos.ToDictionary(
+                cd => (cd.SourceNodeId, cd.TargetNodeId), cd => cd);
+
+            nodeDtos = workflow.Nodes.Select(n =>
+            {
+                var originalId = reverseNodeIdMap.TryGetValue(n.Id, out var origId) ? origId : n.Id.ToString();
+                return WorkflowMapper.ToDto(n, originalId);
+            }).ToList();
+
+            connectionDtos = workflow.Connections.Select(c =>
+            {
+                var origSource = reverseNodeIdMap.TryGetValue(c.SourceNodeId, out var sId) ? sId : c.SourceNodeId.ToString();
+                var origTarget = reverseNodeIdMap.TryGetValue(c.TargetNodeId, out var tId) ? tId : c.TargetNodeId.ToString();
+                connectionByEndpoints.TryGetValue((origSource, origTarget), out var origConn);
+
+                return WorkflowMapper.ToDto(c, origConn?.Id ?? c.Id.ToString(), origSource, origTarget);
+            }).ToList();
+        }
+        else
         {
-            var origSource = reverseNodeIdMap.TryGetValue(c.SourceNodeId, out var sId) ? sId : c.SourceNodeId.ToString();
-            var origTarget = reverseNodeIdMap.TryGetValue(c.TargetNodeId, out var tId) ? tId : c.TargetNodeId.ToString();
-            connectionByEndpoints.TryGetValue((origSource, origTarget), out var origConn);
-
-            return WorkflowMapper.ToDto(c, origConn?.Id ?? c.Id.ToString(), origSource, origTarget);
-        }).ToList();
+            // 从数据库加载时使用实体 Guid
+            nodeDtos = workflow.Nodes.Select(n => WorkflowMapper.ToDto(n, n.Id.ToString())).ToList();
+            connectionDtos = workflow.Connections.Select(c =>
+                WorkflowMapper.ToDto(c, c.Id.ToString(), c.SourceNodeId.ToString(), c.TargetNodeId.ToString())).ToList();
+        }
 
         return new WorkflowDto
         {
@@ -407,15 +351,5 @@ public sealed class WorkflowService(
             Nodes = nodeDtos,
             Connections = connectionDtos,
         };
-    }
-
-    private async Task RegisterTriggersAsync(Guid workflowDefinitionId, CancellationToken cancellationToken)
-    {
-        await _triggerService.RegisterWorkflowSchedulesAsync(workflowDefinitionId, cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task UnregisterTriggersAsync(Guid workflowDefinitionId, CancellationToken cancellationToken)
-    {
-        await _triggerService.UnregisterWorkflowSchedulesAsync(workflowDefinitionId, cancellationToken).ConfigureAwait(false);
     }
 }

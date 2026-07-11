@@ -1,11 +1,8 @@
 using System.Text;
 using System.Text.Json.Nodes;
-using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Dtos;
 using FlowEngine.Core.Entities;
-using FlowEngine.Core.Enums;
-using FlowEngine.Core.Tools;
 using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Core.Agent;
@@ -25,6 +22,9 @@ public sealed class InlineResolver(
     AgentMemory? memory = null,
     ILogger? logger = null)
 {
+    private readonly ToolResolver _toolResolver = new(tools, parentContext);
+    private readonly ToolContextFactory _contextFactory = new(parentContext, logger);
+    private readonly ToolExecutionRecorder _recorder = new();
 
     /// <summary>
     /// 执行工具调用循环，直到 LLM 返回无工具调用或达到最大迭代次数。
@@ -196,29 +196,10 @@ public sealed class InlineResolver(
         LlmToolCall toolCall,
         CancellationToken cancellationToken)
     {
-        var tool = tools.FirstOrDefault(t => t.Name == toolCall.Name);
-        if (tool is null)
+        var resolution = _toolResolver.Resolve(toolCall);
+        if (resolution.HasError)
         {
-            var message = $"Tool '{toolCall.Name}' not found.";
-            var output = ResultSanitizer.Sanitize(toolCall.Name, message);
-            return new ToolResult(toolCall.Id, toolCall.Name, null, output, false, message);
-        }
-
-        var toolNode = parentContext.Workflow.Nodes
-            .FirstOrDefault(n => n.Id == tool.TargetNodeDefinitionId);
-        if (toolNode is null)
-        {
-            var message = $"Tool node '{tool.TargetNodeDefinitionId}' not found.";
-            var output = ResultSanitizer.Sanitize(toolCall.Name, message);
-            return new ToolResult(toolCall.Id, toolCall.Name, null, output, false, message);
-        }
-
-        if (parentContext.NodeRegistry?.TryGet(toolNode.TypeName, out var nodeType) != true
-            || nodeType is null)
-        {
-            var message = $"Node type '{toolNode.TypeName}' not found.";
-            var output = ResultSanitizer.Sanitize(toolCall.Name, message);
-            return new ToolResult(toolCall.Id, toolCall.Name, null, output, false, message);
+            return ToolResultFactory.Error(toolCall, resolution.Error!);
         }
 
         JsonNode? args;
@@ -234,147 +215,29 @@ public sealed class InlineResolver(
 
         var inputBatch = new DataBatch
         {
-            Items =
-            [
-                new DataItem
-                {
-                    Data = args,
-                    Success = true,
-                    SourceIndex = 0
-                }
-            ]
+            Items = [new DataItem { Data = args, Success = true, SourceIndex = 0 }]
         };
 
         var startedAt = DateTime.UtcNow;
-        INodeType? toolNodeInstance;
-
-        try
-        {
-            toolNodeInstance = (INodeType?)Activator.CreateInstance(nodeType.GetType());
-        }
-        catch (Exception ex)
-        {
-            logger?.LogWarning(ex, "创建工具节点实例失败，类型：{TypeName}。", nodeType.GetType().Name);
-            toolNodeInstance = null;
-        }
-
-        toolNodeInstance ??= nodeType;
-
-        NodeExecutionContext toolContext;
-        if (parentContext.ContextFactory is not null && toolNodeInstance is not null)
-        {
-            var execution = new ExecutionRecord
-            {
-                Id = parentContext.ExecutionId,
-                WorkflowDefinitionId = parentContext.Workflow.Id,
-                ProjectId = parentContext.Workflow.ProjectId, // 冗余存储（GAP-11）
-                StartedAt = startedAt,
-                Status = ExecutionStatus.Running,
-            };
-
-            toolContext = await parentContext.ContextFactory.CreateAsync(
-                parentContext.Workflow,
-                execution,
-                toolNode,
-                toolNodeInstance,
-                new Dictionary<string, DataBatch> { [FlowConstants.PortNames.Input] = inputBatch },
-                new Dictionary<string, DataBatch>(),
-                new Dictionary<string, DataBatch>(),
-                0,
-                cancellationToken).ConfigureAwait(false);
-            // ContextFactory 不感知嵌套深度，需在此处显式递增（GAP-03）。
-            toolContext.NestingDepth = parentContext.NestingDepth + 1;
-        }
-        else
-        {
-            toolContext = new NodeExecutionContext
-            {
-                Workflow = parentContext.Workflow,
-                ExecutionId = parentContext.ExecutionId,
-                Node = new NodeDefinition
-                {
-                    Id = toolNode.Id,
-                    TypeName = toolNode.TypeName,
-                    Name = toolNode.Name,
-                    Parameters = toolNode.Parameters,
-                    Ports = toolNode.Ports
-                },
-                Inputs = new Dictionary<string, DataBatch> { [FlowConstants.PortNames.Input] = inputBatch },
-                RawParameters = toolNode.Parameters,
-                ResolvedParameters = toolNode.Parameters,
-                Credentials = parentContext.Credentials,
-                Logger = parentContext.Logger,
-                CancellationToken = cancellationToken,
-                NestingDepth = parentContext.NestingDepth + 1
-            };
-        }
-
+        var (toolContext, toolNodeInstance) = await _contextFactory.CreateAsync(
+            resolution, inputBatch, startedAt, cancellationToken).ConfigureAwait(false);
         if (toolNodeInstance is null)
         {
-            var message = $"Failed to create instance for node type '{toolNode.TypeName}'.";
-            var output = ResultSanitizer.Sanitize(toolCall.Name, message);
-            return new ToolResult(toolCall.Id, toolCall.Name, args, output, false, message);
+            return ToolResultFactory.Error(
+                toolCall, args, $"Failed to create instance for node type '{resolution.Node!.TypeName}'.");
         }
 
         try
         {
             var result = await toolNodeInstance.ExecuteAsync(toolContext, cancellationToken)
                 .ConfigureAwait(false);
-
-            var record = new NodeExecutionRecord
-            {
-                Id = Guid.NewGuid(),
-                NodeDefinitionId = toolNode.Id,
-                RunIndex = 0,
-                StartedAt = startedAt,
-                CompletedAt = DateTime.UtcNow,
-                Inputs = toolContext.Inputs.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
-                Output = result,
-                RawParameters = toolContext.RawParameters.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
-                ResolvedParameters = toolContext.ResolvedParameters.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
-                ParentRecordId = parentRecordId
-            };
-
-            if (!result.Success)
-            {
-                var message = $"Tool execution failed: {result.Error?.Message ?? "Unknown error"}";
-                var errorOutput = ResultSanitizer.Sanitize(toolCall.Name, message);
-                return new ToolResult(toolCall.Id, toolCall.Name, args, errorOutput, false, message);
-            }
-
-            object? output;
-            if (result.Output.Items.Count > 0)
-            {
-                var data = result.Output.Items[0].Data;
-                if (data is not null)
-                {
-                    output = data.ToJsonString();
-                }
-                else
-                {
-                    output = "Tool executed successfully.";
-                }
-            }
-            else
-            {
-                output = "Tool executed successfully.";
-            }
-
-            return new ToolResult(toolCall.Id, toolCall.Name, args, output, true, null);
+            _recorder.Record(resolution.Node!, toolContext, result, startedAt, parentRecordId);
+            return ToolResultFactory.FromExecutionResult(toolCall, args, result);
         }
         catch (Exception ex)
         {
             var message = $"Tool execution error: {ex.Message}";
-            var output = ResultSanitizer.Sanitize(toolCall.Name, message);
-            return new ToolResult(toolCall.Id, toolCall.Name, args, output, false, message);
+            return ToolResultFactory.Error(toolCall, args, message);
         }
     }
-
-    private sealed record ToolResult(
-        string ToolCallId,
-        string ToolName,
-        object? Input,
-        object? Output,
-        bool Success,
-        string? Error);
 }

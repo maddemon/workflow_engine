@@ -36,6 +36,8 @@ public sealed class CredentialServiceTests : IDisposable
         _userContext = new FakeUserContext();
         var auditFactory = new AuditEventFactory(_userContext);
         var resourceAuthService = new StubResourceAuthorizationService();
+        var authGuard = AuthorizationGuardFactory.Create(_userContext, resourceAuthService);
+        var handler = new AuthorizedOperationHandler(authGuard, _eventBus, auditFactory);
         _service = new CredentialService(
             _dbContext,
             _encryptionService,
@@ -45,8 +47,9 @@ public sealed class CredentialServiceTests : IDisposable
             resourceAuthService,
             _userContext,
             new WorkflowRepository(_dbContext),
-            AuthorizationGuardFactory.Create(_userContext, resourceAuthService),
-            new CredentialTypeRegistry());
+            authGuard,
+            new CredentialTypeRegistry(),
+            handler);
     }
 
     public void Dispose()
