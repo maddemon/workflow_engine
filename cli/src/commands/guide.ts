@@ -132,6 +132,125 @@ const knownGaps = [
   'authorization_code 等交互式授权、外部凭据保险库（Vault/KMS）对接尚未实现。',
 ];
 
+const aiGeneration = {
+  overview: 'Flow Engine 支持通过自然语言描述直接生成工作流 DSL。后端语义解析服务会结合实时节点类型清单构造 Prompt，调用 LLM 生成 JSON，并经过结构化校验与校验-纠错循环，保证草案可加载。',
+  prerequisite: '需在后端 appsettings 的 "Ai" 节点配置可用的 LLM（如 OpenAI 兼容端点 + ApiKey），否则 generate 端点会返回友好错误。凭据/Token 不硬编码、不入日志。',
+  commands: [
+    'flowengine workflow generate --description "从钉钉拉取部门员工并写入数据库"',
+    'flowengine workflow generate --description "..." --output dingtalk-sync.json   # 仅保存草案',
+    'flowengine workflow generate --description "..." --create                       # 生成并询问后创建工作流',
+    'flowengine workflow generate --description "..." --json                        # JSON 模式输出 { valid, draft, errors, attempts }',
+  ],
+  notes: [
+    '返回的 draft 为工作流 JSON（含 name / nodes / connections），可直接作为 workflow create 的输入文件。',
+    'valid=false 时附 errors（结构/类型/端口/连接/必填/凭据引用等错误），可在前端或再次描述时修正。',
+    '钉钉令牌等 OAuth2 凭据由引擎按 provider 策略托管（GET gettoken?appkey&appsecret，自动缓存/刷新），下游通过 $credentials.<name>.accessToken 引用，不要自建专用节点。',
+    '触发命令为 CLI 根级 execute [workflow-id]；execution 子命令组仅用于查询/取消执行记录。',
+  ],
+};
+
+const variableReference = {
+  overview:
+    '节点参数与连接条件支持表达式。本引擎统一采用 `$` 前缀内建变量模型：所有 `$` 开头的变量都是引擎内建，裸写的名字视为用户数据或自定义变量（兼容 n8n 习惯）。以下为每个变量的含义与示例：',
+  variables: [
+    {
+      syntax: '$json',
+      meaning: '当前 item 的 Data（JsonNode），指向当前正在处理的数据项。',
+      example: '$json.userid',
+    },
+    {
+      syntax: '$input',
+      meaning: 'n8n 式输入容器，提供 item()/all()/first()/last()/count()/Params/Context 方法。',
+      example: '$input.item().userid',
+    },
+    {
+      syntax: "$items(name?)",
+      meaning: '获取指定（或当前）节点的全部 item 数据数组；name 为节点名。',
+      example: "$items('GetUser') / $items()",
+    },
+    {
+      syntax: "$node['NodeName']",
+      meaning: '指定节点的输出对象（含 .json 数组）。',
+      example: "$node['GetUser'].json[0].name",
+    },
+    {
+      syntax: '$credentials.<name>.<field>',
+      meaning: '多字段凭据值，引用已创建凭据的字段（如 accessToken、connectionString）。',
+      example: '$credentials.db.connectionString',
+    },
+    {
+      syntax: '$workflow',
+      meaning: '工作流元数据（id / name / projectId / version）。',
+      example: '$workflow.name',
+    },
+    {
+      syntax: '$execution',
+      meaning: '执行元数据（id 等）。',
+      example: '$execution.id',
+    },
+    {
+      syntax: '$env.VAR_NAME',
+      meaning: '白名单环境变量（仅允许系统配置显式声明的变量，禁止敏感变量）。',
+      example: '$env.API_BASE_URL',
+    },
+    {
+      syntax: '$vars',
+      meaning: '工作流级可写状态（当前为空对象占位）。',
+      example: '$vars.flag',
+    },
+    {
+      syntax: '$now',
+      meaning: '当前 UTC 时间。',
+      example: '$now',
+    },
+    {
+      syntax: '$today',
+      meaning: '当日 UTC 00:00。',
+      example: '$today',
+    },
+    {
+      syntax: '$runIndex',
+      meaning: '当前运行索引（与 $itemIndex 一致）。',
+      example: '$runIndex',
+    },
+    {
+      syntax: '$itemIndex',
+      meaning: '当前 item 索引（与 $runIndex 一致）。',
+      example: '$itemIndex',
+    },
+    {
+      syntax: '$cursor',
+      meaning: 'PaginateNode 当前请求游标（仅 PaginateNode 注入）。',
+      example: '$cursor',
+    },
+    {
+      syntax: '$nextCursor',
+      meaning: 'PaginateNode 下一页游标，用于 terminateWhen（仅 PaginateNode 注入）。',
+      example: "$nextCursor == ''",
+    },
+  ],
+  examples: [
+    'httpRequest 节点 url 参数：https://oapi.dingtalk.com/user/list?access_token=$credentials.dingtalk.accessToken',
+    "set 节点 fields：{ \"userId\": { \"source\": \"$json.userid\" } }",
+    'if 节点 condition：$json.deptId == 1',
+    "引用上游节点输出：$node['GetUser'].json[0].name",
+  ],
+};
+
+const expressionSyntax = {
+  overview:
+    '表达式可写为「Script 对象」或「纯字符串简写」，二者等价。该写法与后端 SetNode 的 Script 改造（阶段一）保持一致。',
+  scriptType:
+    'Script 类型：{ source: string, returnType?: "String" | "Number" | "Boolean" | "Object" | "Array" }',
+  plainStringShorthand:
+    '纯字符串简写：一个裸字符串字面量（如 "$json.userid"）会被视作 { source: "...", returnType: "String" }，即默认按字符串表达式求值。',
+  examples: [
+    '{ source: "$json.userid", returnType: "String" }',
+    '{ source: "$json.name + \' (\' + $json.dept + \')\'", returnType: "String" }',
+    '纯字符串简写等价形式："$json.userid"',
+  ],
+};
+
 function buildExamples(): unknown[] {
   return [
     {
@@ -268,6 +387,128 @@ function buildExamples(): unknown[] {
         ],
       },
     },
+    {
+      name: '钉钉员工同步到数据库',
+      description: '凭据使用钉钉 OAuth2（provider=dingtalk，引擎自动 GET gettoken 并托管 accessToken）与数据库连接凭据，分页拉取部门员工并 upsert 到数据库。',
+      workflow: {
+        name: 'DingtalkEmployeeSync',
+        nodes: [
+          {
+            id: 'trigger',
+            typeName: 'manualTrigger',
+            name: '触发器',
+            parameters: {},
+            ports: [
+              { name: 'Output', direction: 'Output', type: 'Main' },
+            ],
+            positionX: 100,
+            positionY: 100,
+            isEntry: true,
+          },
+          {
+            id: 'fetch',
+            typeName: 'paginate',
+            name: '拉取钉钉员工',
+            parameters: {
+              url: 'https://oapi.dingtalk.com/topapi/v2/user/list?access_token=$credentials.dingtalk.accessToken',
+              method: 'POST',
+              body: { dept_id: 1, cursor: 0, size: 100 },
+              itemsPath: 'result.list',
+              nextCursorPath: 'result.next_cursor',
+              terminateWhen: '$nextCursor == ""',
+              cursorType: 'string',
+            },
+            ports: [
+              { name: 'Input', direction: 'Input', type: 'Main' },
+              { name: 'Output', direction: 'Output', type: 'Main' },
+            ],
+            positionX: 300,
+            positionY: 100,
+          },
+          {
+            id: 'upsert',
+            typeName: 'dbUpsert',
+            name: '写入数据库',
+            parameters: {
+              connection: '$credentials.db.connectionString',
+              mode: 'upsert',
+              keyColumns: ['emp_id'],
+            },
+            ports: [
+              { name: 'Input', direction: 'Input', type: 'Main' },
+              { name: 'Output', direction: 'Output', type: 'Main' },
+            ],
+            positionX: 500,
+            positionY: 100,
+          },
+        ],
+        connections: [
+          {
+            id: 'conn-1',
+            sourceNodeId: 'trigger',
+            sourcePortName: 'Output',
+            targetNodeId: 'fetch',
+            targetPortName: 'Input',
+          },
+          {
+            id: 'conn-2',
+            sourceNodeId: 'fetch',
+            sourcePortName: 'Output',
+            targetNodeId: 'upsert',
+            targetPortName: 'Input',
+          },
+        ],
+      },
+    },
+    {
+      name: 'SetNode 表达式字段映射',
+      description: 'SetNode 通过表达式将上游字段重命名/拼接后输出，等价于轻量级字段映射。',
+      workflow: {
+        name: 'SetNodeMapping',
+        nodes: [
+          {
+            id: 'trigger',
+            typeName: 'manualTrigger',
+            name: '触发器',
+            parameters: {},
+            ports: [
+              { name: 'Output', direction: 'Output', type: 'Main' },
+            ],
+            positionX: 100,
+            positionY: 100,
+            isEntry: true,
+          },
+          {
+            id: 'map',
+            typeName: 'set',
+            name: '字段映射',
+            parameters: {
+              fields: {
+                userId: { source: '$json.userid', returnType: 'String' },
+                fullName: { source: "$json.name + ' (' + $json.dept + ')'", returnType: 'String' },
+                active: true,
+              },
+              include: 'All',
+            },
+            ports: [
+              { name: 'Input', direction: 'Input', type: 'Main' },
+              { name: 'Output', direction: 'Output', type: 'Main' },
+            ],
+            positionX: 300,
+            positionY: 100,
+          },
+        ],
+        connections: [
+          {
+            id: 'conn-1',
+            sourceNodeId: 'trigger',
+            sourcePortName: 'Output',
+            targetNodeId: 'map',
+            targetPortName: 'Input',
+          },
+        ],
+      },
+    },
   ];
 }
 
@@ -278,6 +519,9 @@ function buildGuideJson(nodeTypes: NodeTypeDescriptorDto[], incomplete: boolean)
     nodeTypes: groupByCategory(nodeTypes),
     examples: buildExamples(),
     commonErrors,
+    aiGeneration,
+    variableReference,
+    expressionSyntax,
     ...(incomplete
       ? { incomplete: true, offlineNotice: '未连接后端，节点类型清单不可用。以下为基础模板与已知内置能力。', recentProgress, knownGaps }
       : { recentProgress }),
@@ -355,6 +599,48 @@ function buildGuideText(nodeTypes: NodeTypeDescriptorDto[], incomplete: boolean)
     lines.push('```');
     lines.push('');
   }
+
+  lines.push('## AI 生成工作流（自然语言 → DSL）');
+  lines.push(aiGeneration.overview);
+  lines.push('');
+  lines.push(`前提：${aiGeneration.prerequisite}`);
+  lines.push('');
+  lines.push('常用命令：');
+  for (const cmd of aiGeneration.commands) {
+    lines.push(`- \`${cmd}\``);
+  }
+  lines.push('');
+  lines.push('说明：');
+  for (const note of aiGeneration.notes) {
+    lines.push(`- ${note}`);
+  }
+  lines.push('');
+
+  lines.push('## 表达式变量参考');
+  lines.push(variableReference.overview);
+  lines.push('');
+  for (const v of variableReference.variables) {
+    lines.push(`- \`${v.syntax}\`：${v.meaning}（示例：\`${v.example}\`）`);
+  }
+  lines.push('');
+  lines.push('示例：');
+  for (const ex of variableReference.examples) {
+    lines.push(`- ${ex}`);
+  }
+  lines.push('');
+
+  lines.push('## 表达式语法说明');
+  lines.push(expressionSyntax.overview);
+  lines.push('');
+  lines.push(`Script 类型：${expressionSyntax.scriptType}`);
+  lines.push('');
+  lines.push(expressionSyntax.plainStringShorthand);
+  lines.push('');
+  lines.push('示例：');
+  for (const ex of expressionSyntax.examples) {
+    lines.push(`- \`${ex}\``);
+  }
+  lines.push('');
 
   lines.push('## 常见校验错误');
   for (const err of commonErrors) {

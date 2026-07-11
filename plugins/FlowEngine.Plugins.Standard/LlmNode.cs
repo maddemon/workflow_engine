@@ -94,10 +94,17 @@ public sealed class LlmNode : INodeType
             endpoint = uri;
         }
 
+        if (context.LlmClientFactory is null)
+        {
+            return context.ErrorResult(
+                "LlmClientFactoryUnavailable",
+                "LLM client factory is not available in the execution context.");
+        }
+
         ILlmClient llmClient;
         try
         {
-            llmClient = new OpenAiLlmClient(
+            llmClient = context.LlmClientFactory.Create(
                 apiKey: apiKey,
                 model: Model,
                 temperature: Temperature,

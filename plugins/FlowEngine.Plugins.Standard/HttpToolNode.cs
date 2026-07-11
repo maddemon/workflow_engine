@@ -115,6 +115,7 @@ public sealed class HttpToolNode : INodeType
             HeadersExpression,
             SendBody,
             BodyExpression,
+            null,
             cancellationToken);
     }
 }

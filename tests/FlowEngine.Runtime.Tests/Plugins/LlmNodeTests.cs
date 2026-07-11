@@ -3,6 +3,7 @@ using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Infrastructure.Ai;
 using FlowEngine.Plugins.Standard;
 using FlowEngine.Runtime.Tests.Executor;
 using FlowEngine.Runtime.Registry;
@@ -271,6 +272,7 @@ public class LlmNodeTests
             ResolvedParameters = new Dictionary<string, object>(),
             Credentials = new TestCredentialAccessor(apiKey, credentialExists, credentialHasApiKey),
             Logger = NullExecutionLogger.Instance,
+            LlmClientFactory = new OpenAiLlmClientFactory(),
             CancellationToken = CancellationToken.None
         };
     }

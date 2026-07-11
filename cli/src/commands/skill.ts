@@ -68,6 +68,7 @@ const cliCommands: CliCommandReference[] = [
   { command: 'project get <id>', description: '查看项目详情' },
   { command: 'guide [--output <file>]', description: '生成 DSL 编写指南' },
   { command: 'skill [--format claude|cursor|mcp|json] [--output <file>]', description: '生成 Skill 内容' },
+  { command: 'workflow generate --description <description> [--output <file>] [--create] [--project-id <id>]', description: '根据自然语言描述生成工作流 DSL 草案' },
 ];
 
 function groupByCategory(nodeTypes: NodeTypeDescriptorDto[]): Record<string, NodeTypeDescriptorDto[]> {

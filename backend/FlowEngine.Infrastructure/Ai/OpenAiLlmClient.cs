@@ -5,10 +5,12 @@ using FlowEngine.Core.Entities;
 using OpenAI;
 using OpenAI.Chat;
 
-namespace FlowEngine.Plugins.Standard;
+namespace FlowEngine.Infrastructure.Ai;
 
 /// <summary>
 /// OpenAI LLM 客户端适配器，封装 OpenAI Chat Completions API 调用。
+/// 已从 <c>FlowEngine.Plugins.Standard</c> 下沉至基础设施层，作为系统级 LLM 客户端实现，
+/// 供后端语义解析服务与插件层（<c>LlmNode</c>）共用。
 /// </summary>
 public sealed class OpenAiLlmClient : ILlmClient
 {

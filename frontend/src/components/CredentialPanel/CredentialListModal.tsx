@@ -1,7 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
+import { notifications } from '@mantine/notifications';
 import { Modal, Stack, Text, Table, ActionIcon, Button, Group, TextInput, Select, Badge, Divider, Loader, Center, Alert } from '@mantine/core';
 import { Plus, Trash2, Edit, AlertCircle } from 'lucide-react';
 import { getCredentials, createCredential, deleteCredential, updateCredential } from '../../services/api.ts';
+import { useWorkflowStore } from '../../stores/workflowStore.ts';
 import type { CredentialDto } from '../../types/workflow.ts';
 
 interface CredentialListModalProps {
@@ -54,8 +56,13 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
       setFormType('apiKey');
       setFormFields([{ key: '', value: '' }]);
       await loadCredentials();
+      useWorkflowStore.getState().bumpCredentialRevision();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to create credential');
+      notifications.show({
+        title: 'Error',
+        message: err instanceof Error ? err.message : 'Failed to create credential',
+        color: 'red',
+      });
     }
   };
 
@@ -64,8 +71,13 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
     try {
       await deleteCredential(id);
       await loadCredentials();
+      useWorkflowStore.getState().bumpCredentialRevision();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to delete credential');
+      notifications.show({
+        title: 'Error',
+        message: err instanceof Error ? err.message : 'Failed to delete credential',
+        color: 'red',
+      });
     }
   };
 
@@ -94,8 +106,13 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
       setFormType('apiKey');
       setFormFields([{ key: '', value: '' }]);
       await loadCredentials();
+      useWorkflowStore.getState().bumpCredentialRevision();
     } catch (err) {
-      alert(err instanceof Error ? err.message : 'Failed to update credential');
+      notifications.show({
+        title: 'Error',
+        message: err instanceof Error ? err.message : 'Failed to update credential',
+        color: 'red',
+      });
     }
   };
 
@@ -117,6 +134,7 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
               { label: 'API Key', value: 'apiKey' },
               { label: 'OAuth2', value: 'oauth2' },
               { label: 'Basic Auth', value: 'basicAuth' },
+              { label: 'Connection String', value: 'connectionString' },
             ]}
             size="sm"
           />

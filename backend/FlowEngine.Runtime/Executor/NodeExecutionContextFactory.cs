@@ -29,9 +29,11 @@ public sealed class NodeExecutionContextFactory(
     ILlmClient? llmClient = null,
     IWorkflowLoader? workflowLoader = null,
     IHttpClientPool? httpClientPool = null,
-    IOAuth2TokenService? tokenService = null) : Core.Abstractions.INodeExecutionContextFactory
+    IOAuth2TokenService? tokenService = null,
+    ILlmClientFactory? llmClientFactory = null) : Core.Abstractions.INodeExecutionContextFactory
 {
     private readonly IOAuth2TokenService? _tokenService = tokenService;
+    private readonly ILlmClientFactory? _llmClientFactory = llmClientFactory;
 
     public async Task<NodeExecutionContext> CreateAsync(
         Workflow workflow,
@@ -170,6 +172,7 @@ public sealed class NodeExecutionContextFactory(
             Logger = NullExecutionLogger.Instance,
             CancellationToken = cancellationToken,
             LlmClient = llmClient,
+            LlmClientFactory = _llmClientFactory,
             HttpClientPool = httpClientPool,
             NodeRegistry = registry,
             ContextFactory = this,

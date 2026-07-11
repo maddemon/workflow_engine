@@ -129,6 +129,15 @@ public sealed class HttpRequestNode : INodeType
     [DisplayCondition(nameof(SendBody), true)]
     public Script? BodyExpression { get; set; }
 
+    /// <summary>
+    /// 业务成功判定表达式。配置后，即使 HTTP 返回 2xx，仍须该表达式为真（如 <c>$json.errcode == 0</c>），
+    /// 否则节点判定为失败；未配置时仅按 HTTP 状态码判定（向后兼容）。
+    /// </summary>
+    [DisplayName("Success When")]
+    [Description("Business success condition. When set, even a 2xx HTTP response fails the node if this expression evaluates to false (e.g. '$json.errcode == 0').")]
+    [Hint(PresentationHint.Expression)]
+    public Script SuccessWhen { get; set; } = Script.Empty;
+
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
     [
@@ -152,6 +161,7 @@ public sealed class HttpRequestNode : INodeType
             HeadersExpression,
             SendBody,
             BodyExpression,
+            SuccessWhen,
             cancellationToken);
     }
 }

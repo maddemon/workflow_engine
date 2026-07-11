@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Stack, TextInput, Text, Badge, Group, ScrollArea, Switch, Select, Collapse, UnstyledButton, Divider } from '@mantine/core';
+import { Stack, TextInput, Text, Badge, Group, ScrollArea, Switch, Select, Collapse, UnstyledButton, Divider, NumberInput } from '@mantine/core';
 import { ChevronRight, ChevronDown } from 'lucide-react';
 import { useShallow } from 'zustand/shallow';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
@@ -284,7 +284,21 @@ export function ParameterPanel() {
                     />
                   </Stack>
                 );
-              })()}
+              }              )()}
+
+              <NumberInput
+                label="Timeout (seconds)"
+                description="单节点执行超时，0 或不填表示不限制"
+                value={selectedNode.data.timeout ?? 0}
+                min={0}
+                allowNegative={false}
+                disabled={isExecuting}
+                size="sm"
+                onChange={(v) => {
+                  const n = typeof v === 'number' ? v : Number(v);
+                  updateNodeSettings(selectedNode.id, { timeout: n > 0 ? n : null });
+                }}
+              />
             </Stack>
           </Collapse>
         </Stack>

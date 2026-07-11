@@ -68,8 +68,16 @@ public class NodeExecutionContext
 
     /// <summary>
     /// LLM 客户端，供 Agent 等节点调用大语言模型。
+    /// 由 <c>LlmNode</c> 在自身执行时创建并写入，供下游节点复用。
     /// </summary>
     public ILlmClient? LlmClient { get; set; }
+
+    /// <summary>
+    /// LLM 客户端工厂，供 <c>LlmNode</c> 等节点按运行时参数（模型、温度、端点、凭据）创建
+    /// <see cref="ILlmClient"/>。抽象定义于 Core，由宿主注入 Infrastructure 的具体实现，
+    /// 使插件无需直接依赖 Infrastructure。
+    /// </summary>
+    public ILlmClientFactory? LlmClientFactory { get; set; }
 
     /// <summary>
     /// HTTP 客户端连接池，供 HTTP 请求节点使用。

@@ -16,7 +16,8 @@ public class WorkflowsController(
     WorkflowService workflowService,
     WorkflowExportService exportService,
     WorkflowImportService importService,
-    WorkflowDryRunService dryRunService) : ControllerBase
+    WorkflowDryRunService dryRunService,
+    WorkflowGenerationService generationService) : ControllerBase
 {
     /// <summary>
     /// 分页获取工作流摘要列表。
@@ -224,6 +225,25 @@ public class WorkflowsController(
             return BadRequest(result);
         }
 
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// 根据自然语言描述生成工作流草案（AI 语义解析 + 结构化校验-纠错循环）。
+    /// 返回的 <c>valid=true</c> 表示草案通过校验；<c>valid=false</c> 时附带错误清单与最后一次草案。
+    /// </summary>
+    [HttpPost("generate")]
+    [AuthorizePermission(Scope.Workflow, Operation.Write)]
+    public async Task<ActionResult<WorkflowGenerationResponse>> Generate(
+        [FromBody] WorkflowGenerationRequest request,
+        CancellationToken cancellationToken)
+    {
+        if (request is null)
+        {
+            return this.BadRequestError("请求体不能为空。");
+        }
+
+        var result = await generationService.GenerateAsync(request, cancellationToken).ConfigureAwait(false);
         return Ok(result);
     }
 }

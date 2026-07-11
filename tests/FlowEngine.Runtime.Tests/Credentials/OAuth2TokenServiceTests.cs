@@ -109,6 +109,67 @@ public sealed class OAuth2TokenServiceTests
         Assert.Equal(1, handler.CallCount);
     }
 
+    [Fact]
+    public async Task GetTokenAsync_DingtalkProvider_GetQueryAppkeyAppsecret_ErrcodeZero_Success()
+    {
+        // 阶段零 0.1：钉钉 provider 内置策略 —— GET + query appkey/appsecret + errcode==0 判定
+        var handler = new DingtalkTokenHandler();
+        var factory = new StubHttpClientFactory(handler);
+        var service = new OAuth2TokenService(factory);
+
+        var request = new OAuth2TokenRequest
+        {
+            TokenUrl = "https://oapi.dingtalk.com/gettoken",
+            ClientId = "my-appkey",
+            ClientSecret = "my-appsecret"
+        };
+        OAuth2ProviderTemplates.Apply(request, "dingtalk");
+
+        var response = await service.GetTokenAsync(request);
+
+        Assert.Equal("DT-TOKEN", response.AccessToken);
+        Assert.Equal("GET", handler.LastMethod);
+        Assert.Contains("appkey=my-appkey", handler.LastQuery);
+        Assert.Contains("appsecret=my-appsecret", handler.LastQuery);
+    }
+
+    [Fact]
+    public async Task GetTokenAsync_DingtalkProvider_ErrcodeNonZero_ThrowsBusinessException()
+    {
+        // 钉钉 errcode != 0 但 HTTP 200 时，应判定为业务失败
+        var handler = new DingtalkTokenHandler(errcode: 88);
+        var factory = new StubHttpClientFactory(handler);
+        var service = new OAuth2TokenService(factory);
+
+        var request = new OAuth2TokenRequest
+        {
+            TokenUrl = "https://oapi.dingtalk.com/gettoken",
+            ClientId = "my-appkey",
+            ClientSecret = "my-appsecret"
+        };
+        OAuth2ProviderTemplates.Apply(request, "dingtalk");
+
+        var ex = await Assert.ThrowsAsync<BusinessException>(() => service.GetTokenAsync(request));
+        Assert.Contains("errcode", ex.Message);
+    }
+
+    [Fact]
+    public async Task GetTokenAsync_StandardProvider_PostForm_Unchanged()
+    {
+        // 标准 client_credentials 行为不受影响（POST + form client_id/client_secret）
+        var handler = new FakeTokenHandler();
+        var factory = new StubHttpClientFactory(handler);
+        var service = new OAuth2TokenService(factory);
+
+        var request = CreateRequest();
+        OAuth2ProviderTemplates.Apply(request, "standard");
+
+        var response = await service.GetTokenAsync(request);
+
+        Assert.Equal("tok-1", response.AccessToken);
+        Assert.Equal("POST", handler.LastMethod);
+    }
+
     private static OAuth2TokenRequest CreateRequest()
     {
         return new OAuth2TokenRequest
@@ -147,10 +208,12 @@ public sealed class OAuth2TokenServiceTests
         public int CallCount { get; private set; }
         public int FailuresBeforeSuccess { get; set; }
         public ResponseShape ResponseShape { get; set; } = ResponseShape.Default;
+        public string? LastMethod { get; private set; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
             CallCount++;
+            LastMethod = request.Method.Method;
 
             if (ResponseShape == ResponseShape.Unauthorized)
             {
@@ -217,6 +280,33 @@ public sealed class OAuth2TokenServiceTests
         public HttpClient CreateClient(string name)
         {
             return new HttpClient(_handler, disposeHandler: false);
+        }
+    }
+
+    private sealed class DingtalkTokenHandler : HttpMessageHandler
+    {
+        private readonly int _errcode;
+        public string? LastMethod { get; private set; }
+        public string? LastQuery { get; private set; }
+
+        public DingtalkTokenHandler(int errcode = 0) => _errcode = errcode;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            LastMethod = request.Method.Method;
+            LastQuery = request.RequestUri?.Query ?? string.Empty;
+
+            var body = new JsonObject
+            {
+                ["errcode"] = _errcode,
+                ["errmsg"] = _errcode == 0 ? "ok" : "invalid",
+                ["access_token"] = "DT-TOKEN"
+            };
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
+            });
         }
     }
 }

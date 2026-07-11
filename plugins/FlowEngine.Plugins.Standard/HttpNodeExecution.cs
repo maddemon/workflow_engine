@@ -29,7 +29,8 @@ internal static class HttpNodeExecution
         Script? headersExpression,
         bool sendBody,
         Script? bodyExpression,
-        CancellationToken cancellationToken)
+        Script? successWhen = null,
+        CancellationToken cancellationToken = default)
     {
         try
         {
@@ -86,8 +87,27 @@ internal static class HttpNodeExecution
                 return context.ErrorResult("HttpClientUnavailable", "HTTP client pool is not configured.");
             }
 
-            return await HttpExecutionHelper.SendAndBuildResultAsync(client, request, context.Node.Id, cancellationToken)
+            var result = await HttpExecutionHelper.SendAndBuildResultAsync(client, request, context.Node.Id, cancellationToken)
                 .ConfigureAwait(false);
+
+            // 阶段零 0.2：HTTP 成功后再判 successWhen 业务成功表达式（如钉钉 errcode != 0 但 HTTP 200）
+            if (result.Success && successWhen is not null && !string.IsNullOrWhiteSpace(successWhen.Source))
+            {
+                // 防御性 NRE 保护：当 result.Output 为 null 时（理论上不会发生，但避免空引用），使用 ?.Items 安全访问。
+                var items = result.Output?.Items;
+                var envelope = items is not null && items.Count > 0 ? items[0].Data as JsonObject : null;
+                var body = envelope?["body"];
+                var statusCode = envelope?["statusCode"]?.GetValue<int>() ?? 200;
+                var statusText = envelope?["statusText"]?.GetValue<string>();
+                var businessOk = await HttpExecutionHelper.EvaluateSuccessWhenAsync(
+                    successWhen, body, statusCode, statusText, context, cancellationToken).ConfigureAwait(false);
+                if (!businessOk)
+                {
+                    return context.ErrorResult("SuccessWhenFailed", $"successWhen 表达式判定为失败：{successWhen.Source}");
+                }
+            }
+
+            return result;
         }
         catch (OperationCanceledException)
         {

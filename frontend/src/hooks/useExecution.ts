@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { executeWorkflow, getWorkflowExecutions, getExecution, cancelExecution as apiCancelExecution } from '../services/api.ts';
+import { executeWorkflow, getWorkflowExecutions, getExecution, cancelExecution as apiCancelExecution, dryRun as apiDryRun } from '../services/api.ts';
+import { serializeWorkflow } from '../utils/workflowSerializer.ts';
 import { useWorkflowStore } from '../stores/workflowStore.ts';
 import { useWebSocketExecution } from './useWebSocketExecution.ts';
 import type { ExecutionDto, NodeExecutionRecordDto } from '../types/workflow.ts';
@@ -26,6 +27,7 @@ export function useExecution() {
   const [executionMeta, setExecutionMeta] = useState<ExecutionDto | null>(null);
   const [status, setStatus] = useState<ExecutionHookStatus>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [dryRunLoading, setDryRunLoading] = useState(false);
   const { subscribe, unsubscribe, connect, disconnect } = useWebSocketExecution();
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -208,7 +210,37 @@ export function useExecution() {
     }
   }, [executionMeta, stopPolling]);
 
-  return { execution: executionMeta, status, error, execute, clearExecution, cancelExecution };
+  const dryRun = useCallback(async () => {
+    const store = useWorkflowStore.getState();
+    store.clearNodeExecutionRecords();
+    store.clearExecutionStatuses();
+    setError(null);
+    setDryRunLoading(true);
+    try {
+      if (!store.validateAllNodes()) {
+        setError('请先修正节点配置错误后再试运行。');
+        return;
+      }
+      const { nodeDefinitions, connections } = serializeWorkflow(store.nodes, store.edges, store.workflowName);
+      if (nodeDefinitions.length === 0) {
+        setError('请先添加节点后再试运行。');
+        return;
+      }
+      const result = await apiDryRun({ nodes: nodeDefinitions, connections });
+      setExecutionMeta(result);
+      if (result.nodeRecords && result.nodeRecords.length > 0) {
+        store.upsertNodeExecutionRecords(result.nodeRecords);
+        applyNodeStatuses(result.nodeRecords);
+      }
+      setStatus(result.status === 'Completed' ? 'completed' : 'failed');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Dry-run 失败');
+    } finally {
+      setDryRunLoading(false);
+    }
+  }, []);
+
+  return { execution: executionMeta, status, error, execute, dryRun, dryRunLoading, clearExecution, cancelExecution };
 }
 
 export type { ExecutionHookStatus };

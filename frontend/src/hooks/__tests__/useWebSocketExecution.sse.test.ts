@@ -87,7 +87,7 @@ describe('useWebSocketExecution SSE fallback', () => {
     vi.useRealTimers();
   });
 
-  it('appends access_token to SSE URL when auth token is present', () => {
+  it('does NOT append access_token to SSE URL (uses HttpOnly cookie auth)', () => {
     localStorage.setItem('auth_token', 'test-jwt-token');
 
     const { result } = renderHook(() => useWebSocketExecution());
@@ -110,9 +110,8 @@ describe('useWebSocketExecution SSE fallback', () => {
     }
 
     expect(mockEventSources.length).toBe(1);
-    expect(mockEventSources[0].url).toBe(
-      '/api/v1/executions/exec-jwt/stream?access_token=test-jwt-token',
-    );
+    // 安全加固：SSE 不再通过 query 暴露令牌，改由同源 HttpOnly Cookie（fe_auth）携带，避免 URL 泄露
+    expect(mockEventSources[0].url).toBe('/api/v1/executions/exec-jwt/stream');
     expect(result.current.status).toBe('connected');
 
     localStorage.removeItem('auth_token');

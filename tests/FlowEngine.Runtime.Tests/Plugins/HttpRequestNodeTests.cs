@@ -7,6 +7,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Scripting;
 using FlowEngine.Plugins.Standard;
+using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Runtime.Tests.Plugins;
 
@@ -110,8 +111,63 @@ public sealed class HttpRequestNodeTests
             ResolvedParameters = new Dictionary<string, object>(),
             Credentials = accessor,
             HttpClientPool = pool,
+            ScriptCache = new ScriptCache(Options.Create(new JsEngineOptions())),
+            EngineOptions = new JsEngineOptions(),
             CancellationToken = CancellationToken.None
         };
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_SuccessWhenTrue_ResponseOk_ReturnsSuccess()
+    {
+        // 阶段零 0.2：HTTP 2xx 且 successWhen 为真 → 节点成功
+        var handler = new BodyRecordingHandler("{\"errcode\":0}");
+        using var client = new HttpClient(handler);
+        var pool = new StubHttpClientPool(client);
+
+        var node = new HttpRequestNode
+        {
+            Url = ResolvedUrl("http://example.com/api"),
+            Method = HttpMethodOption.Get,
+            SuccessWhen = new Script
+            {
+                Source = "$json.errcode == 0",
+                Language = ScriptLanguage.JavaScript,
+                ReturnType = ScriptReturnType.Bool
+            }
+        };
+
+        var context = CreateContext(new NullCredentialAccessor(), pool);
+        var result = await node.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.True(result.Success);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_SuccessWhenFalse_ResponseOkButBusinessFail_ReturnsError()
+    {
+        // 阶段零 0.2：HTTP 200 但 successWhen 为假（钉钉 errcode != 0）→ 节点失败，不自动重试
+        var handler = new BodyRecordingHandler("{\"errcode\":500}");
+        using var client = new HttpClient(handler);
+        var pool = new StubHttpClientPool(client);
+
+        var node = new HttpRequestNode
+        {
+            Url = ResolvedUrl("http://example.com/api"),
+            Method = HttpMethodOption.Get,
+            SuccessWhen = new Script
+            {
+                Source = "$json.errcode == 0",
+                Language = ScriptLanguage.JavaScript,
+                ReturnType = ScriptReturnType.Bool
+            }
+        };
+
+        var context = CreateContext(new NullCredentialAccessor(), pool);
+        var result = await node.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal("SuccessWhenFailed", result.Error?.Code);
     }
 
     private sealed class StubHttpClientPool : IHttpClientPool
@@ -220,5 +276,22 @@ public sealed class HttpRequestNodeTests
 
         public Task<CredentialValue?> GetCredentialByNameAsync(string name, CancellationToken ct = default) =>
             Task.FromResult<CredentialValue?>(null);
+    }
+
+    private sealed class BodyRecordingHandler : HttpMessageHandler
+    {
+        private readonly string _body;
+        public int CallCount { get; private set; }
+
+        public BodyRecordingHandler(string body) => _body = body;
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            CallCount++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(_body, Encoding.UTF8, "application/json")
+            });
+        }
     }
 }

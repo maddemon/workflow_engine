@@ -9,7 +9,9 @@ import type {
   ExecutionDto,
   ExecutionSummaryDto,
   CredentialDto,
+  CredentialTypeDefinition,
   CreateCredentialDto,
+  DryRunRequest,
   UpdateCredentialDto,
   TriggerDto,
   CreateTriggerDto,
@@ -155,6 +157,16 @@ export async function updateCredential(id: string, data: UpdateCredentialDto): P
 
 export async function deleteCredential(id: string): Promise<void> {
   await api.delete(`/credentials/${id}`);
+}
+
+export async function dryRun(request: DryRunRequest): Promise<ExecutionDto> {
+  const res = await api.post<ExecutionDto>('/workflows/dry-run', request);
+  return res.data;
+}
+
+export async function getCredentialTypes(): Promise<CredentialTypeDefinition[]> {
+  const res = await api.get<CredentialTypeDefinition[]>('/credentials/types');
+  return res.data;
 }
 
 // --- Triggers ---

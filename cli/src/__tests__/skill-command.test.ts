@@ -111,6 +111,18 @@ describe('commands/skill', () => {
     spy.mockRestore();
   });
 
+  it('includes workflow generate command in cliCommands', async () => {
+    mockInstance.get.mockResolvedValue({ data: [] });
+
+    const spy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    await skill({ format: 'json', configOptions: options });
+
+    const parsed = JSON.parse(spy.mock.calls[0][0] as string);
+    const commands = parsed.content.cliCommands as Array<{ command: string }>;
+    expect(commands.some((c) => c.command.startsWith('workflow generate'))).toBe(true);
+    spy.mockRestore();
+  });
+
   it('claude format writes SKILL.md by default', async () => {
     mockInstance.get.mockResolvedValue({ data: [] });
 

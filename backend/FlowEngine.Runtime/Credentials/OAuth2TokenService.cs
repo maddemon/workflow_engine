@@ -120,8 +120,28 @@ public sealed class OAuth2TokenService : IOAuth2TokenService, IDisposable
 
     private async Task<OAuth2TokenResponse> RequestTokenAsync(OAuth2TokenRequest request, CancellationToken cancellationToken)
     {
-        using var content = new FormUrlEncodedContent(BuildFormBody(request));
-        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, request.TokenUrl) { Content = content };
+        var httpMethod = string.IsNullOrWhiteSpace(request.HttpMethod)
+            ? HttpMethod.Post
+            : new HttpMethod(request.HttpMethod);
+
+        // 1. 构建逻辑参数（key 为逻辑名，便于 ParamNameMap 重命名）
+        var logicalParams = BuildLogicalParams(request);
+
+        // 2. 应用参数名映射（如 clientId→appkey）
+        var requestParams = ApplyNameMap(logicalParams, request.ParamNameMap);
+
+        // 3. 按参数位置拼装请求（Query 拼到 URL；否则放入 form 请求体）
+        var url = request.TokenUrl;
+        if (request.ParamLocation == OAuth2ParamLocation.Query)
+        {
+            url = AppendQuery(url, requestParams);
+        }
+
+        using var httpRequest = new HttpRequestMessage(httpMethod, url);
+        if (request.ParamLocation != OAuth2ParamLocation.Query && requestParams.Count > 0)
+        {
+            httpRequest.Content = new FormUrlEncodedContent(requestParams!);
+        }
 
         var client = _httpClientFactory.CreateClient();
         using var response = await client.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
@@ -156,6 +176,24 @@ public sealed class OAuth2TokenService : IOAuth2TokenService, IDisposable
             throw new BusinessException("OAuth2 token 端点返回非 JSON 响应。");
         }
 
+        // 4. 业务错误码判定（如钉钉 errcode != 0 但 HTTP 200）
+        if (!string.IsNullOrWhiteSpace(request.ResponseErrorPath))
+        {
+            var errorNode = NavigatePath(raw, request.ResponseErrorPath);
+            if (errorNode is not null)
+            {
+                var errorValue = errorNode.ToString();
+                var successValues = request.ResponseSuccessValues;
+                var isSuccess = successValues is null || successValues.Count == 0
+                    || successValues.Exists(v => string.Equals(v, errorValue, StringComparison.Ordinal));
+                if (!isSuccess)
+                {
+                    throw new BusinessException(
+                        $"OAuth2 令牌端点业务错误（{request.ResponseErrorPath}={errorValue}）：{Truncate(responseBody)}");
+                }
+            }
+        }
+
         var tokenPath = string.IsNullOrWhiteSpace(request.TokenPath) ? "access_token" : request.TokenPath;
         var accessTokenNode = NavigatePath(raw, tokenPath);
         if (accessTokenNode is null)
@@ -163,10 +201,12 @@ public sealed class OAuth2TokenService : IOAuth2TokenService, IDisposable
             throw new BusinessException($"OAuth2 响应中未找到令牌路径 '{tokenPath}'。");
         }
 
-        var accessToken = accessTokenNode.GetValue<string>();
+        // 健壮提取：访问令牌路径可能指向非 JsonValue（如嵌套对象/数组）。
+        // GetValue<string>() 在非 JsonValue 上会抛 InvalidOperationException，需避免被外层重试逻辑误吞。
+        var accessToken = ExtractStringToken(accessTokenNode);
         if (string.IsNullOrWhiteSpace(accessToken))
         {
-            throw new BusinessException("OAuth2 响应中访问令牌为空。");
+            throw new BusinessException($"OAuth2 令牌未找到或为空，路径 '{tokenPath}'。");
         }
 
         var tokenType = GetString(raw, "token_type") ?? "Bearer";
@@ -185,18 +225,20 @@ public sealed class OAuth2TokenService : IOAuth2TokenService, IDisposable
         };
     }
 
-    private static Dictionary<string, string?> BuildFormBody(OAuth2TokenRequest request)
+    private static Dictionary<string, string?> BuildLogicalParams(OAuth2TokenRequest request)
     {
-        var body = new Dictionary<string, string?>(StringComparer.Ordinal)
+        var parameters = new Dictionary<string, string?>(StringComparer.Ordinal);
+        if (!string.IsNullOrWhiteSpace(request.GrantType))
         {
-            ["grant_type"] = request.GrantType,
-            ["client_id"] = request.ClientId,
-            ["client_secret"] = request.ClientSecret
-        };
+            parameters["grant_type"] = request.GrantType;
+        }
+
+        parameters["clientId"] = request.ClientId;
+        parameters["clientSecret"] = request.ClientSecret;
 
         if (!string.IsNullOrWhiteSpace(request.Scope))
         {
-            body["scope"] = request.Scope;
+            parameters["scope"] = request.Scope;
         }
 
         if (request.ExtraParameters is not null)
@@ -205,12 +247,46 @@ public sealed class OAuth2TokenService : IOAuth2TokenService, IDisposable
             {
                 if (!string.IsNullOrWhiteSpace(key))
                 {
-                    body[key] = value;
+                    parameters[key] = value;
                 }
             }
         }
 
-        return body;
+        return parameters;
+    }
+
+    private static Dictionary<string, string?> ApplyNameMap(
+        Dictionary<string, string?> logical, Dictionary<string, string>? nameMap)
+    {
+        if (nameMap is null || nameMap.Count == 0)
+        {
+            return logical;
+        }
+
+        var result = new Dictionary<string, string?>(StringComparer.Ordinal);
+        foreach (var (key, value) in logical)
+        {
+            var actual = nameMap.TryGetValue(key, out var mapped) && !string.IsNullOrWhiteSpace(mapped)
+                ? mapped
+                : key;
+            result[actual] = value;
+        }
+
+        return result;
+    }
+
+    private static string AppendQuery(string url, Dictionary<string, string?> parameters)
+    {
+        var pairs = parameters
+            .Where(kv => kv.Value is not null)
+            .Select(kv => $"{Uri.EscapeDataString(kv.Key)}={Uri.EscapeDataString(kv.Value!)}")
+            .ToList();
+        if (pairs.Count == 0)
+        {
+            return url;
+        }
+
+        return url + (url.Contains('?') ? "&" : "?") + string.Join("&", pairs);
     }
 
     private bool IsExpired(CacheEntry entry)
@@ -249,6 +325,33 @@ public sealed class OAuth2TokenService : IOAuth2TokenService, IDisposable
         }
 
         return current;
+    }
+
+    /// <summary>
+    /// 从 JSON 节点安全提取字符串令牌。
+    /// 若节点为 <see cref="JsonValue"/>，直接取其字符串值；
+    /// 否则（如嵌套对象/数组）退化为 <see cref="JsonNode.ToString"/> 并去掉两侧引号，避免 <c>GetValue&lt;string&gt;()</c> 抛出的 <see cref="InvalidOperationException"/>。
+    /// </summary>
+    private static string? ExtractStringToken(JsonNode? node)
+    {
+        if (node is null)
+        {
+            return null;
+        }
+
+        if (node is JsonValue value)
+        {
+            return value.GetValue<string?>();
+        }
+
+        // 非 JsonValue（对象/数组）：退化为原始 JSON 文本，并去除可能的外层引号。
+        var raw = node.ToString();
+        if (raw.Length >= 2 && raw[0] == '"' && raw[^1] == '"')
+        {
+            raw = raw[1..^1];
+        }
+
+        return raw;
     }
 
     private static string? GetString(JsonNode? node, string key)

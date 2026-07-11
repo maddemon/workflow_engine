@@ -2,6 +2,8 @@ using System.Net;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Entities;
+using FlowEngine.Core.Exceptions;
+using FlowEngine.Core.Scripting;
 
 namespace FlowEngine.Core.Http;
 
@@ -64,6 +66,61 @@ public static class HttpExecutionHelper
                     }
                 }
         };
+    }
+
+    /// <summary>
+    /// 判定 <c>successWhen</c> 业务成功表达式。
+    /// <list type="bullet">
+    ///   <item>未配置表达式时直接返回 <c>true</c>（向后兼容，仅按 HTTP 状态码判定）。</item>
+    ///   <item>已配置时，在 HTTP 成功（2xx）前提下求值，表达式为真才视为业务成功。</item>
+    ///   <item>求值异常或结果为假均返回 <c>false</c>。</item>
+    /// </list>
+    /// 表达式可访问 <c>$json</c>（响应体）、<c>$statusCode</c>、<c>$statusText</c> 三个全局变量。
+    /// </summary>
+    /// <param name="successWhen">业务成功表达式；为 null 或空源码时跳过判定。</param>
+    /// <param name="responseBody">HTTP 响应体（作为 <c>$json</c> 注入）。</param>
+    /// <param name="statusCode">HTTP 状态码（作为 <c>$statusCode</c> 注入）。</param>
+    /// <param name="statusText">HTTP 状态文本（作为 <c>$statusText</c> 注入）。</param>
+    /// <param name="context">节点执行上下文，用于脚本引擎求值。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    public static async Task<bool> EvaluateSuccessWhenAsync(
+        Script? successWhen,
+        JsonNode? responseBody,
+        int statusCode,
+        string? statusText,
+        NodeExecutionContext context,
+        CancellationToken cancellationToken)
+    {
+        if (successWhen is null || string.IsNullOrWhiteSpace(successWhen.Source))
+        {
+            return true;
+        }
+
+        try
+        {
+            var script = new Script
+            {
+                Source = successWhen.Source,
+                Language = ScriptLanguage.JavaScript,
+                ReturnType = ScriptReturnType.Bool
+            };
+
+            return await script.EvaluateAsync<bool>(
+                context,
+                cancellationToken,
+                ("$json", responseBody),
+                ("$statusCode", statusCode),
+                ("$statusText", statusText)).ConfigureAwait(false);
+        }
+        catch (ScriptErrorException)
+        {
+            return false;
+        }
+        catch (Exception)
+        {
+            // 表达式求值失败视为业务未满足，交由调用方标记节点失败
+            return false;
+        }
     }
 
     private static bool TryParseJson(string json, out JsonNode? node)
