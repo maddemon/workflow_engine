@@ -138,6 +138,36 @@ public sealed class AuthorizedOperationHandlerTests
     }
 
     [Fact]
+    public async Task AuthorizePreAsync_WithProjectScoped_CallsRequireAccessWithProjectKind()
+    {
+        var policy = new AuthorizationPolicy(
+            Resource: null, Access: Operation.Write, Scope: null, AdminPhase: false, ProjectScoped: true);
+        var projectId = Guid.NewGuid();
+        var ct = TestContext.Current.CancellationToken;
+
+        await _handler.AuthorizePreAsync(policy, projectId, ct);
+
+        Assert.Single(_guard.CallSequence);
+        Assert.Equal($"RequireAccess:{ResourceKind.Project}:{Operation.Write}", _guard.CallSequence[0]);
+    }
+
+    [Fact]
+    public async Task AuthorizePreAsync_WithProjectScopedAndResource_DoesNotDoubleCheckProject()
+    {
+        // 同时设置 Resource 与 ProjectScoped 时，应分别执行资源访问检查与项目级检查。
+        var policy = new AuthorizationPolicy(
+            Resource: ResourceKind.Workflow, Access: Operation.Write, Scope: null, AdminPhase: false, ProjectScoped: true);
+        var resourceId = Guid.NewGuid();
+        var ct = TestContext.Current.CancellationToken;
+
+        await _handler.AuthorizePreAsync(policy, resourceId, ct);
+
+        Assert.Equal(2, _guard.CallSequence.Count);
+        Assert.Contains($"RequireAccess:{ResourceKind.Workflow}:{Operation.Write}", _guard.CallSequence);
+        Assert.Contains($"RequireAccess:{ResourceKind.Project}:{Operation.Write}", _guard.CallSequence);
+    }
+
+    [Fact]
     public async Task PublishAuditAsync_PublishesEventWithCorrectPayload()
     {
         var resourceId = Guid.NewGuid();

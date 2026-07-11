@@ -115,7 +115,7 @@ public sealed class ProjectService(
             return null;
         }
 
-        await handler.AuthorizeProjectAccessAsync(id, Operation.Write, cancellationToken).ConfigureAwait(false);
+        await handler.AuthorizePreAsync(UpdatePolicy, id, cancellationToken).ConfigureAwait(false);
 
         project.Name = dto.Name;
         project.Description = dto.Description;

@@ -1,5 +1,4 @@
 import type { ParameterDefinition } from '../../types/workflow.ts';
-import { OptionsField } from './fields/OptionsField.tsx';
 import { StringField } from './fields/StringField.tsx';
 import { hintFieldMap, typeFieldMap } from './FieldComponentMap.ts';
 import { resolveHint } from './resolveHint.ts';
@@ -17,11 +16,6 @@ interface FieldResolverProps {
  */
 export function FieldResolver({ definition, value, onChange, error }: FieldResolverProps) {
   const hint = resolveHint(definition);
-
-  // ButtonGroup 选项过多时回退到 Select
-  if (hint === 'ButtonGroup' && (definition.options?.length ?? 0) > 6) {
-    return <OptionsField definition={definition} value={value} onChange={onChange} error={error} />;
-  }
 
   const Field = hintFieldMap[hint] ?? typeFieldMap[definition.type] ?? StringField;
   return <Field definition={definition} value={value} onChange={onChange} error={error} />;

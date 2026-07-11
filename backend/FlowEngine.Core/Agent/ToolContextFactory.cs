@@ -11,7 +11,7 @@ namespace FlowEngine.Core.Agent;
 /// </summary>
 internal sealed record ToolContextResult(
     NodeExecutionContext Context,
-    INodeType? ToolNodeInstance);
+    INodeType ToolNodeInstance);
 
 /// <summary>
 /// 工具上下文工厂，封装节点实例化与执行上下文构造逻辑。
@@ -73,6 +73,9 @@ internal sealed class ToolContextFactory(
         }
         else
         {
+            // 降级/无工厂场景：父上下文未提供 ContextFactory（如测试或独立调用）。
+            // 此时 RawParameters/ResolvedParameters 直接使用工具节点的原始参数，不做表达式求值与解析，
+            // 与 if 分支（经完整 ParameterResolver/ScriptParameterPreEvaluator）语义不同，调用方需知悉此约束。
             toolContext = new NodeExecutionContext
             {
                 Workflow = parentContext.Workflow,
@@ -95,6 +98,6 @@ internal sealed class ToolContextFactory(
             };
         }
 
-        return new ToolContextResult(toolContext, toolNodeInstance);
+        return new ToolContextResult(toolContext, toolNodeInstance!);
     }
 }

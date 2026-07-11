@@ -23,7 +23,7 @@ public sealed class ProjectCascadeDeleter(FlowEngineDbContext dbContext)
         DbSet<T> set,
         Expression<Func<T, bool>> filter,
         DateTime now,
-        CancellationToken ct) where T : class, ISoftDeletable
+        CancellationToken ct) where T : Entity
     {
         var items = await set.Where(filter).ToListAsync(ct);
         foreach (var item in items)

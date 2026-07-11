@@ -63,6 +63,13 @@ internal static class PropertyFilter
             return false;
         }
 
+        // 声明类型未实现 INodeType 时（例如仅叶子类实现接口、属性声明在未实现接口的基类上），
+        // 调用 GetInterfaceMap 会抛异常。该属性不可能是 INodeType 接口成员，直接保留为参数属性。
+        if (!typeof(INodeType).IsAssignableFrom(declaringType))
+        {
+            return true;
+        }
+
         var interfaceMap = declaringType.GetInterfaceMap(typeof(INodeType));
         foreach (var interfaceMethod in interfaceMap.InterfaceMethods)
         {

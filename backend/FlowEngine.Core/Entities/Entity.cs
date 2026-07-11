@@ -16,7 +16,7 @@ public interface IEntity<T>
 /// <summary>
 /// 实体基类，提供有序主键生成。
 /// </summary>
-public abstract class Entity : IEntity<Guid>, ISoftDeletable
+public abstract class Entity : IEntity<Guid>
 {
     public Entity()
     {

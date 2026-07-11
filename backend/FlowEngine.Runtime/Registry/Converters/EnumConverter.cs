@@ -31,8 +31,10 @@ internal sealed class EnumConverter : IValueConverter
         }
         catch (Exception ex)
         {
-            context.Logger?.LogWarning(ex, "枚举类型 {EnumType} 解析失败，使用默认值。", enumType.Name);
-            return Enum.GetValues(enumType).GetValue(0);
+            var fallback = Enum.GetValues(enumType).GetValue(0);
+            context.Logger?.LogWarning(
+                ex, "枚举类型 {EnumType} 解析失败（值={Value}），使用默认值 {Default}。", enumType.Name, value, fallback);
+            return fallback;
         }
     }
 }

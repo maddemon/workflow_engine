@@ -28,7 +28,9 @@ class MockWebSocket {
     this.onclose?.();
   }
 
-  send(_data: string) {}
+  send(_data: string) {
+    void _data;
+  }
 }
 
 class MockEventSource {

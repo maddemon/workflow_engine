@@ -52,7 +52,7 @@ export function formatOutputSummary(output: unknown): string {
   if (typeof output === 'number' || typeof output === 'boolean') return String(output);
 
   try {
-    const obj = typeof output === 'string' ? JSON.parse(output) : output;
+    const obj = output as Record<string, unknown>;
 
     // Handle execution result format { success, output, error }
     if (typeof obj === 'object' && obj !== null && 'success' in obj) {

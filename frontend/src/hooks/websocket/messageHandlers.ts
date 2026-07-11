@@ -2,7 +2,7 @@ import { notifications } from '@mantine/notifications';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
 import type { NodeExecutionRecordDto } from '../../types/workflow.ts';
 
-export type WebSocketStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
+export type WebSocketStatus = 'connected' | 'disconnected' | 'error';
 
 export interface WebSocketPushMessage {
   type: string;

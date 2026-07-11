@@ -18,10 +18,46 @@ public static class ScriptValueConverter
         {
             Script s => s,
             string str => new Script { Source = str, Language = ScriptLanguage.JavaScript, ReturnType = ScriptReturnType.String },
-            JsonElement element => element.Deserialize<Script>(JsonDefaults.Options),
-            JsonNode node => node.Deserialize<Script>(JsonDefaults.Options),
+            JsonElement element => FromJsonElement(element),
+            JsonNode node => FromJsonNode(node),
             _ => null
         };
+    }
+
+    private static Script? FromJsonElement(JsonElement element)
+    {
+        // 字符串令牌视为脚本源码，而非尝试反序列化为 Script 对象（否则会抛 JsonException）。
+        if (element.ValueKind == JsonValueKind.String)
+        {
+            return new Script { Source = element.GetString()!, Language = ScriptLanguage.JavaScript, ReturnType = ScriptReturnType.String };
+        }
+
+        try
+        {
+            return element.Deserialize<Script>(JsonDefaults.Options);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static Script? FromJsonNode(JsonNode node)
+    {
+        // 字符串值视为脚本源码，避免对 JSON 字符串值调用 Deserialize<Script> 抛 JsonException。
+        if (node is JsonValue value && value.TryGetValue<string>(out var str))
+        {
+            return new Script { Source = str, Language = ScriptLanguage.JavaScript, ReturnType = ScriptReturnType.String };
+        }
+
+        try
+        {
+            return node.Deserialize<Script>(JsonDefaults.Options);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     /// <summary>

@@ -24,7 +24,8 @@ public sealed class InlineResolver(
 {
     private readonly ToolResolver _toolResolver = new(tools, parentContext);
     private readonly ToolContextFactory _contextFactory = new(parentContext, logger);
-    private readonly ToolExecutionRecorder _recorder = new();
+    private readonly ToolExecutionRecorder _recorder = new(logger);
+
 
     /// <summary>
     /// 执行工具调用循环，直到 LLM 返回无工具调用或达到最大迭代次数。
@@ -221,11 +222,6 @@ public sealed class InlineResolver(
         var startedAt = DateTime.UtcNow;
         var (toolContext, toolNodeInstance) = await _contextFactory.CreateAsync(
             resolution, inputBatch, startedAt, cancellationToken).ConfigureAwait(false);
-        if (toolNodeInstance is null)
-        {
-            return ToolResultFactory.Error(
-                toolCall, args, $"Failed to create instance for node type '{resolution.Node!.TypeName}'.");
-        }
 
         try
         {

@@ -36,12 +36,11 @@ public sealed class ParameterHydrator(ICredentialAccessor? credentialAccessor = 
         [typeof(Uri)] = new UriConverter(),
     };
 
-    // 泛型/可分配类型：按顺序匹配（enum → JsonObject/JsonNode → Dictionary<string,Script> → List<T>/Array → Dictionary<,>）
+    // 泛型/可分配类型：按顺序匹配（enum → JsonObject/JsonNode → List<T>/Array → Dictionary<,>）
     private readonly List<IValueConverter> _genericConverters =
     [
         new EnumConverter(),
         new JsonConverter(),
-        new ScriptConverter(),
         new ListConverter(),
         new DictionaryConverter(),
     ];

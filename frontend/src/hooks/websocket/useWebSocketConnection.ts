@@ -36,8 +36,6 @@ export function useWebSocketConnection(options: UseWebSocketConnectionOptions) {
       return;
     }
 
-    setStatus('connecting');
-
     const ws = new WebSocket(getWebSocketUrl());
 
     ws.onopen = () => {
@@ -85,7 +83,7 @@ export function useWebSocketConnection(options: UseWebSocketConnectionOptions) {
     };
 
     wsRef.current = ws;
-  }, [getWebSocketUrl, trySseFallback]);
+  }, [getWebSocketUrl, trySseFallback, wsRef, subscribedExecutionsRef, lastSequenceRef, setLastSequence, setStatus, processMessage]);
 
   useEffect(() => {
     connectFnRef.current = doConnect;
@@ -110,7 +108,7 @@ export function useWebSocketConnection(options: UseWebSocketConnectionOptions) {
     }
 
     reconnectAttemptsRef.current = 0;
-  }, []);
+  }, [wsRef]);
 
   const subscribe = useCallback((executionId: string) => {
     subscribedExecutionsRef.current.add(executionId);
@@ -123,7 +121,7 @@ export function useWebSocketConnection(options: UseWebSocketConnectionOptions) {
         lastSequence: seq > 0 ? seq : undefined,
       }));
     }
-  }, []);
+  }, [wsRef, subscribedExecutionsRef, lastSequenceRef]);
 
   const unsubscribe = useCallback((executionId: string) => {
     subscribedExecutionsRef.current.delete(executionId);
@@ -134,7 +132,7 @@ export function useWebSocketConnection(options: UseWebSocketConnectionOptions) {
         executionId,
       }));
     }
-  }, []);
+  }, [wsRef, subscribedExecutionsRef]);
 
   return { connect, closeConnection, subscribe, unsubscribe };
 }

@@ -32,10 +32,14 @@ public sealed class AuthorizedOperationHandler(
         {
             await authGuard.RequireAdminAsync(policy.Access ?? Operation.Delete, ct).ConfigureAwait(false);
         }
+        if (policy.ProjectScoped)
+        {
+            await authGuard.RequireAccessAsync(ResourceKind.Project, resourceId, policy.Access ?? Operation.Write, ct).ConfigureAwait(false);
+        }
     }
 
     /// <summary>
-    /// 执行项目级授权检查（查后，本质差异：先确认项目存在再检查权限）。
+    /// 执行项目级授权检查。调用方需先确认项目存在；本方法仅做资源访问权限校验。
     /// </summary>
     public async Task AuthorizeProjectAccessAsync(Guid projectId, Operation operation, CancellationToken ct)
     {
