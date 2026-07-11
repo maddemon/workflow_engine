@@ -47,6 +47,7 @@ public sealed class FlowEngineDbContext : DbContext
         base.OnModelCreating(modelBuilder);
 
         modelBuilder.Entity<ExecutionDedup>().HasIndex(e => e.IdempotencyKey).IsUnique();
+        modelBuilder.Entity<Credential>().HasIndex(e => new { e.Name, e.ProjectId }).IsUnique();
 
         // 必须在遍历 modelBuilder.Model 之前显式配置带 [JsonColumn] 的属性，
         // 否则 EF Core 会对 Dictionary<,>/List<> 等泛型 navigation 进行关联探测并抛出

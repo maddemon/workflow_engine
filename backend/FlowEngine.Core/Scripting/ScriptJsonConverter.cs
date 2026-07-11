@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.Json.Serialization;
@@ -36,7 +37,19 @@ public sealed class ScriptJsonConverter : JsonConverter<Script>
 
         if (reader.TokenType == JsonTokenType.Number)
         {
-            return new Script(reader.GetDecimal().ToString(System.Globalization.CultureInfo.InvariantCulture), ScriptLanguage.JavaScript, ScriptReturnType.Object);
+            string numberText;
+            if (reader.TryGetDecimal(out var decimalValue))
+            {
+                numberText = decimalValue.ToString(System.Globalization.CultureInfo.InvariantCulture);
+            }
+            else
+            {
+                // 超出 decimal 范围（如科学计数法大数）：保留原始 JSON 数字文本，避免 OverflowException。
+                var bytes = reader.HasValueSequence ? reader.ValueSequence.ToArray() : reader.ValueSpan.ToArray();
+                numberText = System.Text.Encoding.UTF8.GetString(bytes);
+            }
+
+            return new Script(numberText, ScriptLanguage.JavaScript, ScriptReturnType.Object);
         }
 
         if (reader.TokenType != JsonTokenType.StartObject)

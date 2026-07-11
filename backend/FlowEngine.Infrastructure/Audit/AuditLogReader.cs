@@ -1,73 +1,12 @@
 using System.Text.Json;
+using FlowEngine.Application.Audit;
 
 namespace FlowEngine.Infrastructure.Audit;
 
 /// <summary>
-/// 审计日志查询参数。
-/// </summary>
-public sealed class AuditQueryParameters
-{
-    /// <summary>
-    /// 事件类型过滤。
-    /// </summary>
-    public string? EventType { get; set; }
-
-    /// <summary>
-    /// 起始时间。
-    /// </summary>
-    public DateTime? From { get; set; }
-
-    /// <summary>
-    /// 结束时间。
-    /// </summary>
-    public DateTime? To { get; set; }
-
-    /// <summary>
-    /// 资源类型过滤。
-    /// </summary>
-    public string? ResourceType { get; set; }
-
-    /// <summary>
-    /// 资源 ID 过滤。
-    /// </summary>
-    public Guid? ResourceId { get; set; }
-
-    /// <summary>
-    /// 分页偏移量。
-    /// </summary>
-    public int Offset { get; set; }
-
-    private int _limit = 50;
-    /// <summary>
-    /// 分页大小。
-    /// </summary>
-    public int Limit
-    {
-        get => _limit;
-        set => _limit = Math.Clamp(value, 1, 200);
-    }
-}
-
-/// <summary>
-/// 审计日志查询结果。
-/// </summary>
-public sealed class AuditQueryResult
-{
-    /// <summary>
-    /// 事件列表。
-    /// </summary>
-    public IReadOnlyList<JsonDocument> Events { get; init; } = [];
-
-    /// <summary>
-    /// 总匹配数。
-    /// </summary>
-    public int Total { get; init; }
-}
-
-/// <summary>
 /// 审计日志读取器，从 NDJSON 文件读取审计事件。
 /// </summary>
-public sealed class AuditLogReader
+public sealed class AuditLogReader : IAuditLogReader
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -85,12 +24,7 @@ public sealed class AuditLogReader
         _logDirectory = logDirectory;
     }
 
-    /// <summary>
-    /// 按条件查询审计事件。
-    /// </summary>
-    /// <param name="parameters">查询参数。</param>
-    /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>查询结果。</returns>
+    /// <inheritdoc />
     public async Task<AuditQueryResult> QueryAsync(
         AuditQueryParameters parameters,
         CancellationToken cancellationToken = default)

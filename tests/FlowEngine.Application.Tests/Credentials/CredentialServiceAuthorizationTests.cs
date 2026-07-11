@@ -89,7 +89,7 @@ public sealed class CredentialServiceAuthorizationTests : IDisposable
         var dto = new UpdateCredentialDto
         {
             Name = "Updated",
-            Fields = new Dictionary<string, string> { ["key"] = "new-value" },
+            Fields = new Dictionary<string, string> { ["apiKey"] = "new-value" },
         };
 
         await Assert.ThrowsAsync<PermissionDeniedException>(() => _service.UpdateAsync(credential.Id, dto, ct));
@@ -107,7 +107,7 @@ public sealed class CredentialServiceAuthorizationTests : IDisposable
         var dto = new UpdateCredentialDto
         {
             Name = "Updated",
-            Fields = new Dictionary<string, string> { ["key"] = "new-value" },
+            Fields = new Dictionary<string, string> { ["apiKey"] = "new-value" },
         };
 
         var result = await _service.UpdateAsync(credential.Id, dto, ct);

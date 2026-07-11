@@ -272,6 +272,74 @@ public sealed class PaginateNodeTests
         }
     }
 
+    [Fact]
+    public async Task ExecuteAsync_SuccessWhenBusinessError_ReturnsErrorResult()
+    {
+        // HTTP 200 但业务码 errcode != 0，successWhen 应判定为失败
+        var handler = new StubBusinessErrorHandler();
+        using var client = new HttpClient(handler);
+        var pool = new StubHttpClientPool(client);
+        var credentialAccessor = new NullCredentialAccessor();
+        var registry = new NodeRegistry(new List<INodeType> { new PaginateNode() }, NullLogger<NodeRegistry>.Instance);
+        var factory = new NodeExecutionContextFactory(
+            registry,
+            new ScriptCache(Options.Create(new JsEngineOptions())),
+            new ParameterResolver(
+            NullLogger<ParameterResolver>.Instance,
+            Options.Create(new JsEngineOptions()),
+            new ScriptCache(Options.Create(new JsEngineOptions()))),
+            credentialAccessor,
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase));
+
+        var config = new Dictionary<string, object>
+        {
+            ["url"] = "\"http://example.com/api?cursor=\" + $cursor",
+            ["method"] = "GET",
+            ["cursorInitial"] = "0",
+            ["cursorType"] = "number",
+            ["nextCursorPath"] = "result.next_cursor",
+            ["itemsPath"] = "result.list",
+            ["terminateWhen"] = "$nextCursor == ''",
+            ["maxPages"] = "10"
+        };
+
+        var context = new NodeExecutionContext
+        {
+            Workflow = new Workflow { Id = Guid.NewGuid(), Name = "t" },
+            ExecutionId = Guid.NewGuid(),
+            Node = new NodeDefinition
+            {
+                Id = Guid.NewGuid(),
+                TypeName = "paginate",
+                Name = "pag",
+                Parameters = config
+            },
+            Inputs = new Dictionary<string, DataBatch>(),
+            RawParameters = config,
+            ResolvedParameters = config,
+            Credentials = credentialAccessor,
+            CancellationToken = CancellationToken.None,
+            HttpClientPool = pool,
+            NodeRegistry = registry,
+            ContextFactory = factory
+        };
+
+        var node = new PaginateNode
+        {
+            SuccessWhen = new Script
+            {
+                Source = "$json.errcode == 0",
+                Language = ScriptLanguage.JavaScript,
+                ReturnType = ScriptReturnType.Bool
+            }
+        };
+        var result = await node.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.NotNull(result.Error);
+        Assert.Equal("SuccessWhenFailed", result.Error.Code);
+    }
+
     private sealed class StubErrorHandler : HttpMessageHandler
     {
         private readonly HttpStatusCode _statusCode;
@@ -282,6 +350,28 @@ public sealed class PaginateNodeTests
             return Task.FromResult(new HttpResponseMessage(_statusCode)
             {
                 Content = new StringContent("server error", Encoding.UTF8, "text/plain")
+            });
+        }
+    }
+
+    private sealed class StubBusinessErrorHandler : HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var body = new JsonObject
+            {
+                ["errcode"] = 1,
+                ["errmsg"] = "invalid appkey",
+                ["result"] = new JsonObject
+                {
+                    ["list"] = new JsonArray(),
+                    ["next_cursor"] = ""
+                }
+            };
+
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
             });
         }
     }

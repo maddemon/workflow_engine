@@ -7,8 +7,9 @@ namespace FlowEngine.Application.Workflows;
 
 /// <summary>
 /// AI 工作流生成的 Prompt 模板与节点类型序列化。
-/// 系统 Prompt 固化 DSL 结构约束、可用节点清单与钉钉配方（Few-shot），
+/// 系统 Prompt 固化 DSL 结构约束、可用节点清单与通用集成配方（Few-shot），
 /// 降低 LLM 生成非法 DSL 的概率；纠错 Prompt 回传结构化错误清单。
+/// 配方保持 provider 无关，仅以占位示例说明 OAuth2 凭据 / 分页 / 映射 / 入库的通用用法。
 /// </summary>
 public static class PromptTemplates
 {
@@ -40,28 +41,27 @@ public static class PromptTemplates
         sb.AppendLine("## 可用节点类型");
         sb.AppendLine(SerializeNodeTypes(registry));
         sb.AppendLine();
-        sb.AppendLine("## 钉钉同步配方（必须固化，避免错误取 token 方案）");
-        sb.AppendLine("1. 凭据：type=oauth2，引擎按“钉钉策略”GET gettoken?appkey&appsecret 自动缓存/刷新；");
-        sb.AppendLine("   下游在 URL query 中引用 $credentials.<name>.accessToken，【不要】自建 dingtalk 专用节点。");
-        sb.AppendLine("2. 拉取：用 paginate 节点，url 含 ?access_token=$credentials.<name>.accessToken，");
-        sb.AppendLine("   body {dept_id, cursor, size}，itemsPath=result.list，nextCursorPath=result.next_cursor，");
-        sb.AppendLine("   terminateWhen=$nextCursor == ''，cursorType=string。");
+        sb.AppendLine("## 通用集成配方（避免常见错误）");
+        sb.AppendLine("1. 调用需鉴权的外部 API：用 type=oauth2 凭据，引擎会按该凭据的授权策略自动获取并缓存/刷新令牌；");
+        sb.AppendLine("   下游通过 $credentials.<name>.accessToken 在 URL query 或 header 中引用令牌，【不要】自建专用节点。");
+        sb.AppendLine("2. 拉取分页数据：用 paginate 节点，itemsPath 指向数组字段、nextCursorPath 指向游标字段，");
+        sb.AppendLine("   terminateWhen 判断游标耗尽（如 $nextCursor == '' 或 $nextCursor == null），cursorType 按实际类型设置。");
         sb.AppendLine("3. 映射：轻量字段重命名优先用 set 节点（字段值支持表达式）；复杂映射用 script。");
         sb.AppendLine("4. 写库：用 dbUpsert，connection=$credentials.<db>.connectionString，mode=upsert，keyColumns 设主键。");
         sb.AppendLine();
-        sb.AppendLine("## 示例（钉钉部门用户 → 数据库）");
+        sb.AppendLine("## 示例（从第三方 API 拉取部门员工 → 数据库）");
         sb.AppendLine("""
         {
-          "name": "钉钉员工同步",
+          "name": "员工同步",
           "nodes": [
             { "id": "trigger", "typeName": "manualTrigger", "isEntry": true, "parameters": {} },
             { "id": "fetch", "typeName": "paginate", "parameters": {
-                "url": "https://oapi.dingtalk.com/topapi/v2/user/list?access_token=$credentials.dingtalk.accessToken",
+                "url": "https://api.example.com/topapi/v2/user/list?access_token=$credentials.hrApi.accessToken",
                 "method": "POST",
                 "body": { "dept_id": 1, "cursor": 0, "size": 100 },
                 "itemsPath": "result.list", "nextCursorPath": "result.next_cursor",
                 "terminateWhen": "$nextCursor == ''", "cursorType": "string"
-            } },
+            },
             { "id": "map", "typeName": "set", "parameters": {
                 "fields": [ { "name": "userId", "value": "$json.userid" }, { "name": "name", "value": "$json.name" } ]
             } },

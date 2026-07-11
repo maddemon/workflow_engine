@@ -2,9 +2,16 @@ import { useState, useEffect, useCallback } from 'react';
 import { notifications } from '@mantine/notifications';
 import { Modal, Stack, Text, Table, ActionIcon, Button, Group, TextInput, Select, Badge, Divider, Loader, Center, Alert } from '@mantine/core';
 import { Plus, Trash2, Edit, AlertCircle } from 'lucide-react';
-import { getCredentials, createCredential, deleteCredential, updateCredential } from '../../services/api.ts';
+import { getCredentials, createCredential, deleteCredential, updateCredential, getCredentialTypes } from '../../services/api.ts';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
-import type { CredentialDto } from '../../types/workflow.ts';
+import type { CredentialDto, CredentialTypeDefinition } from '../../types/workflow.ts';
+
+const defaultTypeOptions: CredentialTypeDefinition[] = [
+  { name: 'apiKey', displayName: 'API Key', fields: [] },
+  { name: 'oauth2', displayName: 'OAuth2', fields: [] },
+  { name: 'basicAuth', displayName: 'Basic Auth', fields: [] },
+  { name: 'connectionString', displayName: 'Connection String', fields: [] },
+];
 
 interface CredentialListModalProps {
   opened: boolean;
@@ -20,6 +27,7 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
   const [formName, setFormName] = useState('');
   const [formType, setFormType] = useState('apiKey');
   const [formFields, setFormFields] = useState<{ key: string; value: string }[]>([{ key: '', value: '' }]);
+  const [typeOptions, setTypeOptions] = useState<CredentialTypeDefinition[]>(defaultTypeOptions);
 
   const loadCredentials = useCallback(async () => {
     setLoading(true);
@@ -41,6 +49,12 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
       setEditingId(null);
     }
   }, [opened, loadCredentials]);
+
+  useEffect(() => {
+    getCredentialTypes()
+      .then(setTypeOptions)
+      .catch(() => setTypeOptions(defaultTypeOptions));
+  }, []);
 
   const handleCreate = async () => {
     const fields: Record<string, string> = {};
@@ -130,12 +144,7 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
             label="Type"
             value={formType}
             onChange={(v) => setFormType(v ?? 'apiKey')}
-            data={[
-              { label: 'API Key', value: 'apiKey' },
-              { label: 'OAuth2', value: 'oauth2' },
-              { label: 'Basic Auth', value: 'basicAuth' },
-              { label: 'Connection String', value: 'connectionString' },
-            ]}
+            data={typeOptions.map((t) => ({ label: t.displayName, value: t.name }))}
             size="sm"
           />
           <Divider label="Fields" labelPosition="center" />

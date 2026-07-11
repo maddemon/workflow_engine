@@ -202,7 +202,7 @@ public class OAuth2TokenResponse
 生命周期行为：
 
 - **首次获取**：按 `client_credentials` 向 `tokenUrl` 发送 `application/x-www-form-urlencoded` 请求，从 `tokenPath`（默认 `access_token`）提取令牌。
-- **缓存**：结果存入内存缓存；缓存键为 `ComputeCacheKey(credentialName, tokenUrl, scope, grantType)` 的 SHA-256 前 16 位。
+- **缓存**：结果存入内存缓存；缓存键为 `ComputeCacheKey(credentialName, tokenUrl, clientId, scope, grantType)` 的 SHA-256 前 16 位。
 - **刷新**：调用 `GetOrRefreshTokenAsync` 时，若缓存命中且未到达 `ExpiresAt - RefreshBufferSeconds`，直接返回；否则重新获取并覆盖缓存。
 - **重试**：`GetTokenAsync` 对 `HttpRequestException` 与非主动取消的 `TaskCanceledException` 按指数退避重试，默认 `MaxRetries = 3`，延迟分别为 1s / 2s / 4s；4xx 业务错误不重试。
 

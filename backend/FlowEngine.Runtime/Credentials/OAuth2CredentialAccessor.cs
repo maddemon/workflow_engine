@@ -76,7 +76,7 @@ public sealed class OAuth2CredentialAccessor : ICredentialAccessor
         OAuth2ProviderTemplates.Apply(request, provider);
 
         var cacheKey = OAuth2TokenService.ComputeCacheKey(
-            credential.Name, tokenUrl, scope, request.GrantType);
+            credential.Name, tokenUrl, request.ClientId, scope, request.GrantType);
 
         var token = await _tokenService.GetOrRefreshTokenAsync(cacheKey, request, cancellationToken)
             .ConfigureAwait(false);

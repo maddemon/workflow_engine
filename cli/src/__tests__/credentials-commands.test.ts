@@ -267,6 +267,67 @@ describe('commands/credentials', () => {
     expect(output).toContain('clientSecret');
   });
 
+  it('types - prefers remote credential types when backend responds', async () => {
+    mockInstance.get.mockImplementation((url: string) => {
+      if (url === '/credentials/types') {
+        return Promise.resolve({
+          data: [
+            {
+              name: 'remoteType',
+              displayName: 'Remote',
+              fields: [
+                { name: 'token', displayName: 'Token', isRequired: true, secret: true },
+              ],
+            },
+          ],
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+
+    const output = await captureStdout(() => credentialTypes({ configOptions: options }));
+
+    expect(output).toContain('remoteType');
+    expect(output).not.toContain('apiKey'); // 未回退到本地内置定义
+  });
+
+  it('create - validates against remote credential types not present locally', async () => {
+    mockInstance.get.mockImplementation((url: string) => {
+      if (url === '/credentials/types') {
+        return Promise.resolve({
+          data: [
+            {
+              name: 'apiKey',
+              displayName: 'API Key',
+              fields: [{ name: 'apiKey', displayName: 'API Key', isRequired: true, secret: true }],
+            },
+            {
+              name: 'remoteOnly',
+              displayName: 'Remote Only',
+              fields: [{ name: 'custom', displayName: 'Custom', isRequired: true, secret: false }],
+            },
+          ],
+        });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    mockInstance.post.mockResolvedValue({
+      data: { id: 'cred-2', name: 'Test', type: 'remoteOnly', createdAt: '2025-01-01T00:00:00Z' },
+    });
+
+    const output = await captureStdout(() =>
+      credentialCreate({
+        name: 'Test',
+        type: 'remoteOnly',
+        fields: '{"custom":"x"}',
+        configOptions: options,
+      }),
+    );
+
+    expect(output).toContain('已创建凭据：cred-2');
+    expect(mockInstance.post).toHaveBeenCalled();
+  });
+
   it('create - rejects unknown type locally without calling API', async () => {
     await expect(
       credentialCreate({

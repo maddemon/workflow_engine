@@ -118,7 +118,7 @@ CLI 展示草案 → 用户确认 → workflow create
 你是 Flow Engine 工作流编排助手。根据用户描述生成合法的工作流 JSON。
 
 ## DSL 结构
-- 顶层字段：name, projectId?, nodes[], connections[], styleSettings?
+- 顶层字段：name, projectId?, nodes[], connections?[], styleSettings?
 - 节点：id, typeName, name, parameters{}, ports[], positionX, positionY, isEntry?
 - 连接：id, sourceNodeId, sourcePortName, targetNodeId, targetPortName
 
@@ -169,7 +169,7 @@ CLI 展示草案 → 用户确认 → workflow create
 
 | 校验项 | 说明 |
 |--------|------|
-| 结构校验 | 顶层字段存在、nodes/connections 是非空数组 |
+| 结构校验 | 顶层字段存在；nodes 是非空数组；connections 可选，若存在须为数组（单节点工作流可为空） |
 | 节点类型校验 | typeName 在 INodeRegistry 中存在 |
 | 端口方向校验 | sourcePort 是 Output、targetPort 是 Input |
 | 连接完整性 | source/target 节点存在、无悬空连接 |

@@ -122,7 +122,7 @@ export function CredentialField({ definition, value, onChange, error }: Credenti
         value={String(value ?? '')}
         onChange={(v) => onChange(v ?? '')}
         placeholder="-- Select Credential --"
-        data={credentials.map((c) => ({ label: `${c.name} (${c.type})`, value: c.id }))}
+        data={credentials.map((c) => ({ label: `${c.name} (${c.type})`, value: c.name }))}
         searchable
         disabled={loading}
       />

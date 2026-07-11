@@ -77,6 +77,24 @@ public sealed class CredentialTypeRegistryTests
     }
 
     [Fact]
+    public void Validate_Oauth2WithInvalidProvider_ReturnsFailure()
+    {
+        var fields = new Dictionary<string, string>
+        {
+            ["tokenUrl"] = "https://example.com/token",
+            ["clientId"] = "client-id",
+            ["clientSecret"] = "client-secret",
+            ["provider"] = "unknown"
+        };
+
+        var result = _registry.Validate("oauth2", fields);
+
+        Assert.False(result.IsValid);
+        Assert.Contains("provider", result.ErrorMessage);
+        Assert.Contains("unknown", result.ErrorMessage);
+    }
+
+    [Fact]
     public void Validate_UnknownType_ReturnsFailure()
     {
         var result = _registry.Validate("unknown", []);

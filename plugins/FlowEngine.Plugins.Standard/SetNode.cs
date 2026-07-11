@@ -135,8 +135,12 @@ public sealed class SetNode : INodeType
             return await script!.EvaluateAsync<JsonNode>(context, item, index, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         }
-        catch (ScriptErrorException)
+        catch (ScriptErrorException ex)
         {
+            context.Logger?.LogWarning(
+                "SetNode 字段值表达式求值失败，已回退为字面量字符串。Source: {Source}, Error: {Error}",
+                source,
+                ex.Message);
             return JsonValue.Create(source);
         }
     }

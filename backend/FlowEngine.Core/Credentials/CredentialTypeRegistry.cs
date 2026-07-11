@@ -56,7 +56,21 @@ public sealed class CredentialTypeRegistry : ICredentialTypeRegistry
             return ValidationResult.Failure($"凭据类型 '{type}' 缺少必填字段：{missing}");
         }
 
+        if (string.Equals(type, "oauth2", StringComparison.OrdinalIgnoreCase) &&
+            fields.TryGetValue("provider", out var provider) &&
+            !string.IsNullOrWhiteSpace(provider) &&
+            !IsKnownOAuth2Provider(provider))
+        {
+            return ValidationResult.Failure($"凭据类型 'oauth2' 的 provider 值 '{provider}' 无效。可用值：standard, dingtalk");
+        }
+
         return ValidationResult.Success();
+    }
+
+    private static bool IsKnownOAuth2Provider(string provider)
+    {
+        return string.Equals(provider, "standard", StringComparison.OrdinalIgnoreCase) ||
+               string.Equals(provider, "dingtalk", StringComparison.OrdinalIgnoreCase);
     }
 
     private static IEnumerable<CredentialTypeDefinition> CreateBuiltInTypes()

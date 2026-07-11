@@ -16,7 +16,7 @@ public sealed class OAuth2TokenServiceTests
         var service = new OAuth2TokenService(factory);
 
         var request = CreateRequest();
-        var cacheKey = OAuth2TokenService.ComputeCacheKey("cred", request.TokenUrl, request.Scope, request.GrantType);
+        var cacheKey = OAuth2TokenService.ComputeCacheKey("cred", request.TokenUrl, request.ClientId, request.Scope, request.GrantType);
 
         var first = await service.GetOrRefreshTokenAsync(cacheKey, request);
         var second = await service.GetOrRefreshTokenAsync(cacheKey, request);
@@ -24,6 +24,33 @@ public sealed class OAuth2TokenServiceTests
         Assert.Equal("tok-1", first.AccessToken);
         Assert.Equal("tok-1", second.AccessToken);
         Assert.Equal(1, handler.CallCount);
+    }
+
+    [Fact]
+    public async Task GetOrRefreshTokenAsync_DifferentClientIds_DoNotShareCache()
+    {
+        var handler = new FakeTokenHandler();
+        var factory = new StubHttpClientFactory(handler);
+        var service = new OAuth2TokenService(factory);
+
+        var requestA = CreateRequest();
+        var requestB = new OAuth2TokenRequest
+        {
+            TokenUrl = requestA.TokenUrl,
+            ClientId = "other-client-id",
+            ClientSecret = requestA.ClientSecret,
+            Scope = requestA.Scope,
+            GrantType = requestA.GrantType,
+        };
+        var cacheKeyA = OAuth2TokenService.ComputeCacheKey("cred", requestA.TokenUrl, requestA.ClientId, requestA.Scope, requestA.GrantType);
+        var cacheKeyB = OAuth2TokenService.ComputeCacheKey("cred", requestB.TokenUrl, requestB.ClientId, requestB.Scope, requestB.GrantType);
+
+        var first = await service.GetOrRefreshTokenAsync(cacheKeyA, requestA);
+        var second = await service.GetOrRefreshTokenAsync(cacheKeyB, requestB);
+
+        Assert.Equal("tok-1", first.AccessToken);
+        Assert.Equal("tok-2", second.AccessToken);
+        Assert.Equal(2, handler.CallCount);
     }
 
     [Fact]
@@ -37,7 +64,7 @@ public sealed class OAuth2TokenServiceTests
         };
 
         var request = CreateRequest();
-        var cacheKey = OAuth2TokenService.ComputeCacheKey("cred", request.TokenUrl, request.Scope, request.GrantType);
+        var cacheKey = OAuth2TokenService.ComputeCacheKey("cred", request.TokenUrl, request.ClientId, request.Scope, request.GrantType);
 
         var first = await service.GetOrRefreshTokenAsync(cacheKey, request);
         Assert.Equal("tok-1", first.AccessToken);

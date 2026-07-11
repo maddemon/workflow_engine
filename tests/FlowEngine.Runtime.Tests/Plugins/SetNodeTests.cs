@@ -185,7 +185,34 @@ public sealed class SetNodeTests
         Assert.Equal("hello", data["greeting"]?.GetValue<string>());
     }
 
-    private static NodeExecutionContext CreateContext(JsonObject inputData)
+    [Fact]
+    public async Task ExecuteAsync_InvalidExpression_LogsWarningAndFallsBackToLiteral()
+    {
+        var logger = new FakeExecutionLogger();
+        var node = new SetNode
+        {
+            Fields =
+            [
+                new SetField
+                {
+                    Name = "fallback",
+                    Value = new Script { Source = "$json..invalid", ReturnType = ScriptReturnType.String }
+                }
+            ]
+        };
+
+        var context = CreateContext(new JsonObject { ["id"] = 1 }, logger);
+        var result = await node.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.True(result.Success);
+        var data = Assert.IsType<JsonObject>(result.Output.Items[0].Data);
+        Assert.Equal("$json..invalid", data["fallback"]?.GetValue<string>());
+        Assert.Single(logger.Warnings);
+        Assert.Contains("SetNode", logger.Warnings[0].Message);
+        Assert.Contains("$json..invalid", logger.Warnings[0].Args.Select(a => a?.ToString()));
+    }
+
+    private static NodeExecutionContext CreateContext(JsonObject inputData, IExecutionLogger? logger = null)
     {
         return new NodeExecutionContext
         {
@@ -218,6 +245,7 @@ public sealed class SetNodeTests
             Credentials = new NullAccessor(),
             ScriptCache = new ScriptCache(Options.Create(new JsEngineOptions())),
             EngineOptions = new JsEngineOptions(),
+            Logger = logger ?? NullExecutionLogger.Instance,
             CancellationToken = CancellationToken.None
         };
     }
@@ -229,5 +257,30 @@ public sealed class SetNodeTests
 
         public Task<CredentialValue?> GetCredentialByNameAsync(string name, CancellationToken ct = default) =>
             Task.FromResult<CredentialValue?>(null);
+    }
+
+    private sealed class NullExecutionLogger : IExecutionLogger
+    {
+        public static readonly NullExecutionLogger Instance = new();
+
+        public void LogInformation(string message, params object?[] args) { }
+
+        public void LogWarning(string message, params object?[] args) { }
+
+        public void LogError(Exception? exception, string message, params object?[] args) { }
+    }
+
+    private sealed class FakeExecutionLogger : IExecutionLogger
+    {
+        public List<(string Message, object?[] Args)> Warnings { get; } = [];
+
+        public void LogInformation(string message, params object?[] args) { }
+
+        public void LogWarning(string message, params object?[] args)
+        {
+            Warnings.Add((message, args));
+        }
+
+        public void LogError(Exception? exception, string message, params object?[] args) { }
     }
 }

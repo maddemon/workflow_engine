@@ -126,12 +126,22 @@ const builtInCredentialTypes: CredentialTypeDefinition[] = [
         secret: false,
         hint: '默认 access_token',
       },
+      {
+        name: 'provider',
+        displayName: 'Provider',
+        isRequired: false,
+        secret: false,
+        hint: 'standard | dingtalk，默认 standard',
+      },
     ],
   },
 ];
 
-function findCredentialType(type: string): CredentialTypeDefinition | undefined {
-  return builtInCredentialTypes.find((t) => t.name.toLowerCase() === type.toLowerCase());
+function findCredentialType(
+  types: CredentialTypeDefinition[],
+  type: string,
+): CredentialTypeDefinition | undefined {
+  return types.find((t) => t.name.toLowerCase() === type.toLowerCase());
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -147,6 +157,27 @@ function createApiClient(profile?: string, configOptions?: ConfigOptions) {
     verbose: isVerbose(),
   };
   return createClient(options);
+}
+
+/**
+ * 解析可用凭据类型定义。优先从后端 `GET /credentials/types` 拉取（保证与后端 schema 同步，
+ * 例如新增 provider 等字段时 CLI 自动生效），网络不可用或未认证时回退到本地内置定义。
+ */
+async function resolveCredentialTypes(
+  profile?: string,
+  configOptions?: ConfigOptions,
+): Promise<CredentialTypeDefinition[]> {
+  try {
+    const client = createApiClient(profile, configOptions);
+    const response = await client.get<CredentialTypeDefinition[]>('/credentials/types');
+    const remoteTypes = response.data;
+    if (Array.isArray(remoteTypes) && remoteTypes.length > 0) {
+      return remoteTypes;
+    }
+  } catch {
+    // 离线 / 未认证 / 接口异常时回退本地内置定义
+  }
+  return builtInCredentialTypes;
 }
 
 function parseFields(fieldsJson: string): Record<string, string> {
@@ -197,10 +228,14 @@ function requireString(value: string | undefined, label: string): string {
   return trimmed;
 }
 
-function validateCredentialFields(type: string, fields: Record<string, string>): void {
-  const definition = findCredentialType(type);
+function validateCredentialFields(
+  type: string,
+  fields: Record<string, string>,
+  types: CredentialTypeDefinition[],
+): void {
+  const definition = findCredentialType(types, type);
   if (!definition) {
-    const knownTypes = builtInCredentialTypes.map((t) => t.name).join(', ');
+    const knownTypes = types.map((t) => t.name).join(', ');
     throw new CLIError(
       `未知凭据类型 '${type}'。可用类型：${knownTypes}`,
       ErrorCode.ValidationError,
@@ -313,8 +348,9 @@ export async function credentialCreate(options: CredentialCreateOptions): Promis
   const name = requireString(options.name, '--name');
   const type = requireString(options.type, '--type');
   const fields = parseFields(options.fields);
+  const types = await resolveCredentialTypes(options.profile, options.configOptions);
 
-  validateCredentialFields(type, fields);
+  validateCredentialFields(type, fields, types);
 
   const body: CreateCredentialDto = {
     name,
@@ -343,8 +379,9 @@ export async function credentialEnsure(options: CredentialEnsureOptions): Promis
   const name = requireString(options.name, '--name');
   const type = requireString(options.type, '--type');
   const fields = parseFields(options.fields);
+  const types = await resolveCredentialTypes(options.profile, options.configOptions);
 
-  validateCredentialFields(type, fields);
+  validateCredentialFields(type, fields, types);
 
   const body: CreateCredentialDto = {
     name,
@@ -374,13 +411,15 @@ export async function credentialEnsure(options: CredentialEnsureOptions): Promis
   log(`Type: ${output.type}`);
 }
 
-export async function credentialTypes(_options: CredentialTypeOptions): Promise<void> {
+export async function credentialTypes(options: CredentialTypeOptions): Promise<void> {
+  const types = await resolveCredentialTypes(options.profile, options.configOptions);
+
   if (isJsonMode()) {
-    writeJson(builtInCredentialTypes);
+    writeJson(types);
     return;
   }
 
-  for (const type of builtInCredentialTypes) {
+  for (const type of types) {
     log(`${type.name} (${type.displayName})`);
     for (const field of type.fields) {
       const required = field.isRequired ? '必填' : '可选';

@@ -49,6 +49,7 @@ public interface ILlmClient
             Delta = response.Content,
             ToolCalls = response.ToolCalls,
             IsFinal = true,
+            FinishReason = response.FinishReason,
         };
     }
 }

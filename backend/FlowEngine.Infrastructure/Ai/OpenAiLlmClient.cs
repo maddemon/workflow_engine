@@ -145,6 +145,7 @@ public sealed class OpenAiLlmClient : ILlmClient
 
             var toolCallAccumulator = new Dictionary<int, (string Id, string Name, string Arguments)>(4);
             IReadOnlyList<LlmToolCall>? finalToolCalls = null;
+            string? finishReason = null;
 
             await foreach (var update in updates.ConfigureAwait(false))
             {
@@ -192,6 +193,11 @@ public sealed class OpenAiLlmClient : ILlmClient
                     }
                 }
 
+                if (update.FinishReason is not null)
+                {
+                    finishReason = update.FinishReason.ToString();
+                }
+
                 if (update.FinishReason is not null && toolCallAccumulator.Count > 0)
                 {
                     finalToolCalls = toolCallAccumulator
@@ -211,6 +217,7 @@ public sealed class OpenAiLlmClient : ILlmClient
                 Delta = null,
                 ToolCalls = finalToolCalls,
                 IsFinal = true,
+                FinishReason = finishReason,
             }, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
@@ -293,16 +300,38 @@ public sealed class OpenAiLlmClient : ILlmClient
 
     private static LlmResponse ConvertResponse(ChatCompletion response)
     {
-        var result = new LlmResponse();
+        return BuildLlmResponse(
+            response.Content?.ToString(),
+            response.FinishReason.ToString(),
+            response.ToolCalls);
+    }
 
-        if (response.FinishReason == ChatFinishReason.Stop)
+    /// <summary>
+    /// 由原始内容、结束原因与工具调用构建 <see cref="LlmResponse"/>。
+    /// 与具体 SDK 类型解耦，便于单元测试；同时修复旧实现仅在
+    /// <c>Stop</c> 时填充 <see cref="LlmResponse.Content"/> 的问题——
+    /// 命中 <c>Length</c>（截断）或 <c>ContentFilter</c>（内容过滤）时
+    /// 仍会保留已产出的文本内容并标记结束原因，避免上层拿到静默空结果。
+    /// </summary>
+    internal static LlmResponse BuildLlmResponse(
+        string? rawContent,
+        string? finishReason,
+        IReadOnlyList<ChatToolCall>? toolCalls)
+    {
+        var result = new LlmResponse
         {
-            result.Content = response.Content?.ToString() ?? string.Empty;
+            FinishReason = finishReason,
+        };
+
+        // 只要存在非空文本内容即保留，不局限于 Stop（截断/过滤时仍可能有部分内容）。
+        if (!string.IsNullOrEmpty(rawContent))
+        {
+            result.Content = rawContent;
         }
 
-        if (response.ToolCalls.Count > 0)
+        if (toolCalls is { Count: > 0 })
         {
-            result.ToolCalls = response.ToolCalls.Select(tc => new LlmToolCall
+            result.ToolCalls = toolCalls.Select(tc => new LlmToolCall
             {
                 Id = tc.Id,
                 Name = tc.FunctionName,

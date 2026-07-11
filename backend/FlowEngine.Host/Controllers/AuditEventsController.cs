@@ -1,5 +1,5 @@
 using System.Text.Json;
-using FlowEngine.Infrastructure.Audit;
+using FlowEngine.Application.Audit;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -11,7 +11,7 @@ namespace FlowEngine.Host.Controllers;
 [ApiController]
 [Route("api/v1/audit-events")]
 [Authorize]
-public class AuditEventsController(AuditLogReader reader) : ControllerBase
+public class AuditEventsController(IAuditLogReader reader) : ControllerBase
 {
     /// <summary>
     /// 查询审计事件，支持按类型、时间、资源过滤与分页。

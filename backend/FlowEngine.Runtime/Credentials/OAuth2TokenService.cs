@@ -387,9 +387,9 @@ public sealed class OAuth2TokenService : IOAuth2TokenService, IDisposable
     /// <summary>
     /// 生成确定性缓存键。
     /// </summary>
-    public static string ComputeCacheKey(string credentialName, string tokenUrl, string? scope, string? grantType)
+    public static string ComputeCacheKey(string credentialName, string tokenUrl, string clientId, string? scope, string? grantType)
     {
-        var raw = $"{credentialName}|{tokenUrl}|{scope ?? string.Empty}|{grantType ?? "client_credentials"}";
+        var raw = $"{credentialName}|{tokenUrl}|{clientId}|{scope ?? string.Empty}|{grantType ?? "client_credentials"}";
         var bytes = Encoding.UTF8.GetBytes(raw);
 #if NET8_0_OR_GREATER
         var hash = SHA256.HashData(bytes);

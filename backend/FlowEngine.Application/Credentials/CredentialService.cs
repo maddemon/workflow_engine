@@ -50,6 +50,7 @@ public sealed class CredentialService(
         await authGuard.RequireScopeAsync(Scope.Credential, Operation.Write, cancellationToken);
 
         ValidateCredentialType(dto.Type, dto.Fields);
+        await ValidateNameNotInUseAsync(dto.Name, dto.ProjectId, null, cancellationToken).ConfigureAwait(false);
 
         return await CreateCredentialInternalAsync(dto, cancellationToken).ConfigureAwait(false);
     }
@@ -92,6 +93,7 @@ public sealed class CredentialService(
             return (MapToDto(existing, maskValues: false), false);
         }
 
+        await ValidateNameNotInUseAsync(dto.Name, dto.ProjectId, null, cancellationToken).ConfigureAwait(false);
         var created = await CreateCredentialInternalAsync(dto, cancellationToken).ConfigureAwait(false);
         return (created, true);
     }
@@ -177,6 +179,9 @@ public sealed class CredentialService(
             return null;
         }
 
+        ValidateCredentialType(credential.Type, dto.Fields);
+        await ValidateNameNotInUseAsync(dto.Name, credential.ProjectId, credential.Id, cancellationToken).ConfigureAwait(false);
+
         var key = keyProvider.GetKey();
         var encryptedData = EncryptFields(dto.Fields, key);
 
@@ -229,6 +234,22 @@ public sealed class CredentialService(
         if (!validationResult.IsValid)
         {
             throw new BusinessException(validationResult.ErrorMessage);
+        }
+    }
+
+    private async Task ValidateNameNotInUseAsync(string name, Guid? projectId, Guid? excludeId, CancellationToken cancellationToken)
+    {
+        var exists = await dbContext.Credentials
+            .AnyAsync(
+                c => c.Name == name
+                     && c.ProjectId == projectId
+                     && (!excludeId.HasValue || c.Id != excludeId.Value),
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        if (exists)
+        {
+            throw new BusinessException($"项目内已存在名称为 '{name}' 的凭据。");
         }
     }
 

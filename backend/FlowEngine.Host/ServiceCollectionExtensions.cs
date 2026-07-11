@@ -134,7 +134,7 @@ public static class ServiceCollectionExtensions
                 sp.GetRequiredService<IEventBus>(),
                 sp.GetService<ILogger<AuditLogFileSink>>());
         });
-        services.AddSingleton(sp =>
+        services.AddSingleton<IAuditLogReader>(sp =>
         {
             var logPath = configuration["Audit:LogPath"] ?? "./storage/audit";
             return new AuditLogReader(logPath);

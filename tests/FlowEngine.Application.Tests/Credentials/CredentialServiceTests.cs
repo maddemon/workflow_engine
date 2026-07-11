@@ -165,7 +165,7 @@ public sealed class CredentialServiceTests : IDisposable
         var dto = new UpdateCredentialDto
         {
             Name = "Updated",
-            Fields = new Dictionary<string, string> { ["key"] = "new-value" },
+            Fields = new Dictionary<string, string> { ["apiKey"] = "new-value" },
         };
 
         var result = await _service.UpdateAsync(credential.Id, dto, ct);
@@ -175,7 +175,7 @@ public sealed class CredentialServiceTests : IDisposable
 
         var updated = await _dbContext.Credentials.FindAsync([credential.Id], ct);
         Assert.NotNull(updated);
-        Assert.Equal("encrypted:new-value", updated.Data["key"].CipherText);
+        Assert.Equal("encrypted:new-value", updated.Data["apiKey"].CipherText);
     }
 
     [Fact]
@@ -185,6 +185,63 @@ public sealed class CredentialServiceTests : IDisposable
         var dto = new UpdateCredentialDto { Name = "Test" };
         var result = await _service.UpdateAsync(Guid.NewGuid(), dto, ct);
         Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_MissingRequiredFields_ThrowsBusinessException()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var credential = CreateTestCredential("Original", type: "oauth2");
+        credential.Data = new Dictionary<string, EncryptedField>
+        {
+            ["tokenUrl"] = _encryptionService.Encrypt("https://example.com/token", _keyProvider.GetKey()),
+            ["clientId"] = _encryptionService.Encrypt("client-id", _keyProvider.GetKey()),
+            ["clientSecret"] = _encryptionService.Encrypt("client-secret", _keyProvider.GetKey()),
+        };
+        _dbContext.Credentials.Add(credential);
+        await _dbContext.SaveChangesAsync(ct);
+
+        var dto = new UpdateCredentialDto
+        {
+            Name = "Updated",
+            Fields = new Dictionary<string, string> { ["tokenUrl"] = "https://example.com/token" },
+        };
+
+        var exception = await Assert.ThrowsAsync<BusinessException>(() => _service.UpdateAsync(credential.Id, dto, ct));
+        Assert.Contains("缺少必填字段", exception.Message);
+        Assert.Contains("clientId", exception.Message);
+        Assert.Contains("clientSecret", exception.Message);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_InvalidOAuth2Provider_ThrowsBusinessException()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var credential = CreateTestCredential("Original", type: "oauth2");
+        credential.Data = new Dictionary<string, EncryptedField>
+        {
+            ["tokenUrl"] = _encryptionService.Encrypt("https://example.com/token", _keyProvider.GetKey()),
+            ["clientId"] = _encryptionService.Encrypt("client-id", _keyProvider.GetKey()),
+            ["clientSecret"] = _encryptionService.Encrypt("client-secret", _keyProvider.GetKey()),
+        };
+        _dbContext.Credentials.Add(credential);
+        await _dbContext.SaveChangesAsync(ct);
+
+        var dto = new UpdateCredentialDto
+        {
+            Name = "Updated",
+            Fields = new Dictionary<string, string>
+            {
+                ["tokenUrl"] = "https://example.com/token",
+                ["clientId"] = "client-id",
+                ["clientSecret"] = "client-secret",
+                ["provider"] = "dingtalk-wrong"
+            },
+        };
+
+        var exception = await Assert.ThrowsAsync<BusinessException>(() => _service.UpdateAsync(credential.Id, dto, ct));
+        Assert.Contains("provider", exception.Message);
+        Assert.Contains("dingtalk-wrong", exception.Message);
     }
 
     [Fact]
@@ -405,6 +462,28 @@ public sealed class CredentialServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CreateAsync_InvalidOAuth2Provider_ThrowsBusinessException()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var dto = new CreateCredentialDto
+        {
+            Name = "Test",
+            Type = "oauth2",
+            Fields = new Dictionary<string, string>
+            {
+                ["tokenUrl"] = "https://example.com/token",
+                ["clientId"] = "client-id",
+                ["clientSecret"] = "client-secret",
+                ["provider"] = "unknown"
+            },
+        };
+
+        var exception = await Assert.ThrowsAsync<BusinessException>(() => _service.CreateAsync(dto, ct));
+        Assert.Contains("provider", exception.Message);
+        Assert.Contains("unknown", exception.Message);
+    }
+
+    [Fact]
     public async Task EnsureAsync_UnknownType_ThrowsBusinessException()
     {
         var ct = TestContext.Current.CancellationToken;
@@ -435,14 +514,14 @@ public sealed class CredentialServiceTests : IDisposable
         Assert.Contains("password", exception.Message);
     }
 
-    private static Credential CreateTestCredential(string? name = null, Guid? id = null, Guid? projectId = null)
+    private static Credential CreateTestCredential(string? name = null, Guid? id = null, Guid? projectId = null, string type = "apiKey")
     {
         return new Credential
         {
             Id = id ?? Guid.NewGuid(),
             ProjectId = projectId,
             Name = name ?? "Test Credential",
-            Type = "apiKey",
+            Type = type,
             Data = new Dictionary<string, EncryptedField>(),
             KeyVersion = "v1",
         };

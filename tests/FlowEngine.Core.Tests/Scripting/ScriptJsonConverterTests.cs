@@ -74,6 +74,28 @@ public sealed class ScriptJsonConverterTests
     }
 
     [Fact]
+    public void Deserialize_NumberShorthand_Works()
+    {
+        var script = JsonSerializer.Deserialize<Script>("42", Options);
+
+        Assert.NotNull(script);
+        Assert.Equal("42", script.Source);
+        Assert.Equal(ScriptLanguage.JavaScript, script.Language);
+        Assert.Equal(ScriptReturnType.Object, script.ReturnType);
+    }
+
+    [Fact]
+    public void Deserialize_LargeNumber_DoesNotThrowAndPreservesLiteral()
+    {
+        // 1e40 超出 decimal 范围，旧实现 reader.GetDecimal() 会抛 OverflowException。
+        var script = JsonSerializer.Deserialize<Script>("1e40", Options);
+
+        Assert.NotNull(script);
+        Assert.False(string.IsNullOrWhiteSpace(script.Source));
+        Assert.Contains("1", script.Source);
+    }
+
+    [Fact]
     public void Deserialize_Null_ReturnsNull()
     {
         var script = JsonSerializer.Deserialize<Script>("null", Options);

@@ -60,6 +60,14 @@ public sealed class PaginateNode : INodeType
     [Description("Maximum number of pages to fetch (safety cap).")]
     public int MaxPages { get; set; } = 100;
 
+    /// <summary>
+    /// 业务成功判定表达式。HTTP 2xx 后按此表达式判定业务是否成功（如 <c>$json.errcode == 0</c>）。
+    /// </summary>
+    [DisplayName("Success When")]
+    [Description("Business success condition. When set, even a 2xx HTTP response fails the node if this expression evaluates to false (e.g. '$json.errcode == 0').")]
+    [Hint(PresentationHint.Expression)]
+    public Script SuccessWhen { get; set; } = Script.Empty;
+
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
     [
@@ -193,7 +201,7 @@ public sealed class PaginateNode : INodeType
             }
 
             // 阶段零 0.2：HTTP 成功后判 successWhen 业务成功表达式（如钉钉 errcode != 0 但 HTTP 200）
-            var successWhenExpr = GetConfig(context, "successWhen", "");
+            var successWhenExpr = GetSuccessWhenExpression();
             if (!string.IsNullOrWhiteSpace(successWhenExpr))
             {
                 var envelope = pageResult.Output.Items.Count > 0 ? pageResult.Output.Items[0].Data as JsonObject : null;
@@ -317,6 +325,16 @@ public sealed class PaginateNode : INodeType
             // 认证失败不阻断（token 可能已在 URL 内嵌）
             context.Logger?.LogWarning("应用认证头失败，继续执行（token 可能已内嵌于 URL）：{Error}", ex.Message);
         }
+    }
+
+    private string GetSuccessWhenExpression()
+    {
+        if (SuccessWhen is not null && !string.IsNullOrWhiteSpace(SuccessWhen.Source))
+        {
+            return SuccessWhen.Source;
+        }
+
+        return string.Empty;
     }
 
     private static string GetConfig(NodeExecutionContext context, string key, string fallback)
