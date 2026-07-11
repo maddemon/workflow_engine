@@ -455,3 +455,16 @@ export interface ImportBatchRequest {
 export interface ExportBatchRequest {
   ids: string[];
 }
+
+export interface WorkflowGenerationRequestDto {
+  description: string;
+  projectId?: string;
+  maxRetries?: number;
+}
+
+export interface WorkflowGenerationResponseDto {
+  valid: boolean;
+  draft: Record<string, unknown> | null;
+  errors: string[];
+  attempts: number;
+}

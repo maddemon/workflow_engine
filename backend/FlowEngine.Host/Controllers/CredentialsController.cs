@@ -1,6 +1,7 @@
 using FlowEngine.Application.Credentials;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Core.Authorization;
+using FlowEngine.Core.Credentials;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -12,7 +13,9 @@ namespace FlowEngine.Host.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/v1/credentials")]
-public class CredentialsController(CredentialService credentialService) : ControllerBase
+public class CredentialsController(
+    CredentialService credentialService,
+    ICredentialTypeRegistry credentialTypeRegistry) : ControllerBase
 {
     /// <summary>
     /// 获取所有凭据摘要列表。
@@ -25,6 +28,16 @@ public class CredentialsController(CredentialService credentialService) : Contro
     {
         var credentials = await credentialService.GetAllAsync(projectId, cancellationToken).ConfigureAwait(false);
         return Ok(credentials);
+    }
+
+    /// <summary>
+    /// 获取所有已注册的凭据类型定义（含字段 schema），供前端表单渲染与 CLI 本地校验。
+    /// </summary>
+    [HttpGet("types")]
+    [AuthorizePermission(Scope.Credential, Operation.Read)]
+    public ActionResult<IReadOnlyCollection<CredentialTypeDefinition>> GetTypes()
+    {
+        return Ok(credentialTypeRegistry.GetAll());
     }
 
     /// <summary>

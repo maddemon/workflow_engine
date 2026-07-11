@@ -16,7 +16,7 @@ interface WorkflowEditorPageProps {
 export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) {
   const { id } = useParams<{ id: string }>()
   useNodeTypes()
-  const { execution, clearExecution, execute, cancelExecution, error } = useExecution()
+  const { execution, clearExecution, execute, dryRun, dryRunLoading, cancelExecution, error } = useExecution()
   const loadWorkflow = useWorkflowStore((s) => s.loadWorkflow)
   const newWorkflow = useWorkflowStore((s) => s.newWorkflow)
 
@@ -61,7 +61,7 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
 
   return (
     <ReactFlowProvider>
-      <WorkflowCanvas onExecute={execute} onCancel={cancelExecution} />
+      <WorkflowCanvas onExecute={execute} onCancel={cancelExecution} onDryRun={dryRun} dryRunLoading={dryRunLoading} />
     </ReactFlowProvider>
   )
 }

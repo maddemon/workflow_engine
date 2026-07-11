@@ -48,6 +48,10 @@ interface WorkflowState {
   isExecuting: boolean;
   /** nodeDefinitionId → NodeExecutionRecordDto，累积存储，不覆盖 */
   nodeExecutionRecords: Record<string, NodeExecutionRecordDto>;
+  /** 复制/粘贴剪贴板：被复制节点的 data（含参数与设置） */
+  copiedNode: WorkflowNodeData | null;
+  /** 凭据变更版本号，用于跨组件触发凭据下拉刷新 */
+  credentialRevision: number;
 
   setNodes: (nodes: WorkflowNode[]) => void;
   setEdges: (edges: WorkflowEdge[]) => void;
@@ -58,7 +62,10 @@ interface WorkflowState {
   updateNodePosition: (nodeId: string, position: { x: number; y: number }) => void;
   updateNodeParameters: (nodeId: string, parameters: Record<string, unknown>) => void;
   updateNodeName: (nodeId: string, name: string) => void;
-  updateNodeSettings: (nodeId: string, settings: { errorStrategy?: string; retryPolicy?: string | null }) => void;
+  updateNodeSettings: (nodeId: string, settings: { errorStrategy?: string; retryPolicy?: string | null; timeout?: number | null }) => void;
+  copyNode: (nodeId: string) => void;
+  pasteNode: (position: { x: number; y: number }) => void;
+  bumpCredentialRevision: () => void;
   addEdge: (source: string, sourceHandle: string | null, target: string, targetHandle: string | null) => void;
   removeEdge: (edgeId: string) => void;
   setSelectedNode: (nodeId: string | null) => void;
@@ -169,8 +176,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
 	    saving: false,
 	    validationErrors: {},
 	    isExecuting: false,
-	    nodeExecutionRecords: {},
-	    canUndo: false,
+    nodeExecutionRecords: {},
+    copiedNode: null,
+    credentialRevision: 0,
+    canUndo: false,
     canRedo: false,
 
     setNodes: (nodes) => set({ nodes, isDirty: true }),
@@ -252,6 +261,34 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         isDirty: true,
       });
     },
+
+    copyNode: (nodeId) => {
+      const node = get().nodes.find((n) => n.id === nodeId);
+      if (!node) return;
+      set({ copiedNode: structuredClone(node.data) });
+    },
+
+    pasteNode: (position) => {
+      const src = get().copiedNode;
+      if (!src) return;
+      pushHistoryInternal();
+      const id = `${src.typeName}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const newNode: WorkflowNode = {
+        id,
+        type: 'workflow',
+        position,
+        selected: true,
+        data: {
+          ...structuredClone(src),
+          name: `${src.name} copy`,
+          executionStatus: undefined,
+        },
+      };
+      const deselected = get().nodes.map((n) => ({ ...n, selected: false }));
+      set({ nodes: [...deselected, newNode], selectedNodeId: id, isDirty: true, canUndo: true, canRedo: false });
+    },
+
+    bumpCredentialRevision: () => set({ credentialRevision: get().credentialRevision + 1 }),
 
     addEdge: (source, sourceHandle, target, targetHandle) => {
       pushHistoryInternal();

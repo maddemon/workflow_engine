@@ -225,6 +225,27 @@ export interface UpdateCredentialDto {
   fields: Record<string, string>;
 }
 
+export interface CredentialFieldDefinition {
+  name: string;
+  displayName: string;
+  required: boolean;
+  sensitive: boolean;
+  hint?: string;
+}
+
+export interface CredentialTypeDefinition {
+  name: string;
+  displayName: string;
+  fields: CredentialFieldDefinition[];
+}
+
+export interface DryRunRequest {
+  nodes: NodeDefinition[];
+  connections: Connection[];
+  inputs?: Record<string, unknown>;
+  credentials?: Array<{ name: string; type: string; fields: Record<string, string> }>;
+}
+
 // --- Triggers ---
 
 export interface TriggerSettingsDto {

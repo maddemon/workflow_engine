@@ -18,9 +18,11 @@ const defaultEdgeOptions = {
 interface IWorkflowCanvasProps {
   onExecute: (workflowId: string) => void
   onCancel?: () => void
+  onDryRun?: () => void
+  dryRunLoading?: boolean
 }
 
-export function WorkflowCanvas({ onExecute, onCancel }: IWorkflowCanvasProps) {
+export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }: IWorkflowCanvasProps) {
   const reactFlowWrapper = useRef<HTMLDivElement>(null)
   const { screenToFlowPosition } = useReactFlow()
   const nodesData = useWorkflowStore((s) => s.nodes)
@@ -32,6 +34,8 @@ export function WorkflowCanvas({ onExecute, onCancel }: IWorkflowCanvasProps) {
   const addNode = useWorkflowStore((s) => s.addNode)
   const setSelectedNode = useWorkflowStore((s) => s.setSelectedNode)
   const isExecuting = useWorkflowStore((s) => s.isExecuting)
+  const copyNode = useWorkflowStore((s) => s.copyNode)
+  const pasteNode = useWorkflowStore((s) => s.pasteNode)
 
   const hasPositionOverrides = Object.keys(nodePositions).length > 0
   const nodes = useMemo(
@@ -188,9 +192,31 @@ export function WorkflowCanvas({ onExecute, onCancel }: IWorkflowCanvasProps) {
     [addNode, isExecuting, screenToFlowPosition],
   )
 
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return
+      const target = e.target as HTMLElement | null
+      if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return
+      const selectedId = useWorkflowStore.getState().selectedNodeId
+      if (e.key.toLowerCase() === "c" && selectedId) {
+        e.preventDefault()
+        copyNode(selectedId)
+        notifications.show({ title: "Copied", message: "节点已复制到剪贴板", color: "teal" })
+      } else if (e.key.toLowerCase() === "v") {
+        const wrapper = reactFlowWrapper.current
+        if (!wrapper) return
+        const rect = wrapper.getBoundingClientRect()
+        const pos = screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 })
+        pasteNode(pos)
+      }
+    }
+    window.addEventListener("keydown", handler)
+    return () => window.removeEventListener("keydown", handler)
+  }, [copyNode, pasteNode, screenToFlowPosition])
+
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
-      <CanvasToolbar onExecute={onExecute} onCancel={onCancel} />
+      <CanvasToolbar onExecute={onExecute} onCancel={onCancel} onDryRun={onDryRun} dryRunLoading={dryRunLoading} />
       <div ref={reactFlowWrapper} className="workflow-canvas">
         <ReactFlow
           nodes={nodes}

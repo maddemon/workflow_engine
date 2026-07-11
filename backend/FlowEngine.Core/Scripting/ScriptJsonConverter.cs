@@ -24,6 +24,21 @@ public sealed class ScriptJsonConverter : JsonConverter<Script>
             return new Script(reader.GetString() ?? string.Empty, ScriptLanguage.JavaScript, ScriptReturnType.Object);
         }
 
+        if (reader.TokenType == JsonTokenType.True)
+        {
+            return new Script("true", ScriptLanguage.JavaScript, ScriptReturnType.Object);
+        }
+
+        if (reader.TokenType == JsonTokenType.False)
+        {
+            return new Script("false", ScriptLanguage.JavaScript, ScriptReturnType.Object);
+        }
+
+        if (reader.TokenType == JsonTokenType.Number)
+        {
+            return new Script(reader.GetDecimal().ToString(System.Globalization.CultureInfo.InvariantCulture), ScriptLanguage.JavaScript, ScriptReturnType.Object);
+        }
+
         if (reader.TokenType != JsonTokenType.StartObject)
         {
             throw new JsonException("Script JSON 必须是对象或字符串。");

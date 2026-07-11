@@ -1,9 +1,11 @@
 using FlowEngine.Core;
-using System.ComponentModel;
-using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
+using FlowEngine.Core.Scripting;
+using System.ComponentModel;
+using System.Text.Json.Nodes;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -50,7 +52,7 @@ public sealed class SetNode : INodeType
     public bool DefaultIsEntry => false;
 
     /// <inheritdoc />
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
         var inputBatch = context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch)
             ? batch
@@ -81,7 +83,8 @@ public sealed class SetNode : INodeType
 
             foreach (var field in Fields ?? [])
             {
-                var value = ParseValue(field.Value);
+                var value = await EvaluateFieldValueAsync(field.Value, context, inputItem.Data, inputItem.SourceIndex, cancellationToken)
+                    .ConfigureAwait(false);
 
                 if (Include == SetIncludeMode.Exclude)
                 {
@@ -101,43 +104,61 @@ public sealed class SetNode : INodeType
             });
         }
 
-        return Task.FromResult(new NodeExecutionResult
+        return new NodeExecutionResult
         {
             Success = true,
             Output = new DataBatch { Items = outputItems }
-        });
+        };
     }
 
-    private static JsonNode? ParseValue(string value)
+    /// <summary>
+    /// 求值 SetField 的值：空源码返回空字符串；合法 JSON 字面量（字符串/数字/布尔）按字面量处理，
+    /// 保持旧版纯字符串值与脚本简写语义；否则作为 JS 表达式按当前 item 逐项求值（如 <c>$json.userid</c>）。
+    /// 表达式求值失败时退化为字面量字符串（容错）。
+    /// </summary>
+    private static async Task<JsonNode?> EvaluateFieldValueAsync(
+        Script? script, NodeExecutionContext context, JsonNode? item, int index, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrWhiteSpace(value))
+        var source = script?.Source;
+        if (string.IsNullOrEmpty(source))
         {
             return JsonValue.Create(string.Empty);
         }
 
-        // Try to parse as JSON
+        if (TryParseJsonLiteral(source!, out var literal) && literal is not null)
+        {
+            return literal.DeepClone();
+        }
+
         try
         {
-            return JsonNode.Parse(value);
+            return await script!.EvaluateAsync<JsonNode>(context, item, index, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (ScriptErrorException)
+        {
+            return JsonValue.Create(source);
+        }
+    }
+
+    private static bool TryParseJsonLiteral(string source, out JsonNode? literal)
+    {
+        literal = null;
+        try
+        {
+            var node = JsonNode.Parse(source);
+            if (node is JsonValue)
+            {
+                literal = node;
+                return true;
+            }
         }
         catch
         {
-            // Not valid JSON, treat as string
+            // 非合法 JSON 字面量，按表达式处理
         }
 
-        // Try to parse as number
-        if (double.TryParse(value, out var number))
-        {
-            return JsonValue.Create(number);
-        }
-
-        // Try to parse as boolean
-        if (bool.TryParse(value, out var boolean))
-        {
-            return JsonValue.Create(boolean);
-        }
-
-        return JsonValue.Create(value);
+        return false;
     }
 
     private static void SetNestedField(JsonObject obj, string path, JsonNode? value)
@@ -191,10 +212,14 @@ public sealed class SetField
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
-    /// 字段值（字符串形式，会自动转换类型）。
+    /// 字段值。支持两种写法：
+    /// <list type="bullet">
+    ///   <item>纯字面量（字符串/数字/布尔）或纯字符串简写：直接作为字面量值，保持向后兼容。</item>
+    ///   <item>JS 表达式（如 <c>$json.userid</c>、<c>$json.name + ' (' + $json.dept + ')'</c>）：按当前 item 逐项求值。</item>
+    /// </list>
     /// </summary>
     [System.Text.Json.Serialization.JsonPropertyName("value")]
-    public string Value { get; set; } = string.Empty;
+    public Script Value { get; set; } = Script.Empty;
 }
 
 /// <summary>

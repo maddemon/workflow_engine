@@ -93,6 +93,7 @@ public sealed class CredentialTypeRegistry : ICredentialTypeRegistry
                 new CredentialFieldDefinition("scope", "Scope", isRequired: false, secret: false),
                 new CredentialFieldDefinition("grant", "Grant Type", isRequired: false, secret: false, hint: "默认 client_credentials"),
                 new CredentialFieldDefinition("tokenPath", "Token Path", isRequired: false, secret: false, hint: "默认 access_token"),
+                new CredentialFieldDefinition("provider", "Provider", isRequired: false, secret: false, hint: "standard | dingtalk（决定取 token 形态，默认 standard）"),
             ]);
     }
 }

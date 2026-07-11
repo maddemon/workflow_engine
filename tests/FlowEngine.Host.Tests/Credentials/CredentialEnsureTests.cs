@@ -83,6 +83,22 @@ public class CredentialEnsureTests : IClassFixture<FlowEngineWebApplicationFacto
     }
 
     [Fact]
+    public async Task GetTypes_ReturnsOkWithBuiltInCredentialTypes()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = await CreateAuthenticatedClientAsync("jwt-credential-types@example.com", [RoleConstants.Admin], ct);
+
+        var response = await client.GetAsync("/api/v1/credentials/types", ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var types = await response.Content.ReadFromJsonAsync<System.Text.Json.Nodes.JsonArray>(TestJsonOptions, ct);
+        Assert.NotNull(types);
+        Assert.Contains(types!, t => (string?)t!["name"] == "apiKey");
+        Assert.Contains(types!, t => (string?)t!["name"] == "connectionString");
+        Assert.Contains(types!, t => (string?)t!["name"] == "oauth2");
+    }
+
+    [Fact]
     public async Task Ensure_ExistingCredential_ReturnsOk200AndUpdatesFields()
     {
         var ct = TestContext.Current.CancellationToken;

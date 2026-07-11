@@ -15,7 +15,34 @@ public sealed class CredentialTypeRegistryTests
         Assert.Equal("oauth2", definition!.Name);
         Assert.Equal("OAuth2", definition.DisplayName);
         var fieldNames = definition.Fields.Select(f => f.Name).ToList();
-        Assert.Equal(["tokenUrl", "clientId", "clientSecret", "scope", "grant", "tokenPath"], fieldNames);
+        Assert.Equal(["tokenUrl", "clientId", "clientSecret", "scope", "grant", "tokenPath", "provider"], fieldNames);
+    }
+
+    [Fact]
+    public void Get_Oauth2_HasOptionalProviderField()
+    {
+        var definition = _registry.Get("oauth2");
+
+        Assert.NotNull(definition);
+        var provider = definition!.Fields.SingleOrDefault(f => f.Name == "provider");
+        Assert.NotNull(provider);
+        Assert.False(provider!.IsRequired);
+    }
+
+    [Fact]
+    public void Validate_Oauth2WithProviderField_ReturnsSuccess()
+    {
+        var fields = new Dictionary<string, string>
+        {
+            ["tokenUrl"] = "https://oapi.dingtalk.com/gettoken",
+            ["clientId"] = "appkey",
+            ["clientSecret"] = "appsecret",
+            ["provider"] = "dingtalk"
+        };
+
+        var result = _registry.Validate("oauth2", fields);
+
+        Assert.True(result.IsValid);
     }
 
     [Fact]

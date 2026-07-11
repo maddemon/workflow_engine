@@ -7,6 +7,16 @@ import type { ParameterDefinition, PresentationHint } from '../../types/workflow
 export function resolveHint(definition: ParameterDefinition): PresentationHint {
   // 1. 显式 hint 优先
   if (definition.hint && definition.hint !== 'Default') {
+    // ButtonGroup 仅适合少量选项的单选场景；选项超过 6 个时即便显式声明也回退为 Default（Select），
+    // 避免按钮过多难以使用。与下方 2~5 个选项自动升级为 ButtonGroup 的规则保持一致。
+    if (
+      definition.hint === 'ButtonGroup' &&
+      definition.type === 'Options' &&
+      (definition.options?.length ?? 0) > 6
+    ) {
+      return 'Default';
+    }
+
     return definition.hint;
   }
 

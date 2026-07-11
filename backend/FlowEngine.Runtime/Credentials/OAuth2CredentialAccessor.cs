@@ -59,6 +59,7 @@ public sealed class OAuth2CredentialAccessor : ICredentialAccessor
         fields.TryGetValue("scope", out var scope);
         fields.TryGetValue("grant", out var grant);
         fields.TryGetValue("tokenPath", out var tokenPath);
+        fields.TryGetValue("provider", out var provider);
 
         var request = new OAuth2TokenRequest
         {
@@ -69,6 +70,10 @@ public sealed class OAuth2CredentialAccessor : ICredentialAccessor
             GrantType = !string.IsNullOrWhiteSpace(grant) ? grant : "client_credentials",
             TokenPath = tokenPath
         };
+
+        // 按 provider 套用内置取 token 策略（如钉钉 GET+query+errcode 判定）；
+        // 不暴露 5 个陌生策略字段给用户，由引擎内置填充。
+        OAuth2ProviderTemplates.Apply(request, provider);
 
         var cacheKey = OAuth2TokenService.ComputeCacheKey(
             credential.Name, tokenUrl, scope, request.GrantType);

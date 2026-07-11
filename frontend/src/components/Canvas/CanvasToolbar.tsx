@@ -9,9 +9,11 @@ import { validateParameters } from '../../utils/validateParameters.ts';
 interface ICanvasToolbarProps {
   onExecute: (workflowId: string) => void;
   onCancel?: () => void;
+  onDryRun?: () => void;
+  dryRunLoading?: boolean;
 }
 
-export const CanvasToolbar = memo(function CanvasToolbar({ onExecute, onCancel }: ICanvasToolbarProps) {
+export const CanvasToolbar = memo(function CanvasToolbar({ onExecute, onCancel, onDryRun, dryRunLoading }: ICanvasToolbarProps) {
   const { fitView, zoomIn, zoomOut } = useReactFlow();
   const canUndo = useWorkflowStore((s) => s.canUndo);
   const canRedo = useWorkflowStore((s) => s.canRedo);
@@ -24,6 +26,7 @@ export const CanvasToolbar = memo(function CanvasToolbar({ onExecute, onCancel }
   const isExecuting = useWorkflowStore((s) => s.isExecuting);
 
   const canExecute = workflowId && nodeCount > 0 && !isExecuting;
+  const canDryRun = nodeCount > 0 && !isExecuting;
 
   const allValid = useMemo(() => {
     if (nodeCount === 0) return false;
@@ -98,6 +101,17 @@ export const CanvasToolbar = memo(function CanvasToolbar({ onExecute, onCancel }
       <Group gap="xs" wrap="nowrap">
         <Button leftSection={<Save size={12} />} onClick={saveWorkflow} loading={saving} disabled={isExecuting} size="compact-xs" variant="filled">
           Save
+        </Button>
+        <Button
+          leftSection={<Play size={12} />}
+          variant="light"
+          color="blue"
+          size="compact-xs"
+          onClick={onDryRun}
+          disabled={!canDryRun || isExecuting || dryRunLoading}
+          loading={dryRunLoading}
+        >
+          Dry Run
         </Button>
         {isExecuting ? (
           <Button

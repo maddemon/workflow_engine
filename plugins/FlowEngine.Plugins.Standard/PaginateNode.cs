@@ -192,6 +192,27 @@ public sealed class PaginateNode : INodeType
                 };
             }
 
+            // 阶段零 0.2：HTTP 成功后判 successWhen 业务成功表达式（如钉钉 errcode != 0 但 HTTP 200）
+            var successWhenExpr = GetConfig(context, "successWhen", "");
+            if (!string.IsNullOrWhiteSpace(successWhenExpr))
+            {
+                var envelope = pageResult.Output.Items.Count > 0 ? pageResult.Output.Items[0].Data as JsonObject : null;
+                var body = envelope?["body"];
+                var statusCode = envelope?["statusCode"]?.GetValue<int>() ?? 200;
+                var statusText = envelope?["statusText"]?.GetValue<string>();
+                var businessOk = await HttpExecutionHelper.EvaluateSuccessWhenAsync(
+                    new Script { Source = successWhenExpr, Language = ScriptLanguage.JavaScript, ReturnType = ScriptReturnType.Bool },
+                    body,
+                    statusCode,
+                    statusText,
+                    context,
+                    cancellationToken).ConfigureAwait(false);
+                if (!businessOk)
+                {
+                    return context.ErrorResult("SuccessWhenFailed", $"successWhen 表达式判定为失败：{successWhenExpr}");
+                }
+            }
+
             var responseBody = pageResult.Output.Items.Count > 0 ? pageResult.Output.Items[0].Data : null;
 
             // HTTP 响应体位于输出信封的 .body 下
