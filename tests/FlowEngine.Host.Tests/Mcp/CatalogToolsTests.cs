@@ -1,0 +1,201 @@
+using System.ComponentModel;
+using System.Reflection;
+using System.Text.Json;
+using FlowEngine.Application.Workflows;
+using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Ai;
+using FlowEngine.Core.Entities;
+using FlowEngine.Core.Enums;
+using FlowEngine.Host.Mcp.Tools;
+using ModelContextProtocol.Server;
+using Moq;
+
+namespace FlowEngine.Host.Tests.Mcp;
+
+/// <summary>
+/// Catalog MCP 工具单元测试。
+/// </summary>
+public class CatalogToolsTests
+{
+    /// <summary>
+    /// list_node_catalog 在未传入 category 时应返回全部节点摘要。
+    /// </summary>
+    [Fact]
+    public void ListNodeCatalog_WithoutCategory_ReturnsAllSummaries()
+    {
+        var catalogService = CreateCatalogService([
+            CreateDescriptor("coreNode", "Core"),
+            CreateDescriptor("integrationNode", "Integration"),
+        ]);
+        var tools = new CatalogTools(catalogService);
+
+        var result = tools.ListNodeCatalog();
+
+        Assert.Equal(2, result.Count);
+        Assert.Contains(result, n => n.Name == "coreNode");
+        Assert.Contains(result, n => n.Name == "integrationNode");
+    }
+
+    /// <summary>
+    /// list_node_catalog 应按 category 大小写不敏感过滤。
+    /// </summary>
+    [Theory]
+    [InlineData("core")]
+    [InlineData("CORE")]
+    [InlineData("Core")]
+    public void ListNodeCatalog_WithCategoryFilter_CaseInsensitive_ReturnsMatching(string category)
+    {
+        var catalogService = CreateCatalogService([
+            CreateDescriptor("coreNode", "Core"),
+            CreateDescriptor("triggerNode", "Trigger"),
+            CreateDescriptor("integrationNode", "Integration"),
+        ]);
+        var tools = new CatalogTools(catalogService);
+
+        var result = tools.ListNodeCatalog(category);
+
+        Assert.Single(result);
+        Assert.Equal("coreNode", result[0].Name);
+        Assert.Equal("Core", result[0].Category);
+    }
+
+    /// <summary>
+    /// list_node_catalog 在不存在匹配分类时返回空列表。
+    /// </summary>
+    [Fact]
+    public void ListNodeCatalog_WithCategoryFilter_NoMatches_ReturnsEmpty()
+    {
+        var catalogService = CreateCatalogService([CreateDescriptor("coreNode", "Core")]);
+        var tools = new CatalogTools(catalogService);
+
+        var result = tools.ListNodeCatalog("missing");
+
+        Assert.Empty(result);
+    }
+
+    /// <summary>
+    /// get_node_detail 在节点存在时返回完整定义。
+    /// </summary>
+    [Fact]
+    public void GetNodeDetail_ExistingNode_ReturnsDefinition()
+    {
+        var catalogService = CreateCatalogService([CreateDescriptor("coreNode", "Core")]);
+        var tools = new CatalogTools(catalogService);
+
+        var result = tools.GetNodeDetail("coreNode");
+
+        var definition = Assert.IsType<AiNodeDefinition>(result);
+        Assert.Equal("coreNode", definition.Name);
+        Assert.Equal("Core", definition.Category);
+        Assert.NotNull(definition.InputSchema);
+    }
+
+    /// <summary>
+    /// get_node_detail 在节点不存在时返回结构化错误，不抛异常。
+    /// </summary>
+    [Fact]
+    public void GetNodeDetail_NonExistingNode_ReturnsStructuredError()
+    {
+        var catalogService = CreateCatalogService([CreateDescriptor("coreNode", "Core")]);
+        var tools = new CatalogTools(catalogService);
+
+        var result = tools.GetNodeDetail("unknownNode");
+
+        var element = JsonSerializer.SerializeToElement(result);
+        Assert.False(element.GetProperty("success").GetBoolean());
+        Assert.Equal("NodeNotFound", element.GetProperty("errorCode").GetString());
+        Assert.Contains("unknownNode", element.GetProperty("message").GetString());
+    }
+
+    /// <summary>
+    /// CatalogTools 应被 MCP SDK 的工具扫描机制识别，并注册指定名称的工具。
+    /// </summary>
+    [Theory]
+    [InlineData(nameof(CatalogTools.ListNodeCatalog), "list_node_catalog")]
+    [InlineData(nameof(CatalogTools.GetNodeDetail), "get_node_detail")]
+    public void ToolMethods_AreDiscoveredWithExpectedNames(string methodName, string expectedToolName)
+    {
+        var typeInfo = typeof(CatalogTools);
+        Assert.NotNull(typeInfo.GetCustomAttribute<McpServerToolTypeAttribute>());
+
+        var method = typeInfo.GetMethod(methodName);
+        Assert.NotNull(method);
+
+        var toolAttribute = method.GetCustomAttribute<McpServerToolAttribute>();
+        Assert.NotNull(toolAttribute);
+        Assert.Equal(expectedToolName, toolAttribute!.Name);
+
+        var descriptionAttribute = method.GetCustomAttribute<DescriptionAttribute>();
+        Assert.NotNull(descriptionAttribute);
+        Assert.False(string.IsNullOrWhiteSpace(descriptionAttribute!.Description));
+    }
+
+    private static CatalogService CreateCatalogService(IReadOnlyList<NodeTypeDescriptor> descriptors)
+    {
+        var nodes = descriptors.Select(d => new FakeNodeType(d.TypeName, d.Category)).ToList<INodeType>();
+        var registryMock = new Mock<INodeRegistry>();
+        registryMock.Setup(r => r.GetDescriptors()).Returns(descriptors);
+        registryMock.Setup(r => r.GetAll()).Returns(nodes);
+
+        foreach (var descriptor in descriptors)
+        {
+            registryMock.Setup(r => r.TryGet(descriptor.TypeName, out It.Ref<INodeType?>.IsAny))
+                .Returns((string _, out INodeType? node) =>
+                {
+                    node = nodes.FirstOrDefault(n => n.TypeName.Equals(descriptor.TypeName, StringComparison.OrdinalIgnoreCase));
+                    return node is not null;
+                });
+            registryMock.Setup(r => r.GetDescriptor(descriptor.TypeName)).Returns(descriptor);
+        }
+
+        registryMock.Setup(r => r.TryGet(It.Is<string>(n => !descriptors.Any(d => d.TypeName.Equals(n, StringComparison.OrdinalIgnoreCase))), out It.Ref<INodeType?>.IsAny))
+            .Returns((string _, out INodeType? node) =>
+            {
+                node = null;
+                return false;
+            });
+
+        return new CatalogService(registryMock.Object);
+    }
+
+    private static NodeTypeDescriptor CreateDescriptor(string typeName, string category)
+    {
+        return new NodeTypeDescriptor
+        {
+            TypeName = typeName,
+            DisplayName = typeName,
+            Category = category,
+            Parameters = [],
+            Ports = [],
+        };
+    }
+
+    private sealed class FakeNodeType : INodeType
+    {
+        public FakeNodeType(string typeName, string category)
+        {
+            TypeName = typeName;
+            DisplayName = typeName;
+            Category = category;
+        }
+
+        public string TypeName { get; }
+
+        public string DisplayName { get; }
+
+        public string Category { get; }
+
+        public string Icon { get; } = string.Empty;
+
+        public ExecutionMode ExecutionMode { get; } = ExecutionMode.OnceForAll;
+
+        public IReadOnlyList<PortDefinition> Ports { get; } = [];
+
+        public bool DefaultIsEntry { get; }
+
+        public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult<NodeExecutionResult>(null!);
+        }
+    }
+}
