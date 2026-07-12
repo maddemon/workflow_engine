@@ -43,6 +43,16 @@ public sealed class CatalogTools(CatalogService catalogService)
     public object GetNodeDetail(
         [Description("节点类型名，如 httpRequest。")] string name)
     {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return new
+            {
+                success = false,
+                errorCode = "InvalidInput",
+                message = "节点名称不能为空",
+            };
+        }
+
         var definition = catalogService.GetByName(name);
 
         if (definition is null)

@@ -7,6 +7,8 @@ using FlowEngine.Core.Ai;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Host.Mcp.Tools;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using ModelContextProtocol.Server;
 using Moq;
 
@@ -108,6 +110,26 @@ public class CatalogToolsTests
     }
 
     /// <summary>
+    /// get_node_detail 在名称为 null、空字符串或纯空白时返回 InvalidInput 结构化错误，不抛异常。
+    /// </summary>
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void GetNodeDetail_NullOrWhiteSpaceName_ReturnsInvalidInputError(string? name)
+    {
+        var catalogService = CreateCatalogService([]);
+        var tools = new CatalogTools(catalogService);
+
+        var result = tools.GetNodeDetail(name!);
+
+        var element = JsonSerializer.SerializeToElement(result);
+        Assert.False(element.GetProperty("success").GetBoolean());
+        Assert.Equal("InvalidInput", element.GetProperty("errorCode").GetString());
+        Assert.Equal("节点名称不能为空", element.GetProperty("message").GetString());
+    }
+
+    /// <summary>
     /// CatalogTools 应被 MCP SDK 的工具扫描机制识别，并注册指定名称的工具。
     /// </summary>
     [Theory]
@@ -128,6 +150,27 @@ public class CatalogToolsTests
         var descriptionAttribute = method.GetCustomAttribute<DescriptionAttribute>();
         Assert.NotNull(descriptionAttribute);
         Assert.False(string.IsNullOrWhiteSpace(descriptionAttribute!.Description));
+    }
+
+    /// <summary>
+    /// 通过 AddMcpServer().WithToolsFromAssembly() 注册后，MCP server 应能发现 CatalogTools 的两个工具。
+    /// </summary>
+    [Fact]
+    public void CatalogTools_AreDiscoveredViaWithToolsFromAssembly()
+    {
+        var services = new ServiceCollection();
+        services.AddLogging();
+        services.AddSingleton<INodeRegistry>(new StubNodeRegistry([], []));
+        services.AddSingleton<CatalogService>();
+        services.AddMcpServer()
+            .WithToolsFromAssembly(typeof(CatalogTools).Assembly);
+
+        var provider = services.BuildServiceProvider();
+        var tools = provider.GetServices<McpServerTool>().ToList();
+
+        var toolNames = tools.Select(t => t.ProtocolTool.Name).ToList();
+        Assert.Contains("list_node_catalog", toolNames);
+        Assert.Contains("get_node_detail", toolNames);
     }
 
     private static CatalogService CreateCatalogService(IReadOnlyList<NodeTypeDescriptor> descriptors)
@@ -168,6 +211,27 @@ public class CatalogToolsTests
             Parameters = [],
             Ports = [],
         };
+    }
+
+    private sealed class StubNodeRegistry(
+        IReadOnlyCollection<INodeType> nodeTypes,
+        IReadOnlyCollection<NodeTypeDescriptor> descriptors) : INodeRegistry
+    {
+        public void Register(INodeType nodeType) { }
+        public INodeType Get(string typeName) =>
+            nodeTypes.First(n => n.TypeName.Equals(typeName, StringComparison.OrdinalIgnoreCase));
+        public bool TryGet(string typeName, out INodeType? nodeType)
+        {
+            nodeType = nodeTypes.FirstOrDefault(n =>
+                n.TypeName.Equals(typeName, StringComparison.OrdinalIgnoreCase));
+            return nodeType is not null;
+        }
+
+        public IReadOnlyCollection<INodeType> GetAll() => nodeTypes;
+        public INodeType CreateInstance(string typeName) => Get(typeName);
+        public IReadOnlyCollection<NodeTypeDescriptor> GetDescriptors() => descriptors;
+        public NodeTypeDescriptor GetDescriptor(string typeName) =>
+            descriptors.First(d => d.TypeName.Equals(typeName, StringComparison.OrdinalIgnoreCase));
     }
 
     private sealed class FakeNodeType : INodeType
