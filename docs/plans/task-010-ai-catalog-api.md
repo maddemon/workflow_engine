@@ -199,8 +199,8 @@
 - **Phase 4 draft 校验**：`WorkflowDraftValidator` 原 `entryCount==0` 即报错，与后端自动推导入口决策不一致。已放宽为 `entryCount==0 && triggerCount==0`。
 - **测试断言收紧**：`WorkflowValidationServiceTests` 补齐 `CanAutoFix`/`SuggestedFix` 断言；`AiWorkflowEndToEndTests` 执行状态断言收窄为 `ExecutionStatus.Pending`（避免误判 `Completed`）。
 
-**未修项（记录待办，非阻塞）：**
+**已补充实现：**
 
-- **Phase 1 B1/B2**：`ExecutionSession` 端口解析数据源不一致 / 容错不足，仅影响 legacy 直创路径；需注入 `INodeRegistry`，风险较高，本次未修。
-- **参数 schema 校验**：设计文档 §5.2 步骤 3 要求对参数 schema 校验，本期未实现（`validate` 端点已覆盖拓扑/表达式校验，参数级 schema 校验留待后续）。
-- **N1–N18 非阻塞项**：JsonDefaults 枚举转换器、Catalog 强类型返回、Details 字段清理等，按优先级后续处理。
+- **Phase 1 B1/B2**：`ExecutionSession` 新增 `INodeRegistry?` 参数，`ConnectionsBySource` 端口解析时当 `NodeDefinition.Ports` 为空时降级到注册中心 `PortDefinition`；更新 `WorkflowExecutor` / `WorkflowDryRunService` / `WorkflowSchedulerKernelTests` 三处构造调用。
+- **参数 schema 校验**：`WorkflowValidationService.ValidateAsync` 新增步骤 7，校验 Options 类型参数值是否在允许枚举范围内；新增 `ExtractParameterString` 辅助。
+- **N1–N18 非阻塞项**：N8 `JsonDefaults` 添加 `JsonStringEnumConverter`（枚举序列化为字符串）；N1 Catalog 强类型返回、N5 Details 字段清理、ConnectionDto.Condition `[Description]` 均已就绪。
