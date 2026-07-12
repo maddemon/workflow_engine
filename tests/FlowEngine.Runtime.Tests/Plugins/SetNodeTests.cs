@@ -218,7 +218,7 @@ public sealed class SetNodeTests
         {
             Node = new NodeDefinition
             {
-                Id = Guid.NewGuid(),
+                Id = "Set",
                 TypeName = "set",
                 Name = "Set",
                 Parameters = new Dictionary<string, object>(),

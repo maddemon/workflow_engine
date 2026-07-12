@@ -179,6 +179,11 @@ public static class ServiceCollectionExtensions
         services.AddScoped<WorkflowImportService>();
         services.AddScoped<WorkflowDryRunService>();
         services.AddScoped<WorkflowDraftValidator>();
+        services.AddSingleton<CatalogService>();
+        services.AddScoped<WorkflowAssemblyService>();
+        services.AddScoped<WorkflowModificationService>();
+        services.AddScoped<WorkflowValidationService>();
+        services.AddScoped<WorkflowExecutionFeedbackService>();
         services.AddScoped<ProjectService>();
         services.AddScoped<ProjectCascadeDeleter>();
         services.AddScoped<TriggerService>();

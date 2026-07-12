@@ -24,8 +24,8 @@ public sealed class ExecutionSession
     public ExecutionRecord Execution { get; private set; }
     public Guid ExecutionRecordId { get; }
 
-    public Dictionary<Guid, NodeDefinition> NodeMap { get; }
-    public ILookup<(Guid SourceNodeId, string SourcePortName), Connection> ConnectionsBySource { get; }
+    public Dictionary<string, NodeDefinition> NodeMap { get; }
+    public ILookup<(string SourceNodeId, string SourcePortName), Connection> ConnectionsBySource { get; }
 
     public ExecutionQueue Queue { get; }
     public WaitingArea.WaitingArea WaitingArea { get; }
@@ -33,7 +33,7 @@ public sealed class ExecutionSession
 
     public ConcurrentDictionary<string, DataBatch> SuccessfulOutputs { get; } = new(StringComparer.OrdinalIgnoreCase);
     public ConcurrentDictionary<string, DataBatch> LatestBatches { get; } = new(StringComparer.OrdinalIgnoreCase);
-    public ConcurrentDictionary<Guid, ILlmClient> NodeLlmClients { get; } = new();
+    public ConcurrentDictionary<string, ILlmClient> NodeLlmClients { get; } = new(StringComparer.OrdinalIgnoreCase);
     public ConcurrentDictionary<string, JsonNode?> Memory { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
@@ -59,7 +59,16 @@ public sealed class ExecutionSession
 
         NodeMap = workflow.Nodes.ToDictionary(n => n.Id);
         ConnectionsBySource = workflow.Connections
-            .ToLookup(c => (c.SourceNodeId, c.SourcePortName.ToLowerInvariant()));
+            .ToLookup(c =>
+            {
+                var portName = c.SourcePortName;
+                if (string.IsNullOrEmpty(portName) && NodeMap.TryGetValue(c.SourceNodeId, out var srcNode))
+                {
+                    portName = srcNode.Ports
+                        .FirstOrDefault(p => p.Direction == PortDirection.Output)?.Name ?? string.Empty;
+                }
+                return (c.SourceNodeId, (portName ?? string.Empty).ToLowerInvariant());
+            });
 
         Queue = new ExecutionQueue();
         WaitingArea = new WaitingArea.WaitingArea();

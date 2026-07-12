@@ -78,7 +78,7 @@ export function deserializeWorkflow(
     return {
       id: ni.id,
       type: 'workflow' as const,
-      position: { x: ni.positionX, y: ni.positionY },
+      position: { x: ni.positionX ?? 0, y: ni.positionY ?? 0 },
       data: {
         typeName: ni.typeName,
         name: ni.name,
@@ -96,8 +96,8 @@ export function deserializeWorkflow(
     id: conn.id,
     source: conn.sourceNodeId,
     target: conn.targetNodeId,
-    sourceHandle: `port-${conn.sourcePortName}`,
-    targetHandle: `port-${conn.targetPortName}`,
+    sourceHandle: conn.sourcePortName ? `port-${conn.sourcePortName}` : undefined,
+    targetHandle: conn.targetPortName ? `port-${conn.targetPortName}` : undefined,
     type: 'workflow',
     animated: false,
   }));

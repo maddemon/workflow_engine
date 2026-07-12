@@ -57,7 +57,7 @@ public class SubWorkflowToolNodeTests
     {
         var scriptNode = new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = "echo",
             TypeName = "script",
             Name = "echo",
             Parameters = new Dictionary<string, object>
@@ -91,7 +91,7 @@ public class SubWorkflowToolNodeTests
         {
             Node = new NodeDefinition
             {
-                Id = Guid.NewGuid(),
+                Id = "Test SubWorkflow",
                 TypeName = "subWorkflowTool",
                 Name = "Test SubWorkflow",
                 Parameters = new Dictionary<string, object>

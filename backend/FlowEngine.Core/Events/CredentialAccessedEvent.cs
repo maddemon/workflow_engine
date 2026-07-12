@@ -16,9 +16,9 @@ public record CredentialAccessedEvent : AuditEvent
     public Guid ExecutionId { get; init; }
 
     /// <summary>
-    /// 节点定义 ID。
+    /// 节点定义 ID（引用 NodeDefinition.Id 的字符串标识）。
     /// </summary>
-    public Guid NodeDefinitionId { get; init; }
+    public string NodeDefinitionId { get; init; }
 
     /// <summary>
     /// 访问类型。
@@ -35,7 +35,7 @@ public record CredentialAccessedEvent : AuditEvent
     public CredentialAccessedEvent(
         Guid credentialId,
         Guid executionId,
-        Guid nodeDefinitionId,
+        string nodeDefinitionId,
         string accessType)
     {
         CredentialId = credentialId;

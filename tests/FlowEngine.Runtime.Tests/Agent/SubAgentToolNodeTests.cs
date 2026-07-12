@@ -108,7 +108,7 @@ public class SubAgentToolNodeTests
     {
         return new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = name,
             Name = name,
             TypeName = typeName,
             Parameters = []

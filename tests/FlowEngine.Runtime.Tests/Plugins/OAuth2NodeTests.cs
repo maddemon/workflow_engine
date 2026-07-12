@@ -62,7 +62,7 @@ public sealed class OAuth2NodeTests
         {
             Node = new NodeDefinition
             {
-                Id = Guid.NewGuid(),
+                Id = "OAuth2",
                 TypeName = "oauth2",
                 Name = "OAuth2",
                 Parameters = new Dictionary<string, object>(),

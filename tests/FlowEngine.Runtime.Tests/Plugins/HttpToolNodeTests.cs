@@ -77,7 +77,7 @@ public class HttpToolNodeTests
         {
             Node = new NodeDefinition
             {
-                Id = Guid.NewGuid(),
+                Id = "Test Http",
                 TypeName = "httpTool",
                 Name = "Test Http",
                 Parameters = [],

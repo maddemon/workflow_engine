@@ -140,7 +140,7 @@ public class CodeSnippetToolNodeTests
         };
         var nodeDef = new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = "codeTool1",
             TypeName = "codeTool",
             Name = "codeTool1",
             Parameters = config
@@ -172,7 +172,7 @@ public class CodeSnippetToolNodeTests
         {
             Node = new NodeDefinition
             {
-                Id = Guid.NewGuid(),
+                Id = "Test CodeSnippet",
                 TypeName = "codeSnippetTool",
                 Name = "Test CodeSnippet",
                 Parameters = [],

@@ -60,7 +60,7 @@ public sealed class PaginateNodeTests
             ExecutionId = Guid.NewGuid(),
             Node = new NodeDefinition
             {
-                Id = Guid.NewGuid(),
+                Id = "pag_first",
                 TypeName = "paginate",
                 Name = "pag",
                 Parameters = config
@@ -117,7 +117,7 @@ public sealed class PaginateNodeTests
 
         var config = new Dictionary<string, object>
         {
-            ["url"] = "\"http://example.com/api?cursor=\" + $cursor",
+                ["url"] = "\"http://example.com/api?cursor=\" + $cursor",
             ["method"] = "GET",
             ["cursorInitial"] = "0",
             ["cursorType"] = "number",
@@ -133,7 +133,7 @@ public sealed class PaginateNodeTests
             ExecutionId = Guid.NewGuid(),
             Node = new NodeDefinition
             {
-                Id = Guid.NewGuid(),
+                Id = "pag_terminate",
                 TypeName = "paginate",
                 Name = "pag",
                 Parameters = config
@@ -197,7 +197,7 @@ public sealed class PaginateNodeTests
             ExecutionId = Guid.NewGuid(),
             Node = new NodeDefinition
             {
-                Id = Guid.NewGuid(),
+                Id = "pag_httpError",
                 TypeName = "paginate",
                 Name = "pag",
                 Parameters = config
@@ -309,7 +309,7 @@ public sealed class PaginateNodeTests
             ExecutionId = Guid.NewGuid(),
             Node = new NodeDefinition
             {
-                Id = Guid.NewGuid(),
+                Id = "pag_successWhen",
                 TypeName = "paginate",
                 Name = "pag",
                 Parameters = config

@@ -13,9 +13,9 @@ public record NodeErrorEvent : AuditEvent
     public Guid ExecutionId { get; init; }
 
     /// <summary>
-    /// 节点定义 ID。
+    /// 节点定义 ID（引用 NodeDefinition.Id 的字符串标识）。
     /// </summary>
-    public Guid NodeDefinitionId { get; init; }
+    public string NodeDefinitionId { get; init; }
 
     /// <summary>
     /// 运行索引。
@@ -36,7 +36,7 @@ public record NodeErrorEvent : AuditEvent
     /// <param name="error">错误信息。</param>
     public NodeErrorEvent(
         Guid executionId,
-        Guid nodeDefinitionId,
+        string nodeDefinitionId,
         int runIndex,
         NodeError error)
     {

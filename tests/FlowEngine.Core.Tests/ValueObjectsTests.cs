@@ -27,16 +27,6 @@ public class ValueObjectsTests
     }
 
     [Fact]
-    public void NodeDefinitionId_With_Same_Value_Are_Equal()
-    {
-        var guid = Guid.NewGuid();
-        var a = NodeDefinitionId.From(guid);
-        var b = NodeDefinitionId.From(guid);
-
-        Assert.Equal(a, b);
-    }
-
-    [Fact]
     public void WorkflowDefinitionId_With_Same_Value_Are_Equal()
     {
         var guid = Guid.NewGuid();

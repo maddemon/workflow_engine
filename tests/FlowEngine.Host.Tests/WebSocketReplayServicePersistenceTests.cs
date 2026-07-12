@@ -57,7 +57,7 @@ public class WebSocketReplayServicePersistenceTests : IDisposable
     {
         var executionId = Guid.NewGuid();
         var workflowId = Guid.NewGuid();
-        var nodeId = Guid.NewGuid();
+        var nodeId = "test-node";
 
         var record = new ExecutionRecord
         {

@@ -567,10 +567,10 @@ public class AgentNodeTests
     private NodeExecutionContext CreateContext(
         Workflow? workflow = null,
         ILlmClient? llmClient = null,
-        Guid? currentNodeId = null,
+        string? currentNodeId = null,
         IReadOnlyDictionary<string, DataBatch>? inputs = null)
     {
-        var nodeId = currentNodeId ?? Guid.NewGuid();
+        var nodeId = currentNodeId ?? "test-node";
         return new NodeExecutionContext
         {
             Workflow = workflow ?? CreateWorkflow(),
@@ -612,7 +612,7 @@ public class AgentNodeTests
     {
         return new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = name,
             Name = name,
             TypeName = typeName,
             IsEntry = isEntry,

@@ -25,6 +25,7 @@ public sealed class WorkflowValidator(INodeRegistry registry)
 
         var errors = new List<string>();
 
+        DeriveEntryNodes(workflow);
         ValidateDanglingConnections(workflow, errors);
         ValidatePortDirections(workflow, errors);
         ValidateRequiredParameters(workflow, errors);
@@ -127,7 +128,7 @@ public sealed class WorkflowValidator(INodeRegistry registry)
             }
         }
 
-        var queue = new Queue<Guid>(inDegree.Where(x => x.Value == 0).Select(x => x.Key));
+        var queue = new Queue<string>(inDegree.Where(x => x.Value == 0).Select(x => x.Key));
         var visited = 0;
 
         while (queue.Count > 0)
@@ -148,6 +149,59 @@ public sealed class WorkflowValidator(INodeRegistry registry)
         if (visited != workflow.Nodes.Count)
         {
             errors.Add("工作流存在循环依赖。");
+        }
+    }
+
+    /// <summary>
+    /// 自动推导入口节点：将 Trigger 类型节点的 IsEntry 设为 true。
+    /// 规则：
+    /// - 仅有一个 Trigger 节点时，将其设为入口。
+    /// - 有多个 Trigger 节点时，将第一个设为入口，其余保持原值。
+    /// - 非 Trigger 节点即使显式设置 IsEntry=true 也保留。
+    /// </summary>
+    private void DeriveEntryNodes(Workflow workflow)
+    {
+        var triggerNodes = workflow.Nodes
+            .Where(n => IsTriggerNode(n.TypeName))
+            .ToList();
+
+        if (triggerNodes.Count == 0)
+        {
+            return;
+        }
+
+        // 设计 §7.3：若已有 Trigger 显式声明 isEntry=true，尊重 AI 覆盖，不再强制第一个为入口。
+        if (triggerNodes.Any(n => n.IsEntry))
+        {
+            return;
+        }
+
+        // 默认将第一个 Trigger 设为入口节点
+        triggerNodes[0].IsEntry = true;
+    }
+
+    /// <summary>
+    /// 判断节点类型是否为 Trigger 类型（Category == "Trigger" 或 DefaultIsEntry == true）。
+    /// </summary>
+    private bool IsTriggerNode(string typeName)
+    {
+        var descriptor = GetNodeDescriptor(typeName);
+        return descriptor is not null &&
+               (descriptor.Category.Equals("Trigger", StringComparison.OrdinalIgnoreCase) || descriptor.DefaultIsEntry);
+    }
+
+    /// <summary>
+    /// 验证工作流至少包含一个 Trigger 节点。
+    /// </summary>
+    /// <summary>
+    /// 校验工作流是否包含至少一个触发器节点。
+    /// 此校验仅适用于 AI 组装/激活场景，不包含在 <see cref="Validate"/> 中。
+    /// </summary>
+    public void ValidateTriggerNodes(Workflow workflow, List<string> errors)
+    {
+        if (!workflow.Nodes.Any(n => IsTriggerNode(n.TypeName)))
+        {
+            errors.Add("工作流必须至少包含一个触发器节点。");
         }
     }
 

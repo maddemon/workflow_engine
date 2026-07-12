@@ -179,7 +179,7 @@ public sealed class WorkflowSchedulerKernelTests
             "BuildNodeExecutionRecord",
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance,
             null,
-            new[] { typeof(Guid), typeof(int), typeof(IReadOnlyDictionary<string, DataBatch>), typeof(NodeExecutionResult), typeof(NodeExecutionContext), typeof(IReadOnlySet<string>) },
+            new[] { typeof(string), typeof(int), typeof(IReadOnlyDictionary<string, DataBatch>), typeof(NodeExecutionResult), typeof(NodeExecutionContext), typeof(IReadOnlySet<string>) },
             null);
         Assert.NotNull(method);
 
@@ -187,7 +187,7 @@ public sealed class WorkflowSchedulerKernelTests
             _kernel,
             new object?[]
             {
-                Guid.NewGuid(),
+                "test-node",
                 0,
                 new Dictionary<string, DataBatch>(),
                 new NodeExecutionResult(),
@@ -237,7 +237,7 @@ public sealed class WorkflowSchedulerKernelTests
     {
         return new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = name,
             Name = name,
             TypeName = typeName,
             IsEntry = isEntry,
@@ -260,9 +260,9 @@ public sealed class WorkflowSchedulerKernelTests
 
         public Task PersistFailedStateAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task PersistExecutionAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-        public Task PublishNodeStartedAsync(Guid executionId, Guid nodeId, int runIndex, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task PublishNodeStartedAsync(Guid executionId, string nodeId, int runIndex, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task PublishCompletedAsync(ExecutionStatus status, CancellationToken cancellationToken) => Task.CompletedTask;
-        public Func<LlmStreamChunk, CancellationToken, Task> CreateLlmStreamCallback(Guid executionId, Guid nodeId, int runIndex)
+        public Func<LlmStreamChunk, CancellationToken, Task> CreateLlmStreamCallback(Guid executionId, string nodeId, int runIndex)
             => (_, _) => Task.CompletedTask;
     }
 

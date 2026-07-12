@@ -9,13 +9,13 @@ namespace FlowEngine.Application.Workflows;
 public static class WorkflowMapper
 {
     /// <summary>
-    /// 将 NodeDefinitionDto 转换为 NodeDefinition 实体，生成新 Guid 并记录 ID 映射。
+    /// 将 NodeDefinitionDto 转换为 NodeDefinition 实体。
     /// </summary>
-    public static NodeDefinition ToEntity(NodeDefinitionDto dto, Dictionary<string, Guid> nodeIdMap)
+    public static NodeDefinition ToEntity(NodeDefinitionDto dto)
     {
-        var node = new NodeDefinition
+        return new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = dto.Id,
             TypeName = dto.TypeName,
             Name = dto.Name,
             Parameters = dto.Parameters,
@@ -27,13 +27,6 @@ public static class WorkflowMapper
             ErrorStrategy = dto.ErrorStrategy,
             Timeout = dto.Timeout,
         };
-
-        if (!string.IsNullOrEmpty(dto.Id))
-        {
-            nodeIdMap[dto.Id] = node.Id;
-        }
-
-        return node;
     }
 
     /// <summary>
@@ -43,7 +36,7 @@ public static class WorkflowMapper
     {
         return new NodeDefinitionDto
         {
-            Id = id ?? entity.Id.ToString(),
+            Id = id ?? entity.Id,
             TypeName = entity.TypeName,
             Name = entity.Name,
             Parameters = entity.Parameters,
@@ -60,17 +53,13 @@ public static class WorkflowMapper
     /// <summary>
     /// 将 ConnectionDto 转换为 Connection 实体。
     /// </summary>
-    public static Connection ToEntity(ConnectionDto dto, Dictionary<string, Guid> nodeIdMap)
+    public static Connection ToEntity(ConnectionDto dto)
     {
-        var sourceGuid = nodeIdMap.TryGetValue(dto.SourceNodeId, out var s) ? s : Guid.Empty;
-        var targetGuid = nodeIdMap.TryGetValue(dto.TargetNodeId, out var t) ? t : Guid.Empty;
-
         return new Connection
         {
-            Id = Guid.NewGuid(),
-            SourceNodeId = sourceGuid,
+            SourceNodeId = dto.SourceNodeId,
             SourcePortName = dto.SourcePortName,
-            TargetNodeId = targetGuid,
+            TargetNodeId = dto.TargetNodeId,
             TargetPortName = dto.TargetPortName,
             Condition = dto.Condition,
         };
@@ -84,9 +73,9 @@ public static class WorkflowMapper
         return new ConnectionDto
         {
             Id = id ?? entity.Id.ToString(),
-            SourceNodeId = sourceNodeId ?? entity.SourceNodeId.ToString(),
+            SourceNodeId = sourceNodeId ?? entity.SourceNodeId,
             SourcePortName = entity.SourcePortName,
-            TargetNodeId = targetNodeId ?? entity.TargetNodeId.ToString(),
+            TargetNodeId = targetNodeId ?? entity.TargetNodeId,
             TargetPortName = entity.TargetPortName,
             Condition = entity.Condition,
         };

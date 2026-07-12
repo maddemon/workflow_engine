@@ -241,7 +241,6 @@ function validateWorkflow(raw: unknown, schemas: Map<string, NodeTypeSchema>): V
   const connections = raw.connections as unknown[];
 
   const nodeMap = new Map<string, Record<string, unknown>>();
-  let entryCount = 0;
 
   for (let i = 0; i < nodes.length; i++) {
     const node = nodes[i];
@@ -258,14 +257,7 @@ function validateWorkflow(raw: unknown, schemas: Map<string, NodeTypeSchema>): V
       errors.push(`${prefix} 缺少有效的 typeName`);
       continue;
     }
-    if (node.isEntry === true) {
-      entryCount++;
-    }
     nodeMap.set(node.id, node);
-  }
-
-  if (entryCount === 0) {
-    errors.push('至少需要一个入口节点（isEntry = true）');
   }
 
   for (const [id, node] of nodeMap.entries()) {
@@ -315,7 +307,7 @@ function validateWorkflow(raw: unknown, schemas: Map<string, NodeTypeSchema>): V
     const sourceSchema = schemas.get(String(sourceNode.typeName));
     const targetSchema = schemas.get(String(targetNode.typeName));
 
-    if (sourceSchema) {
+    if (sourceSchema && sourcePort) {
       const port = sourceSchema.ports.find((p) => p.name === sourcePort);
       if (!port) {
         errors.push(
@@ -328,7 +320,7 @@ function validateWorkflow(raw: unknown, schemas: Map<string, NodeTypeSchema>): V
       }
     }
 
-    if (targetSchema) {
+    if (targetSchema && targetPort) {
       const port = targetSchema.ports.find((p) => p.name === targetPort);
       if (!port) {
         errors.push(

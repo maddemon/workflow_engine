@@ -35,7 +35,7 @@ public sealed class ExecutionRecordJsonColumnTests : IDisposable
             [
                 new NodeExecutionRecord
                 {
-                    NodeDefinitionId = Guid.NewGuid(),
+                    NodeDefinitionId = "node-1",
                     RunIndex = 0,
                     StartedAt = DateTime.UtcNow,
                 },
@@ -47,7 +47,7 @@ public sealed class ExecutionRecordJsonColumnTests : IDisposable
         // 模拟 WorkflowExecutor 追加节点记录的方式：直接 Add 并显式标记属性已修改。
         execution.NodeRecords.Add(new NodeExecutionRecord
         {
-            NodeDefinitionId = Guid.NewGuid(),
+            NodeDefinitionId = "node-2",
             RunIndex = 1,
             StartedAt = DateTime.UtcNow,
         });

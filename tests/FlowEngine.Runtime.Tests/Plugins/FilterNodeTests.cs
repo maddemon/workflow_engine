@@ -44,7 +44,7 @@ public sealed class FilterNodeTests
             new HashSet<string>(StringComparer.OrdinalIgnoreCase));
         var nodeDef = new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = "f1",
             TypeName = "filter",
             Name = "f1",
             Parameters = config

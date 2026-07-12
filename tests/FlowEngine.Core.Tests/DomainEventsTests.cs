@@ -24,7 +24,7 @@ public class DomainEventsTests
     public void NodeExecutedEvent_Holds_Given_Values()
     {
         var executionId = Guid.NewGuid();
-        var nodeDefinitionId = Guid.NewGuid();
+        var nodeDefinitionId = "node-1";
         var result = new NodeExecutionResult { Success = true };
 
         var evt = new NodeExecutedEvent(executionId, nodeDefinitionId, 2, result);
@@ -53,7 +53,7 @@ public class DomainEventsTests
     {
         var credentialId = Guid.NewGuid();
         var executionId = Guid.NewGuid();
-        var nodeDefinitionId = Guid.NewGuid();
+        var nodeDefinitionId = "node-1";
 
         var evt = new CredentialAccessedEvent(credentialId, executionId, nodeDefinitionId, "read");
 

@@ -14,9 +14,9 @@ public class NodeExecutionRecord
     public Guid Id { get; set; }
 
     /// <summary>
-    /// 节点定义 ID。
+    /// 节点定义 ID（引用 NodeDefinition.Id 的字符串标识）。
     /// </summary>
-    public Guid NodeDefinitionId { get; set; }
+    public string NodeDefinitionId { get; set; } = string.Empty;
 
     /// <summary>
     /// 运行索引。

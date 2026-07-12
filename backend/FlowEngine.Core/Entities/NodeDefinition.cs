@@ -10,9 +10,9 @@ namespace FlowEngine.Core.Entities;
 public class NodeDefinition
 {
     /// <summary>
-    /// 主键。
+    /// 节点 ID。AI-native DSL 使用自然名称字符串（如 "fetch"），后端保证工作流内唯一。
     /// </summary>
-    public Guid Id { get; set; }
+    public string Id { get; set; } = string.Empty;
 
     /// <summary>
     /// 节点类型名。
@@ -35,14 +35,14 @@ public class NodeDefinition
     public List<PortInstance> Ports { get; set; } = [];
 
     /// <summary>
-    /// X 坐标。
+    /// X 坐标。AI 不填时由后端自动布局，故可为空。
     /// </summary>
-    public int PositionX { get; set; }
+    public int? PositionX { get; set; }
 
     /// <summary>
-    /// Y 坐标。
+    /// Y 坐标。AI 不填时由后端自动布局，故可为空。
     /// </summary>
-    public int PositionY { get; set; }
+    public int? PositionY { get; set; }
 
     /// <summary>
     /// 是否为入口节点。

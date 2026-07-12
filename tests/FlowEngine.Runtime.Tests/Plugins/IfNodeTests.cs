@@ -51,7 +51,7 @@ public sealed class IfNodeTests
         };
         var nodeDef = new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = "if1",
             TypeName = "if",
             Name = "if1",
             Parameters = config

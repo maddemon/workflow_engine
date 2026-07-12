@@ -106,8 +106,8 @@ export interface NodeDefinition {
   name: string;
   parameters: Record<string, unknown>;
   ports: PortDefinition[];
-  positionX: number;
-  positionY: number;
+  positionX: number | null;
+  positionY: number | null;
   isEntry: boolean;
   disabled: boolean;
   errorStrategy: string;
@@ -118,9 +118,10 @@ export interface NodeDefinition {
 export interface Connection {
   id: string;
   sourceNodeId: string;
-  sourcePortName: string;
+  sourcePortName: string | null;
   targetNodeId: string;
-  targetPortName: string;
+  targetPortName: string | null;
+  condition?: string;
 }
 
 export interface Workflow {

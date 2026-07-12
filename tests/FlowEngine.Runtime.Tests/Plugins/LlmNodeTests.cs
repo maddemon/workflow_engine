@@ -262,7 +262,7 @@ public class LlmNodeTests
             ExecutionId = Guid.NewGuid(),
             Node = new NodeDefinition
             {
-                Id = Guid.NewGuid(),
+                Id = "llm1",
                 TypeName = "llm",
                 Name = "llm1",
                 Parameters = []

@@ -154,7 +154,7 @@ public class SwitchNodeTests
         };
         var nodeDef = new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = "switch1",
             TypeName = "switch",
             Name = "switch1",
             Parameters = config
@@ -186,7 +186,7 @@ public class SwitchNodeTests
         {
             Node = new NodeDefinition
             {
-                Id = Guid.NewGuid(),
+                Id = "Test Switch",
                 TypeName = "switch",
                 Name = "Test Switch",
                 Parameters = [],

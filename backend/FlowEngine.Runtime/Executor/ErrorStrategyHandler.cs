@@ -17,7 +17,7 @@ public sealed class ErrorStrategyHandler
     /// <returns>处理后的结果。</returns>
     public NodeExecutionResult Handle(
         NodeExecutionResult result,
-        Guid nodeDefinitionId,
+        string nodeDefinitionId,
         ErrorStrategy strategy)
     {
         ArgumentNullException.ThrowIfNull(result);
@@ -33,7 +33,7 @@ public sealed class ErrorStrategyHandler
     /// <summary>
     /// 创建输入超时的失败结果。
     /// </summary>
-    public NodeExecutionResult CreateInputTimeoutResult(Guid nodeDefinitionId)
+    public NodeExecutionResult CreateInputTimeoutResult(string nodeDefinitionId)
     {
         return new NodeExecutionResult
         {
@@ -57,7 +57,7 @@ public sealed class ErrorStrategyHandler
         };
     }
 
-    private static NodeExecutionResult CreateContinueResult(NodeExecutionResult original, Guid nodeDefinitionId)
+    private static NodeExecutionResult CreateContinueResult(NodeExecutionResult original, string nodeDefinitionId)
     {
         var error = original.Error ?? new NodeError
         {

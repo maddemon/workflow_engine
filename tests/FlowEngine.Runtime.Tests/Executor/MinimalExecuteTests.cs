@@ -44,7 +44,7 @@ public class MinimalExecuteTests
 
         var nodeA = new NodeDefinition
         {
-            Id = Guid.NewGuid(), Name = "a", TypeName = "passThrough",
+            Id = "a", Name = "a", TypeName = "passThrough",
             IsEntry = true, Parameters = [], ErrorStrategy = ErrorStrategy.Terminate
         };
         var workflow = new Workflow

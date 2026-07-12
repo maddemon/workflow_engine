@@ -41,7 +41,7 @@ public interface IExecutionSideEffects
     /// <param name="nodeId">节点定义 ID。</param>
     /// <param name="runIndex">运行索引。</param>
     /// <param name="cancellationToken">取消令牌。</param>
-    Task PublishNodeStartedAsync(Guid executionId, Guid nodeId, int runIndex, CancellationToken cancellationToken);
+    Task PublishNodeStartedAsync(Guid executionId, string nodeId, int runIndex, CancellationToken cancellationToken);
 
     /// <summary>
     /// 发布执行完成事件。
@@ -57,5 +57,5 @@ public interface IExecutionSideEffects
     /// <param name="nodeId">节点定义 ID。</param>
     /// <param name="runIndex">运行索引。</param>
     /// <returns>流式回调委托；无事件总线时返回无操作回调。</returns>
-    Func<LlmStreamChunk, CancellationToken, Task> CreateLlmStreamCallback(Guid executionId, Guid nodeId, int runIndex);
+    Func<LlmStreamChunk, CancellationToken, Task> CreateLlmStreamCallback(Guid executionId, string nodeId, int runIndex);
 }

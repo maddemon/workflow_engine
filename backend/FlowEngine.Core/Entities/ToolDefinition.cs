@@ -21,7 +21,7 @@ public class ToolDefinition
     public object? ParametersSchema { get; set; }
 
     /// <summary>
-    /// 目标节点定义 ID。
+    /// 目标节点定义 ID（引用 NodeDefinition.Id 的字符串标识）。
     /// </summary>
-    public Guid TargetNodeDefinitionId { get; set; }
+    public string TargetNodeDefinitionId { get; set; } = string.Empty;
 }

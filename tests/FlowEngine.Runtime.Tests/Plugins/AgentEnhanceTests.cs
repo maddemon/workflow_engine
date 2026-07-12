@@ -257,7 +257,7 @@ public class InlineResolverTests
 
         var tools = new List<ToolDefinition>
         {
-            new() { Name = "tool1", Description = "test", TargetNodeDefinitionId = Guid.NewGuid() }
+            new() { Name = "tool1", Description = "test", TargetNodeDefinitionId = "passthrough1" }
         };
 
         var context = CreateContext(llmClient: llmClient);
@@ -472,9 +472,9 @@ public class InlineResolverTests
     private NodeExecutionContext CreateContext(
         Workflow? workflow = null,
         ILlmClient? llmClient = null,
-        Guid? currentNodeId = null)
+        string? currentNodeId = null)
     {
-        var nodeId = currentNodeId ?? Guid.NewGuid();
+        var nodeId = currentNodeId ?? "test-node";
         return new NodeExecutionContext
         {
             Workflow = workflow ?? new Workflow
@@ -532,7 +532,7 @@ public class InlineResolverTests
     {
         return new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = name,
             Name = name,
             TypeName = typeName,
             IsEntry = isEntry,
@@ -790,7 +790,7 @@ public class SubAgentToolNodeTests
             ExecutionId = Guid.NewGuid(),
             Node = new NodeDefinition
             {
-                Id = Guid.NewGuid(),
+                Id = "subAgent1",
                 TypeName = "subAgentTool",
                 Name = "subAgent1",
                 Parameters = []

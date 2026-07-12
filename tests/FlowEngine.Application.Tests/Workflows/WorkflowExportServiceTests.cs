@@ -239,7 +239,7 @@ public sealed class WorkflowExportServiceTests : IDisposable
             [
                 new NodeDefinition
                 {
-                    Id = Guid.NewGuid(),
+                    Id = "testNode",
                     TypeName = "testNode",
                     Name = "TestNode",
                     Parameters = parameters,

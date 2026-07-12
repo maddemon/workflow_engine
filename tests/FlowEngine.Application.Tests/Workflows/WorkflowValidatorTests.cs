@@ -22,8 +22,8 @@ public sealed class WorkflowValidatorTests
         ]);
         var validator = new WorkflowValidator(registry);
         var workflow = CreateWorkflow([
-            new NodeDefinition { Id = Guid.NewGuid(), TypeName = "start", Name = "Start" },
-            new NodeDefinition { Id = Guid.NewGuid(), TypeName = "end", Name = "End" },
+            new NodeDefinition { Id = "start", TypeName = "start", Name = "Start" },
+            new NodeDefinition { Id = "end", TypeName = "end", Name = "End" },
         ], [
             (nodes) => new Connection
             {
@@ -55,14 +55,14 @@ public sealed class WorkflowValidatorTests
         var validator = new WorkflowValidator(registry);
         var workflow = new Workflow
         {
-            Nodes = [new NodeDefinition { Id = Guid.NewGuid(), TypeName = "test", Name = "Node" }],
+            Nodes = [new NodeDefinition { Id = "testNode", TypeName = "test", Name = "Node" }],
             Connections =
             [
                 new Connection
                 {
                     Id = Guid.NewGuid(),
-                    SourceNodeId = Guid.NewGuid(),
-                    TargetNodeId = Guid.NewGuid(),
+                    SourceNodeId = "dangling-source",
+                    TargetNodeId = "dangling-target",
                 },
             ],
         };
@@ -89,8 +89,8 @@ public sealed class WorkflowValidatorTests
         ]);
         var validator = new WorkflowValidator(registry);
         var workflow = CreateWorkflow([
-            new NodeDefinition { Id = Guid.NewGuid(), TypeName = "source", Name = "Source" },
-            new NodeDefinition { Id = Guid.NewGuid(), TypeName = "sink", Name = "Sink" },
+            new NodeDefinition { Id = "source", TypeName = "source", Name = "Source" },
+            new NodeDefinition { Id = "sink", TypeName = "sink", Name = "Sink" },
         ], [
             (nodes) => new Connection
             {
@@ -123,8 +123,8 @@ public sealed class WorkflowValidatorTests
         ]);
         var validator = new WorkflowValidator(registry);
         var workflow = CreateWorkflow([
-            new NodeDefinition { Id = Guid.NewGuid(), TypeName = "source", Name = "Source" },
-            new NodeDefinition { Id = Guid.NewGuid(), TypeName = "sink", Name = "Sink" },
+            new NodeDefinition { Id = "source", TypeName = "source", Name = "Source" },
+            new NodeDefinition { Id = "sink", TypeName = "sink", Name = "Sink" },
         ], [
             (nodes) => new Connection
             {
@@ -157,7 +157,7 @@ public sealed class WorkflowValidatorTests
         ]);
         var validator = new WorkflowValidator(registry);
         var workflow = CreateWorkflow([
-            new NodeDefinition { Id = Guid.NewGuid(), TypeName = "needsParam", Name = "Needs Key", Parameters = [] },
+            new NodeDefinition { Id = "needsKey", TypeName = "needsParam", Name = "Needs Key", Parameters = [] },
         ], []);
 
         var result = validator.Validate(workflow);
@@ -179,8 +179,8 @@ public sealed class WorkflowValidatorTests
         var validator = new WorkflowValidator(registry);
         var nodes = new[]
         {
-            new NodeDefinition { Id = Guid.NewGuid(), TypeName = "node", Name = "A" },
-            new NodeDefinition { Id = Guid.NewGuid(), TypeName = "node", Name = "B" },
+            new NodeDefinition { Id = "A", TypeName = "node", Name = "A" },
+            new NodeDefinition { Id = "B", TypeName = "node", Name = "B" },
         };
         var workflow = CreateWorkflow(nodes, [
             (n) => new Connection { Id = Guid.NewGuid(), SourceNodeId = n[0].Id, TargetNodeId = n[1].Id, SourcePortName = "output", TargetPortName = "input" },

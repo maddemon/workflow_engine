@@ -71,7 +71,7 @@ public class JSNodeTests
         {
             Node = new NodeDefinition
             {
-                Id = Guid.NewGuid(),
+                Id = "Test JS",
                 TypeName = "script",
                 Name = "Test JS",
                 Parameters = new Dictionary<string, object> { ["code"] = code },

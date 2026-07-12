@@ -8,7 +8,7 @@ namespace FlowEngine.Runtime.WaitingArea;
 /// </summary>
 public sealed class WaitingArea
 {
-    private readonly ConcurrentDictionary<(Guid ExecutionId, Guid NodeInstanceId), PortState> _states = new();
+    private readonly ConcurrentDictionary<(Guid ExecutionId, string NodeInstanceId), PortState> _states = new();
     private readonly TimeSpan _timeout;
 
     /// <summary>
@@ -23,7 +23,7 @@ public sealed class WaitingArea
     /// <summary>
     /// 接收指定端口的数据批次。
     /// </summary>
-    public void Receive(Guid executionId, Guid nodeInstanceId, string portName, DataBatch data)
+    public void Receive(Guid executionId, string nodeInstanceId, string portName, DataBatch data)
     {
         var state = _states.GetOrAdd((executionId, nodeInstanceId), _ => new PortState());
         state.AddOrMerge(portName, data);
@@ -32,7 +32,7 @@ public sealed class WaitingArea
     /// <summary>
     /// 判断指定节点的所有必需输入端口是否都已到齐。
     /// </summary>
-    public bool IsReady(Guid executionId, Guid nodeInstanceId, IEnumerable<string> requiredPorts)
+    public bool IsReady(Guid executionId, string nodeInstanceId, IEnumerable<string> requiredPorts)
     {
         if (!_states.TryGetValue((executionId, nodeInstanceId), out var state))
         {
@@ -47,7 +47,7 @@ public sealed class WaitingArea
     /// </summary>
     public bool TryTake(
         Guid executionId,
-        Guid nodeInstanceId,
+        string nodeInstanceId,
         out IReadOnlyDictionary<string, DataBatch> inputs)
     {
         if (!_states.TryRemove((executionId, nodeInstanceId), out var state))
@@ -63,7 +63,7 @@ public sealed class WaitingArea
     /// <summary>
     /// 取消指定节点的等待。
     /// </summary>
-    public void CancelWaiting(Guid executionId, Guid nodeInstanceId)
+    public void CancelWaiting(Guid executionId, string nodeInstanceId)
     {
         _states.TryRemove((executionId, nodeInstanceId), out _);
     }
@@ -71,7 +71,7 @@ public sealed class WaitingArea
     /// <summary>
     /// 获取已超时的等待项键。
     /// </summary>
-    public IEnumerable<(Guid ExecutionId, Guid NodeInstanceId)> GetTimeoutKeys()
+    public IEnumerable<(Guid ExecutionId, string NodeInstanceId)> GetTimeoutKeys()
     {
         var now = DateTime.UtcNow;
         foreach (var (key, state) in _states)

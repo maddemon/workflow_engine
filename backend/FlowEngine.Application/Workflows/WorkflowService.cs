@@ -39,7 +39,7 @@ public sealed class WorkflowService(
     {
         ArgumentNullException.ThrowIfNull(dto);
 
-        var (nodes, connections, nodeIdMap) = ConvertFromDtos(dto.Nodes, dto.Connections);
+        var (nodes, connections) = ConvertFromDtos(dto.Nodes, dto.Connections);
 
         var workflow = new Workflow
         {
@@ -62,7 +62,7 @@ public sealed class WorkflowService(
             new Dictionary<string, object> { ["name"] = workflow.Name }),
             cancellationToken).ConfigureAwait(false);
 
-        return MapToDto(workflow, dto.Nodes, dto.Connections, nodeIdMap);
+        return MapToDto(workflow);
     }
 
     /// <summary>
@@ -151,7 +151,7 @@ public sealed class WorkflowService(
         }
 
         var previousIsActive = existing.IsActive;
-        var (nodes, connections, nodeIdMap) = ConvertFromDtos(dto.Nodes, dto.Connections);
+        var (nodes, connections) = ConvertFromDtos(dto.Nodes, dto.Connections);
 
         existing.Name = dto.Name;
         existing.IsActive = dto.IsActive;
@@ -173,7 +173,60 @@ public sealed class WorkflowService(
             new Dictionary<string, object> { ["name"] = existing.Name },
             cancellationToken).ConfigureAwait(false);
 
-        return MapToDto(existing, dto.Nodes, dto.Connections, nodeIdMap);
+        return MapToDto(existing);
+    }
+
+    /// <summary>
+    /// 创建工作流草稿（IsActive = false）。
+    /// </summary>
+    public async Task<WorkflowDto> CreateDraftAsync(CreateWorkflowDto dto, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(dto);
+
+        var (nodes, connections) = ConvertFromDtos(dto.Nodes, dto.Connections);
+
+        var workflow = new Workflow
+        {
+            ProjectId = dto.ProjectId,
+            Name = dto.Name,
+            CreatedBy = dto.CreatedBy,
+            IsActive = false,
+            Nodes = nodes,
+            Connections = connections
+        };
+
+        ValidateOrThrow(workflow);
+        dbContext.Workflows.Add(workflow);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+            AuditEventTypes.WorkflowCreated,
+            "Workflow",
+            workflow.Id,
+            new Dictionary<string, object> { ["name"] = workflow.Name }),
+            cancellationToken).ConfigureAwait(false);
+
+        return MapToDto(workflow);
+    }
+
+    /// <summary>
+    /// 确认工作流草稿（将 IsActive 设为 true）。
+    /// </summary>
+    public async Task<WorkflowDto?> ConfirmDraftAsync(Guid id, CancellationToken cancellationToken = default)
+    {
+        var existing = await dbContext.Workflows
+            .FirstOrDefaultAsync(w => w.Id == id, cancellationToken)
+            .ConfigureAwait(false);
+        if (existing is null)
+        {
+            return null;
+        }
+
+        existing.IsActive = true;
+        existing.UpdatedAt = DateTime.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        return MapToDto(existing);
     }
 
     /// <summary>
@@ -239,16 +292,15 @@ public sealed class WorkflowService(
     }
 
     /// <summary>
-    /// 将 API DTO 转换为领域实体，生成新的 Guid ID 并建立前端字符串 ID 到 Guid 的映射。
+    /// 将 API DTO 转换为领域实体。
     /// </summary>
-    private static (List<NodeDefinition> Nodes, List<Connection> Connections, Dictionary<string, Guid> NodeIdMap) ConvertFromDtos(
+    private static (List<NodeDefinition> Nodes, List<Connection> Connections) ConvertFromDtos(
         List<NodeDefinitionDto> nodeDtos,
         List<ConnectionDto> connectionDtos)
     {
-        var nodeIdMap = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
-        var nodes = nodeDtos.Select(dto => WorkflowMapper.ToEntity(dto, nodeIdMap)).ToList();
-        var connections = connectionDtos.Select(dto => WorkflowMapper.ToEntity(dto, nodeIdMap)).ToList();
-        return (nodes, connections, nodeIdMap);
+        var nodes = nodeDtos.Select(WorkflowMapper.ToEntity).ToList();
+        var connections = connectionDtos.Select(WorkflowMapper.ToEntity).ToList();
+        return (nodes, connections);
     }
 
     private void ValidateOrThrow(Workflow workflow)
@@ -260,83 +312,12 @@ public sealed class WorkflowService(
         }
     }
 
-    private static NodeDefinitionDto BuildNodeDto(NodeDefinition n, string id)
-    {
-        return new NodeDefinitionDto
-        {
-            Id = id,
-            TypeName = n.TypeName,
-            Name = n.Name,
-            Parameters = n.Parameters,
-            Ports = n.Ports,
-            PositionX = n.PositionX,
-            PositionY = n.PositionY,
-            IsEntry = n.IsEntry,
-            RetryPolicy = n.RetryPolicy,
-            ErrorStrategy = n.ErrorStrategy,
-            Timeout = n.Timeout,
-        };
-    }
-
-    private static ConnectionDto BuildConnectionDto(Connection c, string id, string sourceNodeId, string targetNodeId)
-    {
-        return new ConnectionDto
-        {
-            Id = id,
-            SourceNodeId = sourceNodeId,
-            SourcePortName = c.SourcePortName,
-            TargetNodeId = targetNodeId,
-            TargetPortName = c.TargetPortName,
-            Condition = c.Condition,
-        };
-    }
-
     /// <summary>
     /// 将领域实体转换为 API 响应 DTO。
-    /// 当提供 originalNodeDtos/originalConnectionDtos/nodeIdMap 时，保留前端原始 ID（保存后返回）；
-    /// 否则使用实体 Guid（从数据库加载）。
+    /// 直接使用实体的字符串 ID（与前端 ID 一致）。
     /// </summary>
-    private static WorkflowDto MapToDto(
-        Workflow workflow,
-        List<NodeDefinitionDto>? originalNodeDtos = null,
-        List<ConnectionDto>? originalConnectionDtos = null,
-        Dictionary<string, Guid>? nodeIdMap = null)
+    private static WorkflowDto MapToDto(Workflow workflow)
     {
-        List<NodeDefinitionDto> nodeDtos;
-        List<ConnectionDto> connectionDtos;
-
-        // 保存后返回时使用原始 DTO，保持前端原始 ID
-        if (originalNodeDtos is not null && originalConnectionDtos is not null && nodeIdMap is not null)
-        {
-            var reverseNodeIdMap = nodeIdMap.ToDictionary(kv => kv.Value, kv => kv.Key);
-
-            // P5：预构建 (Source, Target) → ConnectionDto 映射，避免 O(N×M) 嵌套查找。
-            var connectionByEndpoints = originalConnectionDtos.ToDictionary(
-                cd => (cd.SourceNodeId, cd.TargetNodeId), cd => cd);
-
-            nodeDtos = workflow.Nodes.Select(n =>
-            {
-                var originalId = reverseNodeIdMap.TryGetValue(n.Id, out var origId) ? origId : n.Id.ToString();
-                return WorkflowMapper.ToDto(n, originalId);
-            }).ToList();
-
-            connectionDtos = workflow.Connections.Select(c =>
-            {
-                var origSource = reverseNodeIdMap.TryGetValue(c.SourceNodeId, out var sId) ? sId : c.SourceNodeId.ToString();
-                var origTarget = reverseNodeIdMap.TryGetValue(c.TargetNodeId, out var tId) ? tId : c.TargetNodeId.ToString();
-                connectionByEndpoints.TryGetValue((origSource, origTarget), out var origConn);
-
-                return WorkflowMapper.ToDto(c, origConn?.Id ?? c.Id.ToString(), origSource, origTarget);
-            }).ToList();
-        }
-        else
-        {
-            // 从数据库加载时使用实体 Guid
-            nodeDtos = workflow.Nodes.Select(n => WorkflowMapper.ToDto(n, n.Id.ToString())).ToList();
-            connectionDtos = workflow.Connections.Select(c =>
-                WorkflowMapper.ToDto(c, c.Id.ToString(), c.SourceNodeId.ToString(), c.TargetNodeId.ToString())).ToList();
-        }
-
         return new WorkflowDto
         {
             Id = workflow.Id,
@@ -348,8 +329,9 @@ public sealed class WorkflowService(
             UpdatedAt = workflow.UpdatedAt,
             IsActive = workflow.IsActive,
             StyleSettings = workflow.StyleSettings,
-            Nodes = nodeDtos,
-            Connections = connectionDtos,
+            Nodes = workflow.Nodes.Select(n => WorkflowMapper.ToDto(n)).ToList(),
+            Connections = workflow.Connections.Select(c =>
+                WorkflowMapper.ToDto(c, c.Id.ToString(), c.SourceNodeId, c.TargetNodeId)).ToList(),
         };
     }
 }

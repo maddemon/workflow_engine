@@ -1,3 +1,4 @@
+using System.ComponentModel;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 
@@ -34,14 +35,14 @@ public sealed record NodeDefinitionDto
     public List<PortInstance> Ports { get; init; } = [];
 
     /// <summary>
-    /// X 坐标。
+    /// X 坐标（可为空，由后端自动布局）。
     /// </summary>
-    public int PositionX { get; init; }
+    public int? PositionX { get; init; }
 
     /// <summary>
-    /// Y 坐标。
+    /// Y 坐标（可为空，由后端自动布局）。
     /// </summary>
-    public int PositionY { get; init; }
+    public int? PositionY { get; init; }
 
     /// <summary>
     /// 是否为入口节点。
@@ -80,9 +81,9 @@ public sealed record ConnectionDto
     public string SourceNodeId { get; init; } = string.Empty;
 
     /// <summary>
-    /// 源端口名称。
+    /// 源端口名称（为空时使用源节点第一个 Output 端口）。
     /// </summary>
-    public string SourcePortName { get; init; } = string.Empty;
+    public string? SourcePortName { get; init; }
 
     /// <summary>
     /// 目标节点 ID。
@@ -90,13 +91,14 @@ public sealed record ConnectionDto
     public string TargetNodeId { get; init; } = string.Empty;
 
     /// <summary>
-    /// 目标端口名称。
+    /// 目标端口名称（为空时使用目标节点第一个 Input 端口）。
     /// </summary>
-    public string TargetPortName { get; init; } = string.Empty;
+    public string? TargetPortName { get; init; }
 
     /// <summary>
     /// 连接条件表达式。
     /// </summary>
+    [Description("连接条件表达式")]
     public string? Condition { get; init; }
 }
 

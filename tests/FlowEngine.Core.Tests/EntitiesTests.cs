@@ -34,7 +34,7 @@ public class EntitiesTests
     {
         var node = new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = "node-1",
             TypeName = "httpRequest",
             IsEntry = true,
             ErrorStrategy = ErrorStrategy.Continue

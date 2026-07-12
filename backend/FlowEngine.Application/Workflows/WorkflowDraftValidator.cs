@@ -77,6 +77,7 @@ public sealed class WorkflowDraftValidator(
         // ── 节点基础校验 + 构建 id→node 映射 ──────────────────────
         var nodeMap = new Dictionary<string, JsonObject>(StringComparer.Ordinal);
         var entryCount = 0;
+        var triggerCount = 0;
         var nodeIndex = 0;
         foreach (var nodeItem in nodes)
         {
@@ -113,9 +114,11 @@ public sealed class WorkflowDraftValidator(
             }
         }
 
-        if (entryCount == 0)
+        // 入口由后端自动推导（首个 Trigger 节点），因此不强制显式 isEntry。
+        // 仅当既无显式入口、也无任何触发器节点时才报错（与 assemble 路径的 Trigger 校验一致）。
+        if (entryCount == 0 && triggerCount == 0)
         {
-            errors.Add("至少需要一个入口节点（isEntry = true）");
+            errors.Add("至少需要一个入口节点（isEntry = true）或触发器节点");
         }
 
         // ── 节点类型 / 必填参数 / 凭据参数 ───────────────────────
@@ -133,6 +136,11 @@ public sealed class WorkflowDraftValidator(
             }
 
             var parameters = node["parameters"] as JsonObject ?? new JsonObject();
+
+            if (descriptor.Category.Equals("Trigger", StringComparison.OrdinalIgnoreCase))
+            {
+                triggerCount++;
+            }
 
             foreach (var param in descriptor.Parameters)
             {

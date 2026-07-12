@@ -76,7 +76,7 @@ public sealed class NodeExecutionContextFactoryTests
         var execution = new ExecutionRecord { Id = Guid.NewGuid(), WorkflowDefinitionId = workflow.Id };
         var node = new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = "Node1",
             TypeName = "testNode",
             Name = "Node1",
             Parameters = new Dictionary<string, object> { ["message"] = "hello" },
@@ -108,7 +108,7 @@ public sealed class NodeExecutionContextFactoryTests
         var execution = new ExecutionRecord { Id = Guid.NewGuid(), WorkflowDefinitionId = workflow.Id };
         var node = new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = "Node1_extraGlobals",
             TypeName = "testNode",
             Name = "Node1",
             Parameters = new Dictionary<string, object> { ["message"] = "\"page-\" + $cursor" },
@@ -137,7 +137,7 @@ public sealed class NodeExecutionContextFactoryTests
         var execution = new ExecutionRecord { Id = Guid.NewGuid(), WorkflowDefinitionId = workflow.Id };
         var node = new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = "Node1_defaults",
             TypeName = "testNode",
             Name = "Node1",
             Parameters = new Dictionary<string, object> { ["message"] = "hello" },
@@ -166,7 +166,7 @@ public sealed class NodeExecutionContextFactoryTests
         var execution = new ExecutionRecord { Id = Guid.NewGuid(), WorkflowDefinitionId = workflow.Id };
         var node = new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = "Node1_oauth2",
             TypeName = "testNode",
             Name = "Node1",
             Parameters = new Dictionary<string, object> { ["url"] = "$credentials.oauth2.accessToken" },
@@ -191,7 +191,7 @@ public sealed class NodeExecutionContextFactoryTests
         var execution = new ExecutionRecord { Id = Guid.NewGuid(), WorkflowDefinitionId = workflow.Id };
         var node = new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = "Node1_runIndex",
             TypeName = "testNode",
             Name = "Node1",
         };
@@ -224,7 +224,7 @@ public sealed class NodeExecutionContextFactoryTests
         var execution = new ExecutionRecord { Id = Guid.NewGuid(), WorkflowDefinitionId = workflow.Id };
         var node = new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = "Bad",
             TypeName = "nonexistent",
             Name = "Bad",
         };
@@ -246,7 +246,7 @@ public sealed class NodeExecutionContextFactoryTests
         var execution = new ExecutionRecord { Id = Guid.NewGuid(), WorkflowDefinitionId = workflow.Id };
         var node = new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = "ScriptNode_expr",
             TypeName = "scriptNode",
             Name = "ScriptNode",
             Parameters = new Dictionary<string, object>
@@ -282,7 +282,7 @@ public sealed class NodeExecutionContextFactoryTests
         var execution = new ExecutionRecord { Id = Guid.NewGuid(), WorkflowDefinitionId = workflow.Id };
         var node = new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = "ScriptNode_code",
             TypeName = "scriptNode",
             Name = "ScriptNode",
             Parameters = new Dictionary<string, object>
@@ -315,7 +315,7 @@ public sealed class NodeExecutionContextFactoryTests
         };
         var node = new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = "ScriptNode_mapping",
             TypeName = "scriptNode",
             Name = "ScriptNode",
             Parameters = new Dictionary<string, object>

@@ -74,9 +74,9 @@ public sealed record NodeExecutionRecordDto
     public Guid Id { get; init; }
 
     /// <summary>
-    /// 节点定义 ID。
+    /// 节点定义 ID（引用 NodeDefinition.Id 的字符串标识）。
     /// </summary>
-    public Guid NodeDefinitionId { get; init; }
+    public string NodeDefinitionId { get; init; } = string.Empty;
 
     /// <summary>
     /// 运行索引。

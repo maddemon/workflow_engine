@@ -101,7 +101,7 @@ public sealed class WorkflowExportService(
         {
             // 导出前对参数做凭据脱敏，移除 CredentialValue 中的明文字段（GAP-01）。
             var sanitized = SanitizeParameters(n.Parameters);
-            var dto = WorkflowMapper.ToDto(n, n.Id.ToString());
+            var dto = WorkflowMapper.ToDto(n, n.Id);
             return new NodeDefinitionDto
             {
                 Id = dto.Id,
@@ -119,7 +119,7 @@ public sealed class WorkflowExportService(
         }).ToList();
 
         var connectionDtos = workflow.Connections.Select(c =>
-            WorkflowMapper.ToDto(c, c.Id.ToString(), c.SourceNodeId.ToString(), c.TargetNodeId.ToString())).ToList();
+            WorkflowMapper.ToDto(c, c.Id.ToString(), c.SourceNodeId, c.TargetNodeId)).ToList();
 
         return new WorkflowExportResult
         {

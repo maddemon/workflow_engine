@@ -48,7 +48,7 @@ public class QueueDiagnosticTests
         // Create workflow
         var nodeA = new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = "a",
             Name = "a",
             TypeName = "passThrough",
             IsEntry = true,

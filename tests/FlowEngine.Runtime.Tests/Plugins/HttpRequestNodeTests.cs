@@ -84,7 +84,7 @@ public sealed class HttpRequestNodeTests
         {
             Node = new NodeDefinition
             {
-                Id = Guid.NewGuid(),
+                Id = "HTTP",
                 TypeName = "httpRequest",
                 Name = "HTTP",
                 Parameters = new Dictionary<string, object>(),

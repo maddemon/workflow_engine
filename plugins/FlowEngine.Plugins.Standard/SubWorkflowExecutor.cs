@@ -33,10 +33,10 @@ internal sealed class SubWorkflowExecutor
 
         var nodeMap = workflow.Nodes.ToDictionary(n => n.Id);
         var connectionsBySource = workflow.Connections
-            .ToLookup(c => (c.SourceNodeId, c.SourcePortName));
+            .ToLookup(c => (c.SourceNodeId, c.SourcePortName ?? string.Empty));
         var hasInputConnections = workflow.Connections
             .Select(c => c.TargetNodeId)
-            .ToHashSet();
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         var entryNodes = ResolveEntryNodes(workflow, hasInputConnections);
         if (entryNodes.Count == 0)
@@ -45,8 +45,8 @@ internal sealed class SubWorkflowExecutor
         }
 
         var nodeOutputs = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase);
-        var executed = new HashSet<Guid>();
-        var queue = new Queue<Guid>(entryNodes.Select(n => n.Id));
+        var executed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var queue = new Queue<string>(entryNodes.Select(n => n.Id));
         NodeExecutionResult? lastResult = null;
 
         while (queue.Count > 0)
@@ -91,7 +91,7 @@ internal sealed class SubWorkflowExecutor
         return lastResult ?? CreateErrorResult("NoResult", "Sub-workflow produced no result.");
     }
 
-    private static List<NodeDefinition> ResolveEntryNodes(Workflow workflow, HashSet<Guid> hasInputConnections)
+    private static List<NodeDefinition> ResolveEntryNodes(Workflow workflow, HashSet<string> hasInputConnections)
     {
         return workflow.Nodes
             .Where(n => n.IsEntry || !hasInputConnections.Contains(n.Id))
@@ -101,7 +101,7 @@ internal sealed class SubWorkflowExecutor
     private static Dictionary<string, DataBatch> CollectInputs(
         NodeDefinition node,
         Workflow workflow,
-        Dictionary<Guid, NodeDefinition> nodeMap,
+        Dictionary<string, NodeDefinition> nodeMap,
         Dictionary<string, DataBatch> nodeOutputs,
         List<NodeDefinition> entryNodes,
         JsonNode? triggerPayload)
@@ -119,7 +119,8 @@ internal sealed class SubWorkflowExecutor
                 if (nodeMap.TryGetValue(conn.SourceNodeId, out var sourceNode)
                     && nodeOutputs.TryGetValue(sourceNode.Name, out var batch))
                 {
-                    inputs[conn.TargetPortName] = batch;
+                    var resolvedPort = conn.TargetPortName ?? FlowConstants.PortNames.Input;
+                    inputs[resolvedPort] = batch;
                 }
             }
         }
@@ -171,10 +172,10 @@ internal sealed class SubWorkflowExecutor
         NodeDefinition node,
         INodeType nodeType,
         NodeExecutionResult result,
-        ILookup<(Guid SourceNodeId, string SourcePortName), Connection> connectionsBySource,
-        Dictionary<Guid, NodeDefinition> nodeMap,
-        HashSet<Guid> executed,
-        Queue<Guid> queue)
+        ILookup<(string SourceNodeId, string SourcePortName), Connection> connectionsBySource,
+        Dictionary<string, NodeDefinition> nodeMap,
+        HashSet<string> executed,
+        Queue<string> queue)
     {
         var sourcePortName = ResolveSourcePortName(nodeType, result);
         var outgoingConnections = connectionsBySource[(node.Id, sourcePortName)];
@@ -188,7 +189,7 @@ internal sealed class SubWorkflowExecutor
         }
     }
 
-    private static NodeExecutionResult CreateExceptionResult(Exception ex, Guid nodeId)
+    private static NodeExecutionResult CreateExceptionResult(Exception ex, string nodeId)
     {
         return new NodeExecutionResult
         {

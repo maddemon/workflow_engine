@@ -12,7 +12,7 @@ public class NodeExecutionContextTests
     {
         return new NodeExecutionContext
         {
-            Node = new NodeDefinition { Id = Guid.NewGuid() },
+            Node = new NodeDefinition { Id = "test-node" },
             Inputs = inputs ?? new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase)
         };
     }

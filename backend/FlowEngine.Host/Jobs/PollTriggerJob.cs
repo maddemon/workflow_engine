@@ -226,7 +226,7 @@ public sealed class PollTriggerJob(
         // 创建一个简化的节点执行上下文用于轮询
         var nodeDefinition = new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = "trigger",
             TypeName = settings.PollNodeId ?? string.Empty,
             Parameters = new Dictionary<string, object>(),
         };

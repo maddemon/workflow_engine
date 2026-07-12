@@ -80,9 +80,8 @@ public sealed class WorkflowDryRunService(
 
     private static Workflow BuildWorkflow(DryRunWorkflowRequestDto request)
     {
-        var nodeIdMap = new Dictionary<string, Guid>();
-        var nodes = request.Nodes.Select(n => WorkflowMapper.ToEntity(n, nodeIdMap)).ToList();
-        var connections = request.Connections.Select(c => WorkflowMapper.ToEntity(c, nodeIdMap)).ToList();
+        var nodes = request.Nodes.Select(WorkflowMapper.ToEntity).ToList();
+        var connections = request.Connections.Select(WorkflowMapper.ToEntity).ToList();
 
         return new Workflow
         {
@@ -237,9 +236,9 @@ public sealed class WorkflowDryRunService(
         public Task PersistNodeRecordAsync(NodeExecutionRecord record, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task PersistFailedStateAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task PersistExecutionAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-        public Task PublishNodeStartedAsync(Guid executionId, Guid nodeId, int runIndex, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task PublishNodeStartedAsync(Guid executionId, string nodeId, int runIndex, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task PublishCompletedAsync(ExecutionStatus status, CancellationToken cancellationToken) => Task.CompletedTask;
-        public Func<LlmStreamChunk, CancellationToken, Task> CreateLlmStreamCallback(Guid executionId, Guid nodeId, int runIndex)
+        public Func<LlmStreamChunk, CancellationToken, Task> CreateLlmStreamCallback(Guid executionId, string nodeId, int runIndex)
             => (_, _) => Task.CompletedTask;
     }
 

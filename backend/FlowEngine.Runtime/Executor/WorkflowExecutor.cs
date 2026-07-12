@@ -148,7 +148,7 @@ public sealed class WorkflowExecutor : IEngine
             return _store.SaveChangesAsync(cancellationToken);
         }
 
-        public async Task PublishNodeStartedAsync(Guid executionId, Guid nodeId, int runIndex, CancellationToken cancellationToken)
+        public async Task PublishNodeStartedAsync(Guid executionId, string nodeId, int runIndex, CancellationToken cancellationToken)
         {
             if (_eventBus is null) return;
             await _eventBus.PublishAsync(new NodeStartedEvent(executionId, nodeId, runIndex), cancellationToken).ConfigureAwait(false);
@@ -175,7 +175,7 @@ public sealed class WorkflowExecutor : IEngine
             }
         }
 
-        public Func<LlmStreamChunk, CancellationToken, Task> CreateLlmStreamCallback(Guid executionId, Guid nodeId, int runIndex)
+        public Func<LlmStreamChunk, CancellationToken, Task> CreateLlmStreamCallback(Guid executionId, string nodeId, int runIndex)
         {
             if (_eventBus is null) return (_, _) => Task.CompletedTask;
 

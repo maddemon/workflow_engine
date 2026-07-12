@@ -72,7 +72,7 @@ public class ShellToolNodeTests
         {
             Node = new NodeDefinition
             {
-                Id = Guid.NewGuid(),
+                Id = "Test Shell",
                 TypeName = "shellTool",
                 Name = "Test Shell",
                 Parameters = [],

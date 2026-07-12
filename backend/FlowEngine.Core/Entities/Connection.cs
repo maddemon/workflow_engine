@@ -9,24 +9,24 @@ namespace FlowEngine.Core.Entities;
 public class Connection : Entity
 {
     /// <summary>
-    /// 源节点实例 ID。
+    /// 源节点实例 ID（引用 NodeDefinition.Id 的字符串标识）。
     /// </summary>
-    public Guid SourceNodeId { get; set; }
+    public string SourceNodeId { get; set; } = string.Empty;
 
     /// <summary>
-    /// 源端口名称。
+    /// 源端口名称。缺省时由执行引擎取源节点第一个 Output 端口。
     /// </summary>
-    public string SourcePortName { get; set; } = string.Empty;
+    public string? SourcePortName { get; set; }
 
     /// <summary>
-    /// 目标节点实例 ID。
+    /// 目标节点实例 ID（引用 NodeDefinition.Id 的字符串标识）。
     /// </summary>
-    public Guid TargetNodeId { get; set; }
+    public string TargetNodeId { get; set; } = string.Empty;
 
     /// <summary>
-    /// 目标端口名称。
+    /// 目标端口名称。缺省时由执行引擎取目标节点第一个 Input 端口。
     /// </summary>
-    public string TargetPortName { get; set; } = string.Empty;
+    public string? TargetPortName { get; set; }
 
     /// <summary>
     /// 连接条件表达式。

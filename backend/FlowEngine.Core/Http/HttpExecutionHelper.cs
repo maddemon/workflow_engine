@@ -22,7 +22,7 @@ public static class HttpExecutionHelper
     public static async Task<NodeExecutionResult> SendAndBuildResultAsync(
         HttpClient client,
         HttpRequestMessage request,
-        Guid nodeDefinitionId,
+        string nodeDefinitionId,
         CancellationToken cancellationToken)
     {
         using var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);

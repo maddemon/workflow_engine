@@ -110,8 +110,8 @@ export interface NodeDefinitionDto {
   name: string;
   parameters: Record<string, unknown>;
   ports: PortInstance[];
-  positionX: number;
-  positionY: number;
+  positionX: number | null;
+  positionY: number | null;
   isEntry: boolean;
   retryPolicy?: RetryPolicy;
   errorStrategy: ErrorStrategy;
@@ -121,9 +121,9 @@ export interface NodeDefinitionDto {
 export interface ConnectionDto {
   id: string;
   sourceNodeId: string;
-  sourcePortName: string;
+  sourcePortName: string | null;
   targetNodeId: string;
-  targetPortName: string;
+  targetPortName: string | null;
   condition?: string;
 }
 

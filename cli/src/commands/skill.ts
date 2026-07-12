@@ -131,8 +131,8 @@ function buildClaudeMarkdown(nodeTypes: NodeTypeDescriptorDto[], incomplete: boo
 
   lines.push('## 工作流 DSL 要点');
   lines.push('- 顶层字段：Name、ProjectId、Nodes、Connections、StyleSettings。');
-  lines.push('- 每个节点必须有 Id、TypeName、Name、Parameters。');
-  lines.push('- 连接必须匹配端口的 Input/Output 方向。');
+  lines.push('- 每个节点必须有 Id、TypeName、Name、Parameters；Ports、PositionX/Y、IsEntry 可省略（后端自动填充）。');
+  lines.push('- 连接端的端口名可省略（后端自动匹配默认端口）。');
   lines.push('- Credential 类型参数需要传入凭据 Guid。');
 
   return lines.join('\n');

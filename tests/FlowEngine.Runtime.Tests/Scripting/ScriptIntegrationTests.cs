@@ -55,7 +55,7 @@ public sealed class ScriptIntegrationTests
         };
         var nodeDef = new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = "if1",
             TypeName = "if",
             Name = "if1",
             Parameters = config
@@ -102,7 +102,7 @@ public sealed class ScriptIntegrationTests
         };
         var nodeDef = new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = "filter1",
             TypeName = "filter",
             Name = "filter1",
             Parameters = config
@@ -158,7 +158,7 @@ public sealed class ScriptIntegrationTests
         };
         var nodeDef = new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = "http1",
             TypeName = "httpRequest",
             Name = "http1",
             Parameters = config
@@ -200,7 +200,7 @@ public sealed class ScriptIntegrationTests
         };
         var nodeDef = new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = "httpTool1",
             TypeName = "httpTool",
             Name = "httpTool1",
             Parameters = config
@@ -243,7 +243,7 @@ public sealed class ScriptIntegrationTests
         };
         var nodeDef = new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = "switch1",
             TypeName = "switch",
             Name = "switch1",
             Parameters = config

@@ -527,7 +527,7 @@ public sealed class DbUpsertNodeTests
 
     private static NodeExecutionContext CreateContext(DataBatch input, IReadOnlyDictionary<string, object>? resolvedParameters = null)
     {
-        var nodeId = Guid.NewGuid();
+        var nodeId = "dbUpsert";
         return new NodeExecutionContext
         {
             Workflow = new Workflow { Id = Guid.NewGuid(), Name = "test" },

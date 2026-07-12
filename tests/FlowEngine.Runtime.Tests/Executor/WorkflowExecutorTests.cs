@@ -422,7 +422,7 @@ public class WorkflowExecutorTests
     {
         return new NodeDefinition
         {
-            Id = Guid.NewGuid(),
+            Id = name,
             Name = name,
             TypeName = typeName,
             IsEntry = isEntry,
@@ -514,7 +514,7 @@ public class WorkflowExecutorTests
             "BuildNodeExecutionRecord",
             BindingFlags.NonPublic | BindingFlags.Instance,
             null,
-            new[] { typeof(Guid), typeof(int), typeof(IReadOnlyDictionary<string, DataBatch>), typeof(NodeExecutionResult), typeof(NodeExecutionContext), typeof(IReadOnlySet<string>) },
+            new[] { typeof(string), typeof(int), typeof(IReadOnlyDictionary<string, DataBatch>), typeof(NodeExecutionResult), typeof(NodeExecutionContext), typeof(IReadOnlySet<string>) },
             null);
         Assert.NotNull(method);
 
@@ -522,7 +522,7 @@ public class WorkflowExecutorTests
             kernel,
             new object?[]
             {
-                Guid.NewGuid(),
+                "testNode",
                 0,
                 new Dictionary<string, DataBatch>(),
                 new NodeExecutionResult(),

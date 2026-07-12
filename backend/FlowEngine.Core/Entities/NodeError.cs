@@ -19,9 +19,9 @@ public class NodeError
     public string Message { get; set; } = string.Empty;
 
     /// <summary>
-    /// 节点定义 ID。
+    /// 节点定义 ID（引用 NodeDefinition.Id 的字符串标识）。
     /// </summary>
-    public Guid NodeDefinitionId { get; set; }
+    public string NodeDefinitionId { get; set; } = string.Empty;
 
     /// <summary>
     /// 错误详情映射。

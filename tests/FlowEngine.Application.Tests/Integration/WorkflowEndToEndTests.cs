@@ -237,7 +237,7 @@ public sealed class WorkflowEndToEndTests : IDisposable
                 [
                     new NodeExecutionRecord
                     {
-                        NodeDefinitionId = Guid.NewGuid(),
+                        NodeDefinitionId = "stub-node",
                         RunIndex = 0,
                         StartedAt = DateTime.UtcNow,
                         CompletedAt = DateTime.UtcNow,

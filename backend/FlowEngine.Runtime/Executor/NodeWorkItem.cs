@@ -8,5 +8,5 @@ namespace FlowEngine.Runtime.Executor;
 /// <param name="Inputs">按端口名组织的输入数据。</param>
 public sealed record NodeWorkItem(
     Guid ExecutionId,
-    Guid NodeInstanceId,
+    string NodeInstanceId,
     IReadOnlyDictionary<string, Core.Entities.DataBatch> Inputs);

@@ -105,7 +105,7 @@ public sealed class WorkflowSchedulerKernel(
         var triggerBatch = CreateDataBatch(triggerPayload);
         var hasInputConnections = session.Workflow.Connections
             .Select(c => c.TargetNodeId)
-            .ToHashSet();
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         foreach (var node in session.Workflow.Nodes)
         {
@@ -403,11 +403,18 @@ public sealed class WorkflowSchedulerKernel(
             var targetInputPorts = GetInputPortNames(targetNodeType);
             var outputBatch = result.Output;
 
+            // 当 TargetPortName 为 null 时，解析为目标节点的第一个输入端口名。
+            var resolvedTargetPort = connection.TargetPortName;
+            if (string.IsNullOrEmpty(resolvedTargetPort) && targetInputPorts.Count > 0)
+            {
+                resolvedTargetPort = targetInputPorts[0];
+            }
+
             if (targetInputPorts.Count <= 1)
             {
                 var inputs = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase)
                 {
-                    [connection.TargetPortName] = outputBatch
+                    [resolvedTargetPort ?? FlowConstants.PortNames.Input] = outputBatch
                 };
 
                 await session.Queue.EnqueueAsync(
@@ -416,7 +423,7 @@ public sealed class WorkflowSchedulerKernel(
             }
             else
             {
-                session.WaitingArea.Receive(session.Execution.Id, targetNode.Id, connection.TargetPortName, outputBatch);
+                session.WaitingArea.Receive(session.Execution.Id, targetNode.Id, resolvedTargetPort ?? FlowConstants.PortNames.Input, outputBatch);
 
                 if (session.WaitingArea.IsReady(session.Execution.Id, targetNode.Id, targetInputPorts))
                 {
@@ -624,9 +631,9 @@ public sealed class WorkflowSchedulerKernel(
     private static ILlmClient? ResolveLlmClientForNode(
         NodeDefinition node,
         INodeType nodeType,
-        Dictionary<Guid, NodeDefinition> nodeMap,
-        ILookup<(Guid SourceNodeId, string SourcePortName), Connection> connectionsBySource,
-        ConcurrentDictionary<Guid, ILlmClient> nodeLlmClients)
+        Dictionary<string, NodeDefinition> nodeMap,
+        ILookup<(string SourceNodeId, string SourcePortName), Connection> connectionsBySource,
+        ConcurrentDictionary<string, ILlmClient> nodeLlmClients)
     {
         var supplyInputPorts = nodeType.Ports
             .Where(p => p.Direction == PortDirection.Input && p.Type == PortType.LLM)
@@ -642,7 +649,7 @@ public sealed class WorkflowSchedulerKernel(
             var incomingConnections = connectionsBySource
                 .Where(g => g.Key.SourceNodeId != node.Id)
                 .SelectMany(g => g)
-                .Where(c => c.TargetNodeId == node.Id && c.TargetPortName.Equals(port.Name, StringComparison.OrdinalIgnoreCase))
+                .Where(c => c.TargetNodeId == node.Id && c.TargetPortName is not null && c.TargetPortName.Equals(port.Name, StringComparison.OrdinalIgnoreCase))
                 .ToList();
 
             foreach (var connection in incomingConnections)
@@ -658,7 +665,7 @@ public sealed class WorkflowSchedulerKernel(
     }
 
     private NodeExecutionRecord BuildNodeExecutionRecord(
-        Guid nodeDefinitionId,
+        string nodeDefinitionId,
         int runIndex,
         IReadOnlyDictionary<string, DataBatch> inputs,
         NodeExecutionResult output,
@@ -680,7 +687,7 @@ public sealed class WorkflowSchedulerKernel(
     }
 
     private NodeExecutionRecord BuildNodeExecutionRecord(
-        Guid nodeDefinitionId,
+        string nodeDefinitionId,
         int runIndex,
         IReadOnlyDictionary<string, DataBatch> inputs,
         NodeExecutionResult output,

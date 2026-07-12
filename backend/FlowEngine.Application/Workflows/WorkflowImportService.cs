@@ -146,9 +146,8 @@ public sealed class WorkflowImportService(
             };
         }
 
-        var nodeIdMap = new Dictionary<string, Guid>(StringComparer.OrdinalIgnoreCase);
-        var nodes = exportResult.Nodes.Select(n => WorkflowMapper.ToEntity(n, nodeIdMap)).ToList();
-        var connections = exportResult.Connections.Select(c => WorkflowMapper.ToEntity(c, nodeIdMap)).ToList();
+        var nodes = exportResult.Nodes.Select(WorkflowMapper.ToEntity).ToList();
+        var connections = exportResult.Connections.Select(WorkflowMapper.ToEntity).ToList();
 
         var workflow = new Workflow
         {
