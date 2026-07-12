@@ -1,4 +1,5 @@
 using FlowEngine.Core;
+using FlowEngine.Core.Ai;
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
@@ -11,10 +12,21 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// Webhook 节点，接收外部 HTTP 请求并触发工作流。
 /// </summary>
-public sealed class WebhookNode : INodeType
+public sealed class WebhookNode : INodeType, IAiDefinitionProvider
 {
     /// <inheritdoc />
     public string TypeName => "webhook";
+
+    /// <inheritdoc />
+    public AiNodeDefinition GetAiDefinition(NodeTypeDescriptor descriptor) =>
+        AiDefinitionHelpers.Def(
+            "Webhook Trigger", "Trigger", true,
+            "通过 HTTP Webhook 触发工作流，是工作流的入口节点。外部系统向本节点分配的 URL 发送请求即触发，请求体作为工作流输入。",
+            ["trigger", "webhook", "http"],
+            null,
+            AiDefinitionHelpers.Example("Webhook 触发",
+                JsonNode.Parse("{}"),
+                JsonNode.Parse("""{"triggeredAt":"2026-07-12T09:00:00Z"}""")));
 
     /// <inheritdoc />
     public string DisplayName => "Webhook";

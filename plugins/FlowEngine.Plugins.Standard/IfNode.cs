@@ -1,5 +1,7 @@
 using FlowEngine.Core;
+using FlowEngine.Core.Ai;
 using System.ComponentModel;
+using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
@@ -12,10 +14,21 @@ namespace FlowEngine.Plugins.Standard;
 /// 条件分支节点，根据条件表达式路由到 true 或 false 分支。
 /// Condition 为 <see cref="Script"/> 类型，由工厂在预求值阶段完成 Expression 求值并写入 ResolvedValue。
 /// </summary>
-public sealed class IfNode : INodeType
+public sealed class IfNode : INodeType, IAiDefinitionProvider
 {
     /// <inheritdoc />
     public string TypeName => "if";
+
+    /// <inheritdoc />
+    public AiNodeDefinition GetAiDefinition(NodeTypeDescriptor descriptor) =>
+        AiDefinitionHelpers.Def(
+            "If", "Core", false,
+            "条件分支节点。根据条件表达式把数据路由到 true 或 false 出口。条件表达式在引擎运行时求值，AI 只需在参数中提供条件。",
+            ["logic", "branch", "condition"],
+            null,
+            AiDefinitionHelpers.Example("判断金额是否大于 100",
+                JsonNode.Parse("""{"condition":"$input.first().amount > 100"}"""),
+                null));
 
     /// <inheritdoc />
     public string DisplayName => "If";

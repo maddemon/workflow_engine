@@ -1,4 +1,5 @@
 using FlowEngine.Core;
+using FlowEngine.Core.Ai;
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -15,12 +16,23 @@ namespace FlowEngine.Plugins.Standard;
 /// 代码执行节点，使用 Jint 沙箱执行 JavaScript 代码。
 /// 支持 Run Once for All Items 和 Run Once for Each Item 两种模式。
 /// </summary>
-public sealed class JSNode : INodeType
+public sealed class JSNode : INodeType, IAiDefinitionProvider
 {
     private const int DefaultTimeoutMs = 5000;
 
     /// <inheritdoc />
     public string TypeName => "script";
+
+    /// <inheritdoc />
+    public AiNodeDefinition GetAiDefinition(NodeTypeDescriptor descriptor) =>
+        AiDefinitionHelpers.Def(
+            "Code (JavaScript)", "Core", false,
+            "执行 JavaScript 代码转换数据。通过 $input.all() / $input.first() 访问上游输入，return 返回结果。支持 RunOnceForAllItems（一次性处理全部）与 RunOnceForEachItem（逐条处理）。",
+            ["core", "code", "javascript", "transform"],
+            JsonNode.Parse("""{"type":"object","description":"代码 return 的对象/数组"}"""),
+            AiDefinitionHelpers.Example("拼接问候语",
+                JsonNode.Parse("""{"codeMode":"RunOnceForAllItems","code":"return { message: $input.first().greeting + ' world' };"}"""),
+                JsonNode.Parse("""{"message":"hello world"}""")));
 
     /// <inheritdoc />
     public string DisplayName => "Code";

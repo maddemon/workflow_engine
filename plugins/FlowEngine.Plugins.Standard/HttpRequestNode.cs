@@ -1,5 +1,7 @@
 using System.ComponentModel;
+using System.Text.Json.Nodes;
 using FlowEngine.Core;
+using FlowEngine.Core.Ai;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
@@ -11,10 +13,21 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// HTTP 请求节点，支持静态配置和占位符。
 /// </summary>
-public sealed class HttpRequestNode : INodeType
+public sealed class HttpRequestNode : INodeType, IAiDefinitionProvider
 {
     /// <inheritdoc />
     public string TypeName => "httpRequest";
+
+    /// <inheritdoc />
+    public AiNodeDefinition GetAiDefinition(NodeTypeDescriptor descriptor) =>
+        AiDefinitionHelpers.Def(
+            "HTTP Request", "Core", false,
+            "发起 HTTP 请求并解析响应。支持 GET/POST/PUT/DELETE/PATCH，可配置认证（Bearer/Basic/API Key/Query）、自定义请求头与请求体。返回状态码、响应头与自动解析的响应体。常用于调用外部 API、Webhook 回调。",
+            ["http", "api", "rest"],
+            JsonNode.Parse("""{"type":"object","properties":{"statusCode":{"type":"number"},"headers":{"type":"object"},"body":{"description":"响应体，已按 Content-Type 自动解析为 JSON/文本"}}}"""),
+            AiDefinitionHelpers.Example("GET 请求示例",
+                JsonNode.Parse("""{"method":"GET","url":"https://api.example.com/users"}"""),
+                JsonNode.Parse("""{"statusCode":200,"body":[{"id":1,"name":"Alice"}]}""")));
 
     /// <inheritdoc />
     public string DisplayName => "HTTP Request";

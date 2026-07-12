@@ -1,4 +1,5 @@
 using FlowEngine.Core;
+using FlowEngine.Core.Ai;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -12,10 +13,21 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// 编辑字段节点，用于添加、修改或删除数据字段。
 /// </summary>
-public sealed class SetNode : INodeType
+public sealed class SetNode : INodeType, IAiDefinitionProvider
 {
     /// <inheritdoc />
     public string TypeName => "set";
+
+    /// <inheritdoc />
+    public AiNodeDefinition GetAiDefinition(NodeTypeDescriptor descriptor) =>
+        AiDefinitionHelpers.Def(
+            "Edit Fields (Set)", "Core", false,
+            "编辑数据字段：新增、修改或删除字段，支持点号表示嵌套字段（如 address.city）。常用于为下游节点准备/重命名数据。默认保留全部字段。",
+            ["core", "transform", "set"],
+            JsonNode.Parse("""{"type":"object","description":"与输入结构一致，按 Fields 规则修改后的数据"}"""),
+            AiDefinitionHelpers.Example("写入 greeting 与 count 字段",
+                JsonNode.Parse("""{"fields":[{"name":"greeting","value":"hello"},{"name":"count","value":3}]}"""),
+                JsonNode.Parse("""{"greeting":"hello","count":3}""")));
 
     /// <inheritdoc />
     public string DisplayName => "Edit Fields (Set)";

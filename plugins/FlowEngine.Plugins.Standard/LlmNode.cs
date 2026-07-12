@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
+using FlowEngine.Core.Ai;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
@@ -12,10 +13,21 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// LLM 供应节点，集中管理模型配置并通过供应端口向消费节点提供 LLM 客户端实例。
 /// </summary>
-public sealed class LlmNode : INodeType
+public sealed class LlmNode : INodeType, IAiDefinitionProvider
 {
     /// <inheritdoc />
     public string TypeName => "llm";
+
+    /// <inheritdoc />
+    public AiNodeDefinition GetAiDefinition(NodeTypeDescriptor descriptor) =>
+        AiDefinitionHelpers.Def(
+            "LLM", "AI", false,
+            "调用大语言模型处理文本/数据。常用于摘要、抽取、分类、翻译。非触发器节点，需放在触发器或上游节点之后。",
+            ["ai", "llm", "transform"],
+            JsonNode.Parse("""{"type":"object","properties":{"text":{"description":"模型输出文本"}}}"""),
+            AiDefinitionHelpers.Example("用 LLM 归类交易",
+                JsonNode.Parse("""{"prompt":"将以下流水按类型归类：工资/转账/消费","model":"gpt-4o"}"""),
+                JsonNode.Parse("""{"text":"工资: 2 笔; 消费: 5 笔"}""")));
 
     /// <inheritdoc />
     public string DisplayName => "LLM";
