@@ -75,7 +75,7 @@
       "typeName": "dbUpsert",
       "name": "写入指定数据库",
       "parameters": {
-        "connection": "$credentials.db.connectionString",
+        "connection": "db",
         "table": "employees",
         "mode": "upsert",
         "keyColumns": ["emp_id"]

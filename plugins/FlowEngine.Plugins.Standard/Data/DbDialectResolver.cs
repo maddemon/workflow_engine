@@ -1,65 +1,36 @@
 namespace FlowEngine.Plugins.Standard.Data;
 
 /// <summary>
-/// 从显式方言或连接字符串推断数据库方言。
+/// 从凭据的 dbType 字段解析数据库方言。
 /// </summary>
 public static class DbDialectResolver
 {
     /// <summary>
-    /// 解析方言。
+    /// 将凭据的 <c>dbType</c> 字段解析为方言。
+    /// 接受：postgresql/postgres、mysql、sqlserver/mssql、sqlite。
     /// </summary>
-    /// <param name="dialect">显式方言名称（可选）。</param>
-    /// <param name="connectionString">数据库连接字符串。</param>
-    /// <returns>推断出的方言。</returns>
-    public static DbDialect Resolve(string? dialect, string? connectionString)
+    /// <param name="dbType">凭据的 dbType 值。</param>
+    /// <returns>解析出的方言。</returns>
+    /// <exception cref="System.InvalidOperationException">dbType 为空或无法识别时抛出。</exception>
+    public static DbDialect ParseDbType(string? dbType)
     {
-        if (!string.IsNullOrWhiteSpace(dialect))
+        if (string.IsNullOrWhiteSpace(dbType))
         {
-            if (Enum.TryParse<DbDialect>(dialect, true, out var explicitDialect))
-            {
-                return explicitDialect;
-            }
-
-            throw new NotSupportedException($"不支持的显式方言：'{dialect}'。");
+            throw new System.InvalidOperationException("凭据缺少 dbType 字段，无法确定数据库方言。");
         }
 
-        if (string.IsNullOrWhiteSpace(connectionString))
+        if (System.Enum.TryParse<DbDialect>(dbType, true, out var dialect))
         {
-            throw new ArgumentException("连接字符串不能为空。", nameof(connectionString));
+            return dialect;
         }
 
-        var cs = connectionString;
-
-        // PostgreSQL 通常使用 Host=；MySQL/SQL Server 通常使用 Server=
-        if (ContainsKey(cs, "Host="))
+        // 兼容常见别名
+        var normalized = dbType.Trim().ToLowerInvariant();
+        return normalized switch
         {
-            return DbDialect.PostgreSQL;
-        }
-
-        if (ContainsKey(cs, "Server="))
-        {
-            // SQL Server 常用 Initial Catalog / Trusted_Connection / Encrypt / Integrated Security
-            if (ContainsKey(cs, "Initial Catalog=") ||
-                ContainsKey(cs, "Trusted_Connection=") ||
-                ContainsKey(cs, "Encrypt=") ||
-                ContainsKey(cs, "Integrated Security="))
-            {
-                return DbDialect.SqlServer;
-            }
-
-            return DbDialect.MySQL;
-        }
-
-        if (ContainsKey(cs, "Data Source="))
-        {
-            return DbDialect.SQLite;
-        }
-
-        throw new NotSupportedException("无法从连接字符串推断数据库方言。");
-    }
-
-    private static bool ContainsKey(string connectionString, string key)
-    {
-        return connectionString.Contains(key, StringComparison.OrdinalIgnoreCase);
+            "postgres" => DbDialect.PostgreSQL,
+            "mssql" => DbDialect.SqlServer,
+            _ => throw new System.InvalidOperationException($"无法识别的 dbType：'{dbType}'。可用值：postgresql, mysql, sqlserver, sqlite。")
+        };
     }
 }

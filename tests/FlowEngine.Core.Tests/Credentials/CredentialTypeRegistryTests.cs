@@ -109,14 +109,14 @@ public sealed class CredentialTypeRegistryTests
         var types = _registry.GetAll();
 
         var names = types.Select(t => t.Name).OrderBy(n => n).ToList();
-        Assert.Equal(["apiKey", "basicAuth", "connectionString", "oauth2"], names);
+        Assert.Equal(["apiKey", "basicAuth", "database", "oauth2"], names);
     }
 
     [Fact]
     public void IsKnown_KnownType_ReturnsTrue()
     {
         Assert.True(_registry.IsKnown("apiKey"));
-        Assert.True(_registry.IsKnown("connectionString"));
+        Assert.True(_registry.IsKnown("database"));
         Assert.True(_registry.IsKnown("basicAuth"));
         Assert.True(_registry.IsKnown("oauth2"));
     }

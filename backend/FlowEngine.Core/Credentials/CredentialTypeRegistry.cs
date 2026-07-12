@@ -83,10 +83,19 @@ public sealed class CredentialTypeRegistry : ICredentialTypeRegistry
             ]);
 
         yield return new CredentialTypeDefinition(
-            "connectionString",
-            "Connection String",
+            "database",
+            "Database",
             [
-                new CredentialFieldDefinition("connectionString", "Connection String", isRequired: true, secret: true),
+                new CredentialFieldDefinition("dbType", "Database Type", isRequired: true, secret: false, hint: "postgresql | mysql | sqlserver | sqlite"),
+                new CredentialFieldDefinition("host", "Host", isRequired: false, secret: false),
+                new CredentialFieldDefinition("port", "Port", isRequired: false, secret: false),
+                new CredentialFieldDefinition("database", "Database", isRequired: false, secret: false),
+                new CredentialFieldDefinition("userid", "User ID", isRequired: false, secret: false),
+                new CredentialFieldDefinition("password", "Password", isRequired: false, secret: true),
+                new CredentialFieldDefinition("ssl", "SSL Mode", isRequired: false, secret: false, hint: "依方言而定，如 require / disable / true / false"),
+                new CredentialFieldDefinition("dataSource", "Data Source (SQLite)", isRequired: false, secret: false, hint: "SQLite 专用，如 /path/db.sqlite 或 :memory:"),
+                new CredentialFieldDefinition("mode", "Mode (SQLite)", isRequired: false, secret: false, hint: "SQLite 专用，如 Memory"),
+                new CredentialFieldDefinition("cache", "Cache (SQLite)", isRequired: false, secret: false, hint: "SQLite 专用，如 Shared"),
             ]);
 
         yield return new CredentialTypeDefinition(

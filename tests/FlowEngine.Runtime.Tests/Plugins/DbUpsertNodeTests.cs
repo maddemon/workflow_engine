@@ -18,7 +18,7 @@ public sealed class DbUpsertNodeTests
         using var holder = CreateSharedMemoryConnection(connectionString);
         await CreateUsersTableAsync(holder);
 
-        var node = CreateNode(connectionString, "upsert", "id", new Dictionary<string, string>
+        var node = CreateNode(connectionString, DbUpsertMode.Upsert, "id", new Dictionary<string, string>
         {
             ["id"] = "$json.id",
             ["name"] = "$json.name",
@@ -74,7 +74,7 @@ public sealed class DbUpsertNodeTests
         using var holder = CreateSharedMemoryConnection(connectionString);
         await CreateUsersTableAsync(holder);
 
-        var node = CreateNode(connectionString, "insert", "", new Dictionary<string, string>
+        var node = CreateNode(connectionString, DbUpsertMode.Insert, "", new Dictionary<string, string>
         {
             ["id"] = "$json.id",
             ["name"] = "$json.name",
@@ -113,7 +113,7 @@ public sealed class DbUpsertNodeTests
         await CreateUsersTableAsync(holder);
         await InsertSeedRowAsync(holder, 3, "Carol", "carol@example.com");
 
-        var node = CreateNode(connectionString, "update", "id", new Dictionary<string, string>
+        var node = CreateNode(connectionString, DbUpsertMode.Update, "id", new Dictionary<string, string>
         {
             ["id"] = "$json.id",
             ["name"] = "$json.name"
@@ -151,7 +151,7 @@ public sealed class DbUpsertNodeTests
         await CreateUsersTableAsync(holder);
 
         var malicious = "'; DROP TABLE users; --";
-        var node = CreateNode(connectionString, "insert", "", new Dictionary<string, string>
+        var node = CreateNode(connectionString, DbUpsertMode.Insert, "", new Dictionary<string, string>
         {
             ["id"] = "$json.id",
             ["name"] = "$json.name",
@@ -181,28 +181,6 @@ public sealed class DbUpsertNodeTests
         tableCheck.CommandText = "SELECT COUNT(*) FROM users";
         var count = await tableCheck.ExecuteScalarAsync();
         Assert.Equal(1L, count);
-    }
-
-    [Theory]
-    [InlineData("Host=localhost;Database=test;Username=user;Password=pass", DbDialect.PostgreSQL)]
-    [InlineData("Server=localhost;Database=test;Uid=user;Pwd=pass", DbDialect.MySQL)]
-    [InlineData("Server=localhost;Database=test;User Id=user;Password=pass;Encrypt=false", DbDialect.SqlServer)]
-    [InlineData("Data Source=:memory:", DbDialect.SQLite)]
-    public void ResolveDialect_FromConnectionString(string connectionString, DbDialect expected)
-    {
-        var actual = DbDialectResolver.Resolve(null, connectionString);
-        Assert.Equal(expected, actual);
-    }
-
-    [Theory]
-    [InlineData("postgresql", DbDialect.PostgreSQL)]
-    [InlineData("mysql", DbDialect.MySQL)]
-    [InlineData("sqlserver", DbDialect.SqlServer)]
-    [InlineData("sqlite", DbDialect.SQLite)]
-    public void ResolveDialect_FromExplicitValue(string dialect, DbDialect expected)
-    {
-        var actual = DbDialectResolver.Resolve(dialect, "ignored");
-        Assert.Equal(expected, actual);
     }
 
     [Fact]
@@ -265,7 +243,7 @@ public sealed class DbUpsertNodeTests
         {
             Connection = ResolvedConnection(connectionString),
             Table = "users",
-            Mode = "insert",
+            Mode = DbUpsertMode.Insert,
             Columns = ToScriptColumns(new Dictionary<string, string>
             {
                 ["id"] = "$json.id",
@@ -296,7 +274,29 @@ public sealed class DbUpsertNodeTests
         var node = new DbUpsertNode
         {
             Table = "users",
-            Mode = "insert",
+            Mode = DbUpsertMode.Insert,
+            Columns = ToScriptColumns(new Dictionary<string, string> { ["id"] = "$json.id" })
+        };
+
+        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal("MissingConnection", result.Error?.Code);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_MissingDbType_ReturnsError()
+    {
+        var node = new DbUpsertNode
+        {
+            Connection = new CredentialValue
+            {
+                Name = "test",
+                Type = "database",
+                Fields = { ["host"] = "localhost", ["database"] = "test" }
+            },
+            Table = "users",
+            Mode = DbUpsertMode.Insert,
             Columns = ToScriptColumns(new Dictionary<string, string> { ["id"] = "$json.id" })
         };
 
@@ -312,7 +312,7 @@ public sealed class DbUpsertNodeTests
         var node = new DbUpsertNode
         {
             Connection = ResolvedConnection("Data Source=:memory:"),
-            Mode = "insert",
+            Mode = DbUpsertMode.Insert,
             Columns = ToScriptColumns(new Dictionary<string, string> { ["id"] = "$json.id" })
         };
 
@@ -329,7 +329,7 @@ public sealed class DbUpsertNodeTests
         {
             Connection = ResolvedConnection("Data Source=:memory:"),
             Table = "users",
-            Mode = "insert"
+            Mode = DbUpsertMode.Insert
         };
 
         var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
@@ -345,7 +345,7 @@ public sealed class DbUpsertNodeTests
         {
             Connection = ResolvedConnection("Data Source=:memory:"),
             Table = "users; DROP TABLE users--",
-            Mode = "insert",
+            Mode = DbUpsertMode.Insert,
             Columns = ToScriptColumns(new Dictionary<string, string> { ["id"] = "$json.id" })
         };
 
@@ -362,7 +362,7 @@ public sealed class DbUpsertNodeTests
         {
             Connection = ResolvedConnection("Data Source=:memory:"),
             Table = "users",
-            Mode = "insert",
+            Mode = DbUpsertMode.Insert,
             Columns = ToScriptColumns(new Dictionary<string, string>
             {
                 ["id"] = "$json.id",
@@ -383,7 +383,7 @@ public sealed class DbUpsertNodeTests
         {
             Connection = ResolvedConnection("Data Source=:memory:"),
             Table = "users",
-            Mode = "upsert",
+            Mode = DbUpsertMode.Upsert,
             KeyColumns = "id; DROP TABLE users--",
             Columns = ToScriptColumns(new Dictionary<string, string>
             {
@@ -405,7 +405,7 @@ public sealed class DbUpsertNodeTests
         {
             Connection = ResolvedConnection("Data Source=:memory:"),
             Table = "users",
-            Mode = "upsert",
+            Mode = DbUpsertMode.Upsert,
             KeyColumns = "missing",
             Columns = ToScriptColumns(new Dictionary<string, string>
             {
@@ -461,10 +461,10 @@ public sealed class DbUpsertNodeTests
 
     private static DbUpsertNode CreateNode(
         string connectionString,
-        string mode,
+        DbUpsertMode mode,
         string keyColumns,
         Dictionary<string, string> columns,
-        string? dialect = null)
+        DbDialect? dialect = null)
     {
         return new DbUpsertNode
         {
@@ -477,14 +477,44 @@ public sealed class DbUpsertNodeTests
         };
     }
 
-    private static Script ResolvedConnection(string connectionString)
+    private static CredentialValue ResolvedConnection(string sqliteConnectionString)
     {
-        return new Script
+        var dict = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var part in sqliteConnectionString.Split(';'))
         {
-            Source = $"'{connectionString}'",
-            Language = ScriptLanguage.JavaScript,
-            ReturnType = ScriptReturnType.String
-        }.WithResolvedValue(JsonValue.Create(connectionString));
+            var pair = part.Split('=', 2);
+            if (pair.Length == 2 && pair[0].Trim().Length > 0)
+            {
+                dict[pair[0].Trim()] = pair[1].Trim();
+            }
+        }
+
+        var fields = new Dictionary<string, string>
+        {
+            [FlowConstants.CredentialFields.DbType] = "sqlite"
+        };
+
+        if (dict.TryGetValue("Data Source", out var dataSource))
+        {
+            fields["dataSource"] = dataSource;
+        }
+
+        if (dict.TryGetValue("Mode", out var mode))
+        {
+            fields["mode"] = mode;
+        }
+
+        if (dict.TryGetValue("Cache", out var cache))
+        {
+            fields["cache"] = cache;
+        }
+
+        return new CredentialValue
+        {
+            Name = "test",
+            Type = "database",
+            Fields = fields
+        };
     }
 
     private static Dictionary<string, Script> ToScriptColumns(Dictionary<string, string> columns)

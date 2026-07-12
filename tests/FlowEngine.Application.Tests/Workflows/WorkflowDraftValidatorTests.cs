@@ -38,7 +38,7 @@ public class WorkflowDraftValidatorTests
         ],
         Parameters =
         [
-            new ParameterDefinition { Name = "connection", Required = true, CredentialType = "connectionString" },
+            new ParameterDefinition { Name = "connection", Required = true, CredentialType = "database" },
         ],
     };
 
@@ -326,7 +326,7 @@ public class WorkflowDraftValidatorTests
                 ? new CredentialValue
                 {
                     Name = name,
-                    Type = "connectionString",
+                    Type = "database",
                     Fields = new Dictionary<string, string>(),
                     BinaryFields = new Dictionary<string, byte[]>(),
                 }

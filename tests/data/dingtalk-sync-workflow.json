@@ -92,7 +92,7 @@
       "typeName": "dbUpsert",
       "name": "写入部门表",
       "parameters": {
-        "connection": "$credentials['sync-db'].connectionString",
+        "connection": "sync-db",
         "table": "departments",
         "mode": "upsert",
         "keyColumns": "dingtalk_dept_id",
@@ -116,7 +116,7 @@
       "typeName": "dbUpsert",
       "name": "写入员工表",
       "parameters": {
-        "connection": "$credentials['sync-db'].connectionString",
+        "connection": "sync-db",
         "table": "employees",
         "mode": "upsert",
         "keyColumns": "dingtalk_user_id",

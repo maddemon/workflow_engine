@@ -31,6 +31,7 @@ public static class FlowConstants
     public static class CredentialFields
     {
         public const string ApiKey = "apiKey";
+        public const string DbType = "dbType";
     }
 
     /// <summary>

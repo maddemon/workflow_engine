@@ -10,6 +10,7 @@ using FlowEngine.Core.Enums;
 using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Http;
 using FlowEngine.Core.Scripting;
+using FlowEngine.Plugins.Standard.Enums;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -50,9 +51,9 @@ public sealed class PaginateNode : INodeType
     [Description("Initial cursor value.")]
     public string? CursorInitial { get; set; } = "0";
 
-    /// <summary>游标类型：number 或 string。</summary>
-    [Description("Cursor type: 'number' or 'string'.")]
-    public string CursorType { get; set; } = "string";
+/// <summary>游标类型：number 或 string。</summary>
+[Description("Cursor type: 'number' or 'string'.")]
+public CursorType CursorType { get; set; } = Enums.CursorType.String;
 
     /// <summary>最大分页次数（安全上限，防止无限循环）。</summary>
     [Description("Maximum number of pages to fetch (safety cap).")]
@@ -84,7 +85,10 @@ public sealed class PaginateNode : INodeType
             return context.ErrorResult("ContextFactoryMissing", "PaginateNode requires a context factory to iterate.");
         }
 
-        var cursorType = GetConfig(context, "cursorType", "string");
+        var cursorTypeStr = GetConfig(context, "cursorType", "String");
+        var cursorType = cursorTypeStr.Equals("Number", StringComparison.OrdinalIgnoreCase)
+            ? Enums.CursorType.Number
+            : Enums.CursorType.String;
         var nextCursorPath = GetConfig(context, "nextCursorPath", "");
         var itemsPath = GetConfig(context, "itemsPath", "");
         var terminateWhen = GetConfig(context, "terminateWhen", "$nextCursor == ''");
@@ -326,14 +330,14 @@ public sealed class PaginateNode : INodeType
         };
     }
 
-    private static object? CoerceCursorLiteral(string literal, string cursorType)
+    private static object? CoerceCursorLiteral(string literal, Enums.CursorType cursorType)
     {
         if (string.IsNullOrEmpty(literal))
         {
-            return cursorType.Equals("number", StringComparison.OrdinalIgnoreCase) ? 0 : "";
+            return cursorType == Enums.CursorType.Number ? 0 : "";
         }
 
-        if (cursorType.Equals("number", StringComparison.OrdinalIgnoreCase) && int.TryParse(literal, out var i))
+        if (cursorType == Enums.CursorType.Number && int.TryParse(literal, out var i))
         {
             return i;
         }
@@ -341,14 +345,14 @@ public sealed class PaginateNode : INodeType
         return literal;
     }
 
-    private static object? CoerceCursor(JsonNode? node, string cursorType)
+    private static object? CoerceCursor(JsonNode? node, Enums.CursorType cursorType)
     {
         if (node is not JsonValue val)
         {
             return null;
         }
 
-        if (cursorType.Equals("number", StringComparison.OrdinalIgnoreCase))
+        if (cursorType == Enums.CursorType.Number)
         {
             if (val.TryGetValue(out int i)) return i;
             if (val.TryGetValue(out long l)) return l;
@@ -361,7 +365,7 @@ public sealed class PaginateNode : INodeType
         }
 
         var str = node.ToString();
-        if (cursorType.Equals("number", StringComparison.OrdinalIgnoreCase) && int.TryParse(str, out var ni))
+        if (cursorType == Enums.CursorType.Number && int.TryParse(str, out var ni))
         {
             return ni;
         }

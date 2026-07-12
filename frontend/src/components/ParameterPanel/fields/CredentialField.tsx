@@ -1,12 +1,12 @@
 import { useMemo, useState } from 'react';
 import { notifications } from '@mantine/notifications';
-import { Select, Group, Text, Button, Modal, Stack, TextInput, ActionIcon } from '@mantine/core';
-import { Plus, Trash2 } from 'lucide-react';
+import { Select, Group, Text, Button, Modal, Stack, TextInput, PasswordInput } from '@mantine/core';
+import { Plus } from 'lucide-react';
 import { useRequest } from 'ahooks';
 import { InfoTooltip } from './InfoTooltip.tsx';
 import { getCredentials, createCredential, getCredentialTypes } from '../../../services/api.ts';
 import { useWorkflowStore } from '../../../stores/workflowStore.ts';
-import type { ParameterDefinition } from '../../../types/workflow.ts';
+import type { ParameterDefinition, CredentialTypeDefinition } from '../../../types/workflow.ts';
 
 interface CredentialFieldProps {
   definition: ParameterDefinition;
@@ -20,9 +20,9 @@ export function CredentialField({ definition, value, onChange, error }: Credenti
   const bumpCredentialRevision = useWorkflowStore((s) => s.bumpCredentialRevision);
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [formName, setFormName] = useState('');
   const [formType, setFormType] = useState('apiKey');
-  const [formFields, setFormFields] = useState<{ key: string; value: string }[]>([{ key: '', value: '' }]);
+  const [formValues, setFormValues] = useState<Record<string, string>>({});
+  const [formName, setFormName] = useState('');
 
   const { data: allCredentials = [], loading } = useRequest(getCredentials, {
     refreshDeps: [credentialRevision, definition.credentialType],
@@ -38,13 +38,35 @@ export function CredentialField({ definition, value, onChange, error }: Credenti
   const { data: types = [] } = useRequest(getCredentialTypes);
 
   const typeOptions = types.length > 0
-    ? types.map((t) => ({ label: t.displayName, value: t.name }))
+    ? types.map((t: CredentialTypeDefinition) => ({ label: t.displayName, value: t.name }))
     : [
         { label: 'API Key', value: 'apiKey' },
         { label: 'OAuth2', value: 'oauth2' },
         { label: 'Basic Auth', value: 'basicAuth' },
-        { label: 'Connection String', value: 'connectionString' },
+        { label: 'Database', value: 'database' },
       ];
+
+  // 选中的凭据类型定义，用于按 schema 生成表单字段
+  const selectedType = useMemo(
+    () => types.find((t: CredentialTypeDefinition) => t.name === formType) ?? null,
+    [types, formType],
+  );
+
+  const handleTypeChange = (next: string | null) => {
+    const type = next ?? 'apiKey';
+    setFormType(type);
+    const def = types.find((t: CredentialTypeDefinition) => t.name === type);
+    const initial: Record<string, string> = {};
+    def?.fields.forEach((f) => { initial[f.name] = ''; });
+    setFormValues(initial);
+  };
+
+  const handleOpenCreate = () => {
+    const initial: Record<string, string> = {};
+    selectedType?.fields.forEach((f) => { initial[f.name] = ''; });
+    setFormValues(initial);
+    setCreateOpen(true);
+  };
 
   const handleCreate = async () => {
     if (!formName.trim()) {
@@ -55,16 +77,11 @@ export function CredentialField({ definition, value, onChange, error }: Credenti
       });
       return;
     }
-    const fields: Record<string, string> = {};
-    for (const f of formFields) {
-      if (f.key.trim()) fields[f.key.trim()] = f.value;
-    }
     try {
-      await createCredential({ name: formName, type: formType, fields });
+      await createCredential({ name: formName, type: formType, fields: { ...formValues } });
       setCreateOpen(false);
       setFormName('');
-      setFormType('apiKey');
-      setFormFields([{ key: '', value: '' }]);
+      setFormValues({});
       bumpCredentialRevision();
     } catch (err) {
       notifications.show({
@@ -89,7 +106,7 @@ export function CredentialField({ definition, value, onChange, error }: Credenti
           size="compact-xs"
           variant="subtle"
           leftSection={<Plus size={12} />}
-          onClick={() => setCreateOpen(true)}
+          onClick={handleOpenCreate}
           disabled={loading}
         >
           New
@@ -110,53 +127,41 @@ export function CredentialField({ definition, value, onChange, error }: Credenti
           <Select
             label="Type"
             value={formType}
-            onChange={(v) => setFormType(v ?? 'apiKey')}
+            onChange={handleTypeChange}
             data={typeOptions}
             size="sm"
           />
           <Stack gap="xs">
-            {formFields.map((field, index) => (
-              <Group key={index} gap="xs">
-                <TextInput
-                  placeholder="Key"
-                  value={field.key}
-                  onChange={(e) => {
-                    const next = [...formFields];
-                    next[index] = { ...next[index], key: e.target.value };
-                    setFormFields(next);
-                  }}
-                  size="sm"
-                  style={{ flex: 1 }}
-                />
-                <TextInput
-                  placeholder="Value"
-                  value={field.value}
-                  onChange={(e) => {
-                    const next = [...formFields];
-                    next[index] = { ...next[index], value: e.target.value };
-                    setFormFields(next);
-                  }}
-                  size="sm"
-                  style={{ flex: 1 }}
-                />
-                <ActionIcon
-                  color="red"
-                  variant="subtle"
-                  onClick={() => setFormFields(formFields.filter((_, i) => i !== index))}
-                >
-                  <Trash2 size={14} />
-                </ActionIcon>
-              </Group>
+            {selectedType?.fields.map((field) => (
+              <Stack gap={2} key={field.name}>
+                <Group gap={4} wrap="nowrap">
+                  <Text size="sm" fw={500}>
+                    {field.displayName}
+                    {field.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
+                  </Text>
+                  {field.hint && <InfoTooltip label={field.hint} />}
+                </Group>
+                {field.sensitive ? (
+                  <PasswordInput
+                    placeholder={field.name}
+                    value={formValues[field.name] ?? ''}
+                    onChange={(e) => setFormValues((prev) => ({ ...prev, [field.name]: e.target.value }))}
+                    size="sm"
+                  />
+                ) : (
+                  <TextInput
+                    placeholder={field.name}
+                    value={formValues[field.name] ?? ''}
+                    onChange={(e) => setFormValues((prev) => ({ ...prev, [field.name]: e.target.value }))}
+                    size="sm"
+                  />
+                )}
+              </Stack>
             ))}
+            {selectedType && selectedType.fields.length === 0 && (
+              <Text size="xs" c="dimmed">该凭据类型无字段定义。</Text>
+            )}
           </Stack>
-          <Button
-            variant="subtle"
-            size="xs"
-            leftSection={<Plus size={14} />}
-            onClick={() => setFormFields([...formFields, { key: '', value: '' }])}
-          >
-            Add Field
-          </Button>
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setCreateOpen(false)}>Cancel</Button>
             <Button onClick={handleCreate}>Create</Button>

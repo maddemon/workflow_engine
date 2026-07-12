@@ -94,7 +94,7 @@ public class CredentialEnsureTests : IClassFixture<FlowEngineWebApplicationFacto
         var types = await response.Content.ReadFromJsonAsync<System.Text.Json.Nodes.JsonArray>(TestJsonOptions, ct);
         Assert.NotNull(types);
         Assert.Contains(types!, t => (string?)t!["name"] == "apiKey");
-        Assert.Contains(types!, t => (string?)t!["name"] == "connectionString");
+        Assert.Contains(types!, t => (string?)t!["name"] == "database");
         Assert.Contains(types!, t => (string?)t!["name"] == "oauth2");
     }
 

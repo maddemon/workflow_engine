@@ -33,11 +33,12 @@ public sealed class DbUpsertNode : INodeType
     public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
 
     /// <summary>
-    /// 数据库连接字符串或表达式（如 <c>$credentials.db.connectionString</c>）。
+    /// 数据库连接凭据（类型为 <c>database</c>）。凭据按结构化字段（dbType/host/port/database/userid/password 等）
+    /// 配置，运行时由对应方言的 <see cref="IConnectionStringBuilder"/> 生成 ADO.NET 连接字符串。
     /// </summary>
-    [Hint(PresentationHint.Expression)]
-    [Description("Connection string or expression (e.g. $credentials.db.connectionString).")]
-    public Script Connection { get; set; } = Script.Empty;
+    [Credential("database")]
+    [Description("Database connection credential (type: database). Connection string is generated per dialect from its fields (dbType/host/port/database/userid/password).")]
+    public CredentialValue? Connection { get; set; }
 
     /// <summary>
     /// 目标表名。
@@ -45,11 +46,11 @@ public sealed class DbUpsertNode : INodeType
     [Description("Target table name.")]
     public string Table { get; set; } = string.Empty;
 
-    /// <summary>
-    /// 写入模式：upsert、insert、update。
-    /// </summary>
-    [Description("Write mode: upsert | insert | update.")]
-    public string Mode { get; set; } = "upsert";
+/// <summary>
+/// 写入模式：upsert、insert、update。
+/// </summary>
+[Description("Write mode: upsert | insert | update.")]
+public DbUpsertMode Mode { get; set; } = DbUpsertMode.Upsert;
 
     /// <summary>
     /// 主键列，逗号分隔（upsert/update 必填）。
@@ -64,11 +65,11 @@ public sealed class DbUpsertNode : INodeType
     [Description("Column mapping: key = DB column, value = JS expression evaluated per row.")]
     public Dictionary<string, Script> Columns { get; set; } = [];
 
-    /// <summary>
-    /// 可选方言；留空时从连接字符串推断。
-    /// </summary>
-    [Description("Optional dialect. Inferred from connection string when omitted.")]
-    public string? Dialect { get; set; }
+/// <summary>
+/// 可选方言覆盖；留空时从凭据的 <c>dbType</c> 字段推断。
+/// </summary>
+[Description("Optional dialect override. When omitted, inferred from the credential's dbType field.")]
+public DbDialect? Dialect { get; set; }
 
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
@@ -85,15 +86,23 @@ public sealed class DbUpsertNode : INodeType
     {
         try
         {
-            if (string.IsNullOrWhiteSpace(Connection.Source))
+            if (Connection is null)
             {
-                return context.ErrorResult(FlowConstants.ErrorCodes.MissingConnection, "Connection string is required.");
+                return context.ErrorResult(FlowConstants.ErrorCodes.MissingConnection, "Connection credential is required.");
             }
 
-            var connectionString = await Connection.EvaluateAsync<string>(context, cancellationToken: cancellationToken);
-            if (string.IsNullOrWhiteSpace(connectionString))
+            // 方言：节点 Dialect 参数优先，否则取凭据的 dbType 字段
+            DbDialect dialect;
+            string connectionString;
+            try
             {
-                return context.ErrorResult(FlowConstants.ErrorCodes.MissingConnection, "Connection string is required.");
+                dialect = Dialect
+                    ?? DbDialectResolver.ParseDbType(Connection.Fields.TryGetValue(FlowConstants.CredentialFields.DbType, out var dbType) ? dbType : null);
+                connectionString = ConnectionStringBuilderFactory.Get(dialect).Build(Connection.Fields);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return context.ErrorResult(FlowConstants.ErrorCodes.MissingConnection, ex.Message);
             }
 
             var validationError = Validate(context, connectionString, out var keyColumnList, out var columnList);
@@ -102,27 +111,18 @@ public sealed class DbUpsertNode : INodeType
                 return validationError;
             }
 
-            var mode = Mode.Trim();
-            if (!mode.Equals("upsert", StringComparison.OrdinalIgnoreCase) &&
-                !mode.Equals("insert", StringComparison.OrdinalIgnoreCase) &&
-                !mode.Equals("update", StringComparison.OrdinalIgnoreCase))
-            {
-                return context.ErrorResult("InvalidMode", $"Mode must be 'upsert', 'insert' or 'update', got '{Mode}'.");
-            }
-
-            if ((mode.Equals("upsert", StringComparison.OrdinalIgnoreCase) || mode.Equals("update", StringComparison.OrdinalIgnoreCase))
+            if ((Mode == DbUpsertMode.Upsert || Mode == DbUpsertMode.Update)
                 && keyColumnList!.Count == 0)
             {
                 return context.ErrorResult("MissingKeyColumns", "KeyColumns is required for upsert/update mode.");
             }
 
-            var dialect = DbDialectResolver.Resolve(Dialect, connectionString);
             var generator = SqlGeneratorFactory.Create(dialect);
-            var sql = mode.ToLowerInvariant() switch
+            var sql = Mode switch
             {
-                "upsert" => generator.BuildUpsertSql(Table, columnList!, keyColumnList!),
-                "insert" => generator.BuildInsertSql(Table, columnList!),
-                "update" => generator.BuildUpdateSql(Table, columnList!, keyColumnList!),
+                DbUpsertMode.Upsert => generator.BuildUpsertSql(Table, columnList!, keyColumnList!),
+                DbUpsertMode.Insert => generator.BuildInsertSql(Table, columnList!),
+                DbUpsertMode.Update => generator.BuildUpdateSql(Table, columnList!, keyColumnList!),
                 _ => throw new InvalidOperationException($"Unexpected mode '{Mode}'.")
             };
 
@@ -138,7 +138,7 @@ public sealed class DbUpsertNode : INodeType
             var affectedRows = 0;
             var inserted = 0;
             var updated = 0;
-            var isUpsert = mode.Equals("upsert", StringComparison.OrdinalIgnoreCase);
+            var isUpsert = Mode == DbUpsertMode.Upsert;
 
             for (var itemIndex = 0; itemIndex < inputBatch.Items.Count; itemIndex++)
             {
@@ -147,7 +147,7 @@ public sealed class DbUpsertNode : INodeType
                 var item = inputBatch.Items[itemIndex];
                 var values = await EvaluateRowValues(Columns, item.Data, itemIndex, context, cancellationToken).ConfigureAwait(false);
 
-                if (mode.Equals("update", StringComparison.OrdinalIgnoreCase))
+                if (Mode == DbUpsertMode.Update)
                 {
                     values = ReorderUpdateValues(values, columnList!, keyColumnList!);
                 }
@@ -182,11 +182,11 @@ public sealed class DbUpsertNode : INodeType
 
             await executor.CommitAsync(cancellationToken).ConfigureAwait(false);
 
-            if (mode.Equals("insert", StringComparison.OrdinalIgnoreCase))
+            if (Mode == DbUpsertMode.Insert)
             {
                 inserted = affectedRows;
             }
-            else if (mode.Equals("update", StringComparison.OrdinalIgnoreCase))
+            else if (Mode == DbUpsertMode.Update)
             {
                 updated = affectedRows;
             }

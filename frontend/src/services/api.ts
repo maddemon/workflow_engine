@@ -65,7 +65,13 @@ api.interceptors.response.use(
 
       if (status === 401) {
         localStorage.removeItem('auth_user');
-        window.location.href = '/login';
+        // 不要在每次 401 都强制整页跳转 /login：/auth/me 未登录本就会返回 401，
+        // 整页刷新会重新挂载 AuthProvider 再次请求，形成 401→刷新→401 死循环
+        // （速率限制触发后又表现为 429 死循环）。是否跳转交给 React Router 的
+        // ProtectedRoute / AuthLayout 依据 isAuthenticated 处理即可。
+        if (window.location.pathname !== '/login' && window.location.pathname !== '/register') {
+          window.location.href = '/login';
+        }
       }
 
       return Promise.reject(new ApiError(status, message, code, data));
