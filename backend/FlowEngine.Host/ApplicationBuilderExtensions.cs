@@ -10,6 +10,7 @@ using FlowEngine.Infrastructure.Audit;
 using FlowEngine.Migrations;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
+using ModelContextProtocol.AspNetCore;
 
 namespace FlowEngine.Host;
 
@@ -33,11 +34,13 @@ public static class ApplicationBuilderExtensions
         // ── Startup Initialization ──────────────────────────────────
         await UseInitialization(app);
 
+        // ── Routes ──────────────────────────────────────────────────
+        // 必须在 UseRouting 之前注册所有端点，尤其是使用 MapGroup 的 MCP Streamable HTTP
+        // 端点；否则路由中间件构建 CompositeEndpointDataSource 时无法包含后续新增的组路由。
+        UseRoutes(app);
+
         // ── Middleware ──────────────────────────────────────────────
         UseMiddlewares(app);
-
-        // ── Routes ──────────────────────────────────────────────────
-        UseRoutes(app);
 
         // ── Webhook Routes ──────────────────────────────────────────
         await UseWebhook(app);
@@ -80,6 +83,9 @@ public static class ApplicationBuilderExtensions
         api.MapGet(RouteConstants.HealthPrefix, () => Results.Ok(new { status = "healthy" }));
 
         app.MapControllers();
+
+        // ── MCP Streamable HTTP endpoint ────────────────────────────
+        app.MapMcp("/mcp").RequireAuthorization();
     }
 
     private static void UseMiddlewares(WebApplication app)
@@ -100,6 +106,7 @@ public static class ApplicationBuilderExtensions
         app.UseMiddleware<CurrentUserMiddleware>();
         app.UseAuthorization();
         app.UseMiddleware<RbacAuthorizationMiddleware>();
+        app.UseEndpoints(_ => { });
     }
 
     private static async Task UseInitialization(WebApplication app)

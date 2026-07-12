@@ -34,6 +34,7 @@ using FlowEngine.Core.Scripting;
 using FlowEngine.Infrastructure.Ai;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
+using ModelContextProtocol.AspNetCore;
 using System.Net;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -64,6 +65,11 @@ public static class ServiceCollectionExtensions
                 options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
             });
         services.AddMemoryCache();
+
+        // ── MCP Server ──────────────────────────────────────────────
+        services.AddMcpServer()
+            .WithHttpTransport(options => options.Stateless = false)
+            .WithToolsFromAssembly();
 
         // ── Forwarded Headers（反向代理信任）─────────────────
         // 仅在配置了 KnownProxies/KnownNetworks 时，X-Forwarded-For 等才会生效，
