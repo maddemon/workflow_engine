@@ -147,7 +147,8 @@ public sealed class WorkflowDraftValidator(
                 var paramValue = parameters.TryGetPropertyValue(param.Name, out var pv) ? pv : null;
                 if (IsEmptyValue(paramValue))
                 {
-                    if (param.Required)
+                    // 带默认值的参数本质是可选的，AI 不填时使用默认值（task-013 P5a）。
+                    if (param.Required && param.DefaultValue is null)
                     {
                         errors.Add($"节点 \"{id}\" ({typeName}) 缺少必填参数 \"{param.Name}\"");
                     }

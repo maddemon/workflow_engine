@@ -234,7 +234,9 @@ public sealed class AuditLogFileSink : IHostedService, IDisposable
         _writer?.Dispose();
 
         var filePath = Path.Combine(_logDirectory, $"audit-{today}.ndjson");
-        _writer = new StreamWriter(filePath, append: true) { AutoFlush = false };
+        // 使用 FileShare.ReadWrite 打开，避免文件被其他进程（或上一次未退出的宿主）持有时启动失败。
+        var fileStream = new FileStream(filePath, FileMode.Append, FileAccess.Write, FileShare.ReadWrite);
+        _writer = new StreamWriter(fileStream, leaveOpen: false) { AutoFlush = false };
         _currentDate = today;
     }
 

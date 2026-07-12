@@ -101,6 +101,13 @@ public sealed class WorkflowValidator(INodeRegistry registry)
 
             foreach (var parameter in descriptor.Parameters.Where(p => p.Required))
             {
+                // 带默认值的参数（如枚举）本质上是可选的，AI 不填时使用默认值即可，
+                // 不应判为缺失（task-013 P5a）。
+                if (parameter.DefaultValue is not null)
+                {
+                    continue;
+                }
+
                 if (!node.Parameters.TryGetValue(parameter.Name, out var value) || value is null)
                 {
                     errors.Add($"节点 '{node.Name}' 缺少必填参数 '{parameter.DisplayName}'。");

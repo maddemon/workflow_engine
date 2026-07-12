@@ -3,6 +3,7 @@ using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Scripting;
 
 namespace FlowEngine.Core.Ai;
 
@@ -44,8 +45,9 @@ public static class NodeDefinitionAdapter
 
         // 覆盖优先级：IAiDefinitionProvider.GetAiDefinition() > 自动推导（设计 §3.4）。
         // 节点显式提供的字段优先采用，缺失时回退到从节点类型/描述符自动推导。
-        var derivedIsTrigger = nodeType.Category.Equals("Trigger", StringComparison.OrdinalIgnoreCase)
-                                || nodeType.DefaultIsEntry;
+        // 注意：isTrigger 仅以节点类别是否为 Trigger 为准。DefaultIsEntry=true 的非触发器节点
+        // （如 llm）不能作为工作流入口，误标会误导 AI 将其当作触发器（task-013 P4）。
+        var derivedIsTrigger = nodeType.Category.Equals("Trigger", StringComparison.OrdinalIgnoreCase);
 
         var def = new AiNodeDefinition
         {
@@ -178,10 +180,24 @@ public static class NodeDefinitionAdapter
             {
                 try
                 {
-                    var defaultNode = JsonSerializer.SerializeToNode(p.DefaultValue, JsonDefaults.Options);
-                    if (defaultNode is not null)
+                    // Script/Code 类型在 AI 视角下是字符串（schema 中 type:string），
+                    // 直接序列化默认值会得到 {"source":""} 对象，与 schema 矛盾，
+                    // 因此只暴露 Source 字符串（task-013 P7）。
+                    if ((p.Type == ParameterType.Script || p.Type == ParameterType.Code)
+                        && p.DefaultValue is Script scriptDefault)
                     {
-                        propSchema["default"] = defaultNode;
+                        if (!string.IsNullOrEmpty(scriptDefault.Source))
+                        {
+                            propSchema["default"] = JsonValue.Create(scriptDefault.Source);
+                        }
+                    }
+                    else
+                    {
+                        var defaultNode = JsonSerializer.SerializeToNode(p.DefaultValue, JsonDefaults.Options);
+                        if (defaultNode is not null)
+                        {
+                            propSchema["default"] = defaultNode;
+                        }
                     }
                 }
                 catch
@@ -190,7 +206,9 @@ public static class NodeDefinitionAdapter
                 }
             }
 
-            if (p.Required)
+            // 与校验逻辑（P5a）保持一致：带默认值的必填参数本质是可选的，
+            // 不应出现在 required 中，避免 AI 收到矛盾的「必填」提示。
+            if (p.Required && p.DefaultValue is null)
             {
                 required.Add(p.Name);
             }

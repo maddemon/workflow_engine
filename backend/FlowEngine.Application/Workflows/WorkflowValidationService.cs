@@ -282,6 +282,13 @@ public sealed class WorkflowValidationService(
 
             foreach (var param in descriptor.Parameters.Where(p => p.Required))
             {
+                // 带默认值的必填参数（如枚举）本质上是可选的，AI 不填时使用默认值即可，
+                // 不应判为缺失（task-013 P5a）。
+                if (param.DefaultValue is not null)
+                {
+                    continue;
+                }
+
                 if (!node.Parameters.TryGetValue(param.Name, out var value) || value is null)
                 {
                     errors.Add(new ValidationError

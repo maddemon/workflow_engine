@@ -33,7 +33,7 @@ public sealed class WorkflowValidationServiceTests : IDisposable
                 Parameters =
                 [
                     new ParameterDefinition { Name = "url", DisplayName = "URL", Type = ParameterType.String, Required = true },
-                    new ParameterDefinition { Name = "method", DisplayName = "Method", Type = ParameterType.String, Required = false },
+                    new ParameterDefinition { Name = "method", DisplayName = "Method", Type = ParameterType.Options, Options = [new Option { Label = "GET", Value = "GET" }, new Option { Label = "POST", Value = "POST" }, new Option { Label = "PUT", Value = "PUT" }] },
                 ],
                 Ports =
                 [
@@ -57,6 +57,27 @@ public sealed class WorkflowValidationServiceTests : IDisposable
                 TypeName = "transform",
                 DisplayName = "Transform",
                 Category = "Data",
+                Ports =
+                [
+                    new PortDefinition { Name = "input", DisplayName = "输入", Direction = PortDirection.Input, Type = PortType.Main },
+                    new PortDefinition { Name = "output", DisplayName = "输出", Direction = PortDirection.Output, Type = PortType.Main },
+                ],
+            },
+            // P5a：带默认值的必填参数（如枚举）本质上可选，AI 不填时使用默认值即可，不应判为缺失。
+            new NodeTypeDescriptor
+            {
+                TypeName = "notify",
+                DisplayName = "Notify",
+                Category = "Notification",
+                Parameters =
+                [
+                    new ParameterDefinition
+                    {
+                        Name = "channel", DisplayName = "渠道", Type = ParameterType.Options, Required = true,
+                        DefaultValue = "email",
+                        Options = [new Option { Label = "Email", Value = "email" }, new Option { Label = "Sms", Value = "sms" }],
+                    },
+                ],
                 Ports =
                 [
                     new PortDefinition { Name = "input", DisplayName = "输入", Direction = PortDirection.Input, Type = PortType.Main },
@@ -305,6 +326,152 @@ public sealed class WorkflowValidationServiceTests : IDisposable
 
         Assert.False(result.Valid);
         Assert.Contains(result.Errors, e => e.ErrorType == "TopologyError" && e.Message.Contains("不存在"));
+    }
+
+    [Fact]
+    public async Task ValidateAsync_InvalidOptionValue_ReturnsInvalidValueError()
+    {
+        var request = new ValidateWorkflowRequest
+        {
+            Nodes =
+            [
+                new NodeDefinitionDto
+                {
+                    Id = "trigger", TypeName = "webhookTrigger", Name = "Trigger",
+                    Ports = [new PortInstance { Name = "output", Direction = PortDirection.Output, Type = PortType.Main }],
+                },
+                new NodeDefinitionDto
+                {
+                    Id = "fetch", TypeName = "httpRequest", Name = "Fetch",
+                    Parameters = new() { ["url"] = "https://api.example.com", ["method"] = "DELETE" },
+                    Ports =
+                    [
+                        new PortInstance { Name = "input", Direction = PortDirection.Input, Type = PortType.Main },
+                        new PortInstance { Name = "output", Direction = PortDirection.Output, Type = PortType.Main },
+                    ],
+                },
+            ],
+            Connections =
+            [
+                new ConnectionDto { SourceNodeId = "trigger", SourcePortName = "output", TargetNodeId = "fetch", TargetPortName = "input" },
+            ],
+        };
+
+        var result = await _service.ValidateAsync(request);
+
+        Assert.False(result.Valid);
+        var error = result.Errors.First(e => e.ErrorType == "InvalidValue" && e.NodeId == "fetch");
+        Assert.Contains("DELETE", error.Message);
+        Assert.Contains("GET", error.Message);
+        Assert.Contains("POST", error.Message);
+        Assert.False(string.IsNullOrEmpty(error.SuggestedFix));
+        Assert.True(result.CanAutoFix); // InvalidValue 可自动修复
+    }
+
+    // P5a：必填参数若已配置默认值，节点缺失该参数时不报错（使用默认值即可）。
+    [Fact]
+    public async Task ValidateAsync_RequiredParameterWithDefault_MissingValue_Passes()
+    {
+        var request = new ValidateWorkflowRequest
+        {
+            Nodes =
+            [
+                new NodeDefinitionDto
+                {
+                    Id = "trigger", TypeName = "webhookTrigger", Name = "Trigger",
+                    Ports = [new PortInstance { Name = "output", Direction = PortDirection.Output, Type = PortType.Main }],
+                },
+                new NodeDefinitionDto
+                {
+                    Id = "msg", TypeName = "notify", Name = "Notify",
+                    // 缺失必填参数 channel，但该参数带有默认值 email
+                    Ports =
+                    [
+                        new PortInstance { Name = "input", Direction = PortDirection.Input, Type = PortType.Main },
+                        new PortInstance { Name = "output", Direction = PortDirection.Output, Type = PortType.Main },
+                    ],
+                },
+            ],
+            Connections =
+            [
+                new ConnectionDto { SourceNodeId = "trigger", SourcePortName = "output", TargetNodeId = "msg", TargetPortName = "input" },
+            ],
+        };
+
+        var result = await _service.ValidateAsync(request);
+
+        Assert.True(result.Valid);
+        Assert.Empty(result.Errors);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ValidOptionValue_Passes()
+    {
+        var request = new ValidateWorkflowRequest
+        {
+            Nodes =
+            [
+                new NodeDefinitionDto
+                {
+                    Id = "trigger", TypeName = "webhookTrigger", Name = "Trigger",
+                    Ports = [new PortInstance { Name = "output", Direction = PortDirection.Output, Type = PortType.Main }],
+                },
+                new NodeDefinitionDto
+                {
+                    Id = "fetch", TypeName = "httpRequest", Name = "Fetch",
+                    Parameters = new() { ["url"] = "https://api.example.com", ["method"] = "POST" },
+                    Ports =
+                    [
+                        new PortInstance { Name = "input", Direction = PortDirection.Input, Type = PortType.Main },
+                        new PortInstance { Name = "output", Direction = PortDirection.Output, Type = PortType.Main },
+                    ],
+                },
+            ],
+            Connections =
+            [
+                new ConnectionDto { SourceNodeId = "trigger", SourcePortName = "output", TargetNodeId = "fetch", TargetPortName = "input" },
+            ],
+        };
+
+        var result = await _service.ValidateAsync(request);
+
+        Assert.True(result.Valid);
+        Assert.Empty(result.Errors);
+    }
+
+    [Fact]
+    public async Task ValidateAsync_OptionValue_CaseInsensitiveMatch_Passes()
+    {
+        var request = new ValidateWorkflowRequest
+        {
+            Nodes =
+            [
+                new NodeDefinitionDto
+                {
+                    Id = "trigger", TypeName = "webhookTrigger", Name = "Trigger",
+                    Ports = [new PortInstance { Name = "output", Direction = PortDirection.Output, Type = PortType.Main }],
+                },
+                new NodeDefinitionDto
+                {
+                    Id = "fetch", TypeName = "httpRequest", Name = "Fetch",
+                    Parameters = new() { ["url"] = "https://api.example.com", ["method"] = "post" },
+                    Ports =
+                    [
+                        new PortInstance { Name = "input", Direction = PortDirection.Input, Type = PortType.Main },
+                        new PortInstance { Name = "output", Direction = PortDirection.Output, Type = PortType.Main },
+                    ],
+                },
+            ],
+            Connections =
+            [
+                new ConnectionDto { SourceNodeId = "trigger", SourcePortName = "output", TargetNodeId = "fetch", TargetPortName = "input" },
+            ],
+        };
+
+        var result = await _service.ValidateAsync(request);
+
+        Assert.True(result.Valid);
+        Assert.Empty(result.Errors);
     }
 
     // ── Stubs ─────────────────────────────────────────────────

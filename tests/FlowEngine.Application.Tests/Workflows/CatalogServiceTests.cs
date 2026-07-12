@@ -684,11 +684,13 @@ public sealed class CatalogServiceTests
     }
 
     [Fact]
-    public void IsTrigger_True_For_DefaultIsEntry()
+    public void IsTrigger_False_For_DefaultIsEntry_When_Not_Trigger_Category()
     {
+        // P4 修正：isTrigger 仅以节点类别是否为 Trigger 为准。DefaultIsEntry=true 的非触发器
+        // 节点（如 llm）不能作为工作流入口，误标为触发器会误导 AI（task-013 P4）。
         var definition = NodeDefinitionAdapter.ToAiDefinition(new TestEntryNode(), EntryDescriptor);
 
-        Assert.True(definition.IsTrigger);
+        Assert.False(definition.IsTrigger);
     }
 
     [Fact]

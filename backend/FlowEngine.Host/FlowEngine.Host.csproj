@@ -13,12 +13,16 @@
 
   <Target Name="BuildPlugins" BeforeTargets="BeforeBuild">
     <MSBuild Projects="..\..\plugins\FlowEngine.Plugins.Standard\FlowEngine.Plugins.Standard.csproj" Targets="Build" />
-    <!-- 将插件构建产物（含其私有依赖 OpenAI / System.ClientModel 等）同步到插件扫描目录（../../plugins）。
-         插件共享依赖（Core / Jint / 运行时程序集）由宿主默认加载上下文提供；PluginLoadContext.Load 会优先复用
-         默认上下文中已加载的同名程序集，因此即便一并拷贝也不会造成类型标识冲突，仅插件私有依赖会被插件 ALC 实际加载。 -->
+    <!-- 仅将插件私有依赖同步到插件扫描目录（../../plugins）。
+         宿主默认加载上下文已提供的共享程序集（FlowEngine.* / Jint / OpenAI / Microsoft.Extensions.* /
+         System.ClientModel / IdentityModel / Newtonsoft.Json 等）一律排除，避免 plugins/ 中的旧版本与宿主版本
+         冲突导致 TypeLoadException（如 System.ClientModel 1.8.0.0 缺少 ClientSettings）。
+         PluginLoadContext.Load 会优先复用默认上下文中已加载的同名程序集，因此排除后插件仍能正确解析这些依赖。 -->
     <ItemGroup>
       <PluginOutputFiles Include="..\..\plugins\FlowEngine.Plugins.Standard\bin\$(Configuration)\$(TargetFramework)\*.dll" />
       <PluginOutputFiles Include="..\..\plugins\FlowEngine.Plugins.Standard\bin\$(Configuration)\$(TargetFramework)\*.pdb" />
+      <PluginOutputFiles Remove="@(PluginOutputFiles)"
+        Condition="Exists('$(MSBuildThisFileDirectory)bin\$(Configuration)\$(TargetFramework)\%(Filename)%(Extension)')" />
     </ItemGroup>
     <Copy SourceFiles="@(PluginOutputFiles)" DestinationFolder="..\..\plugins" SkipUnchangedFiles="true" />
   </Target>
@@ -26,6 +30,8 @@
   <Target Name="CopyPluginsOnPublish" AfterTargets="Publish">
     <ItemGroup>
       <PluginAssemblies Include="..\..\plugins\FlowEngine.Plugins.Standard\bin\$(Configuration)\$(TargetFramework)\*.dll" />
+      <PluginAssemblies Remove="@(PluginAssemblies)"
+        Condition="Exists('$(PublishDir)%(Filename)%(Extension)')" />
     </ItemGroup>
     <MakeDir Directories="$(PublishDir)plugins" />
     <Copy SourceFiles="@(PluginAssemblies)" DestinationFolder="$(PublishDir)plugins\" SkipUnchangedFiles="true" />
