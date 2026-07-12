@@ -32,7 +32,7 @@ public sealed class WorkflowExecutor : IEngine
         WorkflowExecutionQueue executionQueue,
         ILogger<WorkflowExecutor> logger,
         ILogger<WorkflowSchedulerKernel> kernelLogger,
-        ISecretMasker secretMasker,
+        SecretMasker secretMasker,
         IEventBus? eventBus = null,
         IOptions<EngineDefaultsOptions>? defaultsOptions = null)
     {

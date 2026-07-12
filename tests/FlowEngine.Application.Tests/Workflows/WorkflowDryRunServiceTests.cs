@@ -164,7 +164,7 @@ public sealed class WorkflowDryRunServiceTests : IDisposable
         };
         var sensitiveValues = new HashSet<string> { "secret-token" };
 
-        FlowEngine.Runtime.Security.ISecretMasker masker = new FlowEngine.Runtime.Security.SecretMasker();
+        FlowEngine.Runtime.Security.SecretMasker masker = new FlowEngine.Runtime.Security.SecretMasker();
         var result = masker.MaskParameters(parameters, sensitiveValues);
 
         var json = JsonSerializer.Serialize(result, JsonDefaults.Options);

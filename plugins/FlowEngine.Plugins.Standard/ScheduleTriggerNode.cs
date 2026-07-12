@@ -1,8 +1,8 @@
 using FlowEngine.Core;
-using FlowEngine.Core.Ai;
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Ai;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 
@@ -11,13 +11,13 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// 定时触发器节点，按时间表触发工作流。
 /// </summary>
-public sealed class ScheduleTriggerNode : INodeType, IAiDefinitionProvider
+public sealed class ScheduleTriggerNode : INodeType
 {
     /// <inheritdoc />
     public string TypeName => "scheduleTrigger";
 
     /// <inheritdoc />
-    public AiNodeDefinition GetAiDefinition(NodeTypeDescriptor descriptor) =>
+    AiNodeDefinition? INodeType.GetAiDefinition(NodeTypeDescriptor descriptor) =>
         AiDefinitionHelpers.Def(
             "Schedule Trigger", "Trigger", true,
             "按 Cron 表达式定时触发工作流，是工作流的入口节点。常用于每日/每小时周期性任务。",

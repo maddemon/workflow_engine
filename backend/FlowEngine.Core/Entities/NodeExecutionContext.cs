@@ -99,7 +99,7 @@ public class NodeExecutionContext
     /// <summary>
     /// 脚本编译缓存，供 FilterNode 等需要逐项求值的节点复用已编译脚本。
     /// </summary>
-    public IScriptCache? ScriptCache { get; set; }
+    public ScriptCache? ScriptCache { get; set; }
 
     /// <summary>
     /// 工作流加载器，供子工作流工具节点从数据库加载工作流。

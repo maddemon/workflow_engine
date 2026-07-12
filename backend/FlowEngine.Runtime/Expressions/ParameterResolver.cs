@@ -35,7 +35,7 @@ public sealed class ParameterResolver
         RegexOptions.Compiled);
 
     private readonly ILogger<ParameterResolver> _logger;
-    private readonly IScriptCache _scriptCache;
+    private readonly ScriptCache _scriptCache;
 
     /// <summary>
     /// 初始化 <see cref="ParameterResolver"/>。
@@ -43,12 +43,12 @@ public sealed class ParameterResolver
     public ParameterResolver(
         ILogger<ParameterResolver> logger,
         IOptions<JsEngineOptions> options,
-        IScriptCache scriptCache)
+        ScriptCache scriptCache)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         ArgumentNullException.ThrowIfNull(options);
         ArgumentNullException.ThrowIfNull(scriptCache);
-        _ = options.Value; // 确保配置可用；安全策略由 IScriptCache 在编译时读取
+        _ = options.Value; // 确保配置可用；安全策略由 ScriptCache 在编译时读取
         _scriptCache = scriptCache;
     }
 

@@ -1,3 +1,4 @@
+using FlowEngine.Core.Ai;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 
@@ -50,4 +51,11 @@ public interface INodeType
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>节点执行结果。</returns>
     Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 返回 AI-native 节点定义。重写此方法可提供比自动推导更丰富的语义信息。
+    /// 默认返回 null，由 <see cref="NodeDefinitionAdapter"/> 回退到自动推导。
+    /// </summary>
+    /// <param name="descriptor">节点类型描述符。</param>
+    AiNodeDefinition? GetAiDefinition(NodeTypeDescriptor descriptor) => null;
 }

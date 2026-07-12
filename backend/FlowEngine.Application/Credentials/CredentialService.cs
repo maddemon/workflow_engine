@@ -30,7 +30,7 @@ public sealed class CredentialService(
     IUserContext userContext,
     WorkflowRepository workflowRepository,
     IAuthorizationGuard authGuard,
-    ICredentialTypeRegistry credentialTypeRegistry,
+    CredentialTypeRegistry credentialTypeRegistry,
     AuthorizedOperationHandler handler)
 {
     private const string KeyVersion = "v1";

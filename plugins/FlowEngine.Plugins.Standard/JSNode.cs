@@ -1,9 +1,9 @@
 using FlowEngine.Core;
-using FlowEngine.Core.Ai;
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Ai;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -16,7 +16,7 @@ namespace FlowEngine.Plugins.Standard;
 /// 代码执行节点，使用 Jint 沙箱执行 JavaScript 代码。
 /// 支持 Run Once for All Items 和 Run Once for Each Item 两种模式。
 /// </summary>
-public sealed class JSNode : INodeType, IAiDefinitionProvider
+public sealed class JSNode : INodeType
 {
     private const int DefaultTimeoutMs = 5000;
 
@@ -24,7 +24,7 @@ public sealed class JSNode : INodeType, IAiDefinitionProvider
     public string TypeName => "script";
 
     /// <inheritdoc />
-    public AiNodeDefinition GetAiDefinition(NodeTypeDescriptor descriptor) =>
+    AiNodeDefinition? INodeType.GetAiDefinition(NodeTypeDescriptor descriptor) =>
         AiDefinitionHelpers.Def(
             "Code (JavaScript)", "Core", false,
             "执行 JavaScript 代码转换数据。通过 $input.all() / $input.first() 访问上游输入，return 返回结果。支持 RunOnceForAllItems（一次性处理全部）与 RunOnceForEachItem（逐条处理）。",

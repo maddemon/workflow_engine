@@ -21,7 +21,7 @@ public sealed class WorkflowDryRunService(
     INodeRegistry nodeRegistry,
     NodeExecutionContextFactory contextFactory,
     ILogger<WorkflowSchedulerKernel> kernelLogger,
-    ISecretMasker secretMasker,
+    SecretMasker secretMasker,
     IAuthorizationGuard authGuard)
 {
     /// <summary>

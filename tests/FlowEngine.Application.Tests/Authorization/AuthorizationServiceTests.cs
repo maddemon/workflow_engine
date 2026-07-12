@@ -5,7 +5,7 @@ namespace FlowEngine.Application.Tests.Authorization;
 
 public class AuthorizationServiceTests
 {
-    private readonly IAuthorizationService _sut = new AuthorizationService();
+    private readonly AuthorizationService _sut = new();
 
     [Fact]
     public void HasPermission_AdminRole_HasAllPermissions()

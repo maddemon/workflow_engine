@@ -17,7 +17,7 @@ using JintPreparedScript = Jint.Prepared<Acornima.Ast.Script>;
 /// 避免 <see cref="ConcurrentDictionary"/> 无界增长。安全校验仅在首次编译（缓存未命中）时执行一次。
 /// </para>
 /// </summary>
-public sealed class ScriptCache : IScriptCache
+public sealed class ScriptCache
 {
     /// <summary>
     /// 缓存条目容量上限，超过则按加入顺序淘汰最旧条目。

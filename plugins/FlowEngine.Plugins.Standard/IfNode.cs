@@ -1,8 +1,8 @@
 using FlowEngine.Core;
-using FlowEngine.Core.Ai;
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Ai;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -14,13 +14,13 @@ namespace FlowEngine.Plugins.Standard;
 /// 条件分支节点，根据条件表达式路由到 true 或 false 分支。
 /// Condition 为 <see cref="Script"/> 类型，由工厂在预求值阶段完成 Expression 求值并写入 ResolvedValue。
 /// </summary>
-public sealed class IfNode : INodeType, IAiDefinitionProvider
+public sealed class IfNode : INodeType
 {
     /// <inheritdoc />
     public string TypeName => "if";
 
     /// <inheritdoc />
-    public AiNodeDefinition GetAiDefinition(NodeTypeDescriptor descriptor) =>
+    AiNodeDefinition? INodeType.GetAiDefinition(NodeTypeDescriptor descriptor) =>
         AiDefinitionHelpers.Def(
             "If", "Core", false,
             "条件分支节点。根据条件表达式把数据路由到 true 或 false 出口。条件表达式在引擎运行时求值，AI 只需在参数中提供条件。",

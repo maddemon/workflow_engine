@@ -406,9 +406,9 @@ public sealed class CatalogServiceTests
 
     #endregion
 
-    #region IAiDefinitionProvider test node
+    #region Test override node
 
-    private sealed class TestOverrideNode : INodeType, IAiDefinitionProvider
+    private sealed class TestOverrideNode : INodeType
     {
         public string TypeName => "testOverride";
         public string DisplayName => "Test Override";
@@ -418,33 +418,18 @@ public sealed class CatalogServiceTests
         public IReadOnlyList<PortDefinition> Ports => [];
         public bool DefaultIsEntry => false;
 
-        public AiNodeDefinition GetAiDefinition(NodeTypeDescriptor descriptor)
-        {
-            return new AiNodeDefinition
+        public AiNodeDefinition? GetAiDefinition(NodeTypeDescriptor descriptor) =>
+            new()
             {
-                Name = TypeName,
-                DisplayName = DisplayName,
-                Category = Category,
-                Description = "自定义描述",
-                Tags = ["custom", "override"],
+                Name = "testOverride",
+                DisplayName = "Test Override",
+                Category = "Custom",
                 IsTrigger = false,
-                InputSchema = new JsonObject { ["type"] = "object" },
-                OutputSchema = new JsonObject { ["type"] = "object", ["description"] = "自定义输出" },
-                Ports =
-                [
-                    new AiPortSchema { Name = "customOut", Direction = "Output", Description = "自定义输出端口" },
-                ],
-                Examples =
-                [
-                    new AiExample
-                    {
-                        Description = "示例",
-                        Input = new JsonObject { ["foo"] = "bar" },
-                        Output = new JsonObject { ["result"] = "ok" },
-                    },
-                ],
+                Description = "AI override node for testing",
+                InputSchema = JsonNode.Parse("{}"),
+                OutputSchema = JsonNode.Parse("""{"type":"object","description":"自定义输出"}"""),
+                Ports = [new AiPortSchema { Name = "customOut", Direction = "Output" }],
             };
-        }
 
         public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
             => Task.FromResult(new NodeExecutionResult { Success = true });
@@ -725,18 +710,6 @@ public sealed class CatalogServiceTests
     }
 
     [Fact]
-    public void Override_Provider_Returns_Custom_Description_Tags_Examples()
-    {
-        var definition = NodeDefinitionAdapter.ToAiDefinition(new TestOverrideNode(), OverrideDescriptor);
-
-        Assert.Equal("自定义描述", definition.Description);
-        Assert.Contains("custom", definition.Tags);
-        Assert.Contains("override", definition.Tags);
-        Assert.Single(definition.Examples);
-        Assert.Equal("示例", definition.Examples[0].Description);
-    }
-
-    [Fact]
     public void Override_Provider_Custom_OutputSchema()
     {
         var definition = NodeDefinitionAdapter.ToAiDefinition(new TestOverrideNode(), OverrideDescriptor);
@@ -749,7 +722,7 @@ public sealed class CatalogServiceTests
     [Fact]
     public void Override_Provider_Adopts_All_Fields_Over_AutoDerivation()
     {
-        // 设计 §3.4：IAiDefinitionProvider.GetAiDefinition() 优先级高于自动推导。
+        // 设计 §3.4：INodeType.GetAiDefinition() 优先级高于自动推导。
         // OverrideDescriptor 的 Category=Trigger（推导 IsTrigger=true、端口 default），
         // 但覆盖定义应优先采用。
         var definition = NodeDefinitionAdapter.ToAiDefinition(new TestOverrideNode(), OverrideDescriptor);
@@ -785,7 +758,7 @@ public sealed class CatalogServiceTests
         var result = service.GetByName("testOverride");
 
         Assert.NotNull(result);
-        Assert.Single(result.Examples);
+        Assert.Empty(result.Examples);
     }
 
     [Fact]

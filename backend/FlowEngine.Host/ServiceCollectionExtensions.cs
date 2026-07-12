@@ -144,8 +144,7 @@ public static class ServiceCollectionExtensions
         AddAuthentication(services, configuration);
 
         // ── RBAC Authorization ──────────────────────────────────────
-        services.AddScoped<FlowEngine.Application.Authorization.IAuthorizationService,
-            FlowEngine.Application.Authorization.AuthorizationService>();
+        services.AddScoped<FlowEngine.Application.Authorization.AuthorizationService>();
         services.AddScoped<FlowEngine.Application.Authorization.IResourceAuthorizationService,
             FlowEngine.Application.Authorization.ResourceAuthorizationService>();
         services.AddScoped<FlowEngine.Application.Authorization.IAuthorizationGuard,
@@ -153,18 +152,18 @@ public static class ServiceCollectionExtensions
         services.AddScoped<FlowEngine.Application.Authorization.AuthorizedOperationHandler>();
         // ── Identity ────────────────────────────────────────────────
         services.AddScoped<IPasswordHasher, PasswordHasher>();
-        services.AddScoped<IPasswordValidator, PasswordValidator>();
+        services.AddScoped<PasswordValidator>();
         services.AddScoped<ITokenService, JwtTokenService>();
         services.AddScoped<IUserStore, UserStore>();
         services.AddScoped<IUserContext, HttpContextUserContext>();
-        services.AddScoped<IUserRoleService, UserRoleService>();
+        services.AddScoped<UserRoleService>();
         services.AddScoped<AuthenticationService>();
         services.AddScoped<ApiKeyService>();
         services.AddSingleton<ITokenBlacklist, TokenBlacklistService>();
         services.AddScoped<AuditEventFactory>();
 
         // ── Business ────────────────────────────────────────────────
-        services.AddSingleton<ICredentialTypeRegistry, CredentialTypeRegistry>();
+        services.AddSingleton<CredentialTypeRegistry>();
         services.AddSingleton<ICryptoKeyProvider, CryptoKeyProvider>();
         services.AddSingleton<ICredentialEncryptionService, CredentialEncryptionService>();
         services.AddScoped<CredentialService>();
@@ -200,7 +199,7 @@ public static class ServiceCollectionExtensions
             return new LocalFileStorage(basePath, logger);
         });
         services.AddScoped<FileService>();
-        services.AddSingleton<FlowEngine.Runtime.Security.ISecretMasker, FlowEngine.Runtime.Security.SecretMasker>();
+        services.AddSingleton<FlowEngine.Runtime.Security.SecretMasker>();
         services.AddScoped<WorkflowExecutor>();
         services.AddScoped<IEngine>(sp => sp.GetRequiredService<WorkflowExecutor>());
         services.AddHostedService<WorkflowExecutionWorker>();
@@ -291,7 +290,7 @@ public static class ServiceCollectionExtensions
             var whitelist = configuration.GetSection("Expression:EnvironmentWhitelist").Get<string[]>() ?? [];
             return new NodeExecutionContextFactory(
                 provider.GetRequiredService<INodeRegistry>(),
-                provider.GetRequiredService<IScriptCache>(),
+                provider.GetRequiredService<ScriptCache>(),
                 provider.GetRequiredService<ParameterResolver>(),
                 provider.GetRequiredService<ICredentialAccessor>(),
                 new HashSet<string>(whitelist, StringComparer.OrdinalIgnoreCase),

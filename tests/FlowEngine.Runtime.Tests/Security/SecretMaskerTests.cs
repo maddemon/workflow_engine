@@ -6,7 +6,7 @@ namespace FlowEngine.Runtime.Tests.Security;
 
 public sealed class SecretMaskerTests
 {
-    private readonly ISecretMasker _masker = new SecretMasker();
+    private readonly SecretMasker _masker = new SecretMasker();
     private static readonly IReadOnlySet<string> Sensitive = new HashSet<string> { "top-secret" };
 
     [Fact]

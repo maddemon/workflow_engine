@@ -12,7 +12,7 @@ public class RbacAuthorizationMiddleware(RequestDelegate next)
     /// <summary>
     /// 处理请求：若端点带有 <see cref="AuthorizePermissionAttribute"/>，则验证用户角色权限。
     /// </summary>
-    public async Task InvokeAsync(HttpContext context, IAuthorizationService authorizationService)
+    public async Task InvokeAsync(HttpContext context, AuthorizationService authorizationService)
     {
         var endpoint = context.GetEndpoint();
         var attribute = endpoint?.Metadata.GetMetadata<AuthorizePermissionAttribute>();

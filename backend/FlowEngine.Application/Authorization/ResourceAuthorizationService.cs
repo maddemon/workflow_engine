@@ -9,7 +9,7 @@ namespace FlowEngine.Application.Authorization;
 /// 资源级授权服务实现，基于用户角色、项目所有权与权限矩阵判定资源访问权限。
 /// Admin 拥有全部资源访问权；其他用户只能访问其拥有的项目内的资源。
 /// </summary>
-public sealed class ResourceAuthorizationService(FlowEngineDbContext dbContext, IAuthorizationService authorizationService) : IResourceAuthorizationService
+public sealed class ResourceAuthorizationService(FlowEngineDbContext dbContext, AuthorizationService authorizationService) : IResourceAuthorizationService
 {
     // P4：请求级角色缓存（服务为 Scoped，等价于请求级），避免同一请求内反复查库。
     private readonly Dictionary<Guid, IReadOnlyList<string>> _roleCache = new();

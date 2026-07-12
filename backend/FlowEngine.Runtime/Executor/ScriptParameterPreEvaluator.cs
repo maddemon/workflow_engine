@@ -20,7 +20,7 @@ internal static class ScriptParameterPreEvaluator
         NodeTypeDescriptor descriptor,
         ScriptContext scriptContext,
         JsEngine js,
-        IScriptCache scriptCache,
+        ScriptCache scriptCache,
         CancellationToken cancellationToken)
     {
         foreach (var (name, value) in rawParameters.ToList())
@@ -102,7 +102,7 @@ internal static class ScriptParameterPreEvaluator
         Script script,
         ScriptContext context,
         JsEngine js,
-        IScriptCache scriptCache,
+        ScriptCache scriptCache,
         CancellationToken cancellationToken)
     {
         var prepared = scriptCache.GetOrPrepare(script);

@@ -13,8 +13,8 @@ public sealed class ServiceCollectionExtensionsTests
         services.AddFlowEngineCoreScripting();
 
         var provider = services.BuildServiceProvider();
-        var cache1 = provider.GetRequiredService<IScriptCache>();
-        var cache2 = provider.GetRequiredService<IScriptCache>();
+        var cache1 = provider.GetRequiredService<ScriptCache>();
+        var cache2 = provider.GetRequiredService<ScriptCache>();
 
         Assert.IsType<ScriptCache>(cache1);
         Assert.Same(cache1, cache2);

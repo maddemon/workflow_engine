@@ -1,6 +1,6 @@
 using FlowEngine.Core;
-using FlowEngine.Core.Ai;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Ai;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using System.Text.Json.Nodes;
@@ -10,13 +10,13 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// 手动触发器节点，用于手动测试工作流。
 /// </summary>
-public sealed class ManualTriggerNode : INodeType, IAiDefinitionProvider
+public sealed class ManualTriggerNode : INodeType
 {
     /// <inheritdoc />
     public string TypeName => "manualTrigger";
 
     /// <inheritdoc />
-    public AiNodeDefinition GetAiDefinition(NodeTypeDescriptor descriptor) =>
+    AiNodeDefinition? INodeType.GetAiDefinition(NodeTypeDescriptor descriptor) =>
         AiDefinitionHelpers.Def(
             "Manual Trigger", "Trigger", true,
             "人工手动触发工作流，是工作流的入口节点。常用于测试、调试或在 UI 中点击执行。",

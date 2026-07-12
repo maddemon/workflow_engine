@@ -6,7 +6,7 @@ namespace FlowEngine.Application.Identity;
 /// 密码强度校验器，实现默认密码策略。
 /// 默认策略：最小长度 8，至少一个大写字母、一个小写字母、一个数字、一个特殊字符。
 /// </summary>
-public partial class PasswordValidator : IPasswordValidator
+public partial class PasswordValidator
 {
     /// <summary>
     /// 最小密码长度。

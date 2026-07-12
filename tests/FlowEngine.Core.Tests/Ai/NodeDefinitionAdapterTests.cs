@@ -71,8 +71,8 @@ public class NodeDefinitionAdapterTests
     [Fact]
     public void ToAiDefinition_WithoutOverride_UsesNodeDisplayNameAsDescription()
     {
-        var node = new FakeNodeType { TypeName = "llm", DisplayName = "大模型", Category = "AI" };
-        var descriptor = DescriptorFor("llm", [], []);
+        var node = new FakeNodeType { TypeName = "unknown", DisplayName = "大模型", Category = "AI" };
+        var descriptor = DescriptorFor("unknown", [], []);
 
         var def = NodeDefinitionAdapter.ToAiDefinition(node, descriptor);
 

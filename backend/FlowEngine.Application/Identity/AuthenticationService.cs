@@ -14,7 +14,7 @@ namespace FlowEngine.Application.Identity;
 public partial class AuthenticationService(
     IUserStore userStore,
     IPasswordHasher passwordHasher,
-    IPasswordValidator passwordValidator,
+    PasswordValidator passwordValidator,
     ITokenService tokenService,
     IEventBus eventBus,
     AuditEventFactory auditFactory,

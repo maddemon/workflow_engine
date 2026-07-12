@@ -1,6 +1,6 @@
 using FlowEngine.Core;
-using FlowEngine.Core.Ai;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Ai;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Exceptions;
@@ -13,13 +13,13 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// 编辑字段节点，用于添加、修改或删除数据字段。
 /// </summary>
-public sealed class SetNode : INodeType, IAiDefinitionProvider
+public sealed class SetNode : INodeType
 {
     /// <inheritdoc />
     public string TypeName => "set";
 
     /// <inheritdoc />
-    public AiNodeDefinition GetAiDefinition(NodeTypeDescriptor descriptor) =>
+    AiNodeDefinition? INodeType.GetAiDefinition(NodeTypeDescriptor descriptor) =>
         AiDefinitionHelpers.Def(
             "Edit Fields (Set)", "Core", false,
             "编辑数据字段：新增、修改或删除字段，支持点号表示嵌套字段（如 address.city）。常用于为下游节点准备/重命名数据。默认保留全部字段。",

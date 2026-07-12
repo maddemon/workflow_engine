@@ -6,10 +6,10 @@ using FlowEngine.Core.Entities;
 namespace FlowEngine.Runtime.Security;
 
 /// <summary>
-/// <see cref="ISecretMasker"/> 默认实现。
+/// <see cref="SecretMasker"/> 默认实现。
 /// 规则：<see cref="CredentialValue"/> 仅保留 name/type；命中敏感字面量集的字符串替换为 "***"；其余透传。
 /// </summary>
-public sealed class SecretMasker : ISecretMasker
+public sealed class SecretMasker
 {
     public DataBatch MaskDataBatch(DataBatch batch, IReadOnlySet<string> sensitiveValues)
     {

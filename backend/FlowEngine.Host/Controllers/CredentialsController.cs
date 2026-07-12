@@ -15,7 +15,7 @@ namespace FlowEngine.Host.Controllers;
 [Route("api/v1/credentials")]
 public class CredentialsController(
     CredentialService credentialService,
-    ICredentialTypeRegistry credentialTypeRegistry) : ControllerBase
+    CredentialTypeRegistry credentialTypeRegistry) : ControllerBase
 {
     /// <summary>
     /// 获取所有凭据摘要列表。

@@ -1,12 +1,12 @@
 using System.Text.Json.Nodes;
 using FlowEngine.Core.Ai;
 
-namespace FlowEngine.Plugins.Standard;
+namespace FlowEngine.Core.Ai;
 
 /// <summary>
 /// AI 节点定义的构造辅助。
 /// 解决自动推导描述无意义（如「Sort 节点」）、示例/输出结构缺失的问题（task-013 P4）：
-/// 节点在各自的 <see cref="IAiDefinitionProvider.GetAiDefinition"/> 中调用本类辅助方法，
+/// 各标准节点在 <see cref="INodeType.GetAiDefinition"/> 的 override 中调用本类辅助方法，
 /// 手写可读的 description / tags / examples / outputSchema；输入 schema 与端口统一回退到
 /// <see cref="NodeDefinitionAdapter"/> 自动推导（结构已正确），此处只补充语义层信息。
 /// Name 由适配器统一取节点 TypeName，这里不设置。

@@ -9,20 +9,7 @@ namespace FlowEngine.Application.Identity;
 /// <summary>
 /// 用户角色管理应用服务，封装角色查询/分配/撤销逻辑（A2），避免 Controller 直接依赖 DbContext。
 /// </summary>
-public interface IUserRoleService
-{
-    /// <summary>获取用户角色列表。</summary>
-    Task<IReadOnlyList<string>> GetRolesAsync(Guid userId, CancellationToken cancellationToken = default);
-
-    /// <summary>分配角色，返回是否成功与错误信息。</summary>
-    Task<(bool Success, string? Error)> AssignRoleAsync(Guid userId, AssignRoleRequest request, CancellationToken cancellationToken = default);
-
-    /// <summary>撤销角色，返回是否成功与错误信息。</summary>
-    Task<(bool Success, string? Error)> RevokeRoleAsync(Guid userId, string role, CancellationToken cancellationToken = default);
-}
-
-/// <inheritdoc />
-public sealed class UserRoleService(FlowEngineDbContext dbContext) : IUserRoleService
+public sealed class UserRoleService(FlowEngineDbContext dbContext)
 {
     /// <inheritdoc />
     public async Task<IReadOnlyList<string>> GetRolesAsync(Guid userId, CancellationToken cancellationToken = default)

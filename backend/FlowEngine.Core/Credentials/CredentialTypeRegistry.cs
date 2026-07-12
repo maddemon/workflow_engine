@@ -3,7 +3,7 @@ namespace FlowEngine.Core.Credentials;
 /// <summary>
 /// 默认凭据类型注册表，内置常用凭据类型。
 /// </summary>
-public sealed class CredentialTypeRegistry : ICredentialTypeRegistry
+public sealed class CredentialTypeRegistry
 {
     private readonly Dictionary<string, CredentialTypeDefinition> _types;
 

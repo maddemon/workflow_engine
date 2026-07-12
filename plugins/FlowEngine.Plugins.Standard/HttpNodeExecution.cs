@@ -11,11 +11,11 @@ namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
 /// HTTP 节点（<see cref="HttpRequestNode"/> 与 <see cref="HttpToolNode"/>）共用的执行流程。
-/// 负责 URL/Headers/Body 脚本求值，将已解析的参数交给 <see cref="IHttpExecutionService"/> 执行。
+/// 负责 URL/Headers/Body 脚本求值，将已解析的参数交给 <see cref="HttpExecutionService"/> 执行。
 /// </summary>
 internal static class HttpNodeExecution
 {
-    private static readonly IHttpExecutionService HttpService = new HttpExecutionService();
+    private static readonly HttpExecutionService HttpService = new HttpExecutionService();
 
     /// <summary>
     /// 执行 HTTP 请求并返回节点结果。
@@ -64,7 +64,7 @@ internal static class HttpNodeExecution
                 bodyContent = bodyJson;
             }
 
-            // 4. 构建请求参数并委托给 IHttpExecutionService
+            // 4. 构建请求参数并委托给 HttpExecutionService
             var httpRequest = new HttpExecutionRequest
             {
                 Url = resolvedUrl,

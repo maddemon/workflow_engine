@@ -14,7 +14,7 @@ namespace FlowEngine.Application.Authorization;
 public sealed class AuthorizationGuard(
     IUserContext userContext,
     IResourceAuthorizationService resourceAuthorization,
-    IAuthorizationService authorizationService,
+    AuthorizationService authorizationService,
     IEventBus eventBus,
     AuditEventFactory auditFactory) : IAuthorizationGuard
 {

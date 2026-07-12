@@ -40,10 +40,8 @@ public static class NodeDefinitionAdapter
         ArgumentNullException.ThrowIfNull(nodeType);
         ArgumentNullException.ThrowIfNull(descriptor);
 
-        var providerOverride = nodeType as IAiDefinitionProvider;
-        AiNodeDefinition? overrideDef = providerOverride?.GetAiDefinition(descriptor);
-
-        // 覆盖优先级：IAiDefinitionProvider.GetAiDefinition() > 自动推导（设计 §3.4）。
+        // 覆盖优先级：INodeType.GetAiDefinition() > 自动推导（设计 §3.4）。
+        AiNodeDefinition? overrideDef = nodeType.GetAiDefinition(descriptor);
         // 节点显式提供的字段优先采用，缺失时回退到从节点类型/描述符自动推导。
         // 注意：isTrigger 仅以节点类别是否为 Trigger 为准。DefaultIsEntry=true 的非触发器节点
         // （如 llm）不能作为工作流入口，误标会误导 AI 将其当作触发器（task-013 P4）。

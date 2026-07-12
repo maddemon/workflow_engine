@@ -26,7 +26,7 @@ public sealed class WorkflowSchedulerKernel(
     INodeRegistry nodeRegistry,
     NodeExecutionContextFactory contextFactory,
     ErrorStrategyHandler errorHandler,
-    ISecretMasker secretMasker,
+    SecretMasker secretMasker,
     ILogger<WorkflowSchedulerKernel> logger,
     IOptions<EngineDefaultsOptions>? defaultsOptions = null)
 {

@@ -1,8 +1,8 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
-using FlowEngine.Core.Ai;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Ai;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -13,13 +13,13 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// HTTP 请求节点，支持静态配置和占位符。
 /// </summary>
-public sealed class HttpRequestNode : INodeType, IAiDefinitionProvider
+public sealed class HttpRequestNode : INodeType
 {
     /// <inheritdoc />
     public string TypeName => "httpRequest";
 
     /// <inheritdoc />
-    public AiNodeDefinition GetAiDefinition(NodeTypeDescriptor descriptor) =>
+    AiNodeDefinition? INodeType.GetAiDefinition(NodeTypeDescriptor descriptor) =>
         AiDefinitionHelpers.Def(
             "HTTP Request", "Core", false,
             "发起 HTTP 请求并解析响应。支持 GET/POST/PUT/DELETE/PATCH，可配置认证（Bearer/Basic/API Key/Query）、自定义请求头与请求体。返回状态码、响应头与自动解析的响应体。常用于调用外部 API、Webhook 回调。",

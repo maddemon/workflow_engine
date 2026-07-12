@@ -18,7 +18,7 @@ public static class ServiceCollectionExtensions
 
         services.AddOptions<JsEngineOptions>();
         services.AddSingleton(sp => sp.GetRequiredService<IOptions<JsEngineOptions>>().Value);
-        services.AddSingleton<IScriptCache, ScriptCache>();
+        services.AddSingleton<ScriptCache>();
 
         return services;
     }

@@ -12,7 +12,7 @@ namespace FlowEngine.Host.Tests.Middlewares;
 
 public class AuthorizationMiddlewareTests
 {
-    private readonly TestAuthorizationService _authService = new();
+    private readonly AuthorizationService _authService = new();
 
     [Fact]
     public async Task EndpointWithAttribute_ChecksPermission_DeniedReturns403()
@@ -93,23 +93,3 @@ public class AuthorizationMiddlewareTests
     }
 }
 
-// -- Test helpers --
-
-public class TestAuthorizationService : IAuthorizationService
-{
-    public bool HasPermission(IReadOnlyList<string> roles, Scope scope, Operation operation)
-    {
-        // Deny Workflow:Read for testing, allow everything else
-        if (scope == Scope.Workflow && operation == Operation.Read)
-            return false;
-        return true;
-    }
-
-    public IReadOnlyList<string> GetAllowedScopes(IReadOnlyList<string> roles, Operation operation)
-    {
-        return Enum.GetValues<Scope>()
-            .Where(s => !(s == Scope.Workflow && operation == Operation.Read))
-            .Select(s => s.ToString())
-            .ToList();
-    }
-}

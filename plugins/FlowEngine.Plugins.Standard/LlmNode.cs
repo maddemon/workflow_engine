@@ -1,25 +1,24 @@
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
-using FlowEngine.Core.Ai;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Ai;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
-
 
 namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
 /// LLM 供应节点，集中管理模型配置并通过供应端口向消费节点提供 LLM 客户端实例。
 /// </summary>
-public sealed class LlmNode : INodeType, IAiDefinitionProvider
+public sealed class LlmNode : INodeType
 {
     /// <inheritdoc />
     public string TypeName => "llm";
 
     /// <inheritdoc />
-    public AiNodeDefinition GetAiDefinition(NodeTypeDescriptor descriptor) =>
+    AiNodeDefinition? INodeType.GetAiDefinition(NodeTypeDescriptor descriptor) =>
         AiDefinitionHelpers.Def(
             "LLM", "AI", false,
             "调用大语言模型处理文本/数据。常用于摘要、抽取、分类、翻译。非触发器节点，需放在触发器或上游节点之后。",

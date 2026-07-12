@@ -22,7 +22,7 @@ namespace FlowEngine.Plugins.Standard;
 /// </summary>
 public sealed class PaginateNode : INodeType
 {
-    private static readonly IHttpExecutionService s_httpService = new HttpExecutionService();
+    private static readonly HttpExecutionService s_httpService = new HttpExecutionService();
 
     /// <inheritdoc />
     public string TypeName => "paginate";

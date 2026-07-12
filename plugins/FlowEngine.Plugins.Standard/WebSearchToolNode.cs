@@ -36,7 +36,7 @@ public enum SearchEngineType
 /// </summary>
 public sealed class WebSearchToolNode : INodeType
 {
-    private static readonly IHttpExecutionService HttpService = new HttpExecutionService();
+    private static readonly HttpExecutionService HttpService = new HttpExecutionService();
 
     /// <inheritdoc />
     public string TypeName => "webSearchTool";
@@ -131,7 +131,7 @@ public sealed class WebSearchToolNode : INodeType
                 if (ssrfGuard is not null) return ssrfGuard;
             }
 
-            // 委托给 IHttpExecutionService 执行 HTTP 请求（统一处理客户端池、SSRF、异常映射）
+            // 委托给 HttpExecutionService 执行 HTTP 请求（统一处理客户端池、SSRF、异常映射）
             var result = SearchEngine switch
             {
                 SearchEngineType.Google => await SearchGoogleAsync(query, apiKey, context, ct).ConfigureAwait(false),

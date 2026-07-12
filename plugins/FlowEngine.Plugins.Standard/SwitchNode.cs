@@ -1,8 +1,8 @@
 using FlowEngine.Core;
-using FlowEngine.Core.Ai;
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Ai;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -15,13 +15,13 @@ namespace FlowEngine.Plugins.Standard;
 /// Switch 分支节点，根据表达式值路由到不同的输出端口。
 /// 每个 Case 对应一个输出端口，不匹配时路由到 default 端口。
 /// </summary>
-public sealed class SwitchNode : INodeType, IAiDefinitionProvider
+public sealed class SwitchNode : INodeType
 {
     /// <inheritdoc />
     public string TypeName => "switch";
 
     /// <inheritdoc />
-    public AiNodeDefinition GetAiDefinition(NodeTypeDescriptor descriptor) =>
+    AiNodeDefinition? INodeType.GetAiDefinition(NodeTypeDescriptor descriptor) =>
         AiDefinitionHelpers.Def(
             "Switch", "Core", false,
             "多路分支节点。按多个条件把数据路由到匹配的出口（如 case1/case2/.../default）。条件在引擎运行时求值。",

@@ -12,7 +12,7 @@ namespace FlowEngine.Host.Controllers;
 [ApiController]
 [Route("api/v1/users")]
 [Authorize(Roles = "Admin")]
-public class UsersController(IUserRoleService userRoleService) : ControllerBase
+public class UsersController(UserRoleService userRoleService) : ControllerBase
 {
     /// <summary>
     /// 查询用户角色列表。

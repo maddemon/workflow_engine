@@ -5,7 +5,7 @@ namespace FlowEngine.Application.Authorization;
 /// <summary>
 /// RBAC 授权服务实现，基于 PermissionMapping 静态权限矩阵。
 /// </summary>
-public sealed class AuthorizationService : IAuthorizationService
+public sealed class AuthorizationService
 {
     /// <inheritdoc />
     public bool HasPermission(IReadOnlyList<string> roles, Scope scope, Operation operation)

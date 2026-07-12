@@ -19,7 +19,7 @@ namespace FlowEngine.Runtime.Executor;
 /// </summary>
 public sealed class NodeExecutionContextFactory(
     INodeRegistry registry,
-    IScriptCache scriptCache,
+    ScriptCache scriptCache,
     ParameterResolver parameterResolver,
     ICredentialAccessor credentialAccessor,
     IReadOnlySet<string> environmentWhitelist,

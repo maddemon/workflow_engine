@@ -117,7 +117,7 @@ public static class ScriptEvaluationExtensions
         return dict;
     }
 
-    private static IScriptCache GetOrCreateScriptCache(NodeExecutionContext context)
+    private static ScriptCache GetOrCreateScriptCache(NodeExecutionContext context)
     {
         return context.ScriptCache ?? new ScriptCache(Options.Create(new JsEngineOptions()));
     }
