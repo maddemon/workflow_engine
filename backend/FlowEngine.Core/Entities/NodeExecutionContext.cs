@@ -1,6 +1,8 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Exceptions;
+using FlowEngine.Core.Http;
 using FlowEngine.Core.Scripting;
 using Microsoft.Extensions.Logging;
 
@@ -232,56 +234,49 @@ public class NodeExecutionContext
     }
 
     /// <summary>
-    /// 解析凭据并返回 API Key 或 OAuth2 accessToken。
-    /// 支持按凭据 ID（Guid）或凭据名称解析；oauth2 类型返回 <c>accessToken</c>。
+    /// 解析凭据并返回完整的 <see cref="CredentialValue"/>。
+    /// 支持按凭据 ID（Guid）或凭据名称解析。
+    /// 节点通过此方法获取完整凭据值对象，不直接接触 <see cref="ICredentialAccessor"/>。
     /// </summary>
-    public async Task<string?> ResolveApiKeyAsync(string? credentialId, CancellationToken cancellationToken = default)
+    public async Task<CredentialValue?> ResolveCredentialAsync(string? idOrName, CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrEmpty(credentialId))
+        if (string.IsNullOrEmpty(idOrName))
         {
             return null;
         }
 
         try
         {
-            CredentialValue credential;
-            if (Guid.TryParse(credentialId, out var id))
+            if (Guid.TryParse(idOrName, out var id))
             {
-                credential = await Credentials.GetCredentialAsync(id, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            else
-            {
-                var byName = await Credentials.GetCredentialByNameAsync(credentialId, cancellationToken)
-                    .ConfigureAwait(false);
-                if (byName is null)
-                {
-                    return null;
-                }
-
-                credential = byName;
+                return await Credentials.GetCredentialAsync(id, cancellationToken).ConfigureAwait(false);
             }
 
-            if (string.Equals(credential.Type, "oauth2", StringComparison.OrdinalIgnoreCase))
-            {
-                if (credential.Fields.TryGetValue("accessToken", out var accessToken))
-                {
-                    return accessToken;
-                }
-            }
-
-            if (credential.Fields.TryGetValue(FlowConstants.CredentialFields.ApiKey, out var apiKey))
-            {
-                return apiKey;
-            }
-
-            return null;
+            return await Credentials.GetCredentialByNameAsync(idOrName, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
-            Logger?.LogError(ex, "Failed to resolve credential {CredentialId}.", credentialId);
+            Logger?.LogError(ex, "Failed to resolve credential {CredentialId}.", idOrName);
             return null;
         }
+    }
+
+    /// <summary>
+    /// SSRF 预检。返回 null 表示安全，返回 ErrorResult 表示请求被拦截。
+    /// </summary>
+    public NodeExecutionResult? GuardSsrf(string? url, string code = FlowConstants.ErrorCodes.SsrfBlocked)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return null;
+        }
+
+        if (SsrfGuard.IsInternalTarget(url))
+        {
+            return ErrorResult(code, "Target URL points to a blocked internal/loopback address.");
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -305,5 +300,150 @@ public class NodeExecutionContext
                 ]
             }
         };
+    }
+
+    /// <summary>
+    /// 获取指定端口的输入批次。端口不存在时返回空批次。
+    /// </summary>
+    /// <param name="portName">端口名称，默认 Input。</param>
+    public DataBatch GetInputBatch(string portName = FlowConstants.PortNames.Input)
+    {
+        return Inputs.TryGetValue(portName, out var batch) ? batch : new DataBatch();
+    }
+
+    /// <summary>
+    /// 创建单条数据项的成功结果。
+    /// </summary>
+    public NodeExecutionResult Ok(JsonNode? data)
+    {
+        return new NodeExecutionResult
+        {
+            Success = true,
+            Output = new DataBatch
+            {
+                Items =
+                [
+                    new DataItem
+                    {
+                        Data = data,
+                        Success = true,
+                        SourceIndex = 0
+                    }
+                ]
+            }
+        };
+    }
+
+    /// <summary>
+    /// 使用已有批次创建成功结果。
+    /// </summary>
+    public NodeExecutionResult Ok(DataBatch batch)
+    {
+        return new NodeExecutionResult
+        {
+            Success = true,
+            Output = batch
+        };
+    }
+
+    /// <summary>
+    /// 统一捕获异常并转换为 ErrorResult。适用于无资源清理的简单节点。
+    /// 对于有事务/资源的节点（如 DbUpsertNode），请使用 <see cref="ToErrorResult"/>。
+    /// </summary>
+    public async Task<NodeExecutionResult> CatchToResult(
+        Func<CancellationToken, Task<NodeExecutionResult>> exec,
+        CancellationToken ct)
+    {
+        try
+        {
+            return await exec(ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return ErrorResult(FlowConstants.ErrorCodes.Cancelled, "Operation was cancelled.");
+        }
+        catch (ScriptErrorException ex)
+        {
+            return ErrorResult(FlowConstants.ErrorCodes.ScriptError, $"Script execution error: {ex.Message}");
+        }
+        catch (TimeoutException)
+        {
+            return ErrorResult(FlowConstants.ErrorCodes.Timeout, "Operation timed out.");
+        }
+        catch (Exception ex)
+        {
+            return ErrorResult(FlowConstants.ErrorCodes.UnexpectedError, $"Unexpected error: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// 将异常轻量映射为 NodeError，供有事务/资源的节点在自己的 catch 块内使用。
+    /// </summary>
+    public NodeError ToErrorResult(Exception ex)
+    {
+        return ex switch
+        {
+            OperationCanceledException => new NodeError
+            {
+                Code = FlowConstants.ErrorCodes.Cancelled,
+                Message = "Operation was cancelled.",
+                NodeDefinitionId = Node.Id
+            },
+            ScriptErrorException scriptEx => new NodeError
+            {
+                Code = FlowConstants.ErrorCodes.ScriptError,
+                Message = $"Script execution error: {scriptEx.Message}",
+                NodeDefinitionId = Node.Id
+            },
+            _ => new NodeError
+            {
+                Code = FlowConstants.ErrorCodes.UnexpectedError,
+                Message = $"Unexpected error: {ex.Message}",
+                NodeDefinitionId = Node.Id
+            }
+        };
+    }
+
+    /// <summary>
+    /// 尝试解析 JSON 字符串为 JsonDocument。调用方负责 Dispose。
+    /// </summary>
+    public bool TryParseJson(string raw, out JsonDocument doc, out string? errorCode)
+    {
+        try
+        {
+            doc = JsonDocument.Parse(raw);
+            errorCode = null;
+            return true;
+        }
+        catch (JsonException)
+        {
+            doc = null!;
+            errorCode = "InvalidJson";
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 尝试解析 JSON 字符串为强类型对象。
+    /// </summary>
+    public bool TryParseJson<T>(string raw, out T? result, out string? errorCode, JsonSerializerOptions? opts = null)
+    {
+        try
+        {
+            result = JsonSerializer.Deserialize<T>(raw, opts);
+            if (result is null)
+            {
+                errorCode = "InvalidJson";
+                return false;
+            }
+            errorCode = null;
+            return true;
+        }
+        catch (JsonException)
+        {
+            result = default;
+            errorCode = "InvalidJson";
+            return false;
+        }
     }
 }

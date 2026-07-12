@@ -79,7 +79,7 @@ public sealed class AgentNode : INodeType
         var llmClient = context.LlmClient;
         if (llmClient is null)
         {
-            return context.ErrorResult("MissingLlmClient", "LLM client not available. Connect an LLM supply node.");
+            return context.ErrorResult(FlowConstants.ErrorCodes.MissingLlmClient, "LLM client not available. Connect an LLM supply node.");
         }
 
         var tools = CollectTools(context);
@@ -237,7 +237,8 @@ public sealed class AgentNode : INodeType
 
     private static string? SerializeInput(NodeExecutionContext context)
     {
-        if (!context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch) || batch.Items.Count == 0)
+        var batch = context.GetInputBatch();
+        if (batch.Items.Count == 0)
         {
             return null;
         }
@@ -290,7 +291,7 @@ public sealed class AgentNode : INodeType
 
     private static NodeExecutionResult CreateTimeoutResult(string message, NodeExecutionContext context)
     {
-        return CreateAgentFailedResult("Cancelled", "AgentTimeout", message, context);
+        return CreateAgentFailedResult(FlowConstants.ErrorCodes.Cancelled, "AgentTimeout", message, context);
     }
 
     private static NodeExecutionResult CreateLlmErrorResult(string message, NodeExecutionContext context)

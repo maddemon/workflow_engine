@@ -64,12 +64,10 @@ public sealed class JSNode : INodeType
         {
             if (Code is null || string.IsNullOrWhiteSpace(Code.Source))
             {
-                return context.ErrorResult("MissingCode", "Code parameter is required.");
+                return context.ErrorResult(FlowConstants.ErrorCodes.MissingCode, "Code parameter is required.");
             }
 
-            var inputBatch = context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch)
-                ? batch
-                : new DataBatch();
+            var inputBatch = context.GetInputBatch();
 
             if (CodeMode == CodeExecutionMode.RunOnceForEachItem)
             {
@@ -80,7 +78,7 @@ public sealed class JSNode : INodeType
         }
         catch (OperationCanceledException)
         {
-            return context.ErrorResult("Cancelled", "Code execution was cancelled.");
+            return context.ErrorResult(FlowConstants.ErrorCodes.Cancelled, "Code execution was cancelled.");
         }
         catch (ScriptErrorException ex)
         {
@@ -88,11 +86,11 @@ public sealed class JSNode : INodeType
         }
         catch (TimeoutException)
         {
-            return context.ErrorResult("Timeout", "Code execution timed out.");
+            return context.ErrorResult(FlowConstants.ErrorCodes.Timeout, "Code execution timed out.");
         }
         catch (Exception ex)
         {
-            return context.ErrorResult("UnexpectedError", $"Unexpected error: {ex.Message}");
+            return context.ErrorResult(FlowConstants.ErrorCodes.UnexpectedError, $"Unexpected error: {ex.Message}");
         }
     }
 

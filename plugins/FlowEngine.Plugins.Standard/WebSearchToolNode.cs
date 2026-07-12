@@ -36,6 +36,8 @@ public enum SearchEngineType
 /// </summary>
 public sealed class WebSearchToolNode : INodeType
 {
+    private static readonly IHttpExecutionService HttpService = new HttpExecutionService();
+
     /// <inheritdoc />
     public string TypeName => "webSearchTool";
 
@@ -109,7 +111,7 @@ public sealed class WebSearchToolNode : INodeType
     /// <inheritdoc />
     public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
-        try
+        return await context.CatchToResult(async ct =>
         {
             // Get search query from LLM input
             var query = GetSearchQuery(context);
@@ -119,59 +121,37 @@ public sealed class WebSearchToolNode : INodeType
             }
 
             // Get API key
-            var apiKey = await GetApiKeyAsync(context, cancellationToken).ConfigureAwait(false);
+            var apiKey = await GetApiKeyAsync(context, ct).ConfigureAwait(false);
 
-            // Get HTTP client from connection pool
-            var client = context.HttpClientPool?.GetClient();
-            if (client is null)
+            // Custom 引擎的 SSRF 预检：用户提供的端点可能指向内网
+            if (SearchEngine == SearchEngineType.Custom && !string.IsNullOrWhiteSpace(CustomEndpoint))
             {
-                return context.ErrorResult("HttpClientUnavailable", "HTTP client pool is not configured.");
+                var customUrl = BuildCustomSearchUrl(query);
+                var ssrfGuard = context.GuardSsrf(customUrl);
+                if (ssrfGuard is not null) return ssrfGuard;
             }
 
-            // Execute search based on engine type
-            var results = SearchEngine switch
+            // 委托给 IHttpExecutionService 执行 HTTP 请求（统一处理客户端池、SSRF、异常映射）
+            var result = SearchEngine switch
             {
-                SearchEngineType.Google => await SearchGoogleAsync(client, query, apiKey, cancellationToken).ConfigureAwait(false),
-                SearchEngineType.Bing => await SearchBingAsync(client, query, apiKey, cancellationToken).ConfigureAwait(false),
-                SearchEngineType.DuckDuckGo => await SearchDuckDuckGoAsync(client, query, cancellationToken).ConfigureAwait(false),
-                SearchEngineType.SerpAPI => await SearchSerpApiAsync(client, query, apiKey, cancellationToken).ConfigureAwait(false),
-                SearchEngineType.Custom => await SearchCustomAsync(client, query, apiKey, cancellationToken).ConfigureAwait(false),
+                SearchEngineType.Google => await SearchGoogleAsync(query, apiKey, context, ct).ConfigureAwait(false),
+                SearchEngineType.Bing => await SearchBingAsync(query, apiKey, context, ct).ConfigureAwait(false),
+                SearchEngineType.DuckDuckGo => await SearchDuckDuckGoAsync(query, context, ct).ConfigureAwait(false),
+                SearchEngineType.SerpAPI => await SearchSerpApiAsync(query, apiKey, context, ct).ConfigureAwait(false),
+                SearchEngineType.Custom => await SearchCustomAsync(query, apiKey, context, ct).ConfigureAwait(false),
                 _ => throw new InvalidOperationException($"Unsupported search engine: {SearchEngine}")
             };
 
-            // Return results
-            var outputBatch = new DataBatch
-            {
-                Items =
-                [
-                    new DataItem
-                    {
-                        Data = results,
-                        Success = true,
-                        SourceIndex = 0
-                    }
-                ]
-            };
-
-            return new NodeExecutionResult
-            {
-                Success = true,
-                Output = outputBatch
-            };
-        }
-        catch (OperationCanceledException)
-        {
-            return context.ErrorResult("Cancelled", "Search was cancelled.");
-        }
-        catch (Exception ex)
-        {
-            return context.ErrorResult("SearchFailed", $"Search failed: {ex.Message}");
-        }
+            if (!result.Success) return result;
+            var data = result.Output?.Items?.FirstOrDefault()?.Data;
+            return context.Ok(data);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private string? GetSearchQuery(NodeExecutionContext context)
     {
-        if (context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch) && batch.Items.Count > 0)
+        var batch = context.GetInputBatch();
+        if (batch.Items.Count > 0)
         {
             var data = batch.Items[0].Data;
             if (data is JsonObject obj)
@@ -207,118 +187,111 @@ public sealed class WebSearchToolNode : INodeType
 
     private async Task<string?> GetApiKeyAsync(NodeExecutionContext context, CancellationToken cancellationToken)
     {
-        if (string.IsNullOrEmpty(ApiKeyCredentialId))
+        var credential = await context.ResolveCredentialAsync(ApiKeyCredentialId, cancellationToken).ConfigureAwait(false);
+        if (credential?.Fields?.TryGetValue(FlowConstants.CredentialFields.ApiKey, out var apiKey) == true)
         {
-            return null;
+            return apiKey;
         }
 
-        if (!Guid.TryParse(ApiKeyCredentialId, out var credentialId))
-        {
-            return null;
-        }
-
-        try
-        {
-            var credential = await context.Credentials.GetCredentialAsync(credentialId, cancellationToken)
-                .ConfigureAwait(false);
-
-            if (credential.Fields.TryGetValue(FlowConstants.CredentialFields.ApiKey, out var apiKey))
-            {
-                return apiKey;
-            }
-
-            return null;
-        }
-        catch (Exception ex)
-        {
-            context.Logger?.LogWarning("解析 WebSearch API Key 失败：{Error}", ex.Message);
-            return null;
-        }
+        return null;
     }
 
-    private async Task<JsonNode?> SearchGoogleAsync(HttpClient client, string query, string? apiKey, CancellationToken cancellationToken)
+    private async Task<NodeExecutionResult> SearchGoogleAsync(string query, string? apiKey, NodeExecutionContext context, CancellationToken cancellationToken)
     {
         // Google Custom Search API
         var url = $"https://www.googleapis.com/customsearch/v1?key={apiKey}&cx={apiKey}&q={Uri.EscapeDataString(query)}&num={MaxResults}&hl={Language}";
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        var response = await HttpExecutionHelper.SendAndBuildResultAsync(client, request, Guid.Empty, cancellationToken)
-            .ConfigureAwait(false);
+        var request = new HttpExecutionRequest
+        {
+            Url = url,
+            Method = HttpMethod.Get
+        };
 
-        return response.Output.Items.FirstOrDefault()?.Data;
+        return await HttpService.ExecuteAsync(request, context, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<JsonNode?> SearchBingAsync(HttpClient client, string query, string? apiKey, CancellationToken cancellationToken)
+    private async Task<NodeExecutionResult> SearchBingAsync(string query, string? apiKey, NodeExecutionContext context, CancellationToken cancellationToken)
     {
         // Bing Web Search API
         var url = $"https://api.bing.microsoft.com/v7.0/search?q={Uri.EscapeDataString(query)}&count={MaxResults}&setLang={Language}";
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
+        var headers = new Dictionary<string, string>();
         if (!string.IsNullOrEmpty(apiKey))
         {
-            request.Headers.TryAddWithoutValidation("Ocp-Apim-Subscription-Key", apiKey);
+            headers["Ocp-Apim-Subscription-Key"] = apiKey;
         }
 
-        var response = await HttpExecutionHelper.SendAndBuildResultAsync(client, request, Guid.Empty, cancellationToken)
-            .ConfigureAwait(false);
+        var request = new HttpExecutionRequest
+        {
+            Url = url,
+            Method = HttpMethod.Get,
+            Headers = headers
+        };
 
-        return response.Output.Items.FirstOrDefault()?.Data;
+        return await HttpService.ExecuteAsync(request, context, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<JsonNode?> SearchDuckDuckGoAsync(HttpClient client, string query, CancellationToken cancellationToken)
+    private async Task<NodeExecutionResult> SearchDuckDuckGoAsync(string query, NodeExecutionContext context, CancellationToken cancellationToken)
     {
         // DuckDuckGo Instant Answer API (no API key required)
         var url = $"https://api.duckduckgo.com/?q={Uri.EscapeDataString(query)}&format=json&no_html=1&skip_disambig=1";
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        var response = await HttpExecutionHelper.SendAndBuildResultAsync(client, request, Guid.Empty, cancellationToken)
-            .ConfigureAwait(false);
+        var request = new HttpExecutionRequest
+        {
+            Url = url,
+            Method = HttpMethod.Get
+        };
 
-        return response.Output.Items.FirstOrDefault()?.Data;
+        return await HttpService.ExecuteAsync(request, context, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<JsonNode?> SearchSerpApiAsync(HttpClient client, string query, string? apiKey, CancellationToken cancellationToken)
+    private async Task<NodeExecutionResult> SearchSerpApiAsync(string query, string? apiKey, NodeExecutionContext context, CancellationToken cancellationToken)
     {
         // SerpAPI (Google Search)
         var url = $"https://serpapi.com/search.json?q={Uri.EscapeDataString(query)}&api_key={apiKey}&hl={Language}&num={MaxResults}";
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        var response = await HttpExecutionHelper.SendAndBuildResultAsync(client, request, Guid.Empty, cancellationToken)
-            .ConfigureAwait(false);
+        var request = new HttpExecutionRequest
+        {
+            Url = url,
+            Method = HttpMethod.Get
+        };
 
-        return response.Output.Items.FirstOrDefault()?.Data;
+        return await HttpService.ExecuteAsync(request, context, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<JsonNode?> SearchCustomAsync(HttpClient client, string query, string? apiKey, CancellationToken cancellationToken)
+    private async Task<NodeExecutionResult> SearchCustomAsync(string query, string? apiKey, NodeExecutionContext context, CancellationToken cancellationToken)
     {
         if (string.IsNullOrEmpty(CustomEndpoint))
         {
             throw new InvalidOperationException("CustomEndpoint is required for Custom search engine.");
         }
 
-        var url = CustomEndpoint.Replace("{query}", Uri.EscapeDataString(query))
-                                .Replace("{language}", Language)
-                                .Replace("{maxResults}", MaxResults.ToString());
+        var url = BuildCustomSearchUrl(query);
 
-        if (SsrfGuard.IsInternalTarget(url))
-        {
-            throw new InvalidOperationException("CustomEndpoint points to a blocked internal/loopback address.");
-        }
-
-        using var request = new HttpRequestMessage(HttpMethod.Get, url);
-
+        var headers = new Dictionary<string, string>();
         if (CustomHeaders is { Count: > 0 })
         {
             foreach (var (key, value) in CustomHeaders)
             {
-                var resolvedValue = value.Replace("{apiKey}", apiKey ?? string.Empty);
-                request.Headers.TryAddWithoutValidation(key, resolvedValue);
+                headers[key] = value.Replace("{apiKey}", apiKey ?? string.Empty);
             }
         }
 
-        var response = await HttpExecutionHelper.SendAndBuildResultAsync(client, request, Guid.Empty, cancellationToken)
-            .ConfigureAwait(false);
+        var request = new HttpExecutionRequest
+        {
+            Url = url,
+            Method = HttpMethod.Get,
+            Headers = headers
+        };
 
-        return response.Output.Items.FirstOrDefault()?.Data;
+        return await HttpService.ExecuteAsync(request, context, cancellationToken).ConfigureAwait(false);
+    }
+
+    private string BuildCustomSearchUrl(string query)
+    {
+        return CustomEndpoint!
+            .Replace("{query}", Uri.EscapeDataString(query))
+            .Replace("{language}", Language)
+            .Replace("{maxResults}", MaxResults.ToString());
     }
 }

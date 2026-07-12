@@ -60,8 +60,8 @@ public sealed class MergeNode : INodeType
     /// <inheritdoc />
     public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
-        var batch1 = context.Inputs.TryGetValue(FlowConstants.PortNames.Input1, out var b1) ? b1 : new DataBatch();
-        var batch2 = context.Inputs.TryGetValue(FlowConstants.PortNames.Input2, out var b2) ? b2 : new DataBatch();
+        var batch1 = context.GetInputBatch(FlowConstants.PortNames.Input1);
+        var batch2 = context.GetInputBatch(FlowConstants.PortNames.Input2);
 
         var result = Mode switch
         {

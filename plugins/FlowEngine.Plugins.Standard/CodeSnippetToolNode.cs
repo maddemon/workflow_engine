@@ -62,20 +62,20 @@ public sealed class CodeSnippetToolNode : INodeType
     /// <inheritdoc />
     public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
-        try
+        if (Code is null || string.IsNullOrWhiteSpace(Code.Source))
         {
-            if (Code is null || string.IsNullOrWhiteSpace(Code.Source))
-            {
-                return context.ErrorResult("MissingCode", "Code is required. Please define the code to execute.");
-            }
+            return context.ErrorResult(FlowConstants.ErrorCodes.MissingCode, "Code is required. Please define the code to execute.");
+        }
 
+        return await context.CatchToResult(async ct =>
+        {
             // Get input from LLM
-            var inputPayload = GetInputPayload(context);
+            var inputPayload = context.GetInputPayload();
             var inputData = GetInputData(inputPayload);
 
             var result = inputData is not null
-                ? await Code.ExecuteAsync(context, cancellationToken, ("input", inputData)).ConfigureAwait(false)
-                : await Code.ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
+                ? await Code.ExecuteAsync(context, ct, ("input", inputData)).ConfigureAwait(false)
+                : await Code.ExecuteAsync(context, ct).ConfigureAwait(false);
             var outputItem = ToDataItem(result);
 
             return new NodeExecutionResult
@@ -83,33 +83,7 @@ public sealed class CodeSnippetToolNode : INodeType
                 Success = true,
                 Output = new DataBatch { Items = [outputItem] }
             };
-        }
-        catch (OperationCanceledException)
-        {
-            return context.ErrorResult("Cancelled", "Code execution was cancelled.");
-        }
-        catch (ScriptErrorException ex)
-        {
-            return context.ErrorResult("CodeError", $"JavaScript execution error: {ex.Message}");
-        }
-        catch (Exception ex) when (ex.GetType().Name.Contains("Timeout"))
-        {
-            return context.ErrorResult("Timeout", "Code execution timed out.");
-        }
-        catch (Exception ex)
-        {
-            return context.ErrorResult("UnexpectedError", $"Unexpected error during code execution: {ex.Message}");
-        }
-    }
-
-    private static JsonNode? GetInputPayload(NodeExecutionContext context)
-    {
-        if (!context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch) || batch.Items.Count == 0)
-        {
-            return null;
-        }
-
-        return batch.Items[0].Data;
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private static object? GetInputData(JsonNode? payload)

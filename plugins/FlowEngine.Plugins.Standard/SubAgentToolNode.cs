@@ -73,7 +73,7 @@ public sealed class SubAgentToolNode : INodeType
         var llmClient = context.LlmClient;
         if (llmClient is null)
         {
-            return context.ErrorResult("MissingLlmClient", "LLM client not available for nested agent.");
+            return context.ErrorResult(FlowConstants.ErrorCodes.MissingLlmClient, "LLM client not available for nested agent.");
         }
 
         var tools = CollectTools(context);
@@ -228,7 +228,8 @@ public sealed class SubAgentToolNode : INodeType
             messages.Add(new LlmMessage { Role = "system", Content = PromptTemplate });
         }
 
-        if (context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch) && batch.Items.Count > 0)
+        var batch = context.GetInputBatch();
+        if (batch.Items.Count > 0)
         {
             var firstItem = batch.Items[0];
             if (firstItem.Data is not null)

@@ -53,9 +53,7 @@ public sealed class DeduplicateNode : INodeType
     /// <inheritdoc />
     public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
-        var inputBatch = context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch)
-            ? batch
-            : new DataBatch();
+        var inputBatch = context.GetInputBatch();
 
         var seen = new HashSet<string>();
         var outputItems = new List<DataItem>();

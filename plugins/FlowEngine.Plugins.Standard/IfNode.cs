@@ -62,9 +62,7 @@ public sealed class IfNode : INodeType
 
             var conditionResult = await Condition.EvaluateAsync<bool>(context, cancellationToken: cancellationToken);
 
-            var inputBatch = context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch)
-                ? batch
-                : new DataBatch();
+            var inputBatch = context.GetInputBatch();
 
             return new NodeExecutionResult
             {

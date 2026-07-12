@@ -69,26 +69,14 @@ public sealed class WaitNode : INodeType
     /// <inheritdoc />
     public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
-        var inputBatch = context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch)
-            ? batch
-            : new DataBatch();
-
+        var inputBatch = context.GetInputBatch();
         var waitTime = CalculateWaitTime();
 
-        try
+        return await context.CatchToResult(async ct =>
         {
-            await Task.Delay(waitTime, cancellationToken).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException)
-        {
-            return context.ErrorResult("Cancelled", "Wait was cancelled.");
-        }
-
-        return new NodeExecutionResult
-        {
-            Success = true,
-            Output = inputBatch
-        };
+            await Task.Delay(waitTime, ct).ConfigureAwait(false);
+            return context.Ok(inputBatch);
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private TimeSpan CalculateWaitTime()

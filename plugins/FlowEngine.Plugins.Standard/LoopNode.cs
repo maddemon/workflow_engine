@@ -53,9 +53,7 @@ public sealed class LoopNode : INodeType
     /// <inheritdoc />
     public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
-        var inputBatch = context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch)
-            ? batch
-            : new DataBatch();
+        var inputBatch = context.GetInputBatch();
 
         // Check if this is a "next batch" call from downstream
         if (IsNextBatchCall(context))

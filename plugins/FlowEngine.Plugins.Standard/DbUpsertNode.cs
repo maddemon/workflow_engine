@@ -87,13 +87,13 @@ public sealed class DbUpsertNode : INodeType
         {
             if (string.IsNullOrWhiteSpace(Connection.Source))
             {
-                return context.ErrorResult("MissingConnection", "Connection string is required.");
+                return context.ErrorResult(FlowConstants.ErrorCodes.MissingConnection, "Connection string is required.");
             }
 
             var connectionString = await Connection.EvaluateAsync<string>(context, cancellationToken: cancellationToken);
             if (string.IsNullOrWhiteSpace(connectionString))
             {
-                return context.ErrorResult("MissingConnection", "Connection string is required.");
+                return context.ErrorResult(FlowConstants.ErrorCodes.MissingConnection, "Connection string is required.");
             }
 
             var validationError = Validate(context, connectionString, out var keyColumnList, out var columnList);
@@ -126,94 +126,61 @@ public sealed class DbUpsertNode : INodeType
                 _ => throw new InvalidOperationException($"Unexpected mode '{Mode}'.")
             };
 
-            var inputBatch = context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch)
-                ? batch
-                : new DataBatch();
+            var inputBatch = context.GetInputBatch();
 
             if (inputBatch.Items.Count == 0)
             {
                 return CreateResult(context, true, 0, 0, 0);
             }
 
-            await using var connection = DbConnectionFactory.CreateConnection(dialect, connectionString);
-            await connection.OpenAsync(cancellationToken).ConfigureAwait(false);
-
-            using var transaction = await connection.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            await using var executor = await DbExecutor.CreateAsync(dialect, connectionString, cancellationToken).ConfigureAwait(false);
 
             var affectedRows = 0;
             var inserted = 0;
             var updated = 0;
             var isUpsert = mode.Equals("upsert", StringComparison.OrdinalIgnoreCase);
 
-            try
+            for (var itemIndex = 0; itemIndex < inputBatch.Items.Count; itemIndex++)
             {
-                for (var itemIndex = 0; itemIndex < inputBatch.Items.Count; itemIndex++)
+                cancellationToken.ThrowIfCancellationRequested();
+
+                var item = inputBatch.Items[itemIndex];
+                var values = await EvaluateRowValues(Columns, item.Data, itemIndex, context, cancellationToken).ConfigureAwait(false);
+
+                if (mode.Equals("update", StringComparison.OrdinalIgnoreCase))
                 {
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    var item = inputBatch.Items[itemIndex];
-                    var values = await EvaluateRowValues(Columns, item.Data, itemIndex, context, cancellationToken).ConfigureAwait(false);
-
-                    if (mode.Equals("update", StringComparison.OrdinalIgnoreCase))
-                    {
-                        values = ReorderUpdateValues(values, columnList!, keyColumnList!);
-                    }
-
-                    var rowExisted = false;
-                    if (isUpsert)
-                    {
-                        var keyValues = GetKeyValues(values, columnList!, keyColumnList!);
-                        rowExisted = await RowExistsAsync(
-                            connection,
-                            transaction,
-                            Table,
-                            keyColumnList!,
-                            keyValues,
-                            generator,
-                            cancellationToken).ConfigureAwait(false);
-                    }
-
-                    using var command = connection.CreateCommand();
-                    command.Transaction = transaction;
-                    command.CommandText = sql;
-                    for (var i = 0; i < values.Count; i++)
-                    {
-                        var parameter = command.CreateParameter();
-                        parameter.ParameterName = $"@p{i}";
-                        parameter.Value = values[i] ?? DBNull.Value;
-                        command.Parameters.Add(parameter);
-                    }
-
-                    affectedRows += await command.ExecuteNonQueryAsync(cancellationToken).ConfigureAwait(false);
-
-                    if (isUpsert)
-                    {
-                        if (rowExisted)
-                        {
-                            updated++;
-                        }
-                        else
-                        {
-                            inserted++;
-                        }
-                    }
+                    values = ReorderUpdateValues(values, columnList!, keyColumnList!);
                 }
 
-                await transaction.CommitAsync(cancellationToken).ConfigureAwait(false);
+                var rowExisted = false;
+                if (isUpsert)
+                {
+                    var keyValues = GetKeyValues(values, columnList!, keyColumnList!);
+                    rowExisted = await RowExistsAsync(
+                        executor,
+                        Table,
+                        keyColumnList!,
+                        keyValues,
+                        generator,
+                        cancellationToken).ConfigureAwait(false);
+                }
+
+                affectedRows += await executor.ExecuteNonQueryAsync(sql, values, cancellationToken).ConfigureAwait(false);
+
+                if (isUpsert)
+                {
+                    if (rowExisted)
+                    {
+                        updated++;
+                    }
+                    else
+                    {
+                        inserted++;
+                    }
+                }
             }
-            catch
-            {
-                try
-                {
-                    await transaction.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                }
-                catch
-                {
-                    // Best-effort rollback; the original exception will be handled below.
-                }
 
-                throw;
-            }
+            await executor.CommitAsync(cancellationToken).ConfigureAwait(false);
 
             if (mode.Equals("insert", StringComparison.OrdinalIgnoreCase))
             {
@@ -228,7 +195,7 @@ public sealed class DbUpsertNode : INodeType
         }
         catch (OperationCanceledException)
         {
-            return context.ErrorResult("Cancelled", "Database operation was cancelled.");
+            return context.ErrorResult(FlowConstants.ErrorCodes.Cancelled, "Database operation was cancelled.");
         }
         catch (DbException ex)
         {
@@ -236,11 +203,11 @@ public sealed class DbUpsertNode : INodeType
         }
         catch (ScriptErrorException ex)
         {
-            return context.ErrorResult("ScriptError", $"Column expression evaluation failed: {ex.Message}");
+            return context.ErrorResult(FlowConstants.ErrorCodes.ScriptError, $"Column expression evaluation failed: {ex.Message}");
         }
         catch (Exception ex)
         {
-            return context.ErrorResult("UnexpectedError", $"Unexpected database error: {ex.Message}");
+            return context.ErrorResult(FlowConstants.ErrorCodes.UnexpectedError, $"Unexpected database error: {ex.Message}");
         }
     }
 
@@ -251,7 +218,7 @@ public sealed class DbUpsertNode : INodeType
 
         if (string.IsNullOrWhiteSpace(connectionString))
         {
-            return context.ErrorResult("MissingConnection", "Connection string is required.");
+            return context.ErrorResult(FlowConstants.ErrorCodes.MissingConnection, "Connection string is required.");
         }
 
         if (string.IsNullOrWhiteSpace(Table))
@@ -358,8 +325,7 @@ public sealed class DbUpsertNode : INodeType
     }
 
     private static async Task<bool> RowExistsAsync(
-        DbConnection connection,
-        DbTransaction transaction,
+        DbExecutor executor,
         string table,
         IReadOnlyList<string> keyColumns,
         IReadOnlyList<object?> keyValues,
@@ -369,19 +335,7 @@ public sealed class DbUpsertNode : INodeType
         var quotedTable = generator.QuoteIdentifier(table);
         var where = string.Join(" AND ", keyColumns.Select((c, i) => $"{generator.QuoteIdentifier(c)} = @p{i}"));
         var sql = $"SELECT 1 FROM {quotedTable} WHERE {where}";
-
-        using var command = connection.CreateCommand();
-        command.Transaction = transaction;
-        command.CommandText = sql;
-        for (var i = 0; i < keyValues.Count; i++)
-        {
-            var parameter = command.CreateParameter();
-            parameter.ParameterName = $"@p{i}";
-            parameter.Value = keyValues[i] ?? DBNull.Value;
-            command.Parameters.Add(parameter);
-        }
-
-        var result = await command.ExecuteScalarAsync(cancellationToken).ConfigureAwait(false);
+        var result = await executor.ExecuteScalarAsync(sql, keyValues, cancellationToken).ConfigureAwait(false);
         return result is not null && result != DBNull.Value;
     }
 

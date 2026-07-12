@@ -65,9 +65,7 @@ public sealed class FilterNode : INodeType
     /// <inheritdoc />
     public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
-        var inputBatch = context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch)
-            ? batch
-            : new DataBatch();
+        var inputBatch = context.GetInputBatch();
 
         var keptItems = new List<DataItem>();
         var discardedItems = new List<DataItem>();

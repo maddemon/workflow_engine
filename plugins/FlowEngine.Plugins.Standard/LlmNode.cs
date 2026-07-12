@@ -5,7 +5,7 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
-using FlowEngine.Core.Http;
+
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -77,7 +77,8 @@ public sealed class LlmNode : INodeType
             return context.ErrorResult("MissingModel", "Model name is required.");
         }
 
-        var apiKey = await ResolveApiKeyAsync(context, cancellationToken).ConfigureAwait(false);
+        var credential = await context.ResolveCredentialAsync(CredentialId, cancellationToken).ConfigureAwait(false);
+        var apiKey = credential?.Fields?.TryGetValue(FlowConstants.CredentialFields.ApiKey, out var key) == true ? key : null;
         if (apiKey is null)
         {
             return context.ErrorResult("MissingApiKey", "API Key not available. Configure a valid credential.");
@@ -86,10 +87,8 @@ public sealed class LlmNode : INodeType
         Uri? endpoint = null;
         if (!string.IsNullOrWhiteSpace(BaseEndpoint) && Uri.TryCreate(BaseEndpoint, UriKind.Absolute, out var uri))
         {
-            if (SsrfGuard.IsInternalTarget(BaseEndpoint))
-            {
-                return context.ErrorResult("SsrfBlocked", "LLM BaseEndpoint points to a blocked internal/loopback address.");
-            }
+            var ssrfGuard = context.GuardSsrf(BaseEndpoint);
+            if (ssrfGuard is not null) return ssrfGuard;
 
             endpoint = uri;
         }
@@ -118,56 +117,11 @@ public sealed class LlmNode : INodeType
 
         context.LlmClient = llmClient;
 
-        return new NodeExecutionResult
+        return context.Ok(new JsonObject
         {
-            Success = true,
-            Output = new DataBatch
-            {
-                Items =
-                [
-                    new DataItem
-                    {
-                        Data = new JsonObject
-                        {
-                            ["model"] = Model,
-                            ["status"] = "ready"
-                        },
-                        Success = true,
-                        SourceIndex = 0
-                    }
-                ]
-            }
-        };
+            ["model"] = Model,
+            ["status"] = "ready"
+        });
     }
 
-    private async Task<string?> ResolveApiKeyAsync(NodeExecutionContext context, CancellationToken cancellationToken)
-    {
-        if (string.IsNullOrWhiteSpace(CredentialId))
-        {
-            return null;
-        }
-
-        if (!Guid.TryParse(CredentialId, out var credentialId))
-        {
-            return null;
-        }
-
-        try
-        {
-            var credential = await context.Credentials.GetCredentialAsync(credentialId, cancellationToken)
-                .ConfigureAwait(false);
-
-            if (credential.Fields.TryGetValue(FlowConstants.CredentialFields.ApiKey, out var apiKey))
-            {
-                return apiKey;
-            }
-
-            return null;
-        }
-        catch (Exception ex)
-        {
-            context.Logger?.LogError(ex, "Failed to resolve API key from credential {CredentialId}.", CredentialId);
-            return null;
-        }
-    }
 }

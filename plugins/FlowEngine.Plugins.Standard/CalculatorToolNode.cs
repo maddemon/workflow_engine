@@ -85,11 +85,11 @@ public sealed class CalculatorToolNode : INodeType
         }
         catch (OperationCanceledException)
         {
-            return context.ErrorResult("Cancelled", "Calculation was cancelled.");
+            return context.ErrorResult(FlowConstants.ErrorCodes.Cancelled, "Calculation was cancelled.");
         }
         catch (ScriptErrorException ex)
         {
-            return context.ErrorResult("ScriptError", $"Expression evaluation failed: {ex.Message}");
+            return context.ErrorResult(FlowConstants.ErrorCodes.ScriptError, $"Expression evaluation failed: {ex.Message}");
         }
         catch (Exception ex)
         {
@@ -99,7 +99,8 @@ public sealed class CalculatorToolNode : INodeType
 
     private string? GetExpression(NodeExecutionContext context)
     {
-        if (context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch) && batch.Items.Count > 0)
+        var batch = context.GetInputBatch();
+        if (batch.Items.Count > 0)
         {
             var data = batch.Items[0].Data;
             if (data is JsonObject obj)

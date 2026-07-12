@@ -1,7 +1,4 @@
-using System.Collections.Generic;
 using System.ComponentModel;
-using System.Net;
-using System.Text;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,7 +10,6 @@ using FlowEngine.Core.Enums;
 using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Http;
 using FlowEngine.Core.Scripting;
-using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -25,6 +21,8 @@ namespace FlowEngine.Plugins.Standard;
 /// </summary>
 public sealed class PaginateNode : INodeType
 {
+    private static readonly IHttpExecutionService s_httpService = new HttpExecutionService();
+
     /// <inheritdoc />
     public string TypeName => "paginate";
 
@@ -93,12 +91,6 @@ public sealed class PaginateNode : INodeType
         var credentialName = GetConfig(context, "credentialName", "");
         var maxPages = int.TryParse(GetConfig(context, "maxPages", "100"), out var mp) && mp > 0 ? mp : 100;
 
-        var client = context.HttpClientPool?.GetClient();
-        if (client is null)
-        {
-            return context.ErrorResult("HttpClientUnavailable", "HTTP client pool is not configured.");
-        }
-
         var nodeType = context.NodeRegistry.Get(context.Node.TypeName);
         var execution = new ExecutionRecord { Id = context.ExecutionId };
 
@@ -148,46 +140,40 @@ public sealed class PaginateNode : INodeType
             var resolvedUrl = resolved.TryGetValue("url", out var ru) ? ru as string : null;
             if (string.IsNullOrWhiteSpace(resolvedUrl))
             {
-                return context.ErrorResult("MissingUrl", $"URL resolution failed on page {page}.");
-            }
-
-            if (SsrfGuard.IsInternalTarget(resolvedUrl))
-            {
-                return context.ErrorResult("SsrfBlocked", "Target URL points to a blocked internal/loopback address.");
+                return context.ErrorResult(FlowConstants.ErrorCodes.MissingUrl, $"URL resolution failed on page {page}.");
             }
 
             var httpMethod = ResolveMethod(resolved, Method);
-            using var request = new HttpRequestMessage(httpMethod, resolvedUrl);
 
-            if (Authentication != HttpRequestAuthMode.None && !string.IsNullOrEmpty(credentialName))
-            {
-                await ApplyAuthHeaderAsync(request, context, Authentication, credentialName, cancellationToken).ConfigureAwait(false);
-            }
-
+            string? bodyJson = null;
             if (httpMethod != HttpMethod.Get && httpMethod != HttpMethod.Head
                 && resolved.TryGetValue("bodyExpression", out var rb) && rb is not null)
             {
-                var bodyJson = BuildBody(rb);
-                if (!string.IsNullOrEmpty(bodyJson))
-                {
-                    request.Content = new StringContent(bodyJson, Encoding.UTF8,
-                        new System.Net.Http.Headers.MediaTypeHeaderValue("application/json"));
-                }
+                bodyJson = BuildBody(rb);
             }
+
+            var httpRequest = new HttpExecutionRequest
+            {
+                Url = resolvedUrl,
+                Method = httpMethod,
+                AuthMode = Authentication,
+                CredentialId = credentialName,
+                BodyContent = bodyJson
+            };
 
             NodeExecutionResult pageResult;
             try
             {
-                pageResult = await HttpExecutionHelper.SendAndBuildResultAsync(client, request, context.Node.Id, cancellationToken)
+                pageResult = await s_httpService.ExecuteAsync(httpRequest, context, cancellationToken)
                     .ConfigureAwait(false);
             }
             catch (OperationCanceledException)
             {
-                return context.ErrorResult("Cancelled", "Paginated request was cancelled.");
+                return context.ErrorResult(FlowConstants.ErrorCodes.Cancelled, "Paginated request was cancelled.");
             }
             catch (HttpRequestException ex)
             {
-                return context.ErrorResult("HttpRequestFailed", $"HTTP request failed on page {page}: {ex.Message}");
+                return context.ErrorResult(FlowConstants.ErrorCodes.HttpRequestFailed, $"HTTP request failed on page {page}: {ex.Message}");
             }
 
             if (!pageResult.Success)
@@ -225,7 +211,7 @@ public sealed class PaginateNode : INodeType
                         detail += $"，{subMsg}";
                     else if (!string.IsNullOrEmpty(errmsg))
                         detail += $"，{errmsg}";
-                    return context.ErrorResult("SuccessWhenFailed",
+                    return context.ErrorResult(FlowConstants.ErrorCodes.SuccessWhenFailed,
                         $"业务条件未满足：{successWhenExpr}{detail}");
                 }
             }
@@ -296,44 +282,6 @@ public sealed class PaginateNode : INodeType
             Success = true,
             Output = new DataBatch { Items = allItems }
         };
-    }
-
-    private static async Task ApplyAuthHeaderAsync(
-        HttpRequestMessage request, NodeExecutionContext context, HttpRequestAuthMode mode, string credentialName, CancellationToken ct)
-    {
-        try
-        {
-            var credential = await context.Credentials.GetCredentialByNameAsync(credentialName, ct).ConfigureAwait(false);
-            if (credential is null) return;
-
-            var fields = credential.Fields;
-            switch (mode)
-            {
-                case HttpRequestAuthMode.BearerToken:
-                    if (fields.TryGetValue("accessToken", out var token) || fields.TryGetValue("token", out token) || fields.TryGetValue(FlowConstants.CredentialFields.ApiKey, out token))
-                    {
-                        request.Headers.TryAddWithoutValidation("Authorization", $"Bearer {token}");
-                    }
-                    break;
-                case HttpRequestAuthMode.ApiKey:
-                    if (fields.TryGetValue(FlowConstants.CredentialFields.ApiKey, out var apiKey))
-                    {
-                        request.Headers.TryAddWithoutValidation("X-API-Key", apiKey);
-                    }
-                    break;
-                case HttpRequestAuthMode.BasicAuth:
-                    var user = fields.TryGetValue("username", out var u) ? u : fields.TryGetValue("user", out u) ? u : "";
-                    var pass = fields.TryGetValue("password", out var p) ? p : "";
-                    var basic = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{user}:{pass}"));
-                    request.Headers.TryAddWithoutValidation("Authorization", $"Basic {basic}");
-                    break;
-            }
-        }
-        catch (Exception ex)
-        {
-            // 认证失败不阻断（token 可能已在 URL 内嵌）
-            context.Logger?.LogWarning("应用认证头失败，继续执行（token 可能已内嵌于 URL）：{Error}", ex.Message);
-        }
     }
 
     private string GetSuccessWhenExpression()

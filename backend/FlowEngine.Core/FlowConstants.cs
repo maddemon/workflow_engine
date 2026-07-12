@@ -32,4 +32,24 @@ public static class FlowConstants
     {
         public const string ApiKey = "apiKey";
     }
+
+    /// <summary>
+    /// 共享错误码常量，供多个节点统一引用。
+    /// </summary>
+    public static class ErrorCodes
+    {
+        public const string Cancelled = "Cancelled";
+        public const string HttpClientUnavailable = "HttpClientUnavailable";
+        public const string HttpRequestFailed = "HttpRequestFailed";
+        public const string MissingCode = "MissingCode";
+        public const string MissingCommand = "MissingCommand";
+        public const string MissingConnection = "MissingConnection";
+        public const string MissingLlmClient = "MissingLlmClient";
+        public const string MissingUrl = "MissingUrl";
+        public const string ScriptError = "ScriptError";
+        public const string SsrfBlocked = "SsrfBlocked";
+        public const string SuccessWhenFailed = "SuccessWhenFailed";
+        public const string Timeout = "Timeout";
+        public const string UnexpectedError = "UnexpectedError";
+    }
 }

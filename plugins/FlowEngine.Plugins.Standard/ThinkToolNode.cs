@@ -91,7 +91,8 @@ public sealed class ThinkToolNode : INodeType
 
     private string? GetThought(NodeExecutionContext context)
     {
-        if (context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch) && batch.Items.Count > 0)
+        var batch = context.GetInputBatch();
+        if (batch.Items.Count > 0)
         {
             var data = batch.Items[0].Data;
             if (data is JsonObject obj)

@@ -50,22 +50,19 @@ public sealed class DataQualityNode : INodeType
     public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
         // 1. Get input data
-        var inputBatch = context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch)
-            ? batch
-            : new DataBatch();
+        var inputBatch = context.GetInputBatch();
 
         var itemCount = inputBatch.Items.Count;
 
         // 2. Parse rules
         List<JsonElement>? rulesList;
-        try
-        {
-            var rulesDoc = JsonDocument.Parse(Rules);
-            rulesList = rulesDoc.RootElement.EnumerateArray().ToList();
-        }
-        catch (JsonException)
+        if (!context.TryParseJson(Rules, out var rulesDoc, out _))
         {
             return Task.FromResult(context.ErrorResult("InvalidRules", "Rules JSON 格式无效。"));
+        }
+        using (rulesDoc)
+        {
+            rulesList = rulesDoc.RootElement.EnumerateArray().ToList();
         }
 
         // 3. Validate each rule
@@ -158,7 +155,7 @@ public sealed class DataQualityNode : INodeType
         var outputItems = inputBatch.Items.Select(item =>
         {
             var mergedData = item.Data is JsonObject obj
-                ? DeepCopy(obj)
+                ? obj.DeepClone()
                 : new JsonObject { ["_original"] = item.Data };
             mergedData["_dqReport"] = report;
             return new DataItem
@@ -292,10 +289,4 @@ public sealed class DataQualityNode : INodeType
         return (true, string.Empty);
     }
 
-    private static JsonObject DeepCopy(JsonObject source)
-    {
-        // Simple deep copy via round-trip serialization
-        var json = source.ToJsonString();
-        return JsonNode.Parse(json)!.AsObject();
-    }
 }

@@ -102,20 +102,20 @@ public sealed class ShellToolNode : INodeType
     /// <inheritdoc />
     public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
-        try
+        if (Command is null || string.IsNullOrWhiteSpace(Command.Source))
         {
-            if (Command is null || string.IsNullOrWhiteSpace(Command.Source))
-            {
-                return context.ErrorResult("MissingCommand", "Command is required.");
-            }
+            return context.ErrorResult(FlowConstants.ErrorCodes.MissingCommand, "Command is required.");
+        }
 
-            var resolvedCommand = await Command.EvaluateAsync<string>(context, cancellationToken: cancellationToken);
+        return await context.CatchToResult(async ct =>
+        {
+            var resolvedCommand = await Command.EvaluateAsync<string>(context, cancellationToken: ct);
             if (string.IsNullOrWhiteSpace(resolvedCommand))
             {
-                return context.ErrorResult("MissingCommand", "Command resolution failed.");
+                return context.ErrorResult(FlowConstants.ErrorCodes.MissingCommand, "Command resolution failed.");
             }
 
-            var result = await ExecuteCommandAsync(resolvedCommand, cancellationToken).ConfigureAwait(false);
+            var result = await ExecuteCommandAsync(resolvedCommand, ct).ConfigureAwait(false);
 
             var outputObj = new JsonObject
             {
@@ -125,19 +125,7 @@ public sealed class ShellToolNode : INodeType
             };
 
             return context.CreateSingleResult(outputObj, result.ExitCode == 0);
-        }
-        catch (OperationCanceledException)
-        {
-            return context.ErrorResult("Cancelled", "Command execution was cancelled.");
-        }
-        catch (ScriptErrorException ex)
-        {
-            return context.ErrorResult("ScriptError", $"Command expression evaluation failed: {ex.Message}");
-        }
-        catch (Exception ex)
-        {
-            return context.ErrorResult("ExecutionFailed", $"Command execution failed: {ex.Message}");
-        }
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<CommandResult> ExecuteCommandAsync(string command, CancellationToken cancellationToken)

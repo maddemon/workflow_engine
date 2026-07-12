@@ -115,22 +115,16 @@ public sealed class SubWorkflowToolNode : INodeType
                 return context.ErrorResult("MissingWorkflowJson", "WorkflowJson is required when Source is Inline.");
             }
 
-            try
+            if (!context.TryParseJson<Workflow>(WorkflowJson, out workflow, out var parseError, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }))
             {
-                workflow = JsonSerializer.Deserialize<Workflow>(WorkflowJson, new JsonSerializerOptions
-                {
-                    PropertyNameCaseInsensitive = true
-                }) ?? throw new InvalidOperationException("Deserialized workflow is null.");
-            }
-            catch (JsonException ex)
-            {
-                return context.ErrorResult("InvalidWorkflowJson", $"Failed to parse workflow JSON: {ex.Message}");
+                return context.ErrorResult("InvalidWorkflowJson", $"Failed to parse workflow JSON.");
             }
         }
 
-        if (workflow is null || workflow.Nodes.Count == 0)
+        var validationError = WorkflowValidator.EnsureNonEmpty(workflow);
+        if (validationError is not null)
         {
-            return context.ErrorResult("EmptyWorkflow", "The sub-workflow contains no nodes.");
+            return context.ErrorResult("EmptyWorkflow", validationError);
         }
 
         using var timeoutCts = TimeoutSeconds.HasValue
@@ -147,8 +141,9 @@ public sealed class SubWorkflowToolNode : INodeType
         try
         {
             var executor = new SubWorkflowExecutor(context.NodeRegistry);
-            var inputPayload = GetInputPayload(context);
-            var result = await executor.ExecuteAsync(workflow, inputPayload, effectiveToken).ConfigureAwait(false);
+            var inputBatch = context.GetInputBatch();
+            var inputPayload = inputBatch.Items.Count > 0 ? inputBatch.Items[0].Data : null;
+            var result = await executor.ExecuteAsync(workflow!, inputPayload, effectiveToken).ConfigureAwait(false);
             return result;
         }
         catch (OperationCanceledException) when (timeoutCts is not null)
@@ -161,15 +156,6 @@ public sealed class SubWorkflowToolNode : INodeType
         }
     }
 
-    private static JsonNode? GetInputPayload(NodeExecutionContext context)
-    {
-        if (!context.Inputs.TryGetValue(FlowConstants.PortNames.Input, out var batch) || batch.Items.Count == 0)
-        {
-            return null;
-        }
-
-        return batch.Items[0].Data;
-    }
 }
 
 /// <summary>

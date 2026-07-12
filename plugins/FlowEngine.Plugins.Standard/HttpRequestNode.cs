@@ -9,52 +9,6 @@ using FlowEngine.Core.Scripting;
 namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
-/// HTTP 请求方法选项。
-/// </summary>
-public enum HttpMethodOption
-{
-    /// <summary>GET</summary>
-    Get,
-
-    /// <summary>POST</summary>
-    Post,
-
-    /// <summary>PUT</summary>
-    Put,
-
-    /// <summary>DELETE</summary>
-    Delete,
-
-    /// <summary>PATCH</summary>
-    Patch
-}
-
-/// <summary>
-/// HTTP 认证方式。
-/// </summary>
-public enum HttpRequestAuthMode
-{
-    /// <summary>无认证</summary>
-    None,
-
-    /// <summary>Bearer Token</summary>
-    BearerToken,
-
-    /// <summary>API Key</summary>
-    ApiKey,
-
-    /// <summary>Basic Auth</summary>
-    BasicAuth,
-
-    /// <summary>
-    /// 查询参数认证：将凭据值（OAuth2 的 accessToken 或 API Key）作为 URL 查询参数附加，
-    /// 参数名由 <see cref="HttpRequestNode.QueryParameterName"/> 指定（默认 access_token）。
-    /// 适用于钉钉 / 企业微信 / 飞书等 token 走 query 的 API。
-    /// </summary>
-    QueryParameter
-}
-
-/// <summary>
 /// HTTP 请求节点，支持静态配置和占位符。
 /// </summary>
 public sealed class HttpRequestNode : INodeType

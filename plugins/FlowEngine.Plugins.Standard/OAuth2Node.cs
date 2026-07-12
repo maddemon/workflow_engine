@@ -54,7 +54,7 @@ public sealed class OAuth2Node : INodeType
             return context.ErrorResult("MissingCredentialName", "CredentialName is required.");
         }
 
-        var credential = await context.Credentials.GetCredentialByNameAsync(CredentialName, cancellationToken)
+        var credential = await context.ResolveCredentialAsync(CredentialName, cancellationToken)
             .ConfigureAwait(false);
 
         if (credential is null)
@@ -82,6 +82,6 @@ public sealed class OAuth2Node : INodeType
             ["expiresAt"] = expiresAt.HasValue ? expiresAt.Value.ToString("O") : null
         };
 
-        return context.CreateSingleResult(data);
+        return context.Ok(data);
     }
 }

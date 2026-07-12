@@ -83,7 +83,7 @@ public sealed class SwitchNode : INodeType
         }
         catch (Exception ex)
         {
-            return context.ErrorResult("UnexpectedError", $"Unexpected switch error: {ex.Message}");
+            return context.ErrorResult(FlowConstants.ErrorCodes.UnexpectedError, $"Unexpected switch error: {ex.Message}");
         }
     }
 }

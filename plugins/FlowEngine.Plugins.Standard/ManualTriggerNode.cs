@@ -38,26 +38,9 @@ public sealed class ManualTriggerNode : INodeType
     public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
         // Manual trigger just outputs an empty object
-        var outputBatch = new DataBatch
+        return Task.FromResult(context.Ok(new System.Text.Json.Nodes.JsonObject
         {
-            Items =
-            [
-                new DataItem
-                {
-                    Data = new System.Text.Json.Nodes.JsonObject
-                    {
-                        ["triggeredAt"] = DateTime.UtcNow.ToString("o")
-                    },
-                    Success = true,
-                    SourceIndex = 0
-                }
-            ]
-        };
-
-        return Task.FromResult(new NodeExecutionResult
-        {
-            Success = true,
-            Output = outputBatch
-        });
+            ["triggeredAt"] = DateTime.UtcNow.ToString("o")
+        }));
     }
 }

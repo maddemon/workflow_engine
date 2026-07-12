@@ -92,7 +92,7 @@ public class CodeSnippetToolNodeTests
         var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
-        Assert.Equal("CodeError", result.Error?.Code);
+        Assert.Equal("ScriptError", result.Error?.Code);
     }
 
     [Fact]
