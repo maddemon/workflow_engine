@@ -214,7 +214,7 @@ public sealed class WorkflowSchedulerKernelTests
             NodeRecords = []
         };
 
-        var session = new ExecutionSession(workflow, executionRecord, executionRecord.Id)
+        var session = new ExecutionSession(workflow, executionRecord, executionRecord.Id, _nodeRegistry)
         {
             SensitiveValues = ExecutionSession.EmptySensitiveValues
         };

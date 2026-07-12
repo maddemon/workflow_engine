@@ -1,3 +1,4 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Core;
@@ -296,14 +297,75 @@ public sealed class WorkflowValidationService(
             }
         }
 
+        // ── 7. 参数值校验（类型/枚举范围）──────────────────────────
+        foreach (var node in nodes)
+        {
+            NodeTypeDescriptor descriptor;
+            try
+            {
+                descriptor = nodeRegistry.GetDescriptor(node.TypeName);
+            }
+            catch (InvalidOperationException)
+            {
+                continue; // 已在步骤 6 报告中
+            }
+
+            foreach (var param in descriptor.Parameters)
+            {
+                if (!node.Parameters.TryGetValue(param.Name, out var value) || value is null)
+                    continue; // 已在步骤 6 报告中
+
+                // Options 类型：校验值是否在允许范围内
+                if (param.Type == ParameterType.Options && param.Options.Count > 0)
+                {
+                    var allowedValues = param.Options
+                        .Select(o => o.Value?.ToString())
+                        .Where(v => v is not null)
+                        .Cast<string>()
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    var strValue = ExtractParameterString(value);
+                    if (strValue is not null && !allowedValues.Contains(strValue))
+                    {
+                        errors.Add(new ValidationError
+                        {
+                            NodeId = node.Id,
+                            Field = param.Name,
+                            ErrorType = "InvalidValue",
+                            Message = $"节点 '{node.Id}' 参数 '{param.DisplayName}' 的值 '{strValue}' 不在允许范围内。" +
+                                      $"允许的值: {string.Join(", ", allowedValues)}",
+                            SuggestedFix = $"请将 '{param.Name}' 设置为允许的值之一: {string.Join(", ", allowedValues)}",
+                        });
+                    }
+                }
+            }
+        }
+
         var canAutoFix = errors.All(e =>
-            e.ErrorType is "MissingRequired" or "InvalidType");
+            e.ErrorType is "MissingRequired" or "InvalidType" or "InvalidValue");
 
         return new ValidateWorkflowResult
         {
             Valid = errors.Count == 0,
             Errors = errors,
             CanAutoFix = canAutoFix,
+        };
+    }
+
+    private static string? ExtractParameterString(object? value)
+    {
+        return value switch
+        {
+            null => null,
+            string s => s,
+            JsonElement element => element.ValueKind switch
+            {
+                JsonValueKind.String => element.GetString(),
+                JsonValueKind.Number => element.GetRawText(),
+                JsonValueKind.True => "true",
+                JsonValueKind.False => "false",
+                _ => null,
+            },
+            _ => value.ToString(),
         };
     }
 }

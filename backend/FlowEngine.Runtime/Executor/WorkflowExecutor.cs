@@ -18,6 +18,7 @@ namespace FlowEngine.Runtime.Executor;
 public sealed class WorkflowExecutor : IEngine
 {
     private readonly FlowEngineDbContext _dbContext;
+    private readonly INodeRegistry _nodeRegistry;
     private readonly WorkflowExecutionQueue _executionQueue;
     private readonly IEventBus? _eventBus;
     private readonly ILogger<WorkflowExecutor> _logger;
@@ -36,6 +37,7 @@ public sealed class WorkflowExecutor : IEngine
         IOptions<EngineDefaultsOptions>? defaultsOptions = null)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+        _nodeRegistry = nodeRegistry ?? throw new ArgumentNullException(nameof(nodeRegistry));
         _executionQueue = executionQueue ?? throw new ArgumentNullException(nameof(executionQueue));
         _eventBus = eventBus;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -95,7 +97,7 @@ public sealed class WorkflowExecutor : IEngine
             .ConfigureAwait(false);
         if (execution is null) return;
 
-        var session = new ExecutionSession(workflow, execution, executionRecordId)
+        var session = new ExecutionSession(workflow, execution, executionRecordId, _nodeRegistry)
         {
             SensitiveValues = ExecutionSession.EmptySensitiveValues
         };

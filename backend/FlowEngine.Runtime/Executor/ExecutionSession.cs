@@ -51,7 +51,8 @@ public sealed class ExecutionSession
     public ExecutionSession(
         Workflow workflow,
         ExecutionRecord execution,
-        Guid executionRecordId)
+        Guid executionRecordId,
+        INodeRegistry? nodeRegistry = null)
     {
         Workflow = workflow;
         Execution = execution;
@@ -64,8 +65,24 @@ public sealed class ExecutionSession
                 var portName = c.SourcePortName;
                 if (string.IsNullOrEmpty(portName) && NodeMap.TryGetValue(c.SourceNodeId, out var srcNode))
                 {
+                    // 优先使用节点显式声明的 Ports
                     portName = srcNode.Ports
                         .FirstOrDefault(p => p.Direction == PortDirection.Output)?.Name ?? string.Empty;
+
+                    // 容错兜底：使用注册中心的 PortDefinition 作为权威数据源
+                    if (string.IsNullOrEmpty(portName) && nodeRegistry is not null)
+                    {
+                        try
+                        {
+                            var descriptor = nodeRegistry.GetDescriptor(srcNode.TypeName);
+                            portName = descriptor.Ports
+                                .FirstOrDefault(p => p.Direction == PortDirection.Output)?.Name ?? string.Empty;
+                        }
+                        catch
+                        {
+                            // Registry 查找失败，保持空字符串
+                        }
+                    }
                 }
                 return (c.SourceNodeId, (portName ?? string.Empty).ToLowerInvariant());
             });

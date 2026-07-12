@@ -53,7 +53,7 @@ public sealed class WorkflowDryRunService(
             NodeRecords = []
         };
 
-        var session = new ExecutionSession(workflow, executionRecord, executionRecord.Id)
+        var session = new ExecutionSession(workflow, executionRecord, executionRecord.Id, nodeRegistry)
         {
             CredentialAccessor = credentialAccessor,
             SensitiveValues = sensitiveValues
