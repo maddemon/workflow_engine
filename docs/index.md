@@ -56,6 +56,15 @@ Flow Engine 是一个节点可热插拔的工作流自动化引擎。后端用 C
 | [plans/enterprise/plan-enterprise-00-readme.md](plans/enterprise/plan-enterprise-00-readme.md) | Enterprise 阶段说明（Git/协作/MCP/AI Builder，7 个模块计划） |
 | [plans/plan-cleanup-01-obsolete-markers.md](plans/plan-cleanup-01-obsolete-markers.md) | 基础设施/交叉清理：清理全仓 `[Obsolete]` 标记及其废弃实现 |
 
+### 设计文档
+
+探索性/跨阶段设计文档位于 `designs/`，用于在具体开发计划之前对齐方案：
+
+| 文档 | 内容 |
+|------|------|
+| [designs/2026-07-12-ai-native-workflow-engine.md](designs/2026-07-12-ai-native-workflow-engine.md) | AI-native 工作流引擎：AI 为主要操作者、Catalog/Workflow API、MCP 暴露、人类审查 |
+| [designs/2026-07-12-frontend-review-board.md](designs/2026-07-12-frontend-review-board.md) | 前端改造为「人类审查板」：纯审查、画布只读、测试先于确认、拒绝闭环 |
+
 ### 项目规则
 
 | 文档                                                                              | 内容               |
