@@ -67,7 +67,7 @@ public static class NodeDefinitionAdapter
             IsTrigger = overrideDef is not null ? overrideDef.IsTrigger : derivedIsTrigger,
             Tags = GetTags(nodeType, overrideDef),
             InputSchema = overrideDef?.InputSchema ?? BuildInputSchema(descriptor),
-            OutputSchema = BuildOutputSchema(descriptor, overrideDef),
+            OutputSchema = AddOutputDescription(BuildOutputSchema(descriptor, overrideDef)),
             Ports = overrideDef is { Ports: { Count: > 0 } } ? overrideDef.Ports : BuildPorts(descriptor),
             Examples = overrideDef?.Examples ?? [],
             ExpressionLanguage = "javascript",
@@ -184,6 +184,13 @@ public static class NodeDefinitionAdapter
             if (IsExpressionType(p.Type))
             {
                 propSchema["supportsExpression"] = true;
+                propSchema["expressionLanguage"] = JsonValue.Create("javascript");
+
+                var examples = GetExpressionExamples(p.Name);
+                if (examples is not null) propSchema["examples"] = examples;
+
+                var anti = GetAntiPatterns(p.Name);
+                if (anti is not null) propSchema["antiPatterns"] = anti;
             }
 
             if (p.DefaultValue is not null && !IsSensitive(p))
@@ -429,5 +436,60 @@ public static class NodeDefinitionAdapter
         }
 
         return false;
+    }
+
+    private static JsonArray? GetExpressionExamples(string? paramName) => paramName?.ToLowerInvariant() switch
+    {
+        "url" => new JsonArray
+        {
+            "'https://api.example.com/items'",
+            "'https://api.example.com/items/' + $json.id",
+            "'https://api.example.com/items?page=' + $json.page + '&size=100'",
+            "'https://oapi.dingtalk.com/topapi/v2/user/list?access_token=' + $json.body.access_token",
+        },
+        "bodyexpression" or "body_expression" or "body" => new JsonArray
+        {
+            "return { name: $json.name, count: $json.count };",
+            "return { items: $input.all().map(i => i.data) };",
+        },
+        "headersexpression" or "headers_expression" or "headers" => new JsonArray
+        {
+            "return { 'Authorization': 'Bearer ' + $json.token };",
+        },
+        "successwhen" => new JsonArray
+        {
+            "$json.errcode == 0",
+            "$json.status == 'ok'",
+        },
+        _ => null,
+    };
+
+    private static JsonArray? GetAntiPatterns(string? paramName) => paramName?.ToLowerInvariant() switch
+    {
+        "url" => new JsonArray
+        {
+            JsonNode.Parse("""{"wrong":"https://x?t={{$json.token}}","why":"{{ }} 是 n8n mustache 模板，本引擎不支持；裸写会被 JS 解析为 '//' 注释导致编译报错，带引号则静默通过并错把 token 原样发出。务必用 JS 拼接","right":"'https://x?t=' + $json.body.token"}"""),
+        },
+        "bodyexpression" or "body_expression" or "body" => new JsonArray
+        {
+            JsonNode.Parse("""{"wrong":"return { token: {{$json.token}} }","why":"{{ }} 不是本引擎语法","right":"return { token: $json.token }"}"""),
+        },
+        "successwhen" => new JsonArray
+        {
+            JsonNode.Parse("""{"wrong":"{{$json.errcode}} == 0","why":"{{ }} 不是本引擎语法","right":"$json.errcode == 0"}"""),
+        },
+        _ => null,
+    };
+
+    private static JsonNode? AddOutputDescription(JsonNode? outputSchema)
+    {
+        if (outputSchema is JsonObject outObj && !outObj.ContainsKey("description"))
+        {
+            outObj["description"] = JsonValue.Create(
+                "节点输出 data 的结构。例如 HTTP 节点响应被包成 { statusCode, headers, body }，" +
+                "下游用 $input.first().body.x 取业务字段，而不是 $input.first().x 或 .result。");
+        }
+
+        return outputSchema;
     }
 }

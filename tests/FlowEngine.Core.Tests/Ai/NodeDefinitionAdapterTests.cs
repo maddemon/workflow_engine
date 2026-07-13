@@ -247,4 +247,29 @@ public class NodeDefinitionAdapterTests
         var connProp = schema["properties"]!["connection"]!;
         Assert.Equal("database", connProp["credentialType"]?.GetValue<string>());
     }
+
+    [Fact]
+    public void BuildInputSchema_ScriptParameter_HasExpressionMeta()
+    {
+        var param = new ParameterDefinition
+        {
+            Name = "url",
+            Type = ParameterType.Script,
+            Hint = PresentationHint.Expression,
+            Description = "Target URL",
+        };
+        var descriptor = new NodeTypeDescriptor
+        {
+            TypeName = "httpRequest",
+            Parameters = [param],
+            Ports = [],
+        };
+
+        var schema = NodeDefinitionAdapter.BuildInputSchema(descriptor);
+        var urlProp = schema["properties"]!["url"]!;
+
+        Assert.Equal("javascript", urlProp["expressionLanguage"]?.GetValue<string>());
+        Assert.NotNull(urlProp["antiPatterns"]);
+        Assert.NotNull(urlProp["examples"]);
+    }
 }
