@@ -393,10 +393,9 @@ backend/FlowEngine.Host/App_Data/flowengine.db-wal
 docs/research/
 .superpowers/
 docs/superpowers/
-# CLI build artifacts and local environment
-cli/dist/
-cli/node_modules/
-cli/.env
+# mcp-shim build artifacts
+mcp-shim/dist/
+mcp-shim/node_modules/
 .agents/documents/
 
 review_diff.patch
