@@ -37,7 +37,8 @@ public sealed class WorkflowSchedulerKernelTests
                 new RetryableNode(),
                 new OncePerItemNode(),
                 new DelayedNode(),
-                new SlowNode()
+                new SlowNode(),
+                new BadScriptNode()
             },
             NullLogger<NodeRegistry>.Instance);
 
@@ -155,6 +156,31 @@ public sealed class WorkflowSchedulerKernelTests
         Assert.Equal(0, record.NodeRecords[0].RunIndex);
         Assert.Equal(1, record.NodeRecords[1].RunIndex);
         Assert.Equal(2, record.NodeRecords[2].RunIndex);
+    }
+
+    // Task 5：预求值阶段 Script 编译失败应被内核捕获，记录带节点/参数信息的失败记录（而非裸奔/崩溃）。
+    [Fact]
+    public async Task RunAsync_BadScriptParameter_PreEvaluationFailureRecordsScriptError()
+    {
+        var node = CreateNode("bad", "badScript", isEntry: true,
+            parameters: new Dictionary<string, object> { ["code"] = new Script { Source = "return (" } });
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "badScript",
+            CreatedBy = "test",
+            Nodes = [node],
+            Connections = []
+        };
+
+        var (record, _) = await RunAsync(workflow);
+
+        // 内核捕获 ScriptErrorException 并写入结构性失败记录（含节点 ID 与错误码），不向上抛崩溃。
+        var failed = Assert.Single(record.NodeRecords);
+        Assert.Equal("bad", failed.NodeDefinitionId);
+        Assert.False(failed.Output.Success);
+        Assert.NotNull(failed.Output.Error);
+        Assert.Equal("ScriptParameterPreEvaluationError", failed.Output.Error!.Code);
     }
 
     [Fact]

@@ -2,104 +2,57 @@
 description: 后端 C# / .NET 代码规范、目录结构、命名规范、DI、Service 设计、EF Core 数据访问、异常处理、日志、测试。
 globs: ["**/*.cs", "**/*.csproj"]
 ---
-> 后端代码规范。所有参与本项目的 AI Agent 与协作者在修改后端代码前必须阅读。
+> 后端代码规范。所有修改后端代码的 AI Agent 与协作者必须先阅读。
 
 # 后端代码规范
 
 ## 1. 技术栈
-
-- C# / .NET
+- C# 12+ / .NET（当前 `net10.0`）
 - ASP.NET Core Web API
-- Entity Framework Core（统一数据访问层，可对接 SQL Server、PostgreSQL、MySQL、SQLite 等）
-- 依赖注入原生容器
-- xUnit / NUnit（测试框架待统一）
+- Entity Framework Core（统一数据访问，可对接 SQL Server / PostgreSQL / MySQL / SQLite）
+- 原生依赖注入容器
+- 测试框架：**xUnit v3**（全仓库统一）
 
 ## 2. 目录结构
+后端源码在 `backend/`，插件在 `plugins/`，测试在 `tests/`（与 backend 平级）。
 
-后端源码统一放在仓库根的 `backend/` 下，插件放在仓库根的 `plugins/`，测试放在仓库根的 `tests/`。
-
-> 说明（A12 对齐）：早期规范曾设想 `src/backend/FlowEngine.{Api,Domain,Contracts,Plugins}` 的分层布局。实际落地时采用了更扁平的 `backend/FlowEngine.*` 命名（`FlowEngine.Host` 即入口/组合根，对应设想中的 `FlowEngine.Api`；`FlowEngine.Core` 合并了设想中的 `Domain` + `Contracts`，并承载脚本/HTTP/Agent/Tools 等下沉类型；插件放在独立的 `plugins/` 目录而非 `FlowEngine.Plugins` 项目）。以下为**当前真实结构**，作为后续开发的权威依据。
+> 早期设想过分层 `src/backend/FlowEngine.{Api,Domain,Contracts,Plugins}`，实际落地为扁平的 `backend/FlowEngine.*`（本文件所述结构为权威依据）。
 
 ```
 backend/
-├── FlowEngine.Core/                  # 最内层：实体、抽象契约、领域事件、值对象，以及下沉的脚本/HTTP/Agent/Tools 类型
-│   ├── Abstractions/                 # INode, IEngine, IContext, IEventBus 等接口
-│   ├── Entities/                     # WorkflowDefinition, NodeDefinition, DataItem 等实体
-│   ├── Events/                       # WorkflowStarted, NodeExecuted 等事件
-│   ├── ValueObjects/                 # NodeDefinitionId, ExecutionId, CredentialKey
-│   ├── Scripting/                    # ScriptEngine / JsEngine（Jint 封装）
-│   ├── Http/                         # HttpExecutionHelper / SsrfGuard
-│   ├── Agent/                        # InlineResolver / AgentMemory
-│   └── Tools/                        # SchemaDerivation / ResultSanitizer
-│   ⚠️ 仅依赖 Jint 等基础库；所有插件只引用此项目。
-├── FlowEngine.Runtime/               # 执行引擎核心
-│   ├── Executor/                     # 执行器主循环、执行队列、worker
-│   ├── Expressions/                  # 表达式解析器与安全沙箱（ParameterResolver）
-│   └── Registry/                     # PluginLoader / PluginLoadContext
-│   ⚠️ 依赖：Core + Microsoft.Extensions.Logging。
-├── FlowEngine.Application/           # 用例编排层
-│   ├── Workflows/                    # 工作流 CRUD、版本控制、激活/停用
-│   ├── Executions/                   # 启动执行、取消执行、查询状态
-│   ├── Services/                     # 业务服务（用户、凭据、RBAC 等）
-│   ├── Dtos/                         # 前端通信专用 DTO
-│   └── Validators/                   # 输入校验
-│   ⚠️ 依赖：Core + Runtime。
-├── FlowEngine.Infrastructure/        # 基础设施适配器
-│   ├── Persistence/                  # DbContext、迁移、EF 配置
-│   ├── Scheduling/                   # Quartz.NET 适配器
-│   ├── Security/                     # 凭据加密（AES-GCM）+ Vault 适配器
-│   ├── FileStorage/                  # 本地/S3 文件适配器
-│   └── Audit/                        # 审计日志落地
-│   ⚠️ 依赖：Core + Application（实现其接口）。
-├── FlowEngine.Migrations/            # EF Core 迁移程序集
-│   ⚠️ 依赖：Core + Infrastructure。
-└── FlowEngine.Host/                  # 启动项与组合根（对应规范中的 FlowEngine.Api）
-    ├── Controllers/                  # REST API
-    ├── Webhooks/                     # Webhook 动态路由
-    ├── WebSocketHandlers/            # 实时执行进度推送
-    ├── Middlewares/                  # 限流、认证、异常处理
-    ├── Scheduling/                   # 后台托管服务
-    ├── Program.cs
-    ├── appsettings.json
-    └── wwwroot/                      # 前端 React 构建产物
-    ⚠️ 职责：注册 DI，组装一切。
-
-plugins/                              # 热插拔节点，独立类库（对应规范中的 FlowEngine.Plugins）
-└── FlowEngine.Plugins.Standard/      # HTTP, Code, If, Loop, Merge, Agent, LLM 等标准节点
-    ⚠️ 只引用 FlowEngine.Core，绝不允许引用 Application 或 Runtime。
-
-tests/                               # 测试项目（与 backend 平级）
-├── FlowEngine.Core.Tests/           # 核心实体、值对象、领域事件
-├── FlowEngine.Application.Tests/    # DTO 转换、业务服务
-├── FlowEngine.Runtime.Tests/        # 表达式引擎、参数解析、插件加载、节点插件
-├── FlowEngine.Host.Tests/           # 集成测试（WebApplicationFactory）
-└── FlowEngine.TestPlugin/           # 测试用虚拟节点插件
+├── FlowEngine.Core/          # 最内层：实体、契约、领域事件、值对象，及下沉的脚本/HTTP/Agent/Tools；并承载 DbContext（EF Core 依赖在此）
+│   ├── Abstractions/ Entities/ Events/ ValueObjects/ Scripting/ Http/ Agent/ Tools/
+│   ├── Data/                 # FlowEngineDbContext
+│   └── …（Ai, Attributes, Authorization, Configuration, Credentials, Dtos, Enums, Exceptions, Expressions, Identity, DependencyInjection）
+│   依赖：EF Core + Extensions.Logging + DI + Options + Jint
+├── FlowEngine.Runtime/       # 执行引擎：Executor / Expressions / Registry；依赖 Core + Logging
+├── FlowEngine.Application/   # 用例编排：Workflows / Executions / Services / Dtos / Validators；依赖 Core + Runtime
+├── FlowEngine.Infrastructure/# 适配器：Audit / Ai / Identity / Security / Storage；依赖 Core + Application（实现其接口）
+├── FlowEngine.Migrations/    # EF 迁移程序集；依赖 Core + Infrastructure
+└── FlowEngine.Host/          # 组合根：Controllers / Webhooks / WebSocketHandlers / Middlewares / Scheduling / Mcp / Program.cs / wwwroot
+plugins/FlowEngine.Plugins.Standard/   # 热插拔节点（HTTP/Code/If/Loop/Merge/Agent/LLM/DB 等）；只引用 Core，绝不引用 Application/Runtime/Infrastructure
+tests/  FlowEngine.Core.Tests / Application.Tests / Runtime.Tests / Host.Tests / TestPlugin
 ```
 
 ### 2.1 各目录职责
-
 | 目录 | 放什么 | 不放什么 |
 |------|--------|----------|
-| `FlowEngine.Host/Controllers/` | 接收 HTTP 请求、参数绑定、调用 Service、返回 DTO/ActionResult | 业务逻辑、DbContext 调用 |
-| `FlowEngine.Application/Services/` | 业务用例编排、领域对象调用、通过 DbContext 读写数据、事务控制 | 直接操作 HTTP 上下文 |
-| `FlowEngine.Core/Entities/` | 纯领域模型、业务规则方法、Data Annotations 元数据 | 导航属性依赖 DbContext |
-| `FlowEngine.Infrastructure/Persistence/` | DbContext、迁移、EF 配置、复杂查询封装 | 业务逻辑 |
-| `plugins/FlowEngine.Plugins.Standard/`（数据库节点） | 数据库节点实现（SQL 执行、读取、写入） | 核心引擎逻辑 |
-| `FlowEngine.Application/Dtos/` | 前后端共享的 DTO、枚举 | 业务逻辑、EF 实体 |
+| `Host/Controllers/` | 接收请求、参数绑定、调用 Service、返回 DTO | 业务逻辑、DbContext |
+| `Application/Services/` | 用例编排、领域调用、通过 DbContext 读写、事务 | 直接操作 HTTP 上下文 |
+| `Core/Entities/` | 纯领域模型、业务规则、Data Annotations 元数据 | 依赖 DbContext 的导航逻辑 |
+| `Infrastructure/` | DbContext 适配、持久化/加密/存储/调度实现 | 业务逻辑 |
+| `Application/Dtos/` | 前后端 DTO、枚举 | 业务逻辑、EF 实体 |
 
 ### 2.2 领域层与数据访问边界
-
-- 领域实体放在 `FlowEngine.Core/Entities/`，使用 Data Annotations 声明表名、索引、列注释等元数据。
-- EF 配置统一通过 Data Annotations 在实体类上完成，禁止在 `FlowEngine.Infrastructure/Persistence/Configurations/` 中使用 Fluent API。
-- Service 层直接使用 `DbContext` 进行数据读写，不强制定义 `IRepository` 接口。
-- 只有跨多个 Service 复用的复杂查询，才考虑封装到 `FlowEngine.Infrastructure/Persistence/Queries/` 中。
+- 实体在 `Core/Entities/`，继承 `Entity` 基类（自动以 UUIDv7 生成 `Id`）；表名/索引/列注释等用 **Data Annotations** 声明。
+- EF 配置**优先 Data Annotations**；**Fluent API 仅允许用于 Data Annotations 无法表达之处**（如 `[JsonColumn]` 的 JSON 列转换、程序化唯一索引），见 `FlowEngineDbContext.OnModelCreating`。
+- Service 层直接使用 `DbContext` 读写，不强制定义 `IRepository`；仅跨多 Service 复用的复杂查询才封装到 `Infrastructure` 查询类。
 
 ## 3. 命名规范
-
 | 类型 | 命名 | 示例 |
 |------|------|------|
 | 类/结构体 | PascalCase | `ExecutionEngine` |
-| 接口 | PascalCase，前缀 `I` | `INodeRegistry` |
+| 接口 | `I` + PascalCase | `INodeRegistry` |
 | 方法/属性 | PascalCase | `ExecuteAsync` |
 | 局部变量/参数 | camelCase | `executionContext` |
 | 私有字段 | `_camelCase` | `_nodeRegistry` |
@@ -108,506 +61,91 @@ tests/                               # 测试项目（与 backend 平级）
 | 泛型约束 | `T` + 描述 | `TNode where TNode : INodeType` |
 
 ## 4. 依赖注入与构造函数
-
-### 4.1 使用 primary constructor
-
-C# 12+ 优先使用 primary constructor，保持类声明简洁。
-
-```csharp
-public class WorkflowService(
-    WorkflowDbContext dbContext,
-    IExecutionEngine executionEngine,
-    ILogger<WorkflowService> logger)
-{
-    public async Task<WorkflowDto> GetAsync(Guid id)
-    {
-        logger.LogInformation("Getting workflow {WorkflowId}", id);
-        var workflow = await dbContext.Workflows.FindAsync(id);
-        return workflow.ToDto();
-    }
-}
-```
-
-### 4.2 Controller 禁止注入 DbContext
-
-Controller 只能注入 Application Service，禁止直接注入 `DbContext`。
-
-正确：
-```csharp
-[ApiController]
-[Route("api/[controller]")]
-public class WorkflowsController(IWorkflowService workflowService) : ControllerBase
-{
-    [HttpGet("{id}")]
-    public async Task<WorkflowDto> Get(Guid id)
-    {
-        return await workflowService.GetAsync(id);
-    }
-}
-```
-
-错误：
-```csharp
-[ApiController]
-[Route("api/[controller]")]
-public class WorkflowsController(WorkflowDbContext dbContext) : ControllerBase  // ❌ 禁止
-{
-    [HttpGet("{id}")]
-    public async Task<WorkflowDto> Get(Guid id)
-    {
-        return await dbContext.Workflows.FindAsync(id).ToDto();  // ❌ 业务逻辑泄露到 Controller
-    }
-}
-```
+- **优先 primary constructor**（C# 12+），保持声明简洁。
+- **Controller 禁止注入 DbContext**，只能注入 Application Service。
+  ```csharp
+  public class WorkflowsController(IWorkflowService s) : ControllerBase
+  {
+      [HttpGet("{id}")] public async Task<WorkflowDto> Get(Guid id) => await s.GetAsync(id);
+  }
+  // ❌ 禁止：WorkflowsController(WorkflowDbContext dbContext)
+  ```
 
 ## 5. Service 设计
-
-### 5.1 不需要不必要的抽象
-
-- Service 是具体业务实现，不需要为每个 Service 都定义 `IXxxService` 接口，除非有多实现或单元测试需要 mock。
-- 数据访问直接使用 EF Core 的 `DbContext`，不需要再包一层 `IRepository`。
-- 如果只有一个实现，直接写具体类并注册到 DI。
-
-正确：
-```csharp
-public class NodeTypeService(INodeRegistry nodeRegistry)
-{
-    public IReadOnlyList<NodeTypeDescriptor> ListAll()
-    {
-        return nodeRegistry.GetAll();
-    }
-}
-```
-
-错误：
-```csharp
-public interface INodeTypeService  // ❌ 只有一个实现，没必要先定义接口
-{
-    IReadOnlyList<NodeTypeDescriptor> ListAll();
-}
-
-public class NodeTypeService : INodeTypeService
-{
-    // ...
-}
-```
-
-### 5.2 Service 直接使用 DbContext
-
-Service 负责业务编排和数据读写，直接注入 `DbContext` 是允许的，也是推荐做法。
-
-```csharp
-public class WorkflowService(WorkflowDbContext dbContext)
-{
-    public async Task CreateAsync(CreateWorkflowDto dto)
-    {
-        var workflow = dto.ToEntity();
-        dbContext.Workflows.Add(workflow);
-        await dbContext.SaveChangesAsync();
-    }
-}
-```
-
-### 5.3 Service 只编排业务，不直接操作基础设施
-
-Service 可以直接使用 DbContext，但不直接写特定数据库的 SQL 方言、不直接操作文件系统、不直接发 HTTP 请求。
+- 只有一个实现时**直接写具体类**，不必先定义 `IXxxService` 接口（多实现或需 mock 时才定义）。
+- Service 直接注入并使用 `DbContext` 读写数据（推荐做法）。
+- Service 只编排业务，**不直接写特定数据库 SQL 方言、不直接操作文件系统、不直接发 HTTP 请求**（这些下沉到 Infrastructure）。
 
 ## 6. 数据访问层
-
-### 6.1 使用 EF Core 作为统一抽象
-
-- EF Core 是本系统统一的数据访问层，通过不同 Provider 对接 SQL Server、PostgreSQL、MySQL、SQLite 等。
-- `DbContext` 定义在 `FlowEngine.Infrastructure/Persistence/`，Service 通过构造函数注入使用。
-- 复杂查询可封装在 `FlowEngine.Infrastructure/Persistence/Queries/` 中，以静态方法或查询类形式存在。
-
-### 6.2 不要写特定数据库的 SQL 方言
-
-- 优先使用 LINQ 和 EF Core 的查询能力。
-- 必须手写 SQL 时，只使用标准 SQL，避免特定数据库方言，确保可移植性。
-- 特定数据库的优化或特殊功能，应封装在 `Infrastructure/Data/{Provider}/` 中，并通过接口暴露。
-
-### 6.3 读写与事务
-
-- 写操作通过 `DbContext.SaveChangesAsync()` 完成。
-- 复杂业务用例在 Service 层控制事务边界：
+- EF Core 为统一数据访问层；`DbContext` 定义在 `Core/Data/`，Service 经构造函数注入使用。
+- 优先 LINQ；必须手写 SQL 时只写标准 SQL，避免方言，可移植封装放 `Infrastructure`。
+- 写操作经 `SaveChangesAsync()`；复杂用例在 Service 层控制事务：
   ```csharp
-  await using var transaction = await dbContext.Database.BeginTransactionAsync();
-  // ... 多次 SaveChanges
-  await transaction.CommitAsync();
+  await using var tx = await dbContext.Database.BeginTransactionAsync();
+  // … 多次 SaveChanges
+  await tx.CommitAsync();
   ```
-- 高频读取场景可引入只读副本或缓存，但须通过接口抽象，不直接依赖具体中间件。
-
-### 6.4 统一使用 Data Annotations 配置 EF
-
-禁止使用 Fluent API（`IEntityTypeConfiguration<T>`、`modelBuilder.Entity<T>()` 等）配置实体。表名、索引、关系、列注释、数据类型等统一通过 Data Annotations 在实体类上声明。
-
-正确：
-
-```csharp
-[Table("workflows", Schema = "flow")]
-[Index(nameof(Code), IsUnique = true)]
-[Comment("工作流定义")]
-public class Workflow
-{
-    [Key]
-    [Column("id")]
-    [Comment("主键")]
-    public Guid Id { get; set; }
-
-    [Required]
-    [MaxLength(128)]
-    [Column("code")]
-    [Comment("工作流编码")]
-    public string Code { get; set; } = null!;
-
-    [ForeignKey(nameof(Creator))]
-    [Column("creator_id")]
-    [Comment("创建人 ID")]
-    public Guid CreatorId { get; set; }
-
-    public User Creator { get; set; } = null!;
-}
-```
-
-错误：
-
-```csharp
-public class WorkflowConfiguration : IEntityTypeConfiguration<Workflow>  // 禁止
-{
-    public void Configure(EntityTypeBuilder<Workflow> builder)
-    {
-        builder.ToTable("workflows", "flow");
-        builder.HasIndex(x => x.Code).IsUnique();
-        builder.Property(x => x.Code).HasMaxLength(128).HasComment("工作流编码");
-    }
-}
-```
+- 高频只读可引入只读副本/缓存，但须经接口抽象。
 
 ## 7. 节点数据库能力
-
-### 7.1 Database 节点
-
-- 系统需要提供数据库节点，支持流程节点对各种数据库进行读取和写入。
-- 数据库节点放在 `plugins/` 下对应的插件项目中（如 `FlowEngine.Plugins.Database/`），每个具体数据库类型可作为一个子节点或参数化配置；当前标准插件 `FlowEngine.Plugins.Standard` 已内置部分数据库/HTTP 类节点。
-- 数据库节点通过 DbContext、ADO.NET 或专用数据库驱动执行 SQL，返回数据批次供下游节点使用。
-
-### 7.2 数据库节点规范
-
-- 数据库连接字符串、凭据通过凭据系统注入，禁止硬编码在节点代码中。
-- 节点执行时须校验 SQL，禁止执行危险操作（如 DROP、TRUNCATE）除非显式开启。
-- 读取节点返回数据批次，写入节点返回影响行数或执行结果。
-- 数据库节点的参数定义应包含：连接凭据、数据库类型、SQL 或操作模式、超时时间等。
+- 数据库节点放 `plugins/`（标准插件 `FlowEngine.Plugins.Standard` 已内置 DB/HTTP 类节点），通过 DbContext / ADO.NET / 驱动执行 SQL，返回数据批次。
+- 连接串与凭据经凭据系统注入，**禁止硬编码**；执行前校验 SQL，禁止 DROP/TRUNCATE 等危险操作（除非显式开启）。
+- 参数须含：连接凭据、数据库类型、SQL/操作模式、超时时间。
 
 ## 8. 控制器返回规范
-
 - 统一返回 DTO，不返回领域实体。
-- 简单成功响应直接返回 DTO，框架会自动包装为 HTTP 200：
-  ```csharp
-  [HttpGet("{id}")]
-  public async Task<WorkflowDto> Get(Guid id)
-  {
-      return await workflowService.GetAsync(id);
-  }
-  ```
-- 需要返回特定状态码（201、204、400、404 等）时才使用 `ActionResult<T>`：
-  ```csharp
-  [HttpPost]
-  public async Task<ActionResult<WorkflowDto>> Create(CreateWorkflowDto dto)
-  {
-      var workflow = await workflowService.CreateAsync(dto);
-      return CreatedAtAction(nameof(Get), new { id = workflow.Id }, workflow);
-  }
-  ```
-- 错误响应由统一异常中间件处理，统一格式：
+- 简单成功直接返回 DTO（框架包装 200）；需特定状态码时用 `ActionResult<T>`（`CreatedAtAction` 等）。
+- 错误由统一异常中间件处理，格式：
   ```json
-  {
-    "success": false,
-    "errorCode": "WorkflowNotFound",
-    "message": "工作流不存在",
-    "details": null
-  }
+  { "success": false, "errorCode": "WorkflowNotFound", "message": "工作流不存在", "details": null }
   ```
 
 ## 9. 异常处理
-
-- 领域异常继承 `DomainException`，Application 层捕获后转换为统一错误响应。
-- 控制器层使用统一异常过滤中间件，不每个 Action 都 `try-catch`。
-- 禁止在内部随意吞异常。
+- 领域异常继承 `DomainException`，Application 层捕获后转统一错误响应。
+- 用统一异常中间件/过滤器，**不每个 Action 都 try-catch**；**禁止随意吞异常**。
 
 ## 10. 日志
-
-- 使用 `ILogger<T>`，禁止 `Console.WriteLine`。
-- 日志中不得输出凭据、Token、私钥等敏感信息。
-- 使用结构化日志模板，避免字符串拼接：
-  ```csharp
-  logger.LogInformation("Executing workflow {WorkflowId}", workflowId);
-  ```
+- 用 `ILogger<T>`，禁止 `Console.WriteLine`。
+- 日志不得输出凭据、Token、私钥等敏感信息。
+- 用结构化模板，避免字符串拼接：`logger.LogInformation("Executing workflow {WorkflowId}", id);`
 
 ## 11. 插件与节点 DLL
-
-- 节点插件 DLL 统一输出到 `plugins/` 目录。
-- 加载插件时使用独立 `AssemblyLoadContext`，避免依赖冲突。
+- 节点插件 DLL 输出到 `plugins/`，用独立 `AssemblyLoadContext` 加载避免依赖冲突。
 - 插件加载失败不影响主程序启动，须记录警告日志。
 
 ## 12. 测试
-
-### 12.1 测试策略
-
-采用 **TDD（测试驱动开发）** 模式：先写测试用例，再实现功能。
-
-| 层级 | 覆盖目标 | 测试框架 |
-|------|----------|----------|
-| 单元测试 | 表达式求值、参数解析、DTO 转换、业务规则 | xUnit v3 |
-| 集成测试 | API 端到端、数据库读写、工作流执行 | xUnit + WebApplicationFactory |
-
-### 12.2 必须测试的场景
-
-新增功能或修复 Bug 时，**必须**包含以下测试：
-
-1. **正常路径**：功能按预期工作
-2. **边界条件**：空值、空字符串、空集合、零值
-3. **类型转换**：`JsonElement` ↔ `string`、枚举反序列化、`null` 处理
-4. **异常路径**：无效输入、缺失参数、类型不匹配
-
-### 12.3 测试命名规范
-
-```
-{方法名}_{场景}_{预期结果}
-```
-
-示例：
-- `Resolve_JsonElement_String_Evaluates_Expression`
-- `Hydrate_Empty_JsonElement_Sets_Null`
-- `Execute_Returns_Object_As_JsonObject`
-
-### 12.4 测试项目结构
-
-```
-tests/
-├── FlowEngine.Core.Tests/          # 核心实体、值对象、领域事件
-├── FlowEngine.Application.Tests/   # DTO 转换、业务服务
-├── FlowEngine.Runtime.Tests/       # 表达式引擎、参数解析、插件加载、节点插件
-│   ├── Expressions/                # 表达式求值器测试
-│   ├── Registry/                   # 参数解析器、注入器测试
-│   └── Plugins/                    # 节点插件测试
-├── FlowEngine.Host.Tests/          # 集成测试（WebApplicationFactory + 插件动态加载）
-└── FlowEngine.TestPlugin/          # 测试用虚拟节点插件
-```
-
-### 12.5 运行测试
-
-```powershell
-# 运行所有测试
-dotnet test
-
-# 运行指定项目
-dotnet test tests\FlowEngine.Runtime.Tests
-
-# 运行指定测试类
-dotnet test --filter "ExpressionEvaluatorComparisonTests"
-```
-
-### 12.6 新增节点插件的测试要求
-
-每个节点插件必须有对应的测试文件，覆盖：
-- 正常执行返回正确输出
-- 空/缺失参数的错误处理
-- `JsonElement` 类型参数的正确转换
-- 输出数据格式符合 `DataBatch` → `DataItem` 结构
+- 采用 **TDD**：先写测试再实现。
+- 框架 **xUnit v3**；单元测试覆盖表达式/参数解析/DTO/业务规则，集成测试用 `WebApplicationFactory` 做端到端。
+- 必须覆盖：正常路径、边界（空值/空串/空集合/零值）、类型转换（`JsonElement`↔`string`/枚举/`null`）、异常路径。
+- 命名 `{方法名}_{场景}_{预期结果}`，如 `Resolve_JsonElement_String_Evaluates_Expression`。
+- 每个节点插件须有对应测试：正常输出、空/缺参错误、`JsonElement` 转换、输出符合 `DataBatch`→`DataItem`。
+- 运行：`dotnet test` / `dotnet test tests\FlowEngine.Runtime.Tests` / `dotnet test --filter "ExpressionEvaluatorComparisonTests"`。
 
 ## 13. 错误示范速查
-
 | 错误 | 正确 |
 |------|------|
-| Controller 注入 `DbContext` | Controller 注入 Service |
-| Service 直接写特定数据库 SQL 方言 | Service 通过 EF Core DbContext 访问数据 |
-| 每个 Service 都定义接口 | 只有一个实现时直接写类 |
+| Controller 注入 `DbContext` | 注入 Service |
+| Service 写特定方言 SQL | 经 EF Core `DbContext` |
+| 每个 Service 都定义接口 | 单实现直接写类 |
 | 返回领域实体 | 返回 DTO |
 | `Console.WriteLine` | `ILogger<T>` |
-| 在 Controller 写业务逻辑 | Controller 只负责路由和调用 |
-| 随意吞掉异常 | 使用统一异常中间件/过滤器 |
-| 使用 Fluent API 配置 EF | 使用 Data Annotations 在实体类上声明 |
-| 公共类/方法缺少 `///` 文档注释 | 所有类和方法使用 XML 文档注释 |
-| 实体字段缺少 `Comment` 属性 | 字段同时加 `///` 注释和 `[Comment]` |
-| 枚举值无中文描述 | 枚举值使用 `[Description]` 标注中文 |
+| Controller 写业务逻辑 | 只路由与调用 |
+| 随意吞异常 | 统一异常中间件 |
+| 用 Fluent API 配表/索引/列 | 优先 Data Annotations（仅 JSON 列/程序化索引用 Fluent） |
+| 缺 `///` 文档注释 | 公共类/方法用 XML 注释 |
+| 实体字段缺 `[Comment]` | 同时加 `///` 与 `[Comment]` |
+| 枚举无中文描述 | 枚举值用 `[Description]` 标注 |
 
 ## 14. 注释与文档
-
-### 14.1 关键逻辑注释
-
-复杂算法、业务规则、边界处理等关键逻辑必须编写注释，说明设计意图和注意事项。注释应简洁准确，避免冗余。
-
-### 14.2 类和方法文档注释
-
-所有类和方法必须使用 `///` XML 文档注释，包含功能说明、参数含义和返回值说明。公共 API 还需注明可能抛出的异常。
-
-正确：
-
-```csharp
-/// <summary>
-/// 工作流执行引擎。
-/// </summary>
-public class ExecutionEngine
-{
-    /// <summary>
-    /// 执行指定工作流。
-    /// </summary>
-    /// <param name="workflowId">工作流 ID。</param>
-    /// <param name="context">执行上下文。</param>
-    /// <returns>执行结果。</returns>
-    /// <exception cref="WorkflowNotFoundException">工作流不存在时抛出。</exception>
-    public async Task<ExecutionResult> ExecuteAsync(Guid workflowId, ExecutionContext context)
-    {
-        // ...
-    }
-}
-```
-
-错误：
-
-```csharp
-public class ExecutionEngine  // 缺少文档注释
-{
-    public async Task<ExecutionResult> ExecuteAsync(Guid workflowId, ExecutionContext context)
-    {
-        // ...
-    }
-}
-```
-
-### 14.3 字段注释与 Comment 属性
-
-实体类和 DTO 中的所有字段/属性必须同时满足：
-
-- 使用 `///` XML 文档注释说明字段含义。
-- 使用 `[Comment]` 属性写入数据库元数据。
-
-正确：
-
-```csharp
-public class Workflow
-{
-    /// <summary>
-    /// 工作流编码，全局唯一。
-    /// </summary>
-    [Required]
-    [MaxLength(128)]
-    [Comment("工作流编码，全局唯一")]
-    public string Code { get; set; } = null!;
-}
-```
-
-错误：
-
-```csharp
-public class Workflow
-{
-    public string Code { get; set; } = null!;  // 缺少注释和 Comment 属性
-}
-```
-
-### 14.4 Enum 中文描述
-
-枚举值必须使用 `[Description]` 属性标注中文含义，便于序列化、日志和前端展示。
-
-正确：
-
-```csharp
-public enum WorkflowStatus
-{
-    /// <summary>
-    /// 草稿。
-    /// </summary>
-    [Description("草稿")]
-    Draft = 0,
-
-    /// <summary>
-    /// 已发布。
-    /// </summary>
-    [Description("已发布")]
-    Published = 1,
-
-    /// <summary>
-    /// 已停用。
-    /// </summary>
-    [Description("已停用")]
-    Disabled = 2
-}
-```
-
-错误：
-
-```csharp
-public enum WorkflowStatus
-{
-    Draft = 0,
-    Published = 1,
-    Disabled = 2
-}
-```
+- 复杂算法/业务规则/边界处理须写注释说明意图，简洁准确。
+- 所有公共类/方法用 `///` XML 注释（功能、参数、返回值；公共 API 注明可能抛出的异常）。
+- 实体/DTO 字段须同时满足：`///` 注释 + `[Comment]` 属性。
+- 枚举值用 `[Description]` 标注中文含义。
 
 ## 15. 异步与并发
-
-### 15.1 禁止在同步上下文中阻塞异步操作
-
-禁止使用 `.GetAwaiter().GetResult()` 或 `.Result` 阻塞异步任务。在 ASP.NET 的 `SynchronizationContext` 中会导致死锁。
-
-正确：
-
-```csharp
-public async Task<CredentialValue> HydrateAsync(INodeType instance, ...)
-{
-    var credential = await _credentialAccessor.GetCredentialAsync(id, ct);
-    return credential;
-}
-```
-
-错误：
-
-```csharp
-public void Hydrate(INodeType instance, ...)
-{
-    var credential = _credentialAccessor.GetCredentialAsync(id, ct)
-        .ConfigureAwait(false).GetAwaiter().GetResult();  // ❌ 死锁风险
-}
-```
-
-### 15.2 Task.Run 中禁止捕获 Scoped 依赖
-
-`Task.Run` 在独立线程执行，原始 HTTP 请求作用域已销毁。若需使用 Scoped 服务（如 `DbContext`、`IExecutionStore`），必须在 `Task.Run` 内创建新作用域。
-
-正确：
-
-```csharp
-_ = Task.Run(async () =>
-{
-    using var scope = _scopeFactory.CreateScope();
-    var store = scope.ServiceProvider.GetRequiredService<IExecutionStore>();
-    await store.SaveAsync(record, ct);
-});
-```
-
-错误：
-
-```csharp
-_ = Task.Run(async () =>
-{
-    await _executionStore.SaveAsync(record, ct);  // ❌ 原作用域已销毁
-});
-```
-
-### 15.3 优先使用 Entity.NewId()
-
-生成主键时优先使用 `Entity.NewId()`（UUIDv7 有序 GUID），而非 `Guid.NewGuid()`。UUIDv7 对 SQLite 索引更友好。
+- 禁止 `.GetAwaiter().GetResult()` / `.Result` 阻塞异步（ASP.NET 下死锁风险）。
+- `Task.Run` 中禁止捕获已销毁的 Scoped 依赖（`DbContext`/`IExecutionStore` 等），须在内部 `CreateScope()` 后取用。
+- 主键优先 UUIDv7 有序 GUID：实体继承 `Entity` 基类会自动以 `Guid.CreateVersion7()` 赋值 `Id`；对 SQLite 索引更友好。临时/瞬态 ID 可用 `Guid.NewGuid()`。
 
 ## 16. 查询性能
-
-### 16.1 只读查询使用 AsNoTracking()
-
-不修改实体的查询应使用 `.AsNoTracking()`，避免 EF Change Tracker 的内存开销。
-
-```csharp
-var entity = await _context.Workflows
-    .AsNoTracking()
-    .FirstOrDefaultAsync(x => x.Id == id);
-```
+- 不修改实体的只读查询用 `.AsNoTracking()`，减少 Change Tracker 开销。

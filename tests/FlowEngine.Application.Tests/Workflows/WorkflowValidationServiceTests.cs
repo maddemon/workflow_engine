@@ -474,6 +474,82 @@ public sealed class WorkflowValidationServiceTests : IDisposable
         Assert.Empty(result.Errors);
     }
 
+    // Task 4 回归：validate_workflow 必须接上 WorkflowDraftValidator 的扫描，
+    // 否则 AI 提交的 {{ }} mustache 模板会拿到虚假绿灯（Valid=true）。
+    [Fact]
+    public async Task ValidateAsync_MustacheUrl_ReturnsInvalidExpression()
+    {
+        var request = new ValidateWorkflowRequest
+        {
+            Nodes =
+            [
+                new NodeDefinitionDto
+                {
+                    Id = "trigger", TypeName = "webhookTrigger", Name = "Trigger",
+                    Ports = [new PortInstance { Name = "output", Direction = PortDirection.Output, Type = PortType.Main }],
+                },
+                new NodeDefinitionDto
+                {
+                    Id = "fetch", TypeName = "httpRequest", Name = "Fetch",
+                    Parameters = new() { ["url"] = "https://x?access_token={{$json.access_token}}" },
+                    Ports =
+                    [
+                        new PortInstance { Name = "input", Direction = PortDirection.Input, Type = PortType.Main },
+                        new PortInstance { Name = "output", Direction = PortDirection.Output, Type = PortType.Main },
+                    ],
+                },
+            ],
+            Connections =
+            [
+                new ConnectionDto { SourceNodeId = "trigger", SourcePortName = "output", TargetNodeId = "fetch", TargetPortName = "input" },
+            ],
+        };
+
+        var result = await _service.ValidateAsync(request);
+
+        Assert.False(result.Valid);
+        var error = result.Errors.FirstOrDefault(e => e.ErrorType == "InvalidExpression" && e.NodeId == "fetch");
+        Assert.NotNull(error);
+        Assert.Contains("{{", error!.Message);
+        Assert.Contains("url", error.Message);
+        Assert.False(string.IsNullOrEmpty(error.SuggestedFix));
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ValidJsExpressionUrl_Passes()
+    {
+        var request = new ValidateWorkflowRequest
+        {
+            Nodes =
+            [
+                new NodeDefinitionDto
+                {
+                    Id = "trigger", TypeName = "webhookTrigger", Name = "Trigger",
+                    Ports = [new PortInstance { Name = "output", Direction = PortDirection.Output, Type = PortType.Main }],
+                },
+                new NodeDefinitionDto
+                {
+                    Id = "fetch", TypeName = "httpRequest", Name = "Fetch",
+                    Parameters = new() { ["url"] = "'https://api.com/path?token=' + $json.token" },
+                    Ports =
+                    [
+                        new PortInstance { Name = "input", Direction = PortDirection.Input, Type = PortType.Main },
+                        new PortInstance { Name = "output", Direction = PortDirection.Output, Type = PortType.Main },
+                    ],
+                },
+            ],
+            Connections =
+            [
+                new ConnectionDto { SourceNodeId = "trigger", SourcePortName = "output", TargetNodeId = "fetch", TargetPortName = "input" },
+            ],
+        };
+
+        var result = await _service.ValidateAsync(request);
+
+        Assert.True(result.Valid);
+        Assert.DoesNotContain(result.Errors, e => e.ErrorType == "InvalidExpression");
+    }
+
     // ── Stubs ─────────────────────────────────────────────────
 
     private sealed class StubNodeRegistry(IReadOnlyCollection<NodeTypeDescriptor> descriptors) : INodeRegistry

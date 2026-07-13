@@ -18,14 +18,18 @@ public static class RouteConstants
     /// <summary>WebSocket 路由前缀，如 "/ws"。</summary>
     public const string WebSocketPrefix = "/ws";
 
+    /// <summary>MCP (Model Context Protocol) 流式 HTTP 路由前缀，如 "/mcp"。</summary>
+    public const string McpPrefix = "/mcp";
+
     /// <summary>
     /// Webhook 动态路由中间件跳过的保留前缀集合（边界感知，见 <see cref="Webhooks.WebhookRoutingMiddleware"/>）。
-    /// 与 <see cref="ApiPrefix"/>、<see cref="HealthPrefix"/>、<see cref="WebSocketPrefix"/> 同源，避免漂移。
+    /// 与 <see cref="ApiPrefix"/>、<see cref="HealthPrefix"/>、<see cref="WebSocketPrefix"/>、<see cref="McpPrefix"/> 同源，避免漂移。
     /// </summary>
     public static readonly IReadOnlyList<string> ReservedPrefixes = new[]
     {
         ApiPrefix + "/",        // "/api/"
         HealthPrefix,           // "/health"
         WebSocketPrefix + "/",  // "/ws/"
+        McpPrefix,              // "/mcp"（MCP Streamable HTTP，POST 收发请求、GET SSE 流，需放行给 MapMcp 端点）
     };
 }

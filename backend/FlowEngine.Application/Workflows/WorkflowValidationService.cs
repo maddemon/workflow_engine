@@ -317,6 +317,27 @@ public sealed class WorkflowValidationService(
                 continue; // 已在步骤 6 报告中
             }
 
+            // Task 4：表达式参数扫描接入 MCP validate_workflow 链路，
+            // 避免 AI 生成的 {{ }} mustache 模板 / 非法 JS 表达式拿到虚假绿灯（Valid=true）。
+            // mustache 词法扫描为首要防线（带/不带引号均命中），JS 编译检查为通用语法网。
+            var paramsNode = JsonSerializer.SerializeToNode(node.Parameters) as JsonObject;
+            if (paramsNode is not null)
+            {
+                var scanErrors = new List<string>();
+                WorkflowDraftValidator.CollectMustacheErrors(paramsNode, node.Id, scanErrors);
+                WorkflowDraftValidator.CollectExpressionSyntaxErrors(paramsNode, descriptor, node.Id, scanErrors);
+                foreach (var msg in scanErrors)
+                {
+                    errors.Add(new ValidationError
+                    {
+                        NodeId = node.Id,
+                        ErrorType = "InvalidExpression",
+                        Message = msg,
+                        SuggestedFix = "把 {{ }} mustache 改为 JavaScript 表达式拼接，例如 'https://api.com/path?token=' + $json.token",
+                    });
+                }
+            }
+
             foreach (var param in descriptor.Parameters)
             {
                 if (!node.Parameters.TryGetValue(param.Name, out var value) || value is null)

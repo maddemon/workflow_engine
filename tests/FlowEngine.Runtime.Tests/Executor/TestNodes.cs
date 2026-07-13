@@ -3,8 +3,10 @@ using System.ComponentModel;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Scripting;
 
 namespace FlowEngine.Runtime.Tests.Executor;
 
@@ -512,4 +514,46 @@ public sealed class SlowNode : INodeType
 
         return new NodeExecutionResult { Success = true, Output = new DataBatch() };
     }
+}
+
+/// <summary>
+/// 含表达式型 Script 参数（必定预求值失败）的测试节点，用于覆盖
+/// <see cref="WorkflowSchedulerKernel"/> 捕获预求值 <see cref="ScriptErrorException"/> 的端到端路径（Task 5）。
+/// </summary>
+public sealed class BadScriptNode : INodeType
+{
+    /// <inheritdoc />
+    public string TypeName => "badScript";
+
+    /// <inheritdoc />
+    public string DisplayName => "Bad Script";
+
+    /// <inheritdoc />
+    public string Category => "Test";
+
+    /// <inheritdoc />
+    public string Icon => "test";
+
+    /// <inheritdoc />
+    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
+
+    /// <summary>
+    /// 表达式型脚本参数：预求值阶段会被编译，非法源码触发 ScriptErrorException。
+    /// </summary>
+    [Hint(PresentationHint.Expression)]
+    public Script? Code { get; set; }
+
+    /// <inheritdoc />
+    public IReadOnlyList<PortDefinition> Ports { get; } =
+    [
+        new PortDefinition { Name = FlowConstants.PortNames.Input, Direction = PortDirection.Input, Type = PortType.Main },
+        new PortDefinition { Name = FlowConstants.PortNames.Output, Direction = PortDirection.Output, Type = PortType.Main }
+    ];
+
+    /// <inheritdoc />
+    public bool DefaultIsEntry => true;
+
+    /// <inheritdoc />
+    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+        => Task.FromResult(new NodeExecutionResult { Success = true, Output = new DataBatch() });
 }

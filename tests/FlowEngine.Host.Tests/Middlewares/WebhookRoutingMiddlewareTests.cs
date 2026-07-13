@@ -132,6 +132,21 @@ public class WebhookRoutingMiddlewareTests
     }
 
     [Fact]
+    public async Task PostToMcpPath_CallsNext_NotHandler()
+    {
+        // MCP Streamable HTTP 使用 POST /mcp 收发请求，必须放行给 MapMcp 端点处理，
+        // 不能被 Webhook 动态路由拦截（否则 AI IDE 的 initialize 会被返回 "Webhook route not found"）。
+        var context = CreateContext("/mcp");
+        var nextCalled = false;
+        var middleware = CreateMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
+
+        await middleware.InvokeAsync(context);
+
+        Assert.True(nextCalled);
+        _handler.Verify(h => h.HandleAsync(It.IsAny<HttpContext>(), It.IsAny<string>()), Times.Never);
+    }
+
+    [Fact]
     public async Task EmptyPath_CallsNext_NotHandler()
     {
         var context = CreateContext(string.Empty);
