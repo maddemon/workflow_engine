@@ -1,0 +1,64 @@
+{
+  "name": "Flow Engine MCP Skill",
+  "version": "1.0.0",
+  "description": "Flow Engine AI-native MCP Skill，通过 9 个 MCP 工具实现节点发现、工作流装配/修改/校验/确认/执行，无需构造完整 DSL。",
+  "tools": [
+    "list_node_catalog",
+    "get_node_detail",
+    "assemble_workflow",
+    "modify_workflow",
+    "validate_workflow",
+    "get_workflow",
+    "list_workflows",
+    "confirm_workflow",
+    "execute_workflow"
+  ],
+  "connection": {
+    "http": {
+      "description": "远程 HTTP 模式（Claude Code / Cursor / VS Code）",
+      "claudeCode": "claude mcp add --transport http flowengine https://host:port/mcp",
+      "cursor": {
+        "file": ".cursor/mcp.json",
+        "config": {
+          "mcpServers": {
+            "flowengine": {
+              "url": "https://host:port/mcp",
+              "headers": { "Authorization": "Bearer <apiKey>" }
+            }
+          }
+        }
+      },
+      "vscode": {
+        "file": ".vscode/mcp.json",
+        "note": "根键是 servers 不是 mcpServers",
+        "config": {
+          "servers": {
+            "flowengine": {
+              "url": "https://host:port/mcp",
+              "headers": { "Authorization": "Bearer <apiKey>" }
+            }
+          }
+        }
+      }
+    },
+    "stdio": {
+      "description": "stdio 模式（Claude Desktop），通过 MCP Shim 垫片转发",
+      "config": {
+        "command": "node",
+        "args": ["path/to/mcp-shim/dist/index.js"],
+        "env": {
+          "FLOWENGINE_URL": "https://host:port",
+          "FLOWENGINE_API_KEY": "<apiKey>"
+        }
+      }
+    }
+  },
+  "commonErrors": [
+    { "error": "NodeNotFound", "cause": "get_node_detail 传入了不存在的节点名", "fix": "先用 list_node_catalog 确认可用节点" },
+    { "error": "AssembleFailed", "cause": "节点参数不符合类型 schema", "fix": "用 get_node_detail 查看完整参数 schema，修正 parameters" },
+    { "error": "DisconnectedGraph", "cause": "孤立节点未连接", "fix": "确保所有节点通过连接可达，trigger 节点需有出口连接" },
+    { "error": "InvalidInput", "cause": "workflowId / draftId 格式不是合法 Guid", "fix": "检查 ID 是否为标准 UUID 格式" },
+    { "error": "ExecutionFailed", "cause": "工作流运行时出错", "fix": "查看返回的 executionContext 和 suggestedFix，修正参数后重试" },
+    { "error": "CredentialNotFound", "cause": "节点引用了不存在的凭据", "fix": "需在 Flow Engine UI 或 API 中先创建凭据" }
+  ]
+}

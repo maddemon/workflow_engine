@@ -109,3 +109,4 @@ flowchart LR
 | 日期 | 修改人 | 修改内容 | 关联任务 |
 |------|--------|----------|----------|
 | 2026-06-18 | Agent | 创建 MCP 协议开发计划 | plan-enterprise-04-mcp |
+| 2026-07-13 | Agent | 阶段一细化：创建 mcp-shim/skill/ MCP-only 文档（mcp.json 声明 9 工具、claude.md 工作流指引、skill.json 元数据 + 连接配置），替代旧 cli/skill bash 驱动文档 | task-011-ai-native-mcp-server §Phase 3 Task 9 |

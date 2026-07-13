@@ -1,0 +1,263 @@
+{
+  "name": "flowengine",
+  "description": "Flow Engine AI-native MCP server — 9 tools for discovering nodes, assembling/modifying/validating/confirming/executing workflows.",
+  "tools": [
+    {
+      "name": "list_node_catalog",
+      "description": "列出 Flow Engine 节点目录。AI 可传入可选的 category 过滤指定分类；不传入则返回全部节点摘要。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "description": "节点分类，如 core、trigger、integration 等；不传入则返回全部。"
+          }
+        }
+      }
+    },
+    {
+      "name": "get_node_detail",
+      "description": "获取指定节点类型的完整定义，包括输入 schema、输出 schema、端口和示例。用于 AI 在组装工作流前确认节点契约。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "节点类型名，如 httpRequest。"
+          }
+        },
+        "required": ["name"]
+      }
+    },
+    {
+      "name": "assemble_workflow",
+      "description": "根据 AI 提供的极简草稿装配完整工作流。AI 只需填写节点 ID、类型名和参数，以及节点间的连接；后端会自动补全端口、坐标、入口节点，并创建未激活的草稿。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "工作流名称。"
+          },
+          "projectId": {
+            "type": "string",
+            "description": "项目 ID（可选，合法 Guid 格式）。"
+          },
+          "nodes": {
+            "type": "array",
+            "description": "节点列表，每项含 id（可选）、typeName（必需）、parameters（可选）。",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "节点 ID（AI 生成的自然名称，如 'fetch'）。"
+                },
+                "typeName": {
+                  "type": "string",
+                  "description": "节点类型名，如 httpRequest。"
+                },
+                "parameters": {
+                  "type": "object",
+                  "description": "参数字典。"
+                }
+              },
+              "required": ["id", "typeName"]
+            }
+          },
+          "connections": {
+            "type": "array",
+            "description": "连接列表，每项含 from（必需）、to（必需）、fromPort（可选）、toPort（可选）。",
+            "items": {
+              "type": "object",
+              "properties": {
+                "from": {
+                  "type": "string",
+                  "description": "源节点 ID。"
+                },
+                "fromPort": {
+                  "type": "string",
+                  "description": "源端口名称（为空时由后端推导为第一个 Output 端口）。"
+                },
+                "to": {
+                  "type": "string",
+                  "description": "目标节点 ID。"
+                },
+                "toPort": {
+                  "type": "string",
+                  "description": "目标端口名称（为空时由后端推导为第一个 Input 端口）。"
+                }
+              },
+              "required": ["from", "to"]
+            }
+          }
+        },
+        "required": ["name", "nodes"]
+      }
+    },
+    {
+      "name": "modify_workflow",
+      "description": "基于已有工作流创建新草稿，并应用 AI 指定的结构化修改操作（add/remove/modify/connect/disconnect）。返回新草稿 ID、完整工作流和差异列表。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "workflowId": {
+            "type": "string",
+            "description": "源工作流 ID（合法 Guid 格式）。"
+          },
+          "operations": {
+            "type": "array",
+            "description": "修改操作列表，每项含 op（必需）及其他按操作类型所需字段。",
+            "items": {
+              "type": "object",
+              "properties": {
+                "op": {
+                  "type": "string",
+                  "description": "操作类型：add | remove | modify | connect | disconnect | move",
+                  "enum": ["add", "remove", "modify", "connect", "disconnect", "move"]
+                },
+                "path": {
+                  "type": "string",
+                  "description": "JSON Pointer 路径，如 '/nodes/fetch/parameters/method'。"
+                },
+                "value": {
+                  "description": "操作值（modify 时新值，move 时新坐标等）。"
+                },
+                "node": {
+                  "type": "object",
+                  "description": "新增节点定义（add 时使用），含 id、typeName、parameters。",
+                  "properties": {
+                    "id": { "type": "string" },
+                    "typeName": { "type": "string" },
+                    "parameters": { "type": "object" }
+                  },
+                  "required": ["id", "typeName"]
+                },
+                "after": {
+                  "type": "string",
+                  "description": "将新节点放置在该节点之后（add 时使用）。"
+                },
+                "from": {
+                  "type": "string",
+                  "description": "源节点 ID（connect / disconnect 时使用）。"
+                },
+                "fromPort": {
+                  "type": "string",
+                  "description": "源端口名称（connect 时使用）。"
+                },
+                "to": {
+                  "type": "string",
+                  "description": "目标节点 ID（connect / disconnect 时使用）。"
+                },
+                "toPort": {
+                  "type": "string",
+                  "description": "目标端口名称（connect 时使用）。"
+                }
+              },
+              "required": ["op"]
+            }
+          }
+        },
+        "required": ["workflowId", "operations"]
+      }
+    },
+    {
+      "name": "validate_workflow",
+      "description": "校验工作流定义的结构完整性。返回详细的错误列表，包含节点 ID、字段、错误类型和建议修复方案，供 AI 自纠。不抛协议异常。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "workflowId": {
+            "type": "string",
+            "description": "已存在的工作流 ID（与 nodes/connections 二选一）。"
+          },
+          "nodes": {
+            "type": "array",
+            "description": "草稿节点列表（与 workflowId 二选一）。",
+            "items": {
+              "type": "object"
+            }
+          },
+          "connections": {
+            "type": "array",
+            "description": "草稿连接列表（与 workflowId 二选一）。",
+            "items": {
+              "type": "object"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "get_workflow",
+      "description": "获取指定工作流的完整定义（包含所有节点、连接和参数）。用于 AI 查看已有工作流的结构。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "workflowId": {
+            "type": "string",
+            "description": "工作流 ID（合法 Guid 格式）。"
+          }
+        },
+        "required": ["workflowId"]
+      }
+    },
+    {
+      "name": "list_workflows",
+      "description": "列出工作流。可按项目 ID 过滤，支持分页。用于 AI 查找现有工作流。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "projectId": {
+            "type": "string",
+            "description": "项目 ID（可选，合法 Guid 格式）。"
+          },
+          "page": {
+            "type": "integer",
+            "description": "页码（默认 1）。"
+          },
+          "pageSize": {
+            "type": "integer",
+            "description": "每页大小（默认 20，范围 1–200）。"
+          }
+        }
+      }
+    },
+    {
+      "name": "confirm_workflow",
+      "description": "确认草稿工作流，将其激活部署。草稿激活后即可执行。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "draftId": {
+            "type": "string",
+            "description": "草稿工作流 ID（合法 Guid 格式）。"
+          }
+        },
+        "required": ["draftId"]
+      }
+    },
+    {
+      "name": "execute_workflow",
+      "description": "执行已激活的工作流。返回执行 ID 和状态。执行失败时返回结构化反馈（含建议修复方案），供 AI 自纠。",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "workflowId": {
+            "type": "string",
+            "description": "工作流 ID（合法 Guid 格式）。"
+          },
+          "inputs": {
+            "type": "object",
+            "description": "输入参数（可选）。"
+          },
+          "idempotencyKey": {
+            "type": "string",
+            "description": "幂等键（可选）。"
+          }
+        },
+        "required": ["workflowId"]
+      }
+    }
+  ]
+}
