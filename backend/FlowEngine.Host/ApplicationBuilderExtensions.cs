@@ -35,8 +35,12 @@ public static class ApplicationBuilderExtensions
         await UseInitialization(app);
 
         // ── Routes ──────────────────────────────────────────────────
-        // 必须在 UseRouting 之前注册所有端点，尤其是使用 MapGroup 的 MCP Streamable HTTP
-        // 端点；否则路由中间件构建 CompositeEndpointDataSource 时无法包含后续新增的组路由。
+        // 注：本方法不调用 app.UseRouting()。所有 Map* 端点（REST API、Controllers、MCP /mcp）
+        // 必须在 UseRouting 被调用之前完成注册，因为 ASP.NET Core 在 UseRouting 时会捕获
+        // 当前已注册的所有 EndpointDataSource（包括 MapGroup 创建的组路由）。如果先调用
+        // UseRouting 再 MapMcp("/mcp")，则 MCP Streamable HTTP 组路由不会被当前路由匹配
+        // 管道发现。因此将 UseRoutes 放在 UseMiddlewares（内部调用 UseRouting）之前。
+        // 现有 REST/Controller 路由对注册顺序不敏感，但为统一处理并保持兼容性，统一前置。
         UseRoutes(app);
 
         // ── Middleware ──────────────────────────────────────────────
@@ -106,7 +110,6 @@ public static class ApplicationBuilderExtensions
         app.UseMiddleware<CurrentUserMiddleware>();
         app.UseAuthorization();
         app.UseMiddleware<RbacAuthorizationMiddleware>();
-        app.UseEndpoints(_ => { });
     }
 
     private static async Task UseInitialization(WebApplication app)
