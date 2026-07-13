@@ -16,8 +16,8 @@ namespace FlowEngine.Host.Controllers;
 [Authorize]
 [Route("api/v1/workflows")]
 public class AiWorkflowsController(
-    WorkflowAssemblyService assemblyService,
-    WorkflowModificationService modificationService,
+    IWorkflowAssemblyService assemblyService,
+    IWorkflowModificationService modificationService,
     WorkflowValidationService validationService,
     WorkflowExecutionFeedbackService feedbackService,
     WorkflowService workflowService) : ControllerBase

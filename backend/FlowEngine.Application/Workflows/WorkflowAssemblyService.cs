@@ -13,6 +13,7 @@ public sealed class WorkflowAssemblyService(
     INodeRegistry nodeRegistry,
     WorkflowService workflowService,
     WorkflowValidator workflowValidator)
+    : IWorkflowAssemblyService
 {
     /// <summary>
     /// 装配 AI 草稿为完整工作流并创建草稿记录。

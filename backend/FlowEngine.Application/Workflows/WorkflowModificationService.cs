@@ -19,6 +19,7 @@ public sealed class WorkflowModificationService(
     WorkflowValidator workflowValidator,
     IEventBus eventBus,
     AuditEventFactory auditFactory)
+    : IWorkflowModificationService
 {
     /// <summary>
     /// 对指定工作流应用一组修改操作，创建新的草稿版本。
