@@ -29,6 +29,8 @@ import type {
   ImportWorkflowRequest,
   ImportBatchRequest,
   ExportBatchRequest,
+  ValidateWorkflowResult,
+  CreateApiKeyResult,
 } from '../types/workflow.ts';
 
 const api = axios.create({
@@ -109,6 +111,21 @@ export async function updateWorkflow(id: string, data: UpdateWorkflowDto): Promi
 
 export async function deleteWorkflow(id: string): Promise<void> {
   await api.delete(`/workflows/${id}`);
+}
+
+export async function validateWorkflow(id: string): Promise<ValidateWorkflowResult> {
+  const response = await api.post<ValidateWorkflowResult>('/workflows/validate', { workflowId: id });
+  return response.data;
+}
+
+export async function confirmWorkflow(id: string): Promise<Workflow> {
+  const response = await api.post<Workflow>(`/workflows/${id}/confirm`);
+  return response.data;
+}
+
+export async function rejectDraft(id: string, reason: string): Promise<Workflow> {
+  const response = await api.post<Workflow>(`/workflows/${id}/reject`, { reason });
+  return response.data;
 }
 
 export async function executeWorkflow(workflowId: string): Promise<ExecutionDto> {
@@ -252,5 +269,12 @@ export async function importWorkflow(data: ImportWorkflowRequest): Promise<Impor
 
 export async function importWorkflowsBatch(data: ImportBatchRequest): Promise<BatchImportResult> {
   const res = await api.post<BatchImportResult>('/workflows/import-batch', data);
+  return res.data;
+}
+
+// --- API Keys (Personal Access Tokens) ---
+
+export async function createApiKey(name: string, expiresAt?: string | null): Promise<CreateApiKeyResult> {
+  const res = await api.post<CreateApiKeyResult>('/auth/api-keys', { name, expiresAt });
   return res.data;
 }

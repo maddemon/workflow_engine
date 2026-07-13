@@ -1,10 +1,11 @@
 import { create } from 'zustand';
 import { applyNodeChanges, applyEdgeChanges } from '@xyflow/react';
 import type { Node, Edge, NodeChange, EdgeChange } from '@xyflow/react';
-import type { NodeTypeDescriptor, ParameterDefinition, WorkflowStyleSettings, NodeExecutionRecordDto } from '../types/workflow.ts';
+import type { NodeTypeDescriptor, ParameterDefinition, WorkflowStyleSettings, NodeExecutionRecordDto, StructuredDiff } from '../types/workflow.ts';
 import { DEFAULT_STYLE_SETTINGS } from '../types/workflow.ts';
 import { deserializeWorkflow, serializeWorkflow } from '../utils/workflowSerializer.ts';
 import { validateParameters } from '../utils/validateParameters.ts';
+import { computeAutoLayout } from '../utils/workflowLayout.ts';
 import * as api from '../services/api.ts';
 
 export type WorkflowNodeData = {
@@ -52,6 +53,10 @@ interface WorkflowState {
   copiedNode: WorkflowNodeData | null;
   /** 凭据变更版本号，用于跨组件触发凭据下拉刷新 */
   credentialRevision: number;
+  reviewMode: boolean;
+  draftSource?: 'ai' | 'human';
+  draftStatus?: 'pending' | 'rejected' | 'confirmed';
+  structuredDiff?: StructuredDiff[];
 
   setNodes: (nodes: WorkflowNode[]) => void;
   setEdges: (edges: WorkflowEdge[]) => void;
@@ -83,11 +88,16 @@ interface WorkflowState {
   clearExecutionStatuses: () => void;
   upsertNodeExecutionRecords: (records: NodeExecutionRecordDto[]) => void;
   clearNodeExecutionRecords: () => void;
+  setReviewMode: (mode: boolean) => void;
+  setDraftSource: (source?: 'ai' | 'human') => void;
+  setDraftStatus: (status?: 'pending' | 'rejected' | 'confirmed') => void;
+  setStructuredDiff: (diff?: StructuredDiff[]) => void;
   canUndo: boolean;
   canRedo: boolean;
   undo: () => void;
   redo: () => void;
   pushHistory: () => void;
+  autoLayout: () => void;
 }
 
 function buildNodeFromDescriptor(
@@ -179,6 +189,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     nodeExecutionRecords: {},
     copiedNode: null,
     credentialRevision: 0,
+    reviewMode: false,
+    draftSource: undefined,
+    draftStatus: undefined,
+    structuredDiff: undefined,
     canUndo: false,
     canRedo: false,
 
@@ -320,10 +334,27 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
 
     setStyleSettings: (settings) => set({ styleSettings: settings, isDirty: true }),
 
+    setReviewMode: (mode) => set({ reviewMode: mode }),
+    setDraftSource: (source) => set({ draftSource: source }),
+    setDraftStatus: (status) => set({ draftStatus: status }),
+    setStructuredDiff: (diff) => set({ structuredDiff: diff }),
+
     loadWorkflow: async (id) => {
       try {
         const workflow = await api.getWorkflow(id);
         const { nodes, edges } = deserializeWorkflow(workflow, get().nodeTypes);
+        const styleSettings = workflow.styleSettings
+          ? { ...DEFAULT_STYLE_SETTINGS, ...workflow.styleSettings }
+          : { ...DEFAULT_STYLE_SETTINGS };
+
+        // 计划约定：载入时若存在位置为 null 的节点（后端未定位），自动布局，
+        // 避免这些节点堆叠在原点。已正确定位的节点不会被重排（仅当存在未定位节点时才整体布局）。
+        const hasUnpositioned = workflow.nodes.some((n) => n.positionX == null || n.positionY == null);
+        const positions = hasUnpositioned ? computeAutoLayout(nodes, edges, styleSettings.layoutDirection) : null;
+        const finalNodes = hasUnpositioned
+          ? nodes.map((n) => ({ ...n, position: positions?.[n.id] ?? n.position }))
+          : nodes;
+
         undoStack.length = 0;
         redoStack.length = 0;
         set({
@@ -331,8 +362,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           workflowName: workflow.name,
           workflowVersion: workflow.version,
           isActive: workflow.isActive,
-          styleSettings: workflow.styleSettings ? { ...DEFAULT_STYLE_SETTINGS, ...workflow.styleSettings } : { ...DEFAULT_STYLE_SETTINGS },
-          nodes,
+          styleSettings,
+          nodes: finalNodes,
           edges,
           nodePositions: {},
           selectedNodeId: null,
@@ -342,6 +373,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           nodeExecutionRecords: {},
           canUndo: false,
           canRedo: false,
+          reviewMode: workflow.source === 'ai' && workflow.draftStatus === 'pending',
+          draftSource: workflow.source === 'ai' ? 'ai' : 'human',
+          draftStatus: workflow.draftStatus,
+          structuredDiff: workflow.diff,
         });
       } catch (err) {
         console.error('Failed to load workflow:', err);
@@ -403,6 +438,10 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         nodeExecutionRecords: {},
         canUndo: false,
         canRedo: false,
+        reviewMode: false,
+        draftSource: undefined,
+        draftStatus: undefined,
+        structuredDiff: undefined,
       });
     },
 
@@ -495,6 +534,15 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     pushHistory: () => {
       pushHistoryInternal();
       set({ canUndo: true, canRedo: false });
+    },
+
+    autoLayout: () => {
+      const { nodes, edges, styleSettings } = get();
+      const positions = computeAutoLayout(nodes, edges, styleSettings.layoutDirection);
+      set({
+        nodes: nodes.map((n) => ({ ...n, position: positions[n.id] ?? n.position })),
+        isDirty: true,
+      });
     },
   };
 });

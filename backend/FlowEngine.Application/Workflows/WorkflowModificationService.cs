@@ -99,6 +99,9 @@ public sealed class WorkflowModificationService(
             Name = workflow.Name,
             CreatedBy = "ai-modifier",
             IsActive = false,
+            Source = WorkflowSource.Ai,
+            DraftStatus = Core.Enums.DraftStatus.Pending,
+            Diff = diffs,
             Nodes = workflow.Nodes,
             Connections = workflow.Connections,
         };
@@ -124,6 +127,10 @@ public sealed class WorkflowModificationService(
             CreatedAt = draftWorkflow.CreatedAt,
             UpdatedAt = draftWorkflow.UpdatedAt,
             IsActive = draftWorkflow.IsActive,
+            Source = draftWorkflow.Source,
+            DraftStatus = draftWorkflow.DraftStatus,
+            RejectionReason = draftWorkflow.RejectionReason,
+            Diff = draftWorkflow.Diff,
             Nodes = draftWorkflow.Nodes.Select(n => WorkflowMapper.ToDto(n)).ToList(),
             Connections = draftWorkflow.Connections.Select(c =>
                 WorkflowMapper.ToDto(c, c.Id.ToString(), c.SourceNodeId, c.TargetNodeId)).ToList(),

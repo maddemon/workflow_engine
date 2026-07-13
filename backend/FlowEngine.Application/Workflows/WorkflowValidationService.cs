@@ -16,7 +16,8 @@ namespace FlowEngine.Application.Workflows;
 /// </summary>
 public sealed class WorkflowValidationService(
     INodeRegistry nodeRegistry,
-    FlowEngineDbContext dbContext) : IWorkflowValidationService
+    FlowEngineDbContext dbContext,
+    ICredentialAccessor credentialAccessor) : IWorkflowValidationService
 {
     /// <summary>
     /// 校验工作流定义。
@@ -365,6 +366,32 @@ public sealed class WorkflowValidationService(
                         });
                     }
                 }
+            }
+        }
+
+        // ── 8. 凭据存在性校验 ──────────────────────────────────────
+        var referencedCredentials = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var node in nodes)
+        {
+            var paramsNode = JsonSerializer.SerializeToNode(node.Parameters) as JsonObject;
+            if (paramsNode is not null)
+            {
+                WorkflowDraftValidator.CollectCredentialReferences(paramsNode, referencedCredentials);
+            }
+        }
+
+        foreach (var credName in referencedCredentials)
+        {
+            var existing = await credentialAccessor.GetCredentialByNameAsync(credName, cancellationToken)
+                .ConfigureAwait(false);
+            if (existing is null)
+            {
+                errors.Add(new ValidationError
+                {
+                    ErrorType = "MissingCredential",
+                    Message = $"引用了不存在的凭据 \"{credName}\"。",
+                    SuggestedFix = $"请先创建凭据 \"{credName}\" 或修改参数引用。",
+                });
             }
         }
 

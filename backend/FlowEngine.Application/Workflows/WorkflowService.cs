@@ -120,6 +120,10 @@ public sealed class WorkflowService(
             {
                 Id = w.Id, Name = w.Name, Version = w.Version, IsActive = w.IsActive,
                 ProjectId = w.ProjectId, CreatedAt = w.CreatedAt, UpdatedAt = w.UpdatedAt,
+                Source = w.Source,
+                DraftStatus = w.DraftStatus,
+                RejectionReason = w.RejectionReason,
+                Diff = w.Diff,
                 LastExecutionAt = stat?.LastExecutionAt,
                 TriggerCount = stat?.TriggerCount ?? 0,
                 NextTriggerAt = stat?.NextTriggerAt,
@@ -179,7 +183,7 @@ public sealed class WorkflowService(
     /// <summary>
     /// 创建工作流草稿（IsActive = false）。
     /// </summary>
-    public async Task<WorkflowDto> CreateDraftAsync(CreateWorkflowDto dto, CancellationToken cancellationToken = default)
+    public async Task<WorkflowDto> CreateDraftAsync(CreateWorkflowDto dto, CancellationToken cancellationToken = default, WorkflowSource source = WorkflowSource.Human)
     {
         ArgumentNullException.ThrowIfNull(dto);
 
@@ -194,6 +198,8 @@ public sealed class WorkflowService(
             Nodes = nodes,
             Connections = connections
         };
+
+        workflow.Source = source;
 
         ValidateOrThrow(workflow);
         dbContext.Workflows.Add(workflow);
@@ -223,6 +229,28 @@ public sealed class WorkflowService(
         }
 
         existing.IsActive = true;
+        existing.DraftStatus = DraftStatus.Confirmed;
+        existing.UpdatedAt = DateTime.UtcNow;
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        return MapToDto(existing);
+    }
+
+    /// <summary>
+    /// 拒绝工作流草稿（设置拒绝理由，将 DraftStatus 设为 Rejected）。
+    /// </summary>
+    public async Task<WorkflowDto?> RejectDraftAsync(Guid id, string reason, CancellationToken cancellationToken = default)
+    {
+        var existing = await dbContext.Workflows
+            .FirstOrDefaultAsync(w => w.Id == id, cancellationToken)
+            .ConfigureAwait(false);
+        if (existing is null)
+        {
+            return null;
+        }
+
+        existing.RejectionReason = reason;
+        existing.DraftStatus = DraftStatus.Rejected;
         existing.UpdatedAt = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
@@ -328,6 +356,10 @@ public sealed class WorkflowService(
             CreatedAt = workflow.CreatedAt,
             UpdatedAt = workflow.UpdatedAt,
             IsActive = workflow.IsActive,
+            Source = workflow.Source,
+            DraftStatus = workflow.DraftStatus,
+            RejectionReason = workflow.RejectionReason,
+            Diff = workflow.Diff,
             StyleSettings = workflow.StyleSettings,
             Nodes = workflow.Nodes.Select(n => WorkflowMapper.ToDto(n)).ToList(),
             Connections = workflow.Connections.Select(c =>

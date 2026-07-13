@@ -215,6 +215,26 @@ public sealed record WorkflowDto
     public bool IsActive { get; init; }
 
     /// <summary>
+    /// 工作流来源。
+    /// </summary>
+    public WorkflowSource Source { get; init; }
+
+    /// <summary>
+    /// 草稿审查状态。
+    /// </summary>
+    public DraftStatus? DraftStatus { get; init; }
+
+    /// <summary>
+    /// 拒绝理由。
+    /// </summary>
+    public string? RejectionReason { get; init; }
+
+    /// <summary>
+    /// 结构化差异列表。
+    /// </summary>
+    public List<StructuredDiff>? Diff { get; init; }
+
+    /// <summary>
     /// 样式设置。
     /// </summary>
     public WorkflowStyleSettings? StyleSettings { get; init; }
@@ -254,6 +274,26 @@ public sealed record WorkflowSummaryDto
     /// 是否激活。
     /// </summary>
     public bool IsActive { get; init; }
+
+    /// <summary>
+    /// 工作流来源。
+    /// </summary>
+    public WorkflowSource Source { get; init; }
+
+    /// <summary>
+    /// 草稿审查状态。
+    /// </summary>
+    public DraftStatus? DraftStatus { get; init; }
+
+    /// <summary>
+    /// 拒绝理由。
+    /// </summary>
+    public string? RejectionReason { get; init; }
+
+    /// <summary>
+    /// 结构化差异列表。
+    /// </summary>
+    public List<StructuredDiff>? Diff { get; init; }
 
     /// <summary>
     /// 项目 ID（null 表示全局工作流）。

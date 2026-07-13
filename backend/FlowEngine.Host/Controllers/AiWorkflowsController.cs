@@ -104,6 +104,21 @@ public class AiWorkflowsController(
     }
 
     /// <summary>
+    /// 拒绝草稿（写入拒绝理由，DraftStatus→Rejected，不删除草稿）。
+    /// </summary>
+    [HttpPost("{id:guid}/reject")]
+    [AuthorizePermission(Scope.Workflow, Operation.Write)]
+    public async Task<ActionResult<WorkflowDto>> RejectDraft(
+        Guid id,
+        [FromBody] RejectDraftRequest request,
+        CancellationToken cancellationToken)
+    {
+        var result = await workflowService.RejectDraftAsync(id, request.Reason, cancellationToken)
+            .ConfigureAwait(false);
+        return this.OkOrNotFound(result);
+    }
+
+    /// <summary>
     /// 获取执行反馈。
     /// </summary>
     [HttpGet("{workflowId:guid}/executions/{executionId:guid}/feedback")]

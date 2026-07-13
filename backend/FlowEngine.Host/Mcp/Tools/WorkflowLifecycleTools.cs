@@ -177,4 +177,48 @@ public sealed class WorkflowLifecycleTools(
                 SuggestedFix: "请根据错误信息调整工作流或输入参数");
         }
     }
+
+    /// <summary>
+    /// 拒绝 AI 生成的工作流草稿，写入拒绝理由。草稿保留以供 AI 拉取反馈。
+    /// </summary>
+    /// <param name="draftId">草稿工作流 ID（合法 Guid 格式）。</param>
+    /// <param name="reason">拒绝理由，描述人类为什么拒绝此草稿。</param>
+    /// <returns>拒绝后的工作流 DTO 或结构化错误。</returns>
+    [McpServerTool(Name = "reject_draft")]
+    [Description("拒绝 AI 生成的工作流草稿，写入拒绝理由。草稿保留以供 AI 拉取反馈。")]
+    public async Task<object> RejectDraft(
+        [Description("草稿工作流 ID（合法 Guid 格式）。")] string draftId,
+        [Description("拒绝理由，描述人类为什么拒绝此草稿。")] string reason,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(draftId) || !Guid.TryParse(draftId, out var id))
+        {
+            return new McpToolError(
+                "InvalidInput",
+                "草稿 ID 格式无效",
+                CanAutoFix: true,
+                SuggestedFix: "请检查并修正输入参数");
+        }
+
+        if (string.IsNullOrWhiteSpace(reason))
+        {
+            return new McpToolError(
+                "InvalidInput",
+                "拒绝理由不能为空",
+                CanAutoFix: false,
+                SuggestedFix: "请填写拒绝理由");
+        }
+
+        var result = await workflowService.RejectDraftAsync(id, reason, cancellationToken).ConfigureAwait(false);
+        if (result is null)
+        {
+            return new McpToolError(
+                "NotFound",
+                $"草稿 '{draftId}' 不存在",
+                CanAutoFix: false,
+                SuggestedFix: "请确认 ID 正确或先创建/装配");
+        }
+
+        return result;
+    }
 }

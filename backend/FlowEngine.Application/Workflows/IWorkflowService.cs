@@ -25,4 +25,10 @@ public interface IWorkflowService
     /// 确认工作流草稿（将 IsActive 设为 true）。
     /// </summary>
     Task<WorkflowDto?> ConfirmDraftAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 拒绝工作流草稿（写入拒绝理由，将 DraftStatus 设为 Rejected）。
+    /// </summary>
+    Task<WorkflowDto?> RejectDraftAsync(
+        Guid id, string reason, CancellationToken cancellationToken = default);
 }

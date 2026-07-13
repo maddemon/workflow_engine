@@ -124,6 +124,29 @@ export interface Connection {
   condition?: string;
 }
 
+export interface StructuredDiff {
+  op: string;
+  nodeId?: string;
+  field?: string;
+  before?: unknown;
+  after?: unknown;
+}
+
+export interface ValidationError {
+  nodeId?: string;
+  field?: string;
+  errorType: string;
+  message: string;
+  schema?: unknown;
+  suggestedFix?: string;
+}
+
+export interface ValidateWorkflowResult {
+  valid: boolean;
+  errors: ValidationError[];
+  canAutoFix: boolean;
+}
+
 export interface Workflow {
   id: string;
   projectId: string | null;
@@ -133,6 +156,10 @@ export interface Workflow {
   createdAt: string;
   updatedAt: string;
   isActive: boolean;
+  source?: 'ai' | 'human';
+  draftStatus?: 'pending' | 'rejected' | 'confirmed';
+  rejectionReason?: string | null;
+  diff?: StructuredDiff[];
   styleSettings: WorkflowStyleSettings | null;
   nodes: NodeDefinition[];
   connections: Connection[];
@@ -147,6 +174,10 @@ export interface WorkflowSummary {
   projectId: string | null;
   createdAt: string;
   updatedAt: string | null;
+  source?: 'ai' | 'human';
+  draftStatus?: 'pending' | 'rejected' | 'confirmed';
+  rejectionReason?: string | null;
+  diff?: StructuredDiff[];
   /** 最近一次执行完成时间。 */
   lastExecutionAt: string | null;
   /** 关联触发器数量。 */
@@ -410,4 +441,15 @@ export interface ImportBatchRequest {
 
 export interface ExportBatchRequest {
   ids: string[];
+}
+
+// --- API Keys (Personal Access Tokens) ---
+
+export interface CreateApiKeyResult {
+  id: string;
+  name: string;
+  prefix: string;
+  expiresAt: string | null;
+  /** 明文 Key（仅创建时返回一次，前缀为 fe_）。 */
+  key: string;
 }

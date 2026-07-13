@@ -295,7 +295,7 @@ public sealed class WorkflowDraftValidator(
         return raw;
     }
 
-    private static void CollectCredentialReferences(JsonNode? node, HashSet<string> names)
+    public static void CollectCredentialReferences(JsonNode? node, HashSet<string> names)
     {
         switch (node)
         {

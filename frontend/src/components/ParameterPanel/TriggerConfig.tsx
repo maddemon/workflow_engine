@@ -15,9 +15,10 @@ import * as api from '../../services/api.ts';
 interface TriggerConfigProps {
   workflowId: string;
   isExecuting: boolean;
+  reviewMode?: boolean;
 }
 
-export function TriggerConfig({ workflowId, isExecuting }: TriggerConfigProps) {
+export function TriggerConfig({ workflowId, isExecuting, reviewMode }: TriggerConfigProps) {
   const workflowVersion = useWorkflowStore((s) => s.workflowVersion);
   const [showForm, setShowForm] = useState(false);
   const [editTrigger, setEditTrigger] = useState<TriggerDto | null>(null);
@@ -156,10 +157,10 @@ export function TriggerConfig({ workflowId, isExecuting }: TriggerConfigProps) {
                   <Text size="xs" c="dimmed">{t.type}</Text>
                 </Group>
                 <Group gap={2} wrap="nowrap">
-                  <ActionIcon variant="subtle" size="sm" onClick={() => openEditForm(t)} disabled={isExecuting}>
-                    <Edit size={12} />
-                  </ActionIcon>
-                  <ActionIcon variant="subtle" color="red" size="sm" onClick={() => handleDelete(t.id)} disabled={isExecuting}>
+                <ActionIcon variant="subtle" size="sm" onClick={() => openEditForm(t)} disabled={isExecuting || reviewMode}>
+                  <Edit size={12} />
+                </ActionIcon>
+                <ActionIcon variant="subtle" color="red" size="sm" onClick={() => handleDelete(t.id)} disabled={isExecuting || reviewMode}>
                     <Trash size={12} />
                   </ActionIcon>
                 </Group>
@@ -182,7 +183,7 @@ export function TriggerConfig({ workflowId, isExecuting }: TriggerConfigProps) {
             size="compact-sm"
             leftSection={<Plus size={12} />}
             onClick={openCreateForm}
-            disabled={isExecuting}
+            disabled={isExecuting || reviewMode}
           >
             Add Trigger
           </Button>

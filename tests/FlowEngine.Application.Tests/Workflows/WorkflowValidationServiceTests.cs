@@ -86,12 +86,24 @@ public sealed class WorkflowValidationServiceTests : IDisposable
             },
         ]);
 
-        _service = new WorkflowValidationService(_registry, _dbContext);
+        _service = new WorkflowValidationService(_registry, _dbContext,
+            new StubCredentialAccessor());
     }
 
     public void Dispose()
     {
         _dbContext.Dispose();
+    }
+
+    /// <summary>
+    /// 测试桩——按名称查询凭据，始终返回 null，表示不存在。
+    /// </summary>
+    private sealed class StubCredentialAccessor : ICredentialAccessor
+    {
+        public Task<CredentialValue> GetCredentialAsync(Guid credentialId, CancellationToken ct = default)
+            => Task.FromResult<CredentialValue>(null!);
+        public Task<CredentialValue?> GetCredentialByNameAsync(string name, CancellationToken ct = default)
+            => Task.FromResult<CredentialValue?>(null);
     }
 
     [Fact]

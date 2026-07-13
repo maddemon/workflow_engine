@@ -359,6 +359,9 @@ export function WorkflowListPage() {
                   >
                     {wf.isActive ? 'Active' : 'Inactive'}
                   </Badge>
+                  {wf.source === 'ai' && !wf.isActive && wf.draftStatus === 'pending' && (
+                    <Badge size="sm" variant="light" color="blue" ml={4}>AI Draft·待审</Badge>
+                  )}
                 </Table.Td>
                 <Table.Td>
                   <Group gap="xs" wrap="nowrap">

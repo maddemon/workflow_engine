@@ -13,7 +13,7 @@ import {
   useComputedColorScheme,
   useMantineColorScheme,
 } from "@mantine/core"
-import { BarChart3, Bell, Home, Key, LogOut, Moon, Settings, Sun, User, Workflow } from "lucide-react"
+import { Bell, BookOpen, Home, Key, LogOut, Moon, Sun, User, Workflow } from "lucide-react"
 import { useState } from "react"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { CredentialListModal } from "../CredentialPanel/CredentialListModal.tsx"
@@ -21,8 +21,7 @@ import { useAuth } from "../../hooks/AuthContext.tsx"
 
 const navItems = [
   { label: "Workflows", icon: Home, path: "/" },
-  { label: "Executions", icon: BarChart3, path: "/workflow/:id/history" },
-  { label: "Settings", icon: Settings, path: "/settings" },
+  { label: "Documents", icon: BookOpen, path: "/help" },
 ]
 
 export function HeaderToolbar() {

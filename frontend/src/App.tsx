@@ -6,6 +6,7 @@ import { AuthProvider, useAuth } from './hooks/AuthContext.tsx';
 import { WorkflowListPage } from './components/WorkflowList/WorkflowListPage.tsx';
 import { WorkflowEditorPage } from './pages/WorkflowEditorPage.tsx';
 import { ExecutionHistoryPage } from './pages/ExecutionHistoryPage.tsx';
+import { HelpPage } from './pages/HelpPage.tsx';
 import { LoginPage } from './pages/LoginPage.tsx';
 import { RegisterPage } from './pages/RegisterPage.tsx';
 import { LoadingOverlay } from '@mantine/core';
@@ -87,6 +88,18 @@ function AppRoutes() {
             <LayoutProvider value={layoutValue}>
               <MainLayout>
                 <ExecutionHistoryPage />
+              </MainLayout>
+            </LayoutProvider>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/help"
+        element={
+          <ProtectedRoute>
+            <LayoutProvider value={layoutValue}>
+              <MainLayout>
+                <HelpPage />
               </MainLayout>
             </LayoutProvider>
           </ProtectedRoute>

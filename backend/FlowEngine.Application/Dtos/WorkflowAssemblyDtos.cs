@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using FlowEngine.Core.Entities;
 
 namespace FlowEngine.Application.Dtos;
 
@@ -172,37 +173,6 @@ public sealed record ModifyWorkflowResult
     /// 结构化差异列表。
     /// </summary>
     public List<StructuredDiff> Diff { get; init; } = [];
-}
-
-/// <summary>
-/// 结构化差异记录。
-/// </summary>
-public sealed record StructuredDiff
-{
-    /// <summary>
-    /// 操作类型。
-    /// </summary>
-    public string Op { get; init; } = string.Empty;
-
-    /// <summary>
-    /// 受影响的节点 ID。
-    /// </summary>
-    public string? NodeId { get; init; }
-
-    /// <summary>
-    /// 受影响的字段名。
-    /// </summary>
-    public string? Field { get; init; }
-
-    /// <summary>
-    /// 修改前的值。
-    /// </summary>
-    public object? Before { get; init; }
-
-    /// <summary>
-    /// 修改后的值。
-    /// </summary>
-    public object? After { get; init; }
 }
 
 /// <summary>

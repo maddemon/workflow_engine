@@ -3,6 +3,7 @@ using System.Reflection;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Entities;
 using FlowEngine.Core.Exceptions;
 using FlowEngine.Host.Mcp;
 using FlowEngine.Host.Mcp.Tools;

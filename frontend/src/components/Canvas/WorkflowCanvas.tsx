@@ -34,6 +34,7 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
   const addNode = useWorkflowStore((s) => s.addNode)
   const setSelectedNode = useWorkflowStore((s) => s.setSelectedNode)
   const isExecuting = useWorkflowStore((s) => s.isExecuting)
+  const reviewMode = useWorkflowStore((s) => s.reviewMode)
   const copyNode = useWorkflowStore((s) => s.copyNode)
   const pasteNode = useWorkflowStore((s) => s.pasteNode)
 
@@ -164,16 +165,16 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
 
   const onDragOver = useCallback(
     (event: React.DragEvent) => {
-      if (isExecuting) return
+      if (isExecuting || reviewMode) return
       event.preventDefault()
       event.dataTransfer.dropEffect = "move"
     },
-    [isExecuting],
+    [isExecuting, reviewMode],
   )
 
   const onDrop = useCallback(
     (event: React.DragEvent) => {
-      if (isExecuting) return
+      if (isExecuting || reviewMode) return
       event.preventDefault()
       const typeName = event.dataTransfer.getData("application/reactflow")
       if (!typeName) return
@@ -184,7 +185,7 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
       })
       addNode(typeName, position)
     },
-    [addNode, isExecuting, screenToFlowPosition],
+    [addNode, isExecuting, reviewMode, screenToFlowPosition],
   )
 
   useEffect(() => {
@@ -216,9 +217,9 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
         <ReactFlow
           nodes={nodes}
           edges={edges}
-          nodesDraggable={!isExecuting}
-          nodesConnectable={!isExecuting}
-          elementsSelectable={!isExecuting}
+          nodesDraggable={!isExecuting && !reviewMode}
+          nodesConnectable={!isExecuting && !reviewMode}
+          elementsSelectable={!isExecuting && !reviewMode}
           onNodesChange={onNodesChange}
           onEdgesChange={onEdgesChange}
           onConnect={onConnect}

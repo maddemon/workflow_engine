@@ -38,6 +38,7 @@ export function ParameterPanel() {
     }),
   );
   const isExecuting = useWorkflowStore((s) => s.isExecuting);
+  const reviewMode = useWorkflowStore((s) => s.reviewMode);
   const updateNodeParameters = useWorkflowStore((s) => s.updateNodeParameters);
   const updateNodeName = useWorkflowStore((s) => s.updateNodeName);
   const updateNodeSettings = useWorkflowStore((s) => s.updateNodeSettings);
@@ -77,6 +78,11 @@ export function ParameterPanel() {
             Execution in progress — canvas is read-only
           </Text>
         )}
+        {reviewMode && (
+          <Text size="xs" c="blue" fw={500} p={4} style={{ background: 'var(--mantine-color-blue-light)', borderRadius: 4, textAlign: 'center' }}>
+            Review Mode — canvas is read-only. Node parameters can still be edited.
+          </Text>
+        )}
         <Text fw={600} size="xs" tt="uppercase" c="dimmed" style={{ letterSpacing: '0.05em' }}>
           Workflow Settings
         </Text>
@@ -86,17 +92,17 @@ export function ParameterPanel() {
             value={workflowName}
             onChange={(e) => setWorkflowName(e.target.value)}
             placeholder="Enter workflow name..."
-            disabled={isExecuting}
+            disabled={isExecuting || reviewMode}
             rightSection={isDirty ? <Text c="orange" fw={700} size="xs">*</Text> : undefined}
           />
           <Group
             justify="space-between"
             align="center"
-            onClick={() => !isExecuting && setIsActive(!isActive)}
-            style={{ cursor: isExecuting ? 'not-allowed' : 'pointer' }}
+            onClick={() => !isExecuting && !reviewMode && setIsActive(!isActive)}
+            style={{ cursor: (isExecuting || reviewMode) ? 'not-allowed' : 'pointer' }}
             p={4}
           >
-            <Switch checked={isActive} onChange={(e) => setIsActive(e.currentTarget.checked)} size="sm" disabled={isExecuting} onClick={(e) => e.stopPropagation()} />
+            <Switch checked={isActive} onChange={(e) => setIsActive(e.currentTarget.checked)} size="sm" disabled={isExecuting || reviewMode} onClick={(e) => e.stopPropagation()} />
             <Group gap={4} style={{ flex: 1 }}>
               <Text size="xs" fw={400}>Active</Text>
               <InfoTooltip label="Enable this workflow to be triggered" />
@@ -106,14 +112,14 @@ export function ParameterPanel() {
             label="Layout Direction"
             value={layoutDirection}
             onChange={handleLayoutChange}
-            disabled={isExecuting}
+            disabled={isExecuting || reviewMode}
             data={[
               { label: 'Vertical (top to bottom)', value: 'vertical' },
               { label: 'Horizontal (left to right)', value: 'horizontal' },
             ]}
           />
           <Divider />
-          <TriggerConfig workflowId={useWorkflowStore.getState().workflowId ?? ''} isExecuting={isExecuting} />
+          <TriggerConfig workflowId={useWorkflowStore.getState().workflowId ?? ''} isExecuting={isExecuting} reviewMode={reviewMode} />
         </Stack>
         <Group justify="space-between">
           <Text size="xs" c="dimmed">Nodes</Text>
@@ -124,7 +130,7 @@ export function ParameterPanel() {
           <Badge variant="light" size="xs">{edgeCount}</Badge>
         </Group>
         <Text c="dimmed" size="xs" ta="center" mt="auto" pb="sm">
-          Select a node on the canvas to edit its parameters.
+          {reviewMode ? 'Select a node to review its parameters.' : 'Select a node on the canvas to edit its parameters.'}
         </Text>
       </Stack>
     );
@@ -150,7 +156,7 @@ export function ParameterPanel() {
         label="Node Name"
         value={name}
         onChange={(e) => updateNodeName(selectedNode.id, e.target.value)}
-        disabled={isExecuting}
+        disabled={isExecuting || reviewMode}
       />
 
       {hasErrors && (
@@ -171,7 +177,7 @@ export function ParameterPanel() {
             }}
           />
         )}
-        <Stack gap="sm" style={isExecuting ? { pointerEvents: 'none', opacity: 0.6 } : undefined}>
+        <Stack gap="sm" style={(isExecuting || reviewMode) ? { pointerEvents: 'none', opacity: isExecuting ? 0.6 : undefined } : undefined}>
           {basic.length > 0 && basic.map((def) => {
             if (def.displayRule && !isVisible(def)) return null;
             return (
@@ -292,7 +298,7 @@ export function ParameterPanel() {
                 value={selectedNode.data.timeout ?? 0}
                 min={0}
                 allowNegative={false}
-                disabled={isExecuting}
+                disabled={isExecuting || reviewMode}
                 size="sm"
                 onChange={(v) => {
                   const n = typeof v === 'number' ? v : Number(v);

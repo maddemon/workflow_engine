@@ -31,6 +31,8 @@ docs/
 │   ├── natural-language-to-dsl.md
 │   ├── deployment.md
 │   └── roadmap.md
+├── designs/                        # 设计文档（前端/模块改造设计等，尚未拆为计划/架构的过渡性设计）
+│   └── 2026-07-12-*.md
 └── chats/                          # 任务/讨论记录
     └── task-*.md
 ```
