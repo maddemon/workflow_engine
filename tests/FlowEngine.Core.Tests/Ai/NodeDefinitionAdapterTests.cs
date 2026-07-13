@@ -215,4 +215,36 @@ public class NodeDefinitionAdapterTests
 
         Assert.Equal("javascript", def.ExpressionLanguage);
     }
+
+    [Fact]
+    public void BuildInputSchema_AuthParameter_HasCredentialFieldMapping_And_CredentialType()
+    {
+        var authParam = new ParameterDefinition
+        {
+            Name = "authentication",
+            Type = ParameterType.Options,
+            Options =
+            [
+                new() { Value = "None" },
+                new() { Value = "BearerToken" },
+                new() { Value = "QueryParameter" },
+                new() { Value = "ApiKey" },
+                new() { Value = "BasicAuth" },
+            ]
+        };
+        var connParam = new ParameterDefinition
+        {
+            Name = "connection",
+            Type = ParameterType.Credential,
+            CredentialType = "database",
+        };
+        var descriptor = DescriptorFor("dbUpsert", [authParam, connParam], []);
+
+        var schema = NodeDefinitionAdapter.BuildInputSchema(descriptor);
+        var authProp = schema["properties"]!["authentication"]!;
+        Assert.NotNull(authProp["credentialFieldMapping"]);
+
+        var connProp = schema["properties"]!["connection"]!;
+        Assert.Equal("database", connProp["credentialType"]?.GetValue<string>());
+    }
 }

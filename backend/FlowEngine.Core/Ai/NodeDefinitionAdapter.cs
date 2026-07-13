@@ -29,6 +29,17 @@ public static class NodeDefinitionAdapter
         private static readonly string[] SensitiveNamePatterns =
         ["secret", "token", "password", "apikey", "api_key", "api-key"];
 
+    private static readonly Dictionary<string, Dictionary<string, string[]>> AuthFieldMappings = new()
+    {
+        ["authentication"] = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["BearerToken"] = ["accessToken", "token"],
+            ["QueryParameter"] = ["accessToken", "token", "apiKey"],
+            ["ApiKey"] = ["apiKey"],
+            ["BasicAuth"] = ["username", "password"],
+        },
+    };
+
     /// <summary>
     /// 将节点类型适配为 AI 节点定义。
     /// </summary>
@@ -149,7 +160,7 @@ public static class NodeDefinitionAdapter
         return [];
     }
 
-    private static JsonNode BuildInputSchema(NodeTypeDescriptor descriptor)
+    internal static JsonNode BuildInputSchema(NodeTypeDescriptor descriptor)
     {
         var schema = new JsonObject
         {
@@ -210,6 +221,30 @@ public static class NodeDefinitionAdapter
             if (p.Required && p.DefaultValue is null)
             {
                 required.Add(p.Name);
+            }
+
+            // 认证模式字段映射：让 AI 知道每种认证模式需要哪些凭据字段。
+            if (p.Options.Count > 0 && AuthFieldMappings.TryGetValue(p.Name, out var modeMap))
+            {
+                var mapping = new JsonObject();
+                foreach (var (mode, fields) in modeMap)
+                {
+                    var arr = new JsonArray();
+                    foreach (var f in fields) arr.Add(f);
+                    mapping[mode] = arr;
+                }
+
+                propSchema["credentialFieldMapping"] = mapping;
+            }
+
+            // 凭据类型：让 AI 知道要传对应类型的凭据 ID，不要填占位符。
+            if (p.Type == ParameterType.Credential && !string.IsNullOrEmpty(p.CredentialType))
+            {
+                propSchema["credentialType"] = JsonValue.Create(p.CredentialType);
+                var desc = string.IsNullOrEmpty(p.Description)
+                    ? $"必须是类型为 '{p.CredentialType}' 的凭据 ID，不要填占位符。"
+                    : p.Description + $" 必须是类型为 '{p.CredentialType}' 的凭据 ID，不要填占位符。";
+                propSchema["description"] = JsonValue.Create(desc);
             }
 
             properties[p.Name] = propSchema;
