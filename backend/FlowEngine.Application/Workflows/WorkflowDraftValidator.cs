@@ -4,6 +4,8 @@ using System.Text.RegularExpressions;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
+using FlowEngine.Core.Scripting;
 
 namespace FlowEngine.Application.Workflows;
 
@@ -169,6 +171,10 @@ public sealed class WorkflowDraftValidator(
 
             // 扫描参数中的所有 $credentials.<name> 表达式引用。
             CollectCredentialReferences(parameters, referencedCredentials);
+
+            // 表达式参数校验：mustache 词法扫描（首要防线）+ JS 编译检查（通用语法网）。
+            CollectMustacheErrors(parameters, id, errors);
+            CollectExpressionSyntaxErrors(parameters, descriptor, id, errors);
         }
 
         // ── 连接完整性 / 端口方向 ───────────────────────────────
@@ -312,6 +318,84 @@ public sealed class WorkflowDraftValidator(
                     names.Add(m.Groups[1].Value);
                 }
                 break;
+        }
+    }
+
+    /// <summary>
+    /// 递归扫描参数字典中的字符串叶子，命中 n8n mustache 标记 {{ / }} 即报错。
+    /// 注意：本引擎表达式是 JavaScript，不支持 n8n 的 {{ }} 模板。
+    /// 裸写 https://x?t={{...}} 会被 JS 引擎当成 "//" 注释导致编译失败（JS 校验可抓到但报错晦涩）；
+    /// 带引号 'https://x?t={{...}}' 则是合法字符串字面量、JS 校验漏报。
+    /// 因此词法扫描是首要防线（带/不带引号都命中），JS 编译校验作为通用语法网补充。
+    /// </summary>
+    public static void CollectMustacheErrors(JsonNode? parameters, string nodeId, List<string> errors)
+    {
+        if (parameters is null) return;
+        ScanMustache(parameters, nodeId, errors, fieldName: null);
+    }
+
+    private static void ScanMustache(JsonNode node, string nodeId, List<string> errors, string? fieldName)
+    {
+        switch (node)
+        {
+            case JsonValue value:
+                if (value.GetValueKind() == System.Text.Json.JsonValueKind.String)
+                {
+                    var raw = value.GetValue<string>();
+                    if (raw.Contains("{{") || raw.Contains("}}"))
+                    {
+                        var where = fieldName is null
+                            ? $"节点 \"{nodeId}\""
+                            : $"节点 \"{nodeId}\" 参数 \"{fieldName}\"";
+                        errors.Add(
+                            $"{where} 含 n8n 风格的 {{{{ }}}} mustache 模板语法，本引擎不支持。" +
+                            $"请改用 JavaScript 表达式，例如：'https://api.com/path?token=' + $json.token");
+                    }
+                }
+                break;
+
+            case JsonObject obj:
+                foreach (var prop in obj)
+                {
+                    ScanMustache(prop.Value!, nodeId, errors, prop.Key);
+                }
+                break;
+
+            case JsonArray arr:
+                foreach (var item in arr)
+                {
+                    ScanMustache(item!, nodeId, errors, fieldName);
+                }
+                break;
+        }
+    }
+
+    /// <summary>
+    /// 对节点的表达式参数源码跑一次 JS 编译，兜住语法错误。
+    /// 仅检查 Hint==Expression 的参数以及 Script/Code 类型的参数。
+    /// </summary>
+    public static void CollectExpressionSyntaxErrors(JsonNode? parameters, NodeTypeDescriptor descriptor, string nodeId, List<string> errors)
+    {
+        if (parameters is not JsonObject obj) return;
+
+        var expressionParamNames = descriptor.Parameters
+            .Where(p => p.Hint == PresentationHint.Expression || p.Type is ParameterType.Script or ParameterType.Code)
+            .Select(p => p.Name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var prop in obj)
+        {
+            if (!expressionParamNames.Contains(prop.Key)) continue;
+
+            if (prop.Value is JsonValue v && v.GetValueKind() == JsonValueKind.String)
+            {
+                var raw = v.GetValue<string>();
+                if (string.IsNullOrWhiteSpace(raw)) continue;
+                if (!ScriptCompiler.TryCompile(new Script { Source = raw, Language = ScriptLanguage.JavaScript }, out var err))
+                {
+                    errors.Add($"节点 \"{nodeId}\" 参数 \"{prop.Key}\" 的 JS 表达式无法编译：{err!.Message}");
+                }
+            }
         }
     }
 }

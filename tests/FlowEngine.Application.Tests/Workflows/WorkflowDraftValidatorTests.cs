@@ -284,6 +284,63 @@ public class WorkflowDraftValidatorTests
         Assert.True(result.Valid);
     }
 
+    [Fact]
+    public void CollectMustacheErrors_MustacheInUrl_Reported()
+    {
+        var node = JsonNode.Parse("""{"id":"getEmployees","typeName":"httpRequest","parameters":{"url":"https://x?access_token={{$json.access_token}}"}}""")!;
+        var errors = new List<string>();
+        WorkflowDraftValidator.CollectMustacheErrors(node["parameters"], "getEmployees", errors);
+
+        Assert.NotEmpty(errors);
+        Assert.Contains(errors, e => e.Contains("{{") && e.Contains("url"));
+    }
+
+    [Fact]
+    public void CollectMustacheErrors_ValidJs_Passes()
+    {
+        var node = JsonNode.Parse("""{"id":"getEmployees","typeName":"httpRequest","parameters":{"url":"'https://x?access_token=' + $json.body.access_token"}}""")!;
+        var errors = new List<string>();
+        WorkflowDraftValidator.CollectMustacheErrors(node["parameters"], "getEmployees", errors);
+
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void CollectExpressionSyntaxErrors_BareMustacheUrl_Reported()
+    {
+        var httpDescriptor = new NodeTypeDescriptor
+        {
+            TypeName = "httpRequest",
+            Parameters =
+            [
+                new ParameterDefinition { Name = "url", Type = ParameterType.String, Hint = PresentationHint.Expression },
+            ],
+            Ports = [],
+        };
+        var node = JsonNode.Parse("""{"id":"getEmployees","typeName":"httpRequest","parameters":{"url":"https://x?access_token={{$json.access_token}}"}}""")!;
+        var errors = new List<string>();
+        WorkflowDraftValidator.CollectExpressionSyntaxErrors(node["parameters"], httpDescriptor, "getEmployees", errors);
+        Assert.NotEmpty(errors);
+    }
+
+    [Fact]
+    public void CollectExpressionSyntaxErrors_UnbalancedParens_Reported()
+    {
+        var codeDescriptor = new NodeTypeDescriptor
+        {
+            TypeName = "script",
+            Parameters =
+            [
+                new ParameterDefinition { Name = "code", Type = ParameterType.Code },
+            ],
+            Ports = [],
+        };
+        var node = JsonNode.Parse("""{"id":"n","typeName":"script","parameters":{"code":"return ($json.a + "}}""")!;
+        var errors = new List<string>();
+        WorkflowDraftValidator.CollectExpressionSyntaxErrors(node["parameters"], codeDescriptor, "n", errors);
+        Assert.NotEmpty(errors);
+    }
+
     private sealed class FakeNodeRegistry : INodeRegistry
     {
         private readonly IReadOnlyCollection<NodeTypeDescriptor> _descriptors;

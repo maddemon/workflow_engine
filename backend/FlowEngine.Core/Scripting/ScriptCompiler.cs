@@ -1,5 +1,6 @@
 using Acornima;
 using Acornima.Ast;
+using FlowEngine.Core.Exceptions;
 using Jint;
 
 namespace FlowEngine.Core.Scripting;
@@ -98,5 +99,23 @@ internal static class ScriptCompiler
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// 尝试编译脚本，不抛异常。编译失败时返回 <c>false</c> 并输出错误。
+    /// </summary>
+    public static bool TryCompile(Script script, out ScriptErrorException? error)
+    {
+        try
+        {
+            Compile(script);
+            error = null;
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            error = new ScriptErrorException(script, ex.Message, ex);
+            return false;
+        }
     }
 }
