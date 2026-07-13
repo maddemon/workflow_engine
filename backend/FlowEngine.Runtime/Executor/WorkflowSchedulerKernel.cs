@@ -8,6 +8,7 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Scripting;
 using FlowEngine.Core.ValueObjects;
 using FlowEngine.Runtime.Security;
@@ -153,17 +154,52 @@ public sealed class WorkflowSchedulerKernel(
         for (var runIndex = 0; runIndex < runCount; runIndex++)
         {
             var runInputs = BuildRunInputs(item.Inputs, executionMode, runIndex);
-            var context = await contextFactory.CreateAsync(
-                session.Workflow,
-                session.Execution,
-                node,
-                nodeType,
-                runInputs,
-                session.SuccessfulOutputs,
-                session.LatestBatches,
-                runIndex,
-                cancellationToken,
-                session.CredentialAccessor).ConfigureAwait(false);
+            NodeExecutionContext? context = null;
+            try
+            {
+                context = await contextFactory.CreateAsync(
+                    session.Workflow,
+                    session.Execution,
+                    node,
+                    nodeType,
+                    runInputs,
+                    session.SuccessfulOutputs,
+                    session.LatestBatches,
+                    runIndex,
+                    cancellationToken,
+                    session.CredentialAccessor).ConfigureAwait(false);
+            }
+            catch (ScriptErrorException ex)
+            {
+                var failureResult = new NodeExecutionResult
+                {
+                    Success = false,
+                    Error = new NodeError
+                    {
+                        Code = "ScriptParameterPreEvaluationError",
+                        Message = ex.Message,
+                        NodeDefinitionId = node.Id.ToString(),
+                    },
+                };
+
+                var failedRecord = new NodeExecutionRecord
+                {
+                    Id = Guid.NewGuid(),
+                    NodeDefinitionId = node.Id,
+                    RunIndex = runIndex,
+                    StartedAt = DateTime.UtcNow,
+                    CompletedAt = DateTime.UtcNow,
+                    Inputs = runInputs.ToDictionary(kv => kv.Key, kv => kv.Value, StringComparer.OrdinalIgnoreCase),
+                    Output = failureResult,
+                };
+
+                session.Execution.NodeRecords.Add(failedRecord);
+                await sideEffects.PublishNodeStartedAsync(session.Execution.Id, node.Id, runIndex, cancellationToken).ConfigureAwait(false);
+                await sideEffects.PersistNodeRecordAsync(failedRecord, cancellationToken).ConfigureAwait(false);
+
+                finalResult = failureResult;
+                continue; // skip to next runIndex
+            }
             context.NodeExecutionRecordId = Guid.NewGuid();
             context.Memory = session.Memory;
 
