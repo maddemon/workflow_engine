@@ -77,13 +77,21 @@ public sealed class WorkflowLifecycleTools(
     {
         if (string.IsNullOrWhiteSpace(draftId) || !Guid.TryParse(draftId, out var id))
         {
-            return new { success = false, errorCode = "InvalidInput", message = "草稿 ID 格式无效" };
+            return new McpToolError(
+                "InvalidInput",
+                "草稿 ID 格式无效",
+                CanAutoFix: true,
+                SuggestedFix: "请检查并修正输入参数");
         }
 
         var workflow = await workflowService.ConfirmDraftAsync(id, cancellationToken).ConfigureAwait(false);
         if (workflow is null)
         {
-            return new { success = false, errorCode = "NotFound", message = $"草稿 '{draftId}' 不存在" };
+            return new McpToolError(
+                "NotFound",
+                $"草稿 '{draftId}' 不存在",
+                CanAutoFix: false,
+                SuggestedFix: "请确认 ID 正确或先创建/装配");
         }
 
         return workflow;
@@ -106,7 +114,11 @@ public sealed class WorkflowLifecycleTools(
     {
         if (string.IsNullOrWhiteSpace(workflowId) || !Guid.TryParse(workflowId, out var id))
         {
-            return new { success = false, errorCode = "InvalidInput", message = "工作流 ID 格式无效" };
+            return new McpToolError(
+                "InvalidInput",
+                "工作流 ID 格式无效",
+                CanAutoFix: true,
+                SuggestedFix: "请检查并修正输入参数");
         }
 
         try
@@ -115,14 +127,22 @@ public sealed class WorkflowLifecycleTools(
                 .ConfigureAwait(false);
             if (execution is null)
             {
-                return new { success = false, errorCode = "NotFound", message = $"工作流 '{workflowId}' 不存在", executionContext = (object?)null, suggestedFix = (string?)null };
+                return new McpToolError(
+                    "NotFound",
+                    $"工作流 '{workflowId}' 不存在",
+                    CanAutoFix: false,
+                    SuggestedFix: "请确认 ID 正确或先创建/装配");
             }
 
             return execution;
         }
         catch (BusinessException ex)
         {
-            return new { success = false, errorCode = "ExecutionFailed", message = ex.Message, executionContext = (object?)null, suggestedFix = (string?)null };
+            return new McpToolError(
+                "ExecutionFailed",
+                ex.Message,
+                CanAutoFix: true,
+                SuggestedFix: "请根据错误信息调整工作流或输入参数");
         }
     }
 }

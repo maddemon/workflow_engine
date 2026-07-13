@@ -45,24 +45,22 @@ public sealed class CatalogTools(CatalogService catalogService)
     {
         if (string.IsNullOrWhiteSpace(name))
         {
-            return new
-            {
-                success = false,
-                errorCode = "InvalidInput",
-                message = "节点名称不能为空",
-            };
+            return new McpToolError(
+                "InvalidInput",
+                "节点名称不能为空",
+                CanAutoFix: true,
+                SuggestedFix: "请提供非空的节点类型名");
         }
 
         var definition = catalogService.GetByName(name);
 
         if (definition is null)
         {
-            return new
-            {
-                success = false,
-                errorCode = "NodeNotFound",
-                message = $"节点 '{name}' 不存在",
-            };
+            return new McpToolError(
+                "NodeNotFound",
+                $"节点 '{name}' 不存在",
+                CanAutoFix: false,
+                SuggestedFix: "请先用 list_node_catalog 查看可用节点");
         }
 
         return definition;

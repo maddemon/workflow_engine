@@ -1,11 +1,11 @@
 using System.ComponentModel;
 using System.Reflection;
-using System.Text.Json;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Executions;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Exceptions;
+using FlowEngine.Host.Mcp;
 using FlowEngine.Host.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -64,9 +64,11 @@ public class WorkflowQueryToolsTests
         var tools = new WorkflowQueryTools(serviceMock.Object);
         var result = await tools.GetWorkflow(workflowId.ToString(), CancellationToken.None);
 
-        var element = JsonSerializer.SerializeToElement(result);
-        Assert.False(element.GetProperty("success").GetBoolean());
-        Assert.Equal("NotFound", element.GetProperty("errorCode").GetString());
+        var error = Assert.IsType<McpToolError>(result);
+        Assert.False(error.Success);
+        Assert.Equal("NotFound", error.ErrorCode);
+        Assert.False(error.CanAutoFix);
+        Assert.Equal("请确认 ID 正确或先创建/装配", error.SuggestedFix);
     }
 
     // ── get_workflow 非法 Guid ──────────────────────────────────────
@@ -84,9 +86,11 @@ public class WorkflowQueryToolsTests
         var tools = new WorkflowQueryTools(Mock.Of<IWorkflowService>());
         var result = await tools.GetWorkflow(workflowId!, CancellationToken.None);
 
-        var element = JsonSerializer.SerializeToElement(result);
-        Assert.False(element.GetProperty("success").GetBoolean());
-        Assert.Equal("InvalidInput", element.GetProperty("errorCode").GetString());
+        var error = Assert.IsType<McpToolError>(result);
+        Assert.False(error.Success);
+        Assert.Equal("InvalidInput", error.ErrorCode);
+        Assert.True(error.CanAutoFix);
+        Assert.Equal("请检查并修正输入参数", error.SuggestedFix);
     }
 
     // ── list_workflows 成功路径 ────────────────────────────────────
@@ -158,9 +162,11 @@ public class WorkflowQueryToolsTests
         var tools = new WorkflowQueryTools(Mock.Of<IWorkflowService>());
         var result = await tools.ListWorkflows(projectId: projectId, cancellationToken: CancellationToken.None);
 
-        var element = JsonSerializer.SerializeToElement(result);
-        Assert.False(element.GetProperty("success").GetBoolean());
-        Assert.Equal("InvalidInput", element.GetProperty("errorCode").GetString());
+        var error = Assert.IsType<McpToolError>(result);
+        Assert.False(error.Success);
+        Assert.Equal("InvalidInput", error.ErrorCode);
+        Assert.True(error.CanAutoFix);
+        Assert.Equal("请检查并修正输入参数", error.SuggestedFix);
     }
 
     // ── list_workflows pageSize 范围校验 ──────────────────────────
@@ -178,10 +184,12 @@ public class WorkflowQueryToolsTests
         var tools = new WorkflowQueryTools(Mock.Of<IWorkflowService>());
         var result = await tools.ListWorkflows(pageSize: pageSize, cancellationToken: CancellationToken.None);
 
-        var element = JsonSerializer.SerializeToElement(result);
-        Assert.False(element.GetProperty("success").GetBoolean());
-        Assert.Equal("InvalidInput", element.GetProperty("errorCode").GetString());
-        Assert.Contains("pageSize", element.GetProperty("message").GetString());
+        var error = Assert.IsType<McpToolError>(result);
+        Assert.False(error.Success);
+        Assert.Equal("InvalidInput", error.ErrorCode);
+        Assert.Contains("pageSize", error.Message);
+        Assert.True(error.CanAutoFix);
+        Assert.Equal("请检查并修正输入参数", error.SuggestedFix);
     }
 
     // ── MCP 工具注册验证 ──────────────────────────────────────────
@@ -320,9 +328,11 @@ public class WorkflowLifecycleToolsTests
         var tools = CreateLifecycleTools(workflowService: workflowMock.Object);
         var result = await tools.ConfirmWorkflow(draftId.ToString(), CancellationToken.None);
 
-        var element = JsonSerializer.SerializeToElement(result);
-        Assert.False(element.GetProperty("success").GetBoolean());
-        Assert.Equal("NotFound", element.GetProperty("errorCode").GetString());
+        var error = Assert.IsType<McpToolError>(result);
+        Assert.False(error.Success);
+        Assert.Equal("NotFound", error.ErrorCode);
+        Assert.False(error.CanAutoFix);
+        Assert.Equal("请确认 ID 正确或先创建/装配", error.SuggestedFix);
     }
 
     // ── confirm_workflow 非法 Guid ──────────────────────────────────
@@ -340,9 +350,11 @@ public class WorkflowLifecycleToolsTests
         var tools = CreateLifecycleTools();
         var result = await tools.ConfirmWorkflow(draftId!, CancellationToken.None);
 
-        var element = JsonSerializer.SerializeToElement(result);
-        Assert.False(element.GetProperty("success").GetBoolean());
-        Assert.Equal("InvalidInput", element.GetProperty("errorCode").GetString());
+        var error = Assert.IsType<McpToolError>(result);
+        Assert.False(error.Success);
+        Assert.Equal("InvalidInput", error.ErrorCode);
+        Assert.True(error.CanAutoFix);
+        Assert.Equal("请检查并修正输入参数", error.SuggestedFix);
     }
 
     // ── execute_workflow 成功路径 ──────────────────────────────────
@@ -411,7 +423,7 @@ public class WorkflowLifecycleToolsTests
     // ── execute_workflow 工作流不存在 ──────────────────────────────
 
     /// <summary>
-    /// execute_workflow 在工作流不存在时应返回 NotFound 结构化错误，包含 executionContext 和 suggestedFix 字段。
+    /// execute_workflow 在工作流不存在时应返回 NotFound 结构化错误。
     /// </summary>
     [Fact]
     public async Task ExecuteWorkflow_NonExistingWorkflow_ReturnsNotFoundError()
@@ -425,11 +437,11 @@ public class WorkflowLifecycleToolsTests
         var tools = CreateLifecycleTools(executionService: executionMock.Object);
         var result = await tools.ExecuteWorkflow(workflowId.ToString(), cancellationToken: CancellationToken.None);
 
-        var element = JsonSerializer.SerializeToElement(result);
-        Assert.False(element.GetProperty("success").GetBoolean());
-        Assert.Equal("NotFound", element.GetProperty("errorCode").GetString());
-        Assert.True(element.TryGetProperty("executionContext", out var ctx) && ctx.ValueKind == JsonValueKind.Null);
-        Assert.True(element.TryGetProperty("suggestedFix", out var fix) && fix.ValueKind == JsonValueKind.Null);
+        var error = Assert.IsType<McpToolError>(result);
+        Assert.False(error.Success);
+        Assert.Equal("NotFound", error.ErrorCode);
+        Assert.False(error.CanAutoFix);
+        Assert.Equal("请确认 ID 正确或先创建/装配", error.SuggestedFix);
     }
 
     // ── execute_workflow 非法 Guid ──────────────────────────────────
@@ -447,15 +459,17 @@ public class WorkflowLifecycleToolsTests
         var tools = CreateLifecycleTools();
         var result = await tools.ExecuteWorkflow(workflowId!, cancellationToken: CancellationToken.None);
 
-        var element = JsonSerializer.SerializeToElement(result);
-        Assert.False(element.GetProperty("success").GetBoolean());
-        Assert.Equal("InvalidInput", element.GetProperty("errorCode").GetString());
+        var error = Assert.IsType<McpToolError>(result);
+        Assert.False(error.Success);
+        Assert.Equal("InvalidInput", error.ErrorCode);
+        Assert.True(error.CanAutoFix);
+        Assert.Equal("请检查并修正输入参数", error.SuggestedFix);
     }
 
     // ── execute_workflow BusinessException 捕获 ────────────────────
 
     /// <summary>
-    /// execute_workflow 在服务抛出 BusinessException 时应返回 ExecutionFailed 结构化错误（含 executionContext 和 suggestedFix），不泄漏异常。
+    /// execute_workflow 在服务抛出 BusinessException 时应返回 ExecutionFailed 结构化错误，不泄漏异常。
     /// </summary>
     [Fact]
     public async Task ExecuteWorkflow_BusinessException_ReturnsExecutionFailedError()
@@ -469,12 +483,12 @@ public class WorkflowLifecycleToolsTests
         var tools = CreateLifecycleTools(executionService: executionMock.Object);
         var result = await tools.ExecuteWorkflow(workflowId.ToString(), cancellationToken: CancellationToken.None);
 
-        var element = JsonSerializer.SerializeToElement(result);
-        Assert.False(element.GetProperty("success").GetBoolean());
-        Assert.Equal("ExecutionFailed", element.GetProperty("errorCode").GetString());
-        Assert.Contains("工作流未激活", element.GetProperty("message").GetString());
-        Assert.True(element.TryGetProperty("executionContext", out var ctx) && ctx.ValueKind == JsonValueKind.Null);
-        Assert.True(element.TryGetProperty("suggestedFix", out var fix) && fix.ValueKind == JsonValueKind.Null);
+        var error = Assert.IsType<McpToolError>(result);
+        Assert.False(error.Success);
+        Assert.Equal("ExecutionFailed", error.ErrorCode);
+        Assert.Contains("工作流未激活", error.Message);
+        Assert.True(error.CanAutoFix);
+        Assert.Equal("请根据错误信息调整工作流或输入参数", error.SuggestedFix);
     }
 
     // ── MCP 工具注册验证 ──────────────────────────────────────────

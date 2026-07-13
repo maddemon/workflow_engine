@@ -24,13 +24,21 @@ public sealed class WorkflowQueryTools(IWorkflowService workflowService)
     {
         if (string.IsNullOrWhiteSpace(workflowId) || !Guid.TryParse(workflowId, out var id))
         {
-            return new { success = false, errorCode = "InvalidInput", message = "工作流 ID 格式无效" };
+            return new McpToolError(
+                "InvalidInput",
+                "工作流 ID 格式无效",
+                CanAutoFix: true,
+                SuggestedFix: "请检查并修正输入参数");
         }
 
         var workflow = await workflowService.GetAsync(id, cancellationToken).ConfigureAwait(false);
         if (workflow is null)
         {
-            return new { success = false, errorCode = "NotFound", message = $"工作流 '{workflowId}' 不存在" };
+            return new McpToolError(
+                "NotFound",
+                $"工作流 '{workflowId}' 不存在",
+                CanAutoFix: false,
+                SuggestedFix: "请确认 ID 正确或先创建/装配");
         }
 
         return workflow;
@@ -53,7 +61,11 @@ public sealed class WorkflowQueryTools(IWorkflowService workflowService)
     {
         if (pageSize < 1 || pageSize > 200)
         {
-            return new { success = false, errorCode = "InvalidInput", message = "pageSize 必须在 1 到 200 之间" };
+            return new McpToolError(
+                "InvalidInput",
+                "pageSize 必须在 1 到 200 之间",
+                CanAutoFix: true,
+                SuggestedFix: "请检查并修正输入参数");
         }
 
         Guid? projectIdValue = null;
@@ -61,7 +73,11 @@ public sealed class WorkflowQueryTools(IWorkflowService workflowService)
         {
             if (!Guid.TryParse(projectId, out var pid))
             {
-                return new { success = false, errorCode = "InvalidInput", message = "项目 ID 格式无效" };
+                return new McpToolError(
+                    "InvalidInput",
+                    "项目 ID 格式无效",
+                    CanAutoFix: true,
+                    SuggestedFix: "请检查并修正输入参数");
             }
 
             projectIdValue = pid;

@@ -1,11 +1,11 @@
 using System.ComponentModel;
 using System.Reflection;
-using System.Text.Json;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Ai;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Host.Mcp;
 using FlowEngine.Host.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -103,10 +103,12 @@ public class CatalogToolsTests
 
         var result = tools.GetNodeDetail("unknownNode");
 
-        var element = JsonSerializer.SerializeToElement(result);
-        Assert.False(element.GetProperty("success").GetBoolean());
-        Assert.Equal("NodeNotFound", element.GetProperty("errorCode").GetString());
-        Assert.Contains("unknownNode", element.GetProperty("message").GetString());
+        var error = Assert.IsType<McpToolError>(result);
+        Assert.False(error.Success);
+        Assert.Equal("NodeNotFound", error.ErrorCode);
+        Assert.Contains("unknownNode", error.Message);
+        Assert.False(error.CanAutoFix);
+        Assert.Equal("请先用 list_node_catalog 查看可用节点", error.SuggestedFix);
     }
 
     /// <summary>
@@ -123,10 +125,12 @@ public class CatalogToolsTests
 
         var result = tools.GetNodeDetail(name!);
 
-        var element = JsonSerializer.SerializeToElement(result);
-        Assert.False(element.GetProperty("success").GetBoolean());
-        Assert.Equal("InvalidInput", element.GetProperty("errorCode").GetString());
-        Assert.Equal("节点名称不能为空", element.GetProperty("message").GetString());
+        var error = Assert.IsType<McpToolError>(result);
+        Assert.False(error.Success);
+        Assert.Equal("InvalidInput", error.ErrorCode);
+        Assert.Equal("节点名称不能为空", error.Message);
+        Assert.True(error.CanAutoFix);
+        Assert.Equal("请提供非空的节点类型名", error.SuggestedFix);
     }
 
     /// <summary>

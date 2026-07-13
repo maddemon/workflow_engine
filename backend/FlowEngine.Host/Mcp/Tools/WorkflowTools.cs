@@ -34,19 +34,34 @@ public sealed class WorkflowTools(
     {
         if (string.IsNullOrWhiteSpace(name))
         {
-            return new { success = false, errorCode = "InvalidInput", message = "工作流名称不能为空" };
+            return new McpToolError(
+                "InvalidInput",
+                "工作流名称不能为空",
+                CanAutoFix: true,
+                SuggestedFix: "请检查并修正输入参数");
         }
 
         if (nodes is null || nodes.Count == 0)
         {
-            return new { success = false, errorCode = "InvalidInput", message = "节点列表不能为空" };
+            return new McpToolError(
+                "InvalidInput",
+                "节点列表不能为空",
+                CanAutoFix: true,
+                SuggestedFix: "请检查并修正输入参数");
         }
 
         Guid? projectIdValue = null;
         if (!string.IsNullOrWhiteSpace(projectId))
         {
             if (!Guid.TryParse(projectId, out var pid))
-                return new { success = false, errorCode = "InvalidInput", message = "项目 ID 格式无效" };
+            {
+                return new McpToolError(
+                    "InvalidInput",
+                    "项目 ID 格式无效",
+                    CanAutoFix: true,
+                    SuggestedFix: "请检查并修正输入参数");
+            }
+
             projectIdValue = pid;
         }
 
@@ -66,7 +81,11 @@ public sealed class WorkflowTools(
         }
         catch (BusinessException ex)
         {
-            return new { success = false, errorCode = "AssembleFailed", message = ex.Message };
+            return new McpToolError(
+                "AssembleFailed",
+                ex.Message,
+                CanAutoFix: true,
+                SuggestedFix: "请根据错误信息调整节点参数或连接");
         }
     }
 
@@ -86,12 +105,20 @@ public sealed class WorkflowTools(
     {
         if (string.IsNullOrWhiteSpace(workflowId) || !Guid.TryParse(workflowId, out var wid) || wid == Guid.Empty)
         {
-            return new { success = false, errorCode = "InvalidInput", message = "工作流 ID 无效" };
+            return new McpToolError(
+                "InvalidInput",
+                "工作流 ID 无效",
+                CanAutoFix: true,
+                SuggestedFix: "请检查并修正输入参数");
         }
 
         if (operations is null || operations.Count == 0)
         {
-            return new { success = false, errorCode = "InvalidInput", message = "操作列表不能为空" };
+            return new McpToolError(
+                "InvalidInput",
+                "操作列表不能为空",
+                CanAutoFix: true,
+                SuggestedFix: "请检查并修正输入参数");
         }
 
         var request = new ModifyWorkflowRequest
@@ -107,7 +134,11 @@ public sealed class WorkflowTools(
         }
         catch (BusinessException ex)
         {
-            return new { success = false, errorCode = "ModifyFailed", message = ex.Message };
+            return new McpToolError(
+                "ModifyFailed",
+                ex.Message,
+                CanAutoFix: true,
+                SuggestedFix: "请检查操作列表是否符合 modify 操作规范");
         }
     }
 }

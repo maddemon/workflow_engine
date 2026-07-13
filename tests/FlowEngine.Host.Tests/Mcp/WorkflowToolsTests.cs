@@ -1,10 +1,10 @@
 using System.ComponentModel;
 using System.Reflection;
-using System.Text.Json;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Exceptions;
+using FlowEngine.Host.Mcp;
 using FlowEngine.Host.Mcp.Tools;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -117,10 +117,12 @@ public class WorkflowToolsTests
             nodes: [new AiDraftNodeDto { TypeName = "x" }],
             cancellationToken: CancellationToken.None);
 
-        var element = JsonSerializer.SerializeToElement(result);
-        Assert.False(element.GetProperty("success").GetBoolean());
-        Assert.Equal("InvalidInput", element.GetProperty("errorCode").GetString());
-        Assert.Contains("名称", element.GetProperty("message").GetString());
+        var error = Assert.IsType<McpToolError>(result);
+        Assert.False(error.Success);
+        Assert.Equal("InvalidInput", error.ErrorCode);
+        Assert.Contains("名称", error.Message);
+        Assert.True(error.CanAutoFix);
+        Assert.Equal("请检查并修正输入参数", error.SuggestedFix);
     }
 
     /// <summary>
@@ -139,10 +141,12 @@ public class WorkflowToolsTests
             projectId: projectId,
             cancellationToken: CancellationToken.None);
 
-        var element = JsonSerializer.SerializeToElement(result);
-        Assert.False(element.GetProperty("success").GetBoolean());
-        Assert.Equal("InvalidInput", element.GetProperty("errorCode").GetString());
-        Assert.Contains("项目 ID", element.GetProperty("message").GetString());
+        var error = Assert.IsType<McpToolError>(result);
+        Assert.False(error.Success);
+        Assert.Equal("InvalidInput", error.ErrorCode);
+        Assert.Contains("项目 ID", error.Message);
+        Assert.True(error.CanAutoFix);
+        Assert.Equal("请检查并修正输入参数", error.SuggestedFix);
     }
 
     /// <summary>
@@ -157,9 +161,11 @@ public class WorkflowToolsTests
             nodes: null!,
             cancellationToken: CancellationToken.None);
 
-        var element = JsonSerializer.SerializeToElement(result);
-        Assert.False(element.GetProperty("success").GetBoolean());
-        Assert.Equal("InvalidInput", element.GetProperty("errorCode").GetString());
+        var error = Assert.IsType<McpToolError>(result);
+        Assert.False(error.Success);
+        Assert.Equal("InvalidInput", error.ErrorCode);
+        Assert.True(error.CanAutoFix);
+        Assert.Equal("请检查并修正输入参数", error.SuggestedFix);
     }
 
     /// <summary>
@@ -174,9 +180,11 @@ public class WorkflowToolsTests
             nodes: [],
             cancellationToken: CancellationToken.None);
 
-        var element = JsonSerializer.SerializeToElement(result);
-        Assert.False(element.GetProperty("success").GetBoolean());
-        Assert.Equal("InvalidInput", element.GetProperty("errorCode").GetString());
+        var error = Assert.IsType<McpToolError>(result);
+        Assert.False(error.Success);
+        Assert.Equal("InvalidInput", error.ErrorCode);
+        Assert.True(error.CanAutoFix);
+        Assert.Equal("请检查并修正输入参数", error.SuggestedFix);
     }
 
     // ── assemble_workflow BusinessException 捕获 ──────────────────
@@ -198,10 +206,12 @@ public class WorkflowToolsTests
             nodes: [new AiDraftNodeDto { TypeName = "unknown" }],
             cancellationToken: CancellationToken.None);
 
-        var element = JsonSerializer.SerializeToElement(result);
-        Assert.False(element.GetProperty("success").GetBoolean());
-        Assert.Equal("AssembleFailed", element.GetProperty("errorCode").GetString());
-        Assert.Contains("节点类型不存在", element.GetProperty("message").GetString());
+        var error = Assert.IsType<McpToolError>(result);
+        Assert.False(error.Success);
+        Assert.Equal("AssembleFailed", error.ErrorCode);
+        Assert.Contains("节点类型不存在", error.Message);
+        Assert.True(error.CanAutoFix);
+        Assert.Equal("请根据错误信息调整节点参数或连接", error.SuggestedFix);
     }
 
     // ── modify_workflow 成功路径 ──────────────────────────────────
@@ -252,9 +262,11 @@ public class WorkflowToolsTests
             operations: [new WorkflowOperation { Op = "add" }],
             cancellationToken: CancellationToken.None);
 
-        var element = JsonSerializer.SerializeToElement(result);
-        Assert.False(element.GetProperty("success").GetBoolean());
-        Assert.Equal("InvalidInput", element.GetProperty("errorCode").GetString());
+        var error = Assert.IsType<McpToolError>(result);
+        Assert.False(error.Success);
+        Assert.Equal("InvalidInput", error.ErrorCode);
+        Assert.True(error.CanAutoFix);
+        Assert.Equal("请检查并修正输入参数", error.SuggestedFix);
     }
 
     /// <summary>
@@ -269,9 +281,11 @@ public class WorkflowToolsTests
             operations: [new WorkflowOperation { Op = "add" }],
             cancellationToken: CancellationToken.None);
 
-        var element = JsonSerializer.SerializeToElement(result);
-        Assert.False(element.GetProperty("success").GetBoolean());
-        Assert.Equal("InvalidInput", element.GetProperty("errorCode").GetString());
+        var error = Assert.IsType<McpToolError>(result);
+        Assert.False(error.Success);
+        Assert.Equal("InvalidInput", error.ErrorCode);
+        Assert.True(error.CanAutoFix);
+        Assert.Equal("请检查并修正输入参数", error.SuggestedFix);
     }
 
     /// <summary>
@@ -286,9 +300,11 @@ public class WorkflowToolsTests
             operations: [new WorkflowOperation { Op = "add" }],
             cancellationToken: CancellationToken.None);
 
-        var element = JsonSerializer.SerializeToElement(result);
-        Assert.False(element.GetProperty("success").GetBoolean());
-        Assert.Equal("InvalidInput", element.GetProperty("errorCode").GetString());
+        var error = Assert.IsType<McpToolError>(result);
+        Assert.False(error.Success);
+        Assert.Equal("InvalidInput", error.ErrorCode);
+        Assert.True(error.CanAutoFix);
+        Assert.Equal("请检查并修正输入参数", error.SuggestedFix);
     }
 
     /// <summary>
@@ -303,9 +319,11 @@ public class WorkflowToolsTests
             operations: null!,
             cancellationToken: CancellationToken.None);
 
-        var element = JsonSerializer.SerializeToElement(result);
-        Assert.False(element.GetProperty("success").GetBoolean());
-        Assert.Equal("InvalidInput", element.GetProperty("errorCode").GetString());
+        var error = Assert.IsType<McpToolError>(result);
+        Assert.False(error.Success);
+        Assert.Equal("InvalidInput", error.ErrorCode);
+        Assert.True(error.CanAutoFix);
+        Assert.Equal("请检查并修正输入参数", error.SuggestedFix);
     }
 
     /// <summary>
@@ -320,9 +338,11 @@ public class WorkflowToolsTests
             operations: [],
             cancellationToken: CancellationToken.None);
 
-        var element = JsonSerializer.SerializeToElement(result);
-        Assert.False(element.GetProperty("success").GetBoolean());
-        Assert.Equal("InvalidInput", element.GetProperty("errorCode").GetString());
+        var error = Assert.IsType<McpToolError>(result);
+        Assert.False(error.Success);
+        Assert.Equal("InvalidInput", error.ErrorCode);
+        Assert.True(error.CanAutoFix);
+        Assert.Equal("请检查并修正输入参数", error.SuggestedFix);
     }
 
     // ── modify_workflow BusinessException 捕获 ─────────────────────
@@ -344,10 +364,12 @@ public class WorkflowToolsTests
             operations: [new WorkflowOperation { Op = "remove", Path = "/nodes/fetch" }],
             cancellationToken: CancellationToken.None);
 
-        var element = JsonSerializer.SerializeToElement(result);
-        Assert.False(element.GetProperty("success").GetBoolean());
-        Assert.Equal("ModifyFailed", element.GetProperty("errorCode").GetString());
-        Assert.Contains("工作流不存在", element.GetProperty("message").GetString());
+        var error = Assert.IsType<McpToolError>(result);
+        Assert.False(error.Success);
+        Assert.Equal("ModifyFailed", error.ErrorCode);
+        Assert.Contains("工作流不存在", error.Message);
+        Assert.True(error.CanAutoFix);
+        Assert.Equal("请检查操作列表是否符合 modify 操作规范", error.SuggestedFix);
     }
 
     // ── MCP 工具注册验证 ──────────────────────────────────────────
