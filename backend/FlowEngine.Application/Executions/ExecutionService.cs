@@ -23,7 +23,7 @@ public sealed class ExecutionService(
     IExecutionIdempotencyService idempotencyService,
     IAuthorizationGuard authGuard,
     IEventBus eventBus,
-    AuditEventFactory auditFactory)
+    AuditEventFactory auditFactory) : IExecutionService
 {
 
     /// <summary>

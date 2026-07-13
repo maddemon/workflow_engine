@@ -25,7 +25,7 @@ public sealed class WorkflowService(
     IAuthorizationGuard authGuard,
     AuthorizedOperationHandler handler,
     WorkflowStatisticsLoader statisticsLoader,
-    WorkflowTriggerSync triggerSync)
+    WorkflowTriggerSync triggerSync) : IWorkflowService
 {
     private static readonly AuthorizationPolicy UpdatePolicy = new(
         ResourceKind.Workflow, Operation.Write, Scope.Workflow, AdminPhase: false, ProjectScoped: false);

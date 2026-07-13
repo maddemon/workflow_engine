@@ -178,6 +178,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IOAuth2TokenService, OAuth2TokenService>();
         services.AddScoped<WorkflowValidator>();
         services.AddScoped<WorkflowService>();
+        services.AddScoped<IWorkflowService>(sp => sp.GetRequiredService<WorkflowService>());
         services.AddScoped<WorkflowStatisticsLoader>();
         services.AddScoped<WorkflowTriggerSync>();
         services.AddScoped<WorkflowExportService>();
@@ -188,6 +189,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWorkflowAssemblyService, WorkflowAssemblyService>();
         services.AddScoped<IWorkflowModificationService, WorkflowModificationService>();
         services.AddScoped<WorkflowValidationService>();
+        services.AddScoped<IWorkflowValidationService>(sp => sp.GetRequiredService<WorkflowValidationService>());
         services.AddScoped<WorkflowExecutionFeedbackService>();
         services.AddScoped<ProjectService>();
         services.AddScoped<ProjectCascadeDeleter>();
@@ -220,6 +222,7 @@ public static class ServiceCollectionExtensions
         services.AddQuartzHostedService(options => options.WaitForJobsToComplete = true);
 
         services.AddScoped<ExecutionService>();
+        services.AddScoped<IExecutionService>(sp => sp.GetRequiredService<ExecutionService>());
         services.AddScoped<IExecutionIdempotencyService, ExecutionIdempotencyService>();
         services.AddScoped<IWorkflowLoader, WorkflowLoader>();
         services.AddNodeExecutionContextFactory(configuration);

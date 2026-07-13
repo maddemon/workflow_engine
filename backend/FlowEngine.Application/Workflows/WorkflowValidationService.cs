@@ -16,7 +16,7 @@ namespace FlowEngine.Application.Workflows;
 /// </summary>
 public sealed class WorkflowValidationService(
     INodeRegistry nodeRegistry,
-    FlowEngineDbContext dbContext)
+    FlowEngineDbContext dbContext) : IWorkflowValidationService
 {
     /// <summary>
     /// 校验工作流定义。

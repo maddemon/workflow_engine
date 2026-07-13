@@ -18,9 +18,9 @@ namespace FlowEngine.Host.Controllers;
 public class AiWorkflowsController(
     IWorkflowAssemblyService assemblyService,
     IWorkflowModificationService modificationService,
-    WorkflowValidationService validationService,
+    IWorkflowValidationService validationService,
     WorkflowExecutionFeedbackService feedbackService,
-    WorkflowService workflowService) : ControllerBase
+    IWorkflowService workflowService) : ControllerBase
 {
     /// <summary>
     /// 装配 AI 草稿为完整工作流。
