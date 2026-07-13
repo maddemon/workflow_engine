@@ -115,14 +115,14 @@ public sealed class WorkflowLifecycleTools(
                 .ConfigureAwait(false);
             if (execution is null)
             {
-                return new { success = false, errorCode = "NotFound", message = $"工作流 '{workflowId}' 不存在" };
+                return new { success = false, errorCode = "NotFound", message = $"工作流 '{workflowId}' 不存在", executionContext = (object?)null, suggestedFix = (string?)null };
             }
 
             return execution;
         }
         catch (BusinessException ex)
         {
-            return new { success = false, errorCode = "ExecutionFailed", message = ex.Message };
+            return new { success = false, errorCode = "ExecutionFailed", message = ex.Message, executionContext = (object?)null, suggestedFix = (string?)null };
         }
     }
 }

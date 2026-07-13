@@ -51,6 +51,11 @@ public sealed class WorkflowQueryTools(IWorkflowService workflowService)
         [Description("每页大小（默认 20，范围 1–200）。")] int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
+        if (pageSize < 1 || pageSize > 200)
+        {
+            return new { success = false, errorCode = "InvalidInput", message = "pageSize 必须在 1 到 200 之间" };
+        }
+
         Guid? projectIdValue = null;
         if (!string.IsNullOrWhiteSpace(projectId))
         {

@@ -163,6 +163,27 @@ public class WorkflowQueryToolsTests
         Assert.Equal("InvalidInput", element.GetProperty("errorCode").GetString());
     }
 
+    // ── list_workflows pageSize 范围校验 ──────────────────────────
+
+    /// <summary>
+    /// list_workflows 在 pageSize 超出 1–200 范围时应返回 InvalidInput 错误。
+    /// </summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(201)]
+    [InlineData(500)]
+    public async Task ListWorkflows_PageSizeOutOfRange_ReturnsInvalidInputError(int pageSize)
+    {
+        var tools = new WorkflowQueryTools(Mock.Of<IWorkflowService>());
+        var result = await tools.ListWorkflows(pageSize: pageSize, cancellationToken: CancellationToken.None);
+
+        var element = JsonSerializer.SerializeToElement(result);
+        Assert.False(element.GetProperty("success").GetBoolean());
+        Assert.Equal("InvalidInput", element.GetProperty("errorCode").GetString());
+        Assert.Contains("pageSize", element.GetProperty("message").GetString());
+    }
+
     // ── MCP 工具注册验证 ──────────────────────────────────────────
 
     /// <summary>
@@ -390,7 +411,7 @@ public class WorkflowLifecycleToolsTests
     // ── execute_workflow 工作流不存在 ──────────────────────────────
 
     /// <summary>
-    /// execute_workflow 在工作流不存在时应返回 NotFound 结构化错误。
+    /// execute_workflow 在工作流不存在时应返回 NotFound 结构化错误，包含 executionContext 和 suggestedFix 字段。
     /// </summary>
     [Fact]
     public async Task ExecuteWorkflow_NonExistingWorkflow_ReturnsNotFoundError()
@@ -407,6 +428,8 @@ public class WorkflowLifecycleToolsTests
         var element = JsonSerializer.SerializeToElement(result);
         Assert.False(element.GetProperty("success").GetBoolean());
         Assert.Equal("NotFound", element.GetProperty("errorCode").GetString());
+        Assert.True(element.TryGetProperty("executionContext", out var ctx) && ctx.ValueKind == JsonValueKind.Null);
+        Assert.True(element.TryGetProperty("suggestedFix", out var fix) && fix.ValueKind == JsonValueKind.Null);
     }
 
     // ── execute_workflow 非法 Guid ──────────────────────────────────
@@ -432,7 +455,7 @@ public class WorkflowLifecycleToolsTests
     // ── execute_workflow BusinessException 捕获 ────────────────────
 
     /// <summary>
-    /// execute_workflow 在服务抛出 BusinessException 时应返回 ExecutionFailed 结构化错误，不泄漏异常。
+    /// execute_workflow 在服务抛出 BusinessException 时应返回 ExecutionFailed 结构化错误（含 executionContext 和 suggestedFix），不泄漏异常。
     /// </summary>
     [Fact]
     public async Task ExecuteWorkflow_BusinessException_ReturnsExecutionFailedError()
@@ -450,6 +473,8 @@ public class WorkflowLifecycleToolsTests
         Assert.False(element.GetProperty("success").GetBoolean());
         Assert.Equal("ExecutionFailed", element.GetProperty("errorCode").GetString());
         Assert.Contains("工作流未激活", element.GetProperty("message").GetString());
+        Assert.True(element.TryGetProperty("executionContext", out var ctx) && ctx.ValueKind == JsonValueKind.Null);
+        Assert.True(element.TryGetProperty("suggestedFix", out var fix) && fix.ValueKind == JsonValueKind.Null);
     }
 
     // ── MCP 工具注册验证 ──────────────────────────────────────────
