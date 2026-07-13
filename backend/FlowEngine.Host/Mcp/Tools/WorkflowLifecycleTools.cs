@@ -25,7 +25,7 @@ public sealed class WorkflowLifecycleTools(
     /// <returns>校验结果，包含 valid、errors[]、canAutoFix、retryCount、maxRetries。</returns>
     [McpServerTool(Name = "validate_workflow")]
     [Description("校验工作流定义的结构完整性。返回详细的错误列表，包含节点 ID、字段、错误类型和建议修复方案，供 AI 自纠。不抛协议异常。")]
-    public async Task<ValidateWorkflowResult> ValidateWorkflow(
+    public async Task<object> ValidateWorkflow(
         [Description("已存在的工作流 ID（与 nodes/connections 二选一）。")] string? workflowId = null,
         [Description("草稿节点列表（与 workflowId 二选一）。")] List<NodeDefinitionDto>? nodes = null,
         [Description("草稿连接列表（与 workflowId 二选一）。")] List<ConnectionDto>? connections = null,
@@ -51,6 +51,18 @@ public sealed class WorkflowLifecycleTools(
             }
 
             workflowIdValue = wid;
+        }
+
+        bool hasWorkflowId = workflowIdValue.HasValue;
+        bool hasDraft = (nodes?.Count ?? 0) > 0 || (connections?.Count ?? 0) > 0;
+
+        if (hasWorkflowId == hasDraft)
+        {
+            return new McpToolError(
+                "InvalidInput",
+                "请提供 workflowId（校验已有工作流）或 nodes/connections（校验草稿），二者不可同时为空或同时传入。",
+                true,
+                "如需校验已有工作流，仅传 workflowId；如需校验草稿，仅传 nodes/connections。");
         }
 
         var request = new ValidateWorkflowRequest

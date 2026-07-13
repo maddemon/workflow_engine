@@ -242,8 +242,9 @@ public class WorkflowLifecycleToolsTests
         var tools = CreateLifecycleTools(validationService: validationMock.Object);
         var result = await tools.ValidateWorkflow(workflowId: workflowId.ToString(), cancellationToken: CancellationToken.None);
 
-        Assert.Same(expectedResult, result);
-        Assert.True(result.Valid);
+        var validateResult = Assert.IsType<ValidateWorkflowResult>(result);
+        Assert.Same(expectedResult, validateResult);
+        Assert.True(validateResult.Valid);
     }
 
     /// <summary>
@@ -269,8 +270,48 @@ public class WorkflowLifecycleToolsTests
             connections: null,
             cancellationToken: CancellationToken.None);
 
-        Assert.Same(expectedResult, result);
-        Assert.False(result.Valid);
+        var validateResult = Assert.IsType<ValidateWorkflowResult>(result);
+        Assert.Same(expectedResult, validateResult);
+        Assert.False(validateResult.Valid);
+    }
+
+    /// <summary>
+    /// validate_workflow 在同时传入 workflowId 和 nodes/connections 时应返回 InvalidInput 结构化错误。
+    /// </summary>
+    [Fact]
+    public async Task ValidateWorkflow_BothWorkflowIdAndDraft_ReturnsInvalidInputError()
+    {
+        var tools = CreateLifecycleTools();
+        var result = await tools.ValidateWorkflow(
+            workflowId: Guid.NewGuid().ToString(),
+            nodes: [new NodeDefinitionDto { Id = "n1", TypeName = "httpRequest" }],
+            cancellationToken: CancellationToken.None);
+
+        var error = Assert.IsType<McpToolError>(result);
+        Assert.False(error.Success);
+        Assert.Equal("InvalidInput", error.ErrorCode);
+        Assert.Contains("workflowId", error.Message);
+        Assert.Contains("nodes/connections", error.Message);
+        Assert.True(error.CanAutoFix);
+        Assert.Equal("如需校验已有工作流，仅传 workflowId；如需校验草稿，仅传 nodes/connections。", error.SuggestedFix);
+    }
+
+    /// <summary>
+    /// validate_workflow 在未传入 workflowId 和 nodes/connections 时应返回 InvalidInput 结构化错误。
+    /// </summary>
+    [Fact]
+    public async Task ValidateWorkflow_NeitherWorkflowIdNorDraft_ReturnsInvalidInputError()
+    {
+        var tools = CreateLifecycleTools();
+        var result = await tools.ValidateWorkflow(cancellationToken: CancellationToken.None);
+
+        var error = Assert.IsType<McpToolError>(result);
+        Assert.False(error.Success);
+        Assert.Equal("InvalidInput", error.ErrorCode);
+        Assert.Contains("workflowId", error.Message);
+        Assert.Contains("nodes/connections", error.Message);
+        Assert.True(error.CanAutoFix);
+        Assert.Equal("如需校验已有工作流，仅传 workflowId；如需校验草稿，仅传 nodes/connections。", error.SuggestedFix);
     }
 
     /// <summary>
@@ -284,9 +325,10 @@ public class WorkflowLifecycleToolsTests
         var tools = CreateLifecycleTools();
         var result = await tools.ValidateWorkflow(workflowId: workflowId, cancellationToken: CancellationToken.None);
 
-        Assert.False(result.Valid);
-        Assert.Single(result.Errors);
-        Assert.Equal("InvalidInput", result.Errors[0].ErrorType);
+        var validateResult = Assert.IsType<ValidateWorkflowResult>(result);
+        Assert.False(validateResult.Valid);
+        Assert.Single(validateResult.Errors);
+        Assert.Equal("InvalidInput", validateResult.Errors[0].ErrorType);
     }
 
     // ── confirm_workflow 成功路径 ──────────────────────────────────
