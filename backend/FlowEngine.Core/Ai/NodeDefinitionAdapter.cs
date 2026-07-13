@@ -59,6 +59,7 @@ public static class NodeDefinitionAdapter
             OutputSchema = BuildOutputSchema(descriptor, overrideDef),
             Ports = overrideDef is { Ports: { Count: > 0 } } ? overrideDef.Ports : BuildPorts(descriptor),
             Examples = overrideDef?.Examples ?? [],
+            ExpressionLanguage = "javascript",
         };
 
         return def;

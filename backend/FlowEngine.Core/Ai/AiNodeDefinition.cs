@@ -56,4 +56,7 @@ public sealed class AiNodeDefinition
     /// 示例列表。
     /// </summary>
     public List<AiExample> Examples { get; set; } = [];
+
+    /// <summary>表达式语言，固定为 "javascript"。用于在 AI 定义中显式声明，消解 n8n 模板假设。</summary>
+    public string ExpressionLanguage { get; set; } = "javascript";
 }

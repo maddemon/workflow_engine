@@ -204,4 +204,15 @@ public class NodeDefinitionAdapterTests
         var required = (JsonArray)((JsonObject)def.InputSchema!)["required"]!;
         Assert.Contains(required, v => v!.GetValue<string>() == "url");
     }
+
+    [Fact]
+    public void ToAiDefinition_ExpressionLanguage_IsJavascript()
+    {
+        var node = new FakeNodeType { TypeName = "httpRequest" };
+        var descriptor = DescriptorFor("httpRequest", [], []);
+
+        var def = NodeDefinitionAdapter.ToAiDefinition(node, descriptor);
+
+        Assert.Equal("javascript", def.ExpressionLanguage);
+    }
 }
