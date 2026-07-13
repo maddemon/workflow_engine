@@ -19,7 +19,7 @@ public class AiWorkflowsController(
     IWorkflowAssemblyService assemblyService,
     IWorkflowModificationService modificationService,
     IWorkflowValidationService validationService,
-    WorkflowExecutionFeedbackService feedbackService,
+    IWorkflowExecutionFeedbackService feedbackService,
     IWorkflowService workflowService) : ControllerBase
 {
     /// <summary>

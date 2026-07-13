@@ -190,7 +190,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWorkflowModificationService, WorkflowModificationService>();
         services.AddScoped<WorkflowValidationService>();
         services.AddScoped<IWorkflowValidationService>(sp => sp.GetRequiredService<WorkflowValidationService>());
-        services.AddScoped<WorkflowExecutionFeedbackService>();
+        services.AddScoped<IWorkflowExecutionFeedbackService, WorkflowExecutionFeedbackService>();
         services.AddScoped<ProjectService>();
         services.AddScoped<ProjectCascadeDeleter>();
         services.AddScoped<TriggerService>();

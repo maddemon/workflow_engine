@@ -424,6 +424,8 @@ public class WorkflowLifecycleToolsTests
         var tools = CreateLifecycleTools(executionService: executionMock.Object);
         var result = await tools.ExecuteWorkflow(workflowId.ToString(), cancellationToken: CancellationToken.None);
 
+        // 默认 Mock.Of<IWorkflowExecutionFeedbackService>() 的 GetFeedbackAsync 返回 null，
+        // 因此成功路径仍直接返回 ExecutionDto（不包装反馈）。
         Assert.Same(expected, result);
     }
 
@@ -533,6 +535,96 @@ public class WorkflowLifecycleToolsTests
         Assert.Equal("请根据错误信息调整工作流或输入参数", error.SuggestedFix);
     }
 
+    // ── execute_workflow 失败节点反馈 ──────────────────────────────
+
+    /// <summary>
+    /// execute_workflow 在执行产生失败节点记录时，应返回 ExecuteWorkflowResult，
+    /// 内含 ExecutionDto 与结构化反馈（executionContext / suggestedFix / canAutoFix），供 AI 自纠（设计 §5.4）。
+    /// </summary>
+    [Fact]
+    public async Task ExecuteWorkflow_FailedExecution_ReturnsFeedbackResult()
+    {
+        var workflowId = Guid.NewGuid();
+        var execution = new ExecutionDto
+        {
+            Id = Guid.NewGuid(),
+            WorkflowDefinitionId = workflowId,
+            Status = "Failed",
+            StartedAt = DateTime.UtcNow,
+        };
+
+        var feedback = new ExecutionFeedbackResult
+        {
+            Success = false,
+            CanAutoFix = true,
+            Nodes =
+            [
+                new ExecutionFeedbackNode
+                {
+                    NodeId = "fetch",
+                    Status = "Failed",
+                    ErrorType = "ExecutionError",
+                    ErrorMessage = "连接被拒绝",
+                    SuggestedFix = "连接被拒绝，请检查目标服务是否可用以及 URL 配置是否正确。",
+                    ExecutionContext = new { RawParameters = new { }, Inputs = new { } },
+                },
+            ],
+        };
+
+        var executionMock = new Mock<IExecutionService>();
+        executionMock
+            .Setup(s => s.ExecuteAsync(workflowId, null, It.IsAny<CancellationToken>(), null))
+            .ReturnsAsync(execution);
+
+        var feedbackMock = new Mock<IWorkflowExecutionFeedbackService>();
+        feedbackMock
+            .Setup(s => s.GetFeedbackAsync(execution.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(feedback);
+
+        var tools = CreateLifecycleTools(
+            executionService: executionMock.Object,
+            feedbackService: feedbackMock.Object);
+        var result = await tools.ExecuteWorkflow(workflowId.ToString(), cancellationToken: CancellationToken.None);
+
+        var wrapped = Assert.IsType<ExecuteWorkflowResult>(result);
+        Assert.Same(execution, wrapped.Execution);
+        Assert.Same(feedback, wrapped.Feedback);
+        Assert.False(wrapped.Success);
+        Assert.True(wrapped.Feedback.CanAutoFix);
+    }
+
+    /// <summary>
+    /// execute_workflow 在反馈服务读取异常时应降级，仍返回 ExecutionDto，不中断主路径。
+    /// </summary>
+    [Fact]
+    public async Task ExecuteWorkflow_FeedbackReadThrows_DegradesToExecutionDto()
+    {
+        var workflowId = Guid.NewGuid();
+        var execution = new ExecutionDto
+        {
+            Id = Guid.NewGuid(),
+            WorkflowDefinitionId = workflowId,
+            Status = "Failed",
+        };
+
+        var executionMock = new Mock<IExecutionService>();
+        executionMock
+            .Setup(s => s.ExecuteAsync(workflowId, null, It.IsAny<CancellationToken>(), null))
+            .ReturnsAsync(execution);
+
+        var feedbackMock = new Mock<IWorkflowExecutionFeedbackService>();
+        feedbackMock
+            .Setup(s => s.GetFeedbackAsync(execution.Id, It.IsAny<CancellationToken>()))
+            .ThrowsAsync(new InvalidOperationException("db unavailable"));
+
+        var tools = CreateLifecycleTools(
+            executionService: executionMock.Object,
+            feedbackService: feedbackMock.Object);
+        var result = await tools.ExecuteWorkflow(workflowId.ToString(), cancellationToken: CancellationToken.None);
+
+        Assert.Same(execution, result);
+    }
+
     // ── MCP 工具注册验证 ──────────────────────────────────────────
 
     /// <summary>
@@ -587,11 +679,13 @@ public class WorkflowLifecycleToolsTests
     private static WorkflowLifecycleTools CreateLifecycleTools(
         IWorkflowValidationService? validationService = null,
         IWorkflowService? workflowService = null,
-        IExecutionService? executionService = null)
+        IExecutionService? executionService = null,
+        IWorkflowExecutionFeedbackService? feedbackService = null)
     {
         validationService ??= Mock.Of<IWorkflowValidationService>();
         workflowService ??= Mock.Of<IWorkflowService>();
         executionService ??= Mock.Of<IExecutionService>();
-        return new WorkflowLifecycleTools(validationService, workflowService, executionService);
+        feedbackService ??= Mock.Of<IWorkflowExecutionFeedbackService>();
+        return new WorkflowLifecycleTools(validationService, workflowService, executionService, feedbackService);
     }
 }

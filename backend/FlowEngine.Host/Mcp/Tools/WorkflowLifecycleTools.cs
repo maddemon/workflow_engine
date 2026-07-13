@@ -14,7 +14,8 @@ namespace FlowEngine.Host.Mcp.Tools;
 public sealed class WorkflowLifecycleTools(
     IWorkflowValidationService validationService,
     IWorkflowService workflowService,
-    IExecutionService executionService)
+    IExecutionService executionService,
+    IWorkflowExecutionFeedbackService feedbackService)
 {
     /// <summary>
     /// 校验工作流定义的结构完整性。返回详细的错误列表，包含节点 ID、字段、错误类型和建议修复方案，供 AI 自纠。不抛协议异常。
@@ -144,6 +145,25 @@ public sealed class WorkflowLifecycleTools(
                     $"工作流 '{workflowId}' 不存在",
                     CanAutoFix: false,
                     SuggestedFix: "请确认 ID 正确或先创建/装配");
+            }
+
+            // 执行已触发；若存在失败节点记录，附上结构化反馈供 AI 自纠（设计文档 §5.4）。
+            // 执行成功或暂无反馈记录时保持原有契约，仅返回 ExecutionDto。
+            // 反馈读取属执行结果的「增值信息」，读取失败不应阻断执行结果返回，降级为仅返回 ExecutionDto。
+            ExecutionFeedbackResult? feedback = null;
+            try
+            {
+                feedback = await feedbackService.GetFeedbackAsync(execution.Id, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch
+            {
+                // 反馈读取异常（如数据库瞬时不可用）时静默降级，保证 execute_workflow 主路径可用。
+            }
+
+            if (feedback is not null && !feedback.Success)
+            {
+                return new ExecuteWorkflowResult(execution, feedback);
             }
 
             return execution;

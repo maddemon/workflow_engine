@@ -11,7 +11,7 @@ namespace FlowEngine.Application.Workflows;
 /// Phase 2 为基础实现，后续阶段将扩展为完整的错误分析引擎。
 /// </summary>
 public sealed class WorkflowExecutionFeedbackService(
-    FlowEngineDbContext dbContext)
+    FlowEngineDbContext dbContext) : IWorkflowExecutionFeedbackService
 {
     /// <summary>
     /// 获取执行反馈。
