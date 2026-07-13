@@ -124,6 +124,28 @@ public class WorkflowToolsTests
     }
 
     /// <summary>
+    /// assemble_workflow 在 projectId 为无效 Guid 字符串时应返回 InvalidInput 错误。
+    /// </summary>
+    [Theory]
+    [InlineData("not-a-guid")]
+    [InlineData("12345")]
+    [InlineData("g0000000-0000-0000-0000-000000000000")]
+    public async Task AssembleWorkflow_InvalidProjectId_ReturnsInvalidInputError(string projectId)
+    {
+        var tools = CreateTools();
+        var result = await tools.AssembleWorkflow(
+            name: "flow",
+            nodes: [new AiDraftNodeDto { TypeName = "x" }],
+            projectId: projectId,
+            cancellationToken: CancellationToken.None);
+
+        var element = JsonSerializer.SerializeToElement(result);
+        Assert.False(element.GetProperty("success").GetBoolean());
+        Assert.Equal("InvalidInput", element.GetProperty("errorCode").GetString());
+        Assert.Contains("项目 ID", element.GetProperty("message").GetString());
+    }
+
+    /// <summary>
     /// assemble_workflow 在 nodes 为 null 时应返回 InvalidInput 错误。
     /// </summary>
     [Fact]

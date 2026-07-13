@@ -43,8 +43,10 @@ public sealed class WorkflowTools(
         }
 
         Guid? projectIdValue = null;
-        if (!string.IsNullOrWhiteSpace(projectId) && Guid.TryParse(projectId, out var pid))
+        if (!string.IsNullOrWhiteSpace(projectId))
         {
+            if (!Guid.TryParse(projectId, out var pid))
+                return new { success = false, errorCode = "InvalidInput", message = "项目 ID 格式无效" };
             projectIdValue = pid;
         }
 
