@@ -11,7 +11,7 @@ import { createHttpClient } from './http-client.js';
 import { createProxy } from './proxy.js';
 import { createInterface } from 'node:readline';
 
-function main(): void {
+async function main(): Promise<void> {
   const baseURL = process.env.FLOWENGINE_URL;
   const apiKey = process.env.FLOWENGINE_API_KEY;
 
@@ -37,13 +37,12 @@ function main(): void {
 
   const rl = createInterface({ input: process.stdin });
 
-  rl.on('line', (line) => {
-    proxy.handleMessage(line);
-  });
-
-  rl.on('close', () => {
-    process.exit(0);
-  });
+  for await (const line of rl) {
+    await proxy.handleMessage(line);
+  }
 }
 
-main();
+main().catch((err) => {
+  process.stderr.write(`Fatal: ${err instanceof Error ? err.message : String(err)}\n`);
+  process.exit(1);
+});
