@@ -9,6 +9,11 @@ namespace FlowEngine.Core.Abstractions;
 public interface ILlmClient
 {
     /// <summary>
+    /// 模型名称，如 gpt-4o、claude-3-5-sonnet 等。
+    /// </summary>
+    string ModelName { get; }
+
+    /// <summary>
     /// 向 LLM 发送对话请求并获取响应。
     /// </summary>
     /// <param name="messages">对话消息列表。</param>

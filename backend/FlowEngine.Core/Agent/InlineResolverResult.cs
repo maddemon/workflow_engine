@@ -1,4 +1,5 @@
 using FlowEngine.Core.Dtos;
+using FlowEngine.Core.Entities;
 
 namespace FlowEngine.Core.Agent;
 
@@ -21,6 +22,11 @@ public sealed class InlineResolverResult
     /// 停止原因。
     /// </summary>
     public InlineResolverStopReason StoppedReason { get; set; }
+
+    /// <summary>
+    /// 工具执行记录列表（按执行顺序）。
+    /// </summary>
+    public List<NodeExecutionRecord> ToolExecutionRecords { get; } = new();
 }
 
 /// <summary>

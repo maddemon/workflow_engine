@@ -21,6 +21,9 @@ public sealed class OpenAiLlmClient : ILlmClient
     private readonly float _temperature;
     private readonly int? _maxTokens;
 
+    /// <inheritdoc />
+    public string ModelName => _model;
+
     /// <summary>
     /// 初始化 OpenAI LLM 客户端。
     /// </summary>

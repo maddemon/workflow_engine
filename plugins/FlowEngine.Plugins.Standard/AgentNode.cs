@@ -108,7 +108,8 @@ public sealed class AgentNode : INodeType
             tools,
             context,
             maxIterations,
-            memory: memory);
+            memory: memory,
+            logger: context.Logger);
 
         try
         {
@@ -191,30 +192,13 @@ public sealed class AgentNode : INodeType
             tools.Add(new ToolDefinition
             {
                 Name = toolNode.Name,
-                Description = ResolveToolDescription(nodeType, descriptor),
+                Description = AgentToolDescriptionHelper.ResolveToolDescription(nodeType, descriptor),
                 TargetNodeDefinitionId = toolNode.Id,
                 ParametersSchema = parametersSchema
             });
         }
 
         return tools;
-    }
-
-    private static string ResolveToolDescription(INodeType nodeType, NodeTypeDescriptor? descriptor)
-    {
-        var description = nodeType.DisplayName;
-        if (descriptor?.Parameters is { Count: > 0 })
-        {
-            var aiParamParam = descriptor.Parameters.FirstOrDefault(p =>
-                SchemaDerivation.HasAiParamPlaceholder(p.Description));
-            if (aiParamParam?.Description is not null)
-            {
-                description = SchemaDerivation.ResolveAiParamDescription(aiParamParam.Description)
-                    ?? description;
-            }
-        }
-
-        return description;
     }
 
     private List<LlmMessage> BuildMessages(NodeExecutionContext context)
@@ -243,6 +227,11 @@ public sealed class AgentNode : INodeType
             return null;
         }
 
+        if (batch.Items.Count > 1)
+        {
+            context.Logger?.LogWarning("Agent 节点收到 {Count} 条输入数据，仅处理第一条，其余将被忽略。", batch.Items.Count);
+        }
+
         var firstItem = batch.Items[0];
         if (firstItem.Data is null)
         {
@@ -258,7 +247,7 @@ public sealed class AgentNode : INodeType
         {
             AgentInfo = new AgentExecutionInfoDto
             {
-                Model = context.LlmClient?.GetType().Name ?? "unknown",
+                Model = context.LlmClient?.ModelName ?? "unknown",
                 IterationCount = result.Iterations.Count,
                 Status = "Completed",
                 StartedAt = null,
@@ -305,7 +294,7 @@ public sealed class AgentNode : INodeType
         {
             AgentInfo = new AgentExecutionInfoDto
             {
-                Model = context.LlmClient?.GetType().Name ?? "unknown",
+                Model = context.LlmClient?.ModelName ?? "unknown",
                 IterationCount = 0,
                 Status = status,
                 StartedAt = null,

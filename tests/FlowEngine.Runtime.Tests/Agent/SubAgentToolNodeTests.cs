@@ -104,6 +104,78 @@ public class SubAgentToolNodeTests
         Assert.Equal("Done", result.Output.Items[0].Data?.ToString());
     }
 
+    [Fact]
+    public async Task ExecuteAsync_MemoryEnabled_Completes_MultiIteration_Flow()
+    {
+        var toolNode = CreateNodeDefinition("tool1", "passThrough");
+        var subAgentNode = CreateNodeDefinition("subAgent1", "subAgentTool");
+
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "test",
+            CreatedBy = "test",
+            Nodes = [subAgentNode, toolNode],
+            Connections =
+            [
+                new Connection
+                {
+                    Id = Guid.NewGuid(),
+                    SourceNodeId = toolNode.Id,
+                    SourcePortName = FlowConstants.PortNames.Output,
+                    TargetNodeId = subAgentNode.Id,
+                    TargetPortName = FlowConstants.PortNames.Tools
+                }
+            ]
+        };
+
+        var callCount = 0;
+        var llmClient = new MockLlmClient(_ =>
+        {
+            callCount++;
+            if (callCount <= 2)
+            {
+                return new LlmResponse
+                {
+                    Content = null,
+                    ToolCalls =
+                    [
+                        new LlmToolCall { Id = $"call{callCount}", Name = "tool1", Arguments = "{}" }
+                    ]
+                };
+            }
+
+            return new LlmResponse { Content = "Done" };
+        });
+
+        var node = new SubAgentToolNode
+        {
+            PromptTemplate = "You are a helper.",
+            MemoryEnabled = true,
+            MemoryWindowSize = 10
+        };
+
+        var context = new NodeExecutionContext
+        {
+            Workflow = workflow,
+            ExecutionId = Guid.NewGuid(),
+            Node = subAgentNode,
+            Inputs = new Dictionary<string, DataBatch>(),
+            RawParameters = new Dictionary<string, object>(),
+            ResolvedParameters = new Dictionary<string, object>(),
+            Credentials = new TestCredentialAccessor(),
+            Logger = NullExecutionLogger.Instance,
+            CancellationToken = CancellationToken.None,
+            LlmClient = llmClient,
+            NodeRegistry = _nodeRegistry
+        };
+
+        var result = await node.ExecuteAsync(context);
+
+        Assert.True(result.Success);
+        Assert.Equal(3, callCount);
+    }
+
     private static NodeDefinition CreateNodeDefinition(string name, string typeName)
     {
         return new NodeDefinition
@@ -118,6 +190,8 @@ public class SubAgentToolNodeTests
     private sealed class MockLlmClient : ILlmClient
     {
         private readonly Func<IReadOnlyList<ToolDefinition>, LlmResponse> _responder;
+
+        public string ModelName => "test-model";
 
         public MockLlmClient(Func<IReadOnlyList<ToolDefinition>, LlmResponse> responder)
         {

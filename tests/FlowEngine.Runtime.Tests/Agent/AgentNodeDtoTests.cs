@@ -193,6 +193,8 @@ public class AgentNodeDtoTests
     {
         private readonly Func<IReadOnlyList<ToolDefinition>, CancellationToken, Task<LlmResponse>> _responder;
 
+        public string ModelName => "test-model";
+
         public MockLlmClient(Func<IReadOnlyList<ToolDefinition>, LlmResponse> responder)
         {
             _responder = (tools, _) => Task.FromResult(responder(tools));

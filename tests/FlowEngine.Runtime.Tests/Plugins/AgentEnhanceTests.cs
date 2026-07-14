@@ -814,6 +814,8 @@ internal sealed class MockLlmClient : ILlmClient
 {
     private readonly Func<IReadOnlyList<ToolDefinition>, CancellationToken, Task<LlmResponse>> _responder;
 
+    public string ModelName => "test-model";
+
     public IReadOnlyList<LlmMessage>? LastMessages { get; private set; }
 
     public MockLlmClient(Func<IReadOnlyList<ToolDefinition>, LlmResponse> responder)

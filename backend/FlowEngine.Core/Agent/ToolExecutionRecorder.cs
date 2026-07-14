@@ -1,12 +1,12 @@
+using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
-using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Core.Agent;
 
 /// <summary>
 /// 工具执行记录器，构造节点执行记录并写入日志，避免工具级遥测丢失。
 /// </summary>
-internal sealed class ToolExecutionRecorder(ILogger? logger = null)
+internal sealed class ToolExecutionRecorder(IExecutionLogger? logger = null)
 {
     /// <summary>
     /// 构造节点执行记录，并以 Debug 级别写入日志，便于排查工具执行结果。
@@ -33,7 +33,7 @@ internal sealed class ToolExecutionRecorder(ILogger? logger = null)
             ParentRecordId = parentRecordId
         };
 
-        logger?.LogDebug(
+        logger?.LogInformation(
             "工具节点 {NodeType} 执行完成：Success={Success}, 耗时={Elapsed}ms。",
             toolNode.TypeName,
             result.Success,

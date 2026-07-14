@@ -3,7 +3,6 @@ using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Dtos;
 using FlowEngine.Core.Entities;
-using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Core.Agent;
 
@@ -20,11 +19,12 @@ public sealed class InlineResolver(
     int maxIterations = 10,
     Guid? parentRecordId = null,
     AgentMemory? memory = null,
-    ILogger? logger = null)
+    IExecutionLogger? logger = null)
 {
     private readonly ToolResolver _toolResolver = new(tools, parentContext);
     private readonly ToolContextFactory _contextFactory = new(parentContext, logger);
     private readonly ToolExecutionRecorder _recorder = new(logger);
+    private readonly List<NodeExecutionRecord> _toolExecutionRecords = [];
 
 
     /// <summary>
@@ -147,12 +147,14 @@ public sealed class InlineResolver(
             }
         }
 
-        return new InlineResolverResult
+        var result = new InlineResolverResult
         {
             Content = finalContent,
             StoppedReason = stopReason,
             Iterations = iterations,
         };
+        result.ToolExecutionRecords.AddRange(_toolExecutionRecords);
+        return result;
     }
 
     /// <summary>
@@ -166,6 +168,7 @@ public sealed class InlineResolver(
         var contentBuilder = new StringBuilder();
         IReadOnlyList<LlmToolCall>? toolCalls = null;
         var callback = parentContext.OnLlmStreamChunk;
+        var callbackErrorLogged = false;
 
         await foreach (var chunk in llmClient.ChatStreamAsync(messages, tools, cancellationToken)
             .ConfigureAwait(false))
@@ -182,7 +185,18 @@ public sealed class InlineResolver(
 
             if (callback is not null)
             {
-                await callback(chunk, cancellationToken).ConfigureAwait(false);
+                try
+                {
+                    await callback(chunk, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex)
+                {
+                    if (!callbackErrorLogged)
+                    {
+                        logger?.LogWarning("LLM 流式回调执行失败（后续错误将被抑制）：{Message}", ex.Message);
+                        callbackErrorLogged = true;
+                    }
+                }
             }
         }
 
@@ -210,7 +224,7 @@ public sealed class InlineResolver(
         }
         catch (Exception ex)
         {
-            logger?.LogWarning(ex, "解析工具调用参数失败。");
+            logger?.LogWarning("解析工具调用参数失败：{Message}", ex.Message);
             args = null;
         }
 
@@ -227,11 +241,24 @@ public sealed class InlineResolver(
         {
             var result = await toolNodeInstance.ExecuteAsync(toolContext, cancellationToken)
                 .ConfigureAwait(false);
-            _recorder.Record(resolution.Node!, toolContext, result, startedAt, parentRecordId);
+            var record = _recorder.Record(resolution.Node!, toolContext, result, startedAt, parentRecordId);
+            _toolExecutionRecords.Add(record);
             return ToolResultFactory.FromExecutionResult(toolCall, args, result);
         }
         catch (Exception ex)
         {
+            var errorResult = new NodeExecutionResult
+            {
+                Success = false,
+                Error = new NodeError
+                {
+                    Code = "UnexpectedError",
+                    Message = ex.Message ?? string.Empty,
+                    NodeDefinitionId = resolution.Node?.Id.ToString() ?? string.Empty
+                }
+            };
+            var record = _recorder.Record(resolution.Node!, toolContext, errorResult, startedAt, parentRecordId);
+            _toolExecutionRecords.Add(record);
             var message = $"Tool execution error: {ex.Message}";
             return ToolResultFactory.Error(toolCall, args, message);
         }

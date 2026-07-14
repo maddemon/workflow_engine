@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
+using FlowEngine.Core.Agent;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Dtos;
 using FlowEngine.Core.Entities;
@@ -651,9 +652,341 @@ public class AgentNodeTests
         return data.ToJsonString();
     }
 
+    [Fact]
+    public async Task ExecuteAsync_ToolCalls_Appear_In_Iterations()
+    {
+        var toolNode = CreateNodeDefinition("tool1", "passThrough");
+        var agentNode = CreateNodeDefinition("agent1", "agent", isEntry: true);
+
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "test",
+            CreatedBy = "test",
+            Nodes = [agentNode, toolNode],
+            Connections =
+            [
+                new Connection
+                {
+                    Id = Guid.NewGuid(),
+                    SourceNodeId = toolNode.Id,
+                    SourcePortName = FlowConstants.PortNames.Output,
+                    TargetNodeId = agentNode.Id,
+                    TargetPortName = FlowConstants.PortNames.Tools
+                }
+            ]
+        };
+
+        var callCount = 0;
+        var llmClient = new MockLlmClient(_ =>
+        {
+            callCount++;
+            if (callCount == 1)
+            {
+                return new LlmResponse
+                {
+                    Content = null,
+                    ToolCalls =
+                    [
+                        new LlmToolCall { Id = "call1", Name = "tool1", Arguments = "{\"value\": 42}" }
+                    ]
+                };
+            }
+            return new LlmResponse { Content = "Done" };
+        });
+
+        var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNode.Id);
+        var agent = new AgentNode();
+
+        var result = await agent.ExecuteAsync(context);
+
+        Assert.True(result.Success);
+        var dto = GetResultDto(result);
+        Assert.NotNull(dto);
+        Assert.True(dto.Iterations.Count >= 2);
+        var toolCalls = dto.Iterations.SelectMany(i => i.ToolCalls).ToList();
+        Assert.NotEmpty(toolCalls);
+        Assert.Contains(toolCalls, t => t.ToolName == "tool1" && t.Status == "Completed");
+    }
+
+    [Fact]
+    public async Task InlineResolver_RunAsync_Collects_ToolExecutionRecords()
+    {
+        var toolNode = CreateNodeDefinition("tool1", "passThrough");
+        var agentNode = CreateNodeDefinition("agent1", "agent", isEntry: true);
+
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "test",
+            CreatedBy = "test",
+            Nodes = [agentNode, toolNode],
+            Connections =
+            [
+                new Connection
+                {
+                    Id = Guid.NewGuid(),
+                    SourceNodeId = toolNode.Id,
+                    SourcePortName = FlowConstants.PortNames.Output,
+                    TargetNodeId = agentNode.Id,
+                    TargetPortName = FlowConstants.PortNames.Tools
+                }
+            ]
+        };
+
+        var tools = new List<ToolDefinition>
+        {
+            new ToolDefinition
+            {
+                Name = "tool1",
+                TargetNodeDefinitionId = toolNode.Id,
+                ParametersSchema = null
+            }
+        };
+
+        var callCount = 0;
+        var llmClient = new MockLlmClient(_ =>
+        {
+            callCount++;
+            if (callCount == 1)
+            {
+                return new LlmResponse
+                {
+                    Content = null,
+                    ToolCalls =
+                    [
+                        new LlmToolCall { Id = "call1", Name = "tool1", Arguments = "{\"value\": 42}" }
+                    ]
+                };
+            }
+            return new LlmResponse { Content = "Done" };
+        });
+
+        var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNode.Id);
+        var resolver = new InlineResolver(llmClient, tools, context, logger: context.Logger);
+
+        var result = await resolver.RunAsync(new List<LlmMessage>(), CancellationToken.None);
+
+        Assert.NotEmpty(result.ToolExecutionRecords);
+        var firstRecord = result.ToolExecutionRecords[0];
+        Assert.Equal(toolNode.Id, firstRecord.NodeDefinitionId);
+        Assert.True(firstRecord.Output.Success);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_StreamCallback_Exception_Does_Not_Break_Execution()
+    {
+        var agentNode = CreateNodeDefinition("agent1", "agent", isEntry: true);
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "test",
+            CreatedBy = "test",
+            Nodes = [agentNode],
+            Connections = []
+        };
+
+        var callbackErrorCount = 0;
+        var llmClient = new MockLlmClient((tools, ct) => Task.FromResult(new LlmResponse { Content = "Hello" }));
+
+        var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNode.Id);
+        context.OnLlmStreamChunk = (chunk, ct) =>
+        {
+            callbackErrorCount++;
+            throw new InvalidOperationException("stream error");
+        };
+
+        var agent = new AgentNode();
+        var result = await agent.ExecuteAsync(context);
+
+        Assert.True(result.Success);
+        Assert.True(callbackErrorCount > 0);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_MultipleInputItems_LogsWarning()
+    {
+        var agentNode = CreateNodeDefinition("agent1", "agent", isEntry: true);
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "test",
+            CreatedBy = "test",
+            Nodes = [agentNode],
+            Connections = []
+        };
+
+        var logger = new ListExecutionLogger();
+        var llmClient = new MockLlmClient(_ => new LlmResponse { Content = "Hi" });
+        var inputs = new Dictionary<string, DataBatch>
+        {
+            [FlowConstants.PortNames.Input] = new DataBatch
+            {
+                Items =
+                [
+                    new DataItem { Data = "first", Success = true, SourceIndex = 0 },
+                    new DataItem { Data = "second", Success = true, SourceIndex = 1 }
+                ]
+            }
+        };
+
+        var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNode.Id, inputs: inputs);
+        context.Logger = logger;
+
+        var agent = new AgentNode();
+        await agent.ExecuteAsync(context);
+
+        Assert.Contains(logger.Warnings, m => m.Contains("2 条输入数据") || m.Contains("仅处理第一条"));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_MemoryEnabled_AddsMessagesToMemory()
+    {
+        var toolNode = CreateNodeDefinition("tool1", "passThrough");
+        var agentNode = CreateNodeDefinition("agent1", "agent", isEntry: true);
+
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "test",
+            CreatedBy = "test",
+            Nodes = [agentNode, toolNode],
+            Connections =
+            [
+                new Connection
+                {
+                    Id = Guid.NewGuid(),
+                    SourceNodeId = toolNode.Id,
+                    SourcePortName = FlowConstants.PortNames.Output,
+                    TargetNodeId = agentNode.Id,
+                    TargetPortName = FlowConstants.PortNames.Tools
+                }
+            ]
+        };
+
+        var callCount = 0;
+        var llmClient = new MockLlmClient(_ =>
+        {
+            callCount++;
+            if (callCount <= 2)
+            {
+                return new LlmResponse
+                {
+                    Content = null,
+                    ToolCalls =
+                    [
+                        new LlmToolCall { Id = $"call{callCount}", Name = "tool1", Arguments = "{}" }
+                    ]
+                };
+            }
+            return new LlmResponse { Content = "Done" };
+        });
+
+        var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNode.Id);
+        var agent = new AgentNode { MemoryEnabled = true, MemoryWindowSize = 10 };
+
+        var result = await agent.ExecuteAsync(context);
+
+        Assert.True(result.Success);
+        Assert.Equal(3, callCount);
+        var dto = GetResultDto(result);
+        Assert.NotNull(dto);
+        Assert.True(dto.Iterations.Count >= 2);
+    }
+
+    [Fact]
+    public void AgentMemory_AddMessage_And_GetMessages_Works()
+    {
+        var memory = new FlowEngine.Core.Agent.AgentMemory(5);
+        Assert.Equal(0, memory.Count);
+
+        memory.AddMessage(new LlmMessage { Role = "user", Content = "hello" });
+        memory.AddMessage(new LlmMessage { Role = "assistant", Content = "hi" });
+
+        Assert.Equal(2, memory.Count);
+        var messages = memory.GetMessages();
+        Assert.Equal(2, messages.Count);
+        Assert.Equal("user", messages[0].Role);
+        Assert.Equal("hello", messages[0].Content);
+    }
+
+    [Fact]
+    public void AgentMemory_WindowSize_Trims_Old_Messages()
+    {
+        var memory = new FlowEngine.Core.Agent.AgentMemory(3);
+
+        for (var i = 0; i < 5; i++)
+        {
+            memory.AddMessage(new LlmMessage { Role = "user", Content = $"msg-{i}" });
+        }
+
+        Assert.Equal(3, memory.Count);
+        var messages = memory.GetMessages();
+        Assert.Equal("msg-2", messages[0].Content);
+        Assert.Equal("msg-4", messages[2].Content);
+    }
+
+    private static AgentExecutionResultDto? GetResultDto(NodeExecutionResult result)
+    {
+        if (result.Output.Items.Count == 0)
+        {
+            return null;
+        }
+
+        var data = result.Output.Items[0].Data;
+        if (data is null)
+        {
+            return null;
+        }
+
+        return JsonSerializer.Deserialize<AgentExecutionResultDto>(
+            data.ToJsonString(),
+            JsonDefaults.Options);
+    }
+
+    private sealed class ListExecutionLogger : IExecutionLogger
+    {
+        public List<string> Infos { get; } = new();
+        public List<string> Warnings { get; } = new();
+        public List<string> Errors { get; } = new();
+
+        public void LogInformation(string message, params object?[] args)
+            => Infos.Add(FormatMessage(message, args));
+
+        public void LogWarning(string message, params object?[] args)
+            => Warnings.Add(FormatMessage(message, args));
+
+        public void LogError(Exception? exception, string message, params object?[] args)
+            => Errors.Add(FormatMessage(message, args));
+
+        private static string FormatMessage(string message, object?[] args)
+        {
+            if (args.Length == 0)
+            {
+                return message;
+            }
+
+            try
+            {
+                return string.Format(message, args);
+            }
+            catch (FormatException)
+            {
+                var result = message;
+                for (var i = 0; i < args.Length; i++)
+                {
+                    result = result.Replace($"{{{i}}}", args[i]?.ToString() ?? string.Empty);
+                }
+                return result;
+            }
+        }
+    }
+
     private sealed class MockLlmClient : ILlmClient
     {
         private readonly Func<IReadOnlyList<ToolDefinition>, CancellationToken, Task<LlmResponse>> _responder;
+
+        public string ModelName => "test-model";
 
         public IReadOnlyList<LlmMessage>? LastMessages { get; private set; }
 

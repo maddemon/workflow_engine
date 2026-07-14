@@ -2,7 +2,6 @@ using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
-using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Core.Agent;
 
@@ -18,7 +17,7 @@ internal sealed record ToolContextResult(
 /// </summary>
 internal sealed class ToolContextFactory(
     NodeExecutionContext parentContext,
-    ILogger? logger)
+    IExecutionLogger? logger)
 {
     /// <summary>
     /// 创建工具节点执行上下文。
@@ -40,7 +39,7 @@ internal sealed class ToolContextFactory(
         }
         catch (Exception ex)
         {
-            logger?.LogWarning(ex, "创建工具节点实例失败，类型：{TypeName}。", nodeType.GetType().Name);
+            logger?.LogWarning("创建工具节点实例失败，类型：{TypeName}，错误：{Message}", nodeType.GetType().Name, ex.Message);
             toolNodeInstance = null;
         }
 
