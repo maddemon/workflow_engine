@@ -53,6 +53,8 @@ public sealed class LoopNode : INodeType
     /// <inheritdoc />
     public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
+        BatchSize = Math.Max(1, BatchSize);
+
         var inputBatch = context.GetInputBatch();
 
         // Check if this is a "next batch" call from downstream
