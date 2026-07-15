@@ -16,8 +16,9 @@ public sealed class WorkflowRepository(FlowEngineDbContext dbContext)
     {
         var credentialIdStr = credentialId.ToString();
 
-        // 工作流数量有限，直接加载后在内存中精确匹配。
+        // 只读查询加 AsNoTracking；投影仅加载 Id/Name/Nodes 以减少内存占用。
         var allWorkflows = await dbContext.Workflows
+            .AsNoTracking()
             .Select(w => new { w.Id, w.Name, w.Nodes })
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
