@@ -337,6 +337,7 @@ public sealed class TriggerService(
     public async Task<IReadOnlyCollection<TriggerDto>> GetActiveAsync(CancellationToken cancellationToken = default)
     {
         var triggers = await dbContext.Triggers
+            .AsNoTracking()
             .Where(t => t.IsActive)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
