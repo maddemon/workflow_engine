@@ -23,8 +23,13 @@ export function useAuth() {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<UserDto | null>(() => {
-    const stored = localStorage.getItem('auth_user');
-    return stored ? JSON.parse(stored) : null;
+    try {
+      const stored = localStorage.getItem('auth_user');
+      return stored ? JSON.parse(stored) as UserDto : null;
+    } catch {
+      localStorage.removeItem('auth_user');
+      return null;
+    }
   });
 
   const { loading: isLoading } = useRequest(api.getCurrentUser, {
