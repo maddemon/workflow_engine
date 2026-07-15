@@ -29,7 +29,12 @@ public sealed class AuditLogReader : IAuditLogReader
         AuditQueryParameters parameters,
         CancellationToken cancellationToken = default)
     {
-        var matching = new List<JsonDocument>();
+        // 流式过滤 + 最小堆 Top-N：仅保留 Top (Offset+Limit) 条，避免全量加载内存。
+        var capacity = parameters.Offset + parameters.Limit;
+        var totalMatched = 0;
+
+        // 最小堆：堆顶为当前保留中时间戳最小（最旧）的记录，新记录时间戳更大时替换堆顶。
+        var heap = new PriorityQueue<JsonDocument, DateTime>(capacity + 1);
 
         var files = GetLogFiles(parameters.From, parameters.To);
 
@@ -63,32 +68,57 @@ public sealed class AuditLogReader : IAuditLogReader
                     continue;
                 }
 
-                matching.Add(doc);
+                totalMatched++;
+                var timestamp = GetTimestamp(doc);
+
+                if (heap.Count < capacity)
+                {
+                    heap.Enqueue(doc, timestamp);
+                }
+                else if (heap.TryPeek(out _, out var oldestTs) && timestamp > oldestTs)
+                {
+                    // 新记录比堆顶（最旧）更新，替换堆顶。
+                    var evicted = heap.Dequeue();
+                    evicted.Dispose();
+                    heap.Enqueue(doc, timestamp);
+                }
+                else
+                {
+                    doc.Dispose();
+                }
             }
         }
 
-        matching.Sort((a, b) =>
+        // 从堆中按时间降序取出所有记录。
+        var allRetained = new List<(JsonDocument Doc, DateTime Ts)>(heap.Count);
+        while (heap.Count > 0)
         {
-            var tsA = GetTimestamp(a);
-            var tsB = GetTimestamp(b);
-            return tsB.CompareTo(tsA);
-        });
+            heap.TryDequeue(out var doc, out var ts);
+            if (doc is not null)
+            {
+                allRetained.Add((doc, ts));
+            }
+        }
 
-        var total = matching.Count;
-        var paged = matching
+        allRetained.Sort((a, b) => b.Ts.CompareTo(a.Ts));
+
+        // 应用分页：跳过 Offset，取 Limit 条。
+        var paged = allRetained
             .Skip(parameters.Offset)
             .Take(parameters.Limit)
+            .Select(x => x.Doc)
             .ToList();
 
-        if (paged.Count < matching.Count)
+        // 释放未被分页选中的保留记录。
+        for (var i = 0; i < allRetained.Count; i++)
         {
-            foreach (var doc in matching.Skip(parameters.Offset + parameters.Limit))
+            if (i < parameters.Offset || i >= parameters.Offset + parameters.Limit)
             {
-                doc.Dispose();
+                allRetained[i].Doc.Dispose();
             }
         }
 
-        return new AuditQueryResult { Events = paged, Total = total };
+        return new AuditQueryResult { Events = paged, Total = totalMatched };
     }
 
     private IEnumerable<string> GetLogFiles(DateTime? from, DateTime? to)
