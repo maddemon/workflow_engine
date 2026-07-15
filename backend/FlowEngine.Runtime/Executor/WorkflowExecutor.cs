@@ -56,6 +56,7 @@ public sealed class WorkflowExecutor : IEngine
         CancellationToken cancellationToken = default)
     {
         var workflow = await _dbContext.Workflows
+            .AsNoTracking()
             .FirstOrDefaultAsync(w => w.Id == workflowDefinitionId, cancellationToken)
             .ConfigureAwait(false);
 
