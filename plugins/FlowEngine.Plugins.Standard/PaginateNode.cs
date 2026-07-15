@@ -85,7 +85,7 @@ public CursorType CursorType { get; set; } = Enums.CursorType.String;
             return context.ErrorResult("ContextFactoryMissing", "PaginateNode requires a context factory to iterate.");
         }
 
-        var cursorTypeStr = GetConfig(context, "cursorType", "String");
+        var cursorTypeStr = GetConfig(context, "cursorType", CursorType.ToString());
         var cursorType = cursorTypeStr.Equals("Number", StringComparison.OrdinalIgnoreCase)
             ? Enums.CursorType.Number
             : Enums.CursorType.String;
@@ -93,12 +93,12 @@ public CursorType CursorType { get; set; } = Enums.CursorType.String;
         var itemsPath = GetConfig(context, "itemsPath", "");
         var terminateWhen = GetConfig(context, "terminateWhen", "$nextCursor == ''");
         var credentialName = GetConfig(context, "credentialName", "");
-        var maxPages = int.TryParse(GetConfig(context, "maxPages", "100"), out var mp) && mp > 0 ? mp : 100;
+        var maxPages = int.TryParse(GetConfig(context, "maxPages", MaxPages.ToString()), out var mp) && mp > 0 ? mp : MaxPages;
 
         var nodeType = context.NodeRegistry.Get(context.Node.TypeName);
         var execution = new ExecutionRecord { Id = context.ExecutionId };
 
-        object? cursor = CoerceCursorLiteral(GetConfig(context, "cursorInitial", "0"), cursorType);
+        object? cursor = CoerceCursorLiteral(GetConfig(context, "cursorInitial", CursorInitial ?? "0"), cursorType);
         JsonNode? lastResponse = null;
         var allItems = new List<DataItem>();
 
