@@ -140,24 +140,3 @@ public sealed class LoopNode : INodeType
         });
     }
 }
-
-/// <summary>
-/// 循环节点的迭代结果。
-/// </summary>
-public sealed class LoopIterationResult
-{
-    /// <summary>
-    /// 当前批次的数据。
-    /// </summary>
-    public DataBatch Batch { get; set; } = new();
-
-    /// <summary>
-    /// 是否还有更多批次。
-    /// </summary>
-    public bool HasMore { get; set; }
-
-    /// <summary>
-    /// 下一个起始位置。
-    /// </summary>
-    public int NextPosition { get; set; }
-}
