@@ -133,6 +133,7 @@ public sealed class CredentialService(
         await authGuard.RequireAccessAsync(ResourceKind.Credential, id, Operation.Read, cancellationToken);
 
         var credential = await dbContext.Credentials
+            .AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == id, cancellationToken)
             .ConfigureAwait(false);
         if (credential is null)
@@ -151,7 +152,7 @@ public sealed class CredentialService(
         Guid? projectId = null,
         CancellationToken cancellationToken = default)
     {
-        var query = dbContext.Credentials.AsQueryable();
+        var query = dbContext.Credentials.AsNoTracking();
         if (projectId.HasValue)
         {
             query = query.Where(c => c.ProjectId == projectId.Value);
@@ -240,6 +241,7 @@ public sealed class CredentialService(
     private async Task ValidateNameNotInUseAsync(string name, Guid? projectId, Guid? excludeId, CancellationToken cancellationToken)
     {
         var exists = await dbContext.Credentials
+            .AsNoTracking()
             .AnyAsync(
                 c => c.Name == name
                      && c.ProjectId == projectId
