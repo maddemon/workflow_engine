@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Agent;
 using FlowEngine.Core.Dtos;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -110,6 +111,162 @@ public class SubAgentToolNodeTests
         Assert.Equal("Completed", dto.AgentInfo.Status);
         Assert.Equal("test-model", dto.AgentInfo.Model);
         Assert.NotNull(dto.AgentInfo.CompletedAt);
+
+        // SubAgentToolNode 解析 parentRecordId = NodeExecutionRecordId != Guid.Empty ? NodeExecutionRecordId : ExecutionId。
+        // 此处 NodeExecutionRecordId 已设置，parentRecordId == nodeExecutionRecordId。
+        // InlineResolver 将 parentRecordId 透传到 ToolExecutionRecords，此处直接验证透传链路。
+        var resolverCallCount = 0;
+        var resolverLlmClient = new MockLlmClient(_ =>
+        {
+            resolverCallCount++;
+            if (resolverCallCount == 1)
+            {
+                return new LlmResponse
+                {
+                    Content = null,
+                    ToolCalls =
+                    [
+                        new LlmToolCall { Id = "r-call1", Name = "tool1", Arguments = "{}" }
+                    ]
+                };
+            }
+
+            return new LlmResponse { Content = "Done" };
+        });
+
+        var tools = new List<ToolDefinition>
+        {
+            new() { Name = "tool1", Description = "test", TargetNodeDefinitionId = toolNode.Id }
+        };
+
+        var resolver = new InlineResolver(
+            resolverLlmClient,
+            tools,
+            context,
+            maxIterations: 3,
+            parentRecordId: nodeExecutionRecordId);
+
+        var resolverMessages = new List<LlmMessage> { new() { Role = "user", Content = "Test" } };
+        var resolverResult = await resolver.RunAsync(resolverMessages);
+
+        Assert.NotEmpty(resolverResult.ToolExecutionRecords);
+        Assert.All(resolverResult.ToolExecutionRecords, r => Assert.Equal(nodeExecutionRecordId, r.ParentRecordId));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Falls_Back_To_ExecutionId_When_NodeExecutionRecordId_Is_Empty()
+    {
+        var toolNode = CreateNodeDefinition("tool1", "passThrough");
+        var subAgentNode = CreateNodeDefinition("subAgent1", "subAgentTool");
+
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "test",
+            CreatedBy = "test",
+            Nodes = [subAgentNode, toolNode],
+            Connections =
+            [
+                new Connection
+                {
+                    Id = Guid.NewGuid(),
+                    SourceNodeId = toolNode.Id,
+                    SourcePortName = FlowConstants.PortNames.Output,
+                    TargetNodeId = subAgentNode.Id,
+                    TargetPortName = FlowConstants.PortNames.Tools
+                }
+            ]
+        };
+
+        var executionId = Guid.NewGuid();
+        var callCount = 0;
+        var llmClient = new MockLlmClient(_ =>
+        {
+            callCount++;
+            if (callCount == 1)
+            {
+                return new LlmResponse
+                {
+                    Content = null,
+                    ToolCalls =
+                    [
+                        new LlmToolCall
+                        {
+                            Id = "call1",
+                            Name = "tool1",
+                            Arguments = "{\"value\": 42}"
+                        }
+                    ]
+                };
+            }
+
+            return new LlmResponse { Content = "Done" };
+        });
+
+        var node = new SubAgentToolNode
+        {
+            PromptTemplate = "You are a helper."
+        };
+
+        // NodeExecutionRecordId 为 Guid.Empty，SubAgentToolNode 回退到 ExecutionId 作为 parentRecordId。
+        var context = new NodeExecutionContext
+        {
+            Workflow = workflow,
+            ExecutionId = executionId,
+            NodeExecutionRecordId = Guid.Empty,
+            Node = subAgentNode,
+            Inputs = new Dictionary<string, DataBatch>(),
+            RawParameters = new Dictionary<string, object>(),
+            ResolvedParameters = new Dictionary<string, object>(),
+            Credentials = new TestCredentialAccessor(),
+            Logger = NullExecutionLogger.Instance,
+            CancellationToken = CancellationToken.None,
+            LlmClient = llmClient,
+            NodeRegistry = _nodeRegistry
+        };
+
+        var result = await node.ExecuteAsync(context);
+
+        Assert.True(result.Success);
+        Assert.Equal(2, callCount);
+
+        // 验证回退逻辑：parentRecordId == executionId（因 NodeExecutionRecordId == Guid.Empty）。
+        var resolverCallCount = 0;
+        var resolverLlmClient = new MockLlmClient(_ =>
+        {
+            resolverCallCount++;
+            if (resolverCallCount == 1)
+            {
+                return new LlmResponse
+                {
+                    Content = null,
+                    ToolCalls =
+                    [
+                        new LlmToolCall { Id = "r-call1", Name = "tool1", Arguments = "{}" }
+                    ]
+                };
+            }
+
+            return new LlmResponse { Content = "Done" };
+        });
+
+        var tools = new List<ToolDefinition>
+        {
+            new() { Name = "tool1", Description = "test", TargetNodeDefinitionId = toolNode.Id }
+        };
+
+        var resolver = new InlineResolver(
+            resolverLlmClient,
+            tools,
+            context,
+            maxIterations: 3,
+            parentRecordId: executionId);
+
+        var resolverMessages = new List<LlmMessage> { new() { Role = "user", Content = "Test" } };
+        var resolverResult = await resolver.RunAsync(resolverMessages);
+
+        Assert.NotEmpty(resolverResult.ToolExecutionRecords);
+        Assert.All(resolverResult.ToolExecutionRecords, r => Assert.Equal(executionId, r.ParentRecordId));
     }
 
     [Fact]
