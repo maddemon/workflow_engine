@@ -126,16 +126,16 @@ public sealed class MergeNode : INodeType
             return MergeAppend(batch1, batch2);
         }
 
-        var lookup = batch2.Items.ToDictionary(
-            item => JsonPath.GetValue(item.Data, MatchField) ?? string.Empty,
-            item => item);
+        var lookup = batch2.Items.ToLookup(
+            item => JsonPath.GetValue(item.Data, MatchField) ?? string.Empty);
 
         var items = new List<DataItem>();
 
         foreach (var item1 in batch1.Items)
         {
             var key = JsonPath.GetValue(item1.Data, MatchField) ?? string.Empty;
-            if (lookup.TryGetValue(key, out var item2))
+            var item2 = lookup[key].FirstOrDefault();
+            if (item2 is not null)
             {
                 var merged = MergeJsonNodes(item1.Data, item2.Data);
                 items.Add(new DataItem
