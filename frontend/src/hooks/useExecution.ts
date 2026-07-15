@@ -86,8 +86,9 @@ export function useExecution() {
   }, [stopPolling]);
 
   // 页面加载时检查是否有正在运行的执行，并自动订阅
+  const workflowId = useWorkflowStore((s) => s.workflowId);
+
   useEffect(() => {
-    const workflowId = useWorkflowStore.getState().workflowId;
     if (!workflowId) return;
 
     let cancelled = false;
@@ -134,7 +135,7 @@ export function useExecution() {
       cancelled = true;
       cleanupPolling?.();
     };
-  }, [subscribe, startPolling]);
+  }, [workflowId, subscribe, startPolling]);
 
   const execute = useCallback(
     async (workflowId: string) => {
