@@ -60,10 +60,9 @@ public sealed class DataQualityNode : INodeType
         {
             return Task.FromResult(context.ErrorResult("InvalidRules", "Rules JSON 格式无效。"));
         }
-        using (rulesDoc)
-        {
-            rulesList = rulesDoc.RootElement.EnumerateArray().ToList();
-        }
+        // 注意：JsonElement 引用 JsonDocument 的池化内存，文档 dispose 后不可访问。
+        // 此处不提前 dispose，保持文档存活至方法结束，由 GC 回收。
+        rulesList = rulesDoc.RootElement.EnumerateArray().ToList();
 
         // 3. Validate each rule
         var failures = new List<JsonObject>();
@@ -157,7 +156,7 @@ public sealed class DataQualityNode : INodeType
             var mergedData = item.Data is JsonObject obj
                 ? obj.DeepClone()
                 : new JsonObject { ["_original"] = item.Data };
-            mergedData["_dqReport"] = report;
+            mergedData["_dqReport"] = report.DeepClone();
             return new DataItem
             {
                 Data = mergedData,
