@@ -11,6 +11,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.Exceptions;
+using FlowEngine.Application.Tests.TestSupport.Fakes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -21,7 +22,7 @@ public sealed class WorkflowServiceAuthorizationTests : IDisposable
     private readonly FlowEngineDbContext _dbContext;
     private readonly FakeUserContext _userContext;
     private readonly WorkflowService _service;
-    private readonly InMemoryEventBus _eventBus;
+    private readonly RecordingEventBus _eventBus;
 
     public WorkflowServiceAuthorizationTests()
     {
@@ -31,7 +32,7 @@ public sealed class WorkflowServiceAuthorizationTests : IDisposable
             .Options;
         _dbContext = new FlowEngineDbContext(options);
         _userContext = new FakeUserContext();
-        _eventBus = new InMemoryEventBus();
+        _eventBus = new RecordingEventBus();
         var auditFactory = new AuditEventFactory(_userContext);
         var scheduleManager = new FakeScheduleManager();
         var resourceAuthorization = new RoleBasedResourceAuthorizationService(_userContext);
@@ -191,21 +192,6 @@ public sealed class WorkflowServiceAuthorizationTests : IDisposable
         public INodeType CreateInstance(string typeName) => throw new InvalidOperationException();
         public IReadOnlyCollection<NodeTypeDescriptor> GetDescriptors() => [];
         public NodeTypeDescriptor GetDescriptor(string typeName) => throw new InvalidOperationException();
-    }
-
-    private sealed class InMemoryEventBus : IEventBus
-    {
-        public List<object> PublishedEvents { get; } = [];
-
-        public Task PublishAsync<TEvent>(TEvent eventInstance, CancellationToken cancellationToken = default)
-            where TEvent : IDomainEvent
-        {
-            PublishedEvents.Add(eventInstance!);
-            return Task.CompletedTask;
-        }
-        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler)
-            where TEvent : IDomainEvent => new Disposable();
-        private sealed class Disposable : IDisposable { public void Dispose() { } }
     }
 
     private sealed class FakeScheduleManager : IScheduleManager

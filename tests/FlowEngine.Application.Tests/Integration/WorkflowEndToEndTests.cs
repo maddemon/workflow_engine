@@ -13,6 +13,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.ValueObjects;
+using FlowEngine.Application.Tests.TestSupport.Fakes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -36,7 +37,7 @@ public sealed class WorkflowEndToEndTests : IDisposable
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
         _dbContext = new FlowEngineDbContext(options);
-        var eventBus = new InMemoryEventBus();
+        var eventBus = new RecordingEventBus();
         var userContext = new FakeUserContext();
         var auditFactory = new AuditEventFactory(userContext);
         var scheduleManager = new FakeScheduleManager();
@@ -281,32 +282,6 @@ public sealed class WorkflowEndToEndTests : IDisposable
         public INodeType CreateInstance(string typeName) => throw new InvalidOperationException();
         public IReadOnlyCollection<NodeTypeDescriptor> GetDescriptors() => [];
         public NodeTypeDescriptor GetDescriptor(string typeName) => throw new InvalidOperationException();
-    }
-
-    private sealed class FakeUserContext : IUserContext
-    {
-        public bool IsAuthenticated => true;
-        public Guid? UserId => Guid.NewGuid();
-        public string? Email => "test@test.com";
-        public IReadOnlyList<string> Roles => [];
-    }
-
-    private sealed class InMemoryEventBus : IEventBus
-    {
-        public Task PublishAsync<TEvent>(TEvent eventInstance, CancellationToken ct = default) where TEvent : IDomainEvent => Task.CompletedTask;
-        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler) where TEvent : IDomainEvent => new Disposable();
-        private sealed class Disposable : IDisposable { public void Dispose() { } }
-    }
-
-    private sealed class FakeScheduleManager : IScheduleManager
-    {
-        public Task StartAsync(CancellationToken ct = default) => Task.CompletedTask;
-        public Task StopAsync(CancellationToken ct = default) => Task.CompletedTask;
-        public Task RegisterScheduleAsync(Guid triggerId, Guid workflowDefId, string cron, string? tz, DateTime? startAt, DateTime? endAt, CancellationToken ct = default) => Task.CompletedTask;
-        public Task UnregisterScheduleAsync(Guid triggerId, CancellationToken ct = default) => Task.CompletedTask;
-        public Task<DateTime?> GetNextFireTimeAsync(Guid triggerId, CancellationToken ct = default) => Task.FromResult<DateTime?>(null);
-        public Task RegisterPollTriggerAsync(Guid triggerId, Guid workflowDefId, int intervalSeconds, CancellationToken ct = default) => Task.CompletedTask;
-        public Task UnregisterPollTriggerAsync(Guid triggerId, CancellationToken ct = default) => Task.CompletedTask;
     }
 
     private sealed class StubIdempotencyService : IExecutionIdempotencyService

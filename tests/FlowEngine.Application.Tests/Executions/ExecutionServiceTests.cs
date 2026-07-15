@@ -3,6 +3,7 @@ using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Executions;
 using FlowEngine.Application.Identity;
+using FlowEngine.Application.Tests.TestSupport.Fakes;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
@@ -20,7 +21,7 @@ public sealed class ExecutionServiceTests : IDisposable
     private readonly FlowEngineDbContext _dbContext;
     private readonly FakeUserContext _userContext;
     private readonly CapturingEngine _engine;
-    private readonly InMemoryEventBus _eventBus;
+    private readonly RecordingEventBus _eventBus;
     private readonly ExecutionService _service;
 
     public ExecutionServiceTests()
@@ -30,8 +31,9 @@ public sealed class ExecutionServiceTests : IDisposable
             .Options;
         _dbContext = new FlowEngineDbContext(options);
         _userContext = new FakeUserContext();
+        _userContext.Roles = [RoleConstants.Admin];
         _engine = new CapturingEngine();
-        _eventBus = new InMemoryEventBus();
+        _eventBus = new RecordingEventBus();
         var auditFactory = new AuditEventFactory(_userContext);
         var resourceAuthorization = new StubResourceAuthorizationService(_userContext);
         var idempotencyService = new StubIdempotencyService();
@@ -234,14 +236,6 @@ public sealed class ExecutionServiceTests : IDisposable
         };
     }
 
-    private sealed class FakeUserContext : IUserContext
-    {
-        public bool IsAuthenticated => UserId.HasValue;
-        public Guid? UserId { get; set; } = Guid.NewGuid();
-        public string? Email => "test@test.com";
-        public IReadOnlyList<string> Roles { get; set; } = [RoleConstants.Admin];
-    }
-
     private sealed class CapturingEngine : IEngine
     {
         public object? LastPayload { get; private set; }
@@ -250,26 +244,6 @@ public sealed class ExecutionServiceTests : IDisposable
         {
             LastPayload = triggerPayload;
             return Task.FromResult(ExecutionId.From(Guid.NewGuid()));
-        }
-    }
-
-    private sealed class InMemoryEventBus : IEventBus
-    {
-        public List<object> PublishedEvents { get; } = [];
-
-        public Task PublishAsync<TEvent>(TEvent eventInstance, CancellationToken cancellationToken = default)
-            where TEvent : IDomainEvent
-        {
-            PublishedEvents.Add(eventInstance!);
-            return Task.CompletedTask;
-        }
-
-        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler)
-            where TEvent : IDomainEvent => new Disposable();
-
-        private sealed class Disposable : IDisposable
-        {
-            public void Dispose() { }
         }
     }
 

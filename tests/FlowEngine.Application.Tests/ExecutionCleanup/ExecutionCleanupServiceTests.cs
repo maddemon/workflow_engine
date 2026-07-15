@@ -7,6 +7,7 @@ using FlowEngine.Core.Enums;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using FlowEngine.Application.Tests.TestSupport.Fakes;
 
 namespace FlowEngine.Application.Tests.ExecutionCleanup;
 
@@ -17,7 +18,7 @@ namespace FlowEngine.Application.Tests.ExecutionCleanup;
 public sealed class ExecutionCleanupServiceTests : IDisposable
 {
     private readonly FlowEngineDbContext _dbContext;
-    private readonly InMemoryEventBus _eventBus;
+    private readonly RecordingEventBus _eventBus;
     private readonly ExecutionCleanupOptions _options;
     private readonly ExecutionCleanupService _service;
 
@@ -27,7 +28,7 @@ public sealed class ExecutionCleanupServiceTests : IDisposable
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
         _dbContext = new FlowEngineDbContext(options);
-        _eventBus = new InMemoryEventBus();
+        _eventBus = new RecordingEventBus();
         _options = new ExecutionCleanupOptions
         {
             Enabled = true,
@@ -136,26 +137,6 @@ public sealed class ExecutionCleanupServiceTests : IDisposable
         _dbContext.ExecutionRecords.Add(record);
         _dbContext.SaveChanges();
         return record;
-    }
-
-    private sealed class InMemoryEventBus : IEventBus
-    {
-        public List<object> PublishedEvents { get; } = [];
-
-        public Task PublishAsync<TEvent>(TEvent eventInstance, CancellationToken cancellationToken = default)
-            where TEvent : IDomainEvent
-        {
-            PublishedEvents.Add(eventInstance!);
-            return Task.CompletedTask;
-        }
-
-        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler)
-            where TEvent : IDomainEvent => new Disposable();
-
-        private sealed class Disposable : IDisposable
-        {
-            public void Dispose() { }
-        }
     }
 
     private sealed class StubIdempotencyService : IExecutionIdempotencyService

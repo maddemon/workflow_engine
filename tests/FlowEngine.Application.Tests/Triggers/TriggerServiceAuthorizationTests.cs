@@ -10,6 +10,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.Exceptions;
+using FlowEngine.Application.Tests.TestSupport.Fakes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -20,7 +21,7 @@ public sealed class TriggerServiceAuthorizationTests : IDisposable
     private readonly FlowEngineDbContext _dbContext;
     private readonly FakeUserContext _userContext;
     private readonly TriggerService _service;
-    private readonly InMemoryEventBus _eventBus;
+    private readonly RecordingEventBus _eventBus;
 
     public TriggerServiceAuthorizationTests()
     {
@@ -30,7 +31,7 @@ public sealed class TriggerServiceAuthorizationTests : IDisposable
             .Options;
         _dbContext = new FlowEngineDbContext(options);
         _userContext = new FakeUserContext();
-        _eventBus = new InMemoryEventBus();
+        _eventBus = new RecordingEventBus();
         var auditFactory = new AuditEventFactory(_userContext);
         var scheduleManager = new FakeScheduleManager();
         var resourceAuthorization = new RoleBasedResourceAuthorizationService(_userContext);
@@ -164,66 +165,4 @@ public sealed class TriggerServiceAuthorizationTests : IDisposable
         };
     }
 
-    private sealed class FakeUserContext : IUserContext
-    {
-        public bool IsAuthenticated => UserId.HasValue;
-        public Guid? UserId { get; set; } = Guid.NewGuid();
-        public string? Email => "test@test.com";
-        public IReadOnlyList<string> Roles { get; set; } = [];
-    }
-
-    private sealed class InMemoryEventBus : IEventBus
-    {
-        public List<object> PublishedEvents { get; } = [];
-
-        public Task PublishAsync<TEvent>(TEvent eventInstance, CancellationToken cancellationToken = default)
-            where TEvent : IDomainEvent
-        {
-            PublishedEvents.Add(eventInstance!);
-            return Task.CompletedTask;
-        }
-        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler)
-            where TEvent : IDomainEvent => new Disposable();
-        private sealed class Disposable : IDisposable { public void Dispose() { } }
-    }
-
-    private sealed class FakeScheduleManager : IScheduleManager
-    {
-        public Task StartAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task StopAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task RegisterScheduleAsync(Guid triggerId, Guid workflowDefinitionId, string cronExpression, string? timeZone, DateTime? startAt, DateTime? endAt, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task UnregisterScheduleAsync(Guid triggerId, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task<DateTime?> GetNextFireTimeAsync(Guid triggerId, CancellationToken cancellationToken = default) => Task.FromResult<DateTime?>(null);
-        public Task RegisterPollTriggerAsync(Guid triggerId, Guid workflowDefinitionId, int intervalSeconds, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task UnregisterPollTriggerAsync(Guid triggerId, CancellationToken cancellationToken = default) => Task.CompletedTask;
-    }
-
-    private sealed class RoleBasedResourceAuthorizationService(IUserContext userContext) : IResourceAuthorizationService
-    {
-        public Task<bool> CanAccessWorkflowAsync(Guid userId, Guid workflowId, Operation operation, CancellationToken ct = default)
-            => Task.FromResult(HasPermission(Scope.Workflow, operation));
-
-        public Task<bool> CanAccessCredentialAsync(Guid userId, Guid credentialId, Operation operation, CancellationToken ct = default)
-            => Task.FromResult(HasPermission(Scope.Credential, operation));
-
-        public Task<bool> CanAccessExecutionAsync(Guid userId, Guid executionId, Operation operation, CancellationToken ct = default)
-            => Task.FromResult(HasPermission(Scope.Execution, operation));
-
-        public Task<bool> CanAccessTriggerAsync(Guid userId, Guid triggerId, Operation operation, CancellationToken ct = default)
-            => Task.FromResult(HasPermission(Scope.Trigger, operation));
-
-        public bool ShouldMaskCredentialValues(IReadOnlyList<string> roles) => false;
-
-        private bool HasPermission(Scope scope, Operation operation)
-        {
-            foreach (var roleStr in userContext.Roles)
-            {
-                if (Enum.TryParse<Role>(roleStr, ignoreCase: true, out var role) && PermissionMapping.HasPermission(role, scope, operation))
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-    }
 }

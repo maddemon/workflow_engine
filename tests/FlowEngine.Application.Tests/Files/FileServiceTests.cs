@@ -8,6 +8,7 @@ using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.Exceptions;
+using FlowEngine.Application.Tests.TestSupport.Fakes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 
@@ -20,7 +21,7 @@ public sealed class FileServiceTests : IDisposable
     private readonly FakeUserContext _userContext;
     private readonly FileStorageOptions _options;
     private readonly FileService _service;
-    private readonly InMemoryEventBus _eventBus;
+    private readonly RecordingEventBus _eventBus;
 
     public FileServiceTests()
     {
@@ -31,7 +32,7 @@ public sealed class FileServiceTests : IDisposable
         _fileStorage = new FakeFileStorage();
         _userContext = new FakeUserContext();
         _options = new FileStorageOptions();
-        _eventBus = new InMemoryEventBus();
+        _eventBus = new RecordingEventBus();
         _service = new FileService(_dbContext, _fileStorage, _userContext, AuthorizationGuardFactory.Create(_userContext, new FakeResourceAuthorizationService()), Options.Create(_options));
     }
 
@@ -307,15 +308,6 @@ public sealed class FileServiceTests : IDisposable
         }
     }
 
-    private sealed class FakeUserContext : IUserContext
-    {
-        private readonly Guid _userId = Guid.NewGuid();
-        public bool IsAuthenticated => true;
-        public Guid? UserId => _userId;
-        public string? Email => "test@test.com";
-        public IReadOnlyList<string> Roles => [RoleConstants.Admin];
-    }
-
     [Fact]
     public async Task UploadAsync_ResourceAuthorizationDenied_ThrowsPermissionDeniedException()
     {
@@ -389,23 +381,4 @@ public sealed class FileServiceTests : IDisposable
         public bool ShouldMaskCredentialValues(IReadOnlyList<string> roles) => false;
     }
 
-    private sealed class InMemoryEventBus : IEventBus
-    {
-        public List<object> PublishedEvents { get; } = [];
-
-        public Task PublishAsync<TEvent>(TEvent eventInstance, CancellationToken cancellationToken = default)
-            where TEvent : IDomainEvent
-        {
-            PublishedEvents.Add(eventInstance!);
-            return Task.CompletedTask;
-        }
-
-        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler)
-            where TEvent : IDomainEvent => new Disposable();
-
-        private sealed class Disposable : IDisposable
-        {
-            public void Dispose() { }
-        }
-    }
 }

@@ -11,6 +11,7 @@ using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.Exceptions;
+using FlowEngine.Application.Tests.TestSupport.Fakes;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Tests.Credentials;
@@ -18,7 +19,7 @@ namespace FlowEngine.Application.Tests.Credentials;
 public sealed class CredentialServiceAuthorizationTests : IDisposable
 {
     private readonly FlowEngineDbContext _dbContext;
-    private readonly InMemoryEventBus _eventBus;
+    private readonly RecordingEventBus _eventBus;
     private readonly CredentialService _service;
     private readonly FakeUserContext _userContext;
 
@@ -29,7 +30,7 @@ public sealed class CredentialServiceAuthorizationTests : IDisposable
             .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         _dbContext = new FlowEngineDbContext(options);
-        _eventBus = new InMemoryEventBus();
+        _eventBus = new RecordingEventBus();
         _userContext = new FakeUserContext();
         var auditFactory = new AuditEventFactory(_userContext);
         var resourceAuthService = new RoleBasedResourceAuthorizationService(_userContext);
@@ -199,26 +200,6 @@ public sealed class CredentialServiceAuthorizationTests : IDisposable
     private sealed class StubKeyProvider : ICryptoKeyProvider
     {
         public byte[] GetKey() => new byte[32];
-    }
-
-    private sealed class InMemoryEventBus : IEventBus
-    {
-        public List<object> PublishedEvents { get; } = [];
-
-        public Task PublishAsync<TEvent>(TEvent eventInstance, CancellationToken cancellationToken = default)
-            where TEvent : IDomainEvent
-        {
-            PublishedEvents.Add(eventInstance!);
-            return Task.CompletedTask;
-        }
-
-        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler)
-            where TEvent : IDomainEvent => new Disposable();
-
-        private sealed class Disposable : IDisposable
-        {
-            public void Dispose() { }
-        }
     }
 
     private sealed class FakeUserContext : IUserContext

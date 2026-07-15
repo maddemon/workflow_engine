@@ -11,6 +11,7 @@ using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.Exceptions;
+using FlowEngine.Application.Tests.TestSupport.Fakes;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Tests.Credentials;
@@ -18,7 +19,7 @@ namespace FlowEngine.Application.Tests.Credentials;
 public sealed class CredentialServiceTests : IDisposable
 {
     private readonly FlowEngineDbContext _dbContext;
-    private readonly InMemoryEventBus _eventBus;
+    private readonly RecordingEventBus _eventBus;
     private readonly CredentialService _service;
     private readonly StubEncryptionService _encryptionService;
     private readonly StubKeyProvider _keyProvider;
@@ -30,10 +31,11 @@ public sealed class CredentialServiceTests : IDisposable
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
         _dbContext = new FlowEngineDbContext(options);
-        _eventBus = new InMemoryEventBus();
+        _eventBus = new RecordingEventBus();
         _encryptionService = new StubEncryptionService();
         _keyProvider = new StubKeyProvider();
         _userContext = new FakeUserContext();
+        _userContext.Roles = [RoleConstants.Admin];
         var auditFactory = new AuditEventFactory(_userContext);
         var resourceAuthService = new StubResourceAuthorizationService();
         var authGuard = AuthorizationGuardFactory.Create(_userContext, resourceAuthService);
@@ -525,61 +527,6 @@ public sealed class CredentialServiceTests : IDisposable
             Data = new Dictionary<string, EncryptedField>(),
             KeyVersion = "v1",
         };
-    }
-
-    private sealed class StubEncryptionService : ICredentialEncryptionService
-    {
-        public EncryptedField Encrypt(string plaintext, byte[] key)
-        {
-            return new EncryptedField
-            {
-                CipherText = $"encrypted:{plaintext}",
-                Nonce = "nonce",
-                Tag = "tag",
-            };
-        }
-
-        public EncryptedField Encrypt(byte[] plaintext, byte[] key) =>
-            new() { CipherText = Convert.ToBase64String(plaintext), Nonce = "nonce", Tag = "tag" };
-
-        public string DecryptString(EncryptedField field, byte[] key) =>
-            field.CipherText.Replace("encrypted:", "");
-
-        public byte[] DecryptBytes(EncryptedField field, byte[] key) =>
-            Convert.FromBase64String(field.CipherText);
-    }
-
-    private sealed class StubKeyProvider : ICryptoKeyProvider
-    {
-        public byte[] GetKey() => new byte[32];
-    }
-
-    private sealed class InMemoryEventBus : IEventBus
-    {
-        public List<object> PublishedEvents { get; } = [];
-
-        public Task PublishAsync<TEvent>(TEvent eventInstance, CancellationToken cancellationToken = default)
-            where TEvent : IDomainEvent
-        {
-            PublishedEvents.Add(eventInstance!);
-            return Task.CompletedTask;
-        }
-
-        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler)
-            where TEvent : IDomainEvent => new Disposable();
-
-        private sealed class Disposable : IDisposable
-        {
-            public void Dispose() { }
-        }
-    }
-
-    private sealed class FakeUserContext : IUserContext
-    {
-        public bool IsAuthenticated => true;
-        public Guid? UserId => Guid.NewGuid();
-        public string? Email => "test@test.com";
-        public IReadOnlyList<string> Roles { get; set; } = ["Admin"];
     }
 
     private sealed class StubResourceAuthorizationService : IResourceAuthorizationService

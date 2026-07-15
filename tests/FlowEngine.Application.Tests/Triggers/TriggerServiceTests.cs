@@ -9,6 +9,7 @@ using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
+using FlowEngine.Application.Tests.TestSupport.Fakes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 
@@ -17,7 +18,7 @@ namespace FlowEngine.Application.Tests.Triggers;
 public class TriggerServiceTests : IDisposable
 {
     private readonly FlowEngineDbContext _dbContext;
-    private readonly InMemoryEventBus _eventBus;
+    private readonly RecordingEventBus _eventBus;
     private readonly TriggerService _service;
 
     public TriggerServiceTests()
@@ -26,7 +27,7 @@ public class TriggerServiceTests : IDisposable
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
             .Options;
         _dbContext = new FlowEngineDbContext(options);
-        _eventBus = new InMemoryEventBus();
+        _eventBus = new RecordingEventBus();
         var userContext = new FakeUserContext { Roles = [RoleConstants.Admin] };
         var auditFactory = new AuditEventFactory(userContext);
         var scheduleManager = new FakeScheduleManager();
@@ -292,48 +293,6 @@ public class TriggerServiceTests : IDisposable
             Nodes = [],
             Connections = [],
         };
-    }
-
-    private sealed class FakeUserContext : IUserContext
-    {
-        public bool IsAuthenticated => true;
-        public Guid? UserId => Guid.NewGuid();
-        public string? Email => "test@test.com";
-        public IReadOnlyList<string> Roles { get; set; } = [];
-    }
-
-    private sealed class InMemoryEventBus : IEventBus
-    {
-        public List<object> PublishedEvents { get; } = [];
-
-        public Task PublishAsync<TEvent>(TEvent eventInstance, CancellationToken cancellationToken = default)
-            where TEvent : IDomainEvent
-        {
-            PublishedEvents.Add(eventInstance!);
-            return Task.CompletedTask;
-        }
-
-        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler)
-            where TEvent : IDomainEvent
-        {
-            return new Disposable();
-        }
-
-        private sealed class Disposable : IDisposable
-        {
-            public void Dispose() { }
-        }
-    }
-
-    private sealed class FakeScheduleManager : IScheduleManager
-    {
-        public Task StartAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task StopAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task RegisterScheduleAsync(Guid triggerId, Guid workflowDefinitionId, string cronExpression, string? timeZone, DateTime? startAt, DateTime? endAt, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task UnregisterScheduleAsync(Guid triggerId, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task<DateTime?> GetNextFireTimeAsync(Guid triggerId, CancellationToken cancellationToken = default) => Task.FromResult<DateTime?>(null);
-        public Task RegisterPollTriggerAsync(Guid triggerId, Guid workflowDefinitionId, int intervalSeconds, CancellationToken cancellationToken = default) => Task.CompletedTask;
-        public Task UnregisterPollTriggerAsync(Guid triggerId, CancellationToken cancellationToken = default) => Task.CompletedTask;
     }
 
     private sealed class StubResourceAuthorizationService : IResourceAuthorizationService

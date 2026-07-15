@@ -3,6 +3,7 @@ using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Executions;
 using FlowEngine.Application.Identity;
+using FlowEngine.Application.Tests.TestSupport.Fakes;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
@@ -20,7 +21,7 @@ public sealed class ExecutionServiceAuthorizationTests : IDisposable
     private readonly FlowEngineDbContext _dbContext;
     private readonly FakeUserContext _userContext;
     private readonly ExecutionService _service;
-    private readonly InMemoryEventBus _eventBus;
+    private readonly RecordingEventBus _eventBus;
 
     public ExecutionServiceAuthorizationTests()
     {
@@ -33,7 +34,7 @@ public sealed class ExecutionServiceAuthorizationTests : IDisposable
         var resourceAuthorization = new RoleBasedResourceAuthorizationService(_userContext);
         var engine = new StubEngine();
         var idempotencyService = new StubIdempotencyService();
-        _eventBus = new InMemoryEventBus();
+        _eventBus = new RecordingEventBus();
         var auditFactory = new AuditEventFactory(_userContext);
         _service = new ExecutionService(engine, _dbContext, idempotencyService, AuthorizationGuardFactory.Create(_userContext, resourceAuthorization, _eventBus), _eventBus, auditFactory);
     }
@@ -193,29 +194,6 @@ public sealed class ExecutionServiceAuthorizationTests : IDisposable
         };
     }
 
-    private sealed class FakeUserContext : IUserContext
-    {
-        public bool IsAuthenticated => UserId.HasValue;
-        public Guid? UserId { get; set; } = Guid.NewGuid();
-        public string? Email => "test@test.com";
-        public IReadOnlyList<string> Roles { get; set; } = [];
-    }
-
-    private sealed class InMemoryEventBus : IEventBus
-    {
-        public List<object> PublishedEvents { get; } = [];
-
-        public Task PublishAsync<TEvent>(TEvent eventInstance, CancellationToken cancellationToken = default)
-            where TEvent : IDomainEvent
-        {
-            PublishedEvents.Add(eventInstance!);
-            return Task.CompletedTask;
-        }
-        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler)
-            where TEvent : IDomainEvent => new Disposable();
-        private sealed class Disposable : IDisposable { public void Dispose() { } }
-    }
-
     private sealed class StubEngine : IEngine
     {
         public Task<ExecutionId> StartAsync(Guid workflowDefinitionId, object? triggerPayload = null, CancellationToken cancellationToken = default)
@@ -232,32 +210,4 @@ public sealed class ExecutionServiceAuthorizationTests : IDisposable
             => Task.CompletedTask;
     }
 
-    private sealed class RoleBasedResourceAuthorizationService(IUserContext userContext) : IResourceAuthorizationService
-    {
-        public Task<bool> CanAccessWorkflowAsync(Guid userId, Guid workflowId, Operation operation, CancellationToken ct = default)
-            => Task.FromResult(HasPermission(Scope.Workflow, operation));
-
-        public Task<bool> CanAccessCredentialAsync(Guid userId, Guid credentialId, Operation operation, CancellationToken ct = default)
-            => Task.FromResult(HasPermission(Scope.Credential, operation));
-
-        public Task<bool> CanAccessExecutionAsync(Guid userId, Guid executionId, Operation operation, CancellationToken ct = default)
-            => Task.FromResult(HasPermission(Scope.Execution, operation));
-
-        public Task<bool> CanAccessTriggerAsync(Guid userId, Guid triggerId, Operation operation, CancellationToken ct = default)
-            => Task.FromResult(HasPermission(Scope.Trigger, operation));
-
-        public bool ShouldMaskCredentialValues(IReadOnlyList<string> roles) => false;
-
-        private bool HasPermission(Scope scope, Operation operation)
-        {
-            foreach (var roleStr in userContext.Roles)
-            {
-                if (Enum.TryParse<Role>(roleStr, ignoreCase: true, out var role) && PermissionMapping.HasPermission(role, scope, operation))
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-    }
 }
