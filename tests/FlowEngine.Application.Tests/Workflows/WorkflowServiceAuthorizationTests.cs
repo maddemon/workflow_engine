@@ -222,29 +222,29 @@ public sealed class WorkflowServiceAuthorizationTests : IDisposable
     private sealed class RoleBasedResourceAuthorizationService(IUserContext userContext) : IResourceAuthorizationService
     {
         public Task<bool> CanAccessWorkflowAsync(Guid userId, Guid workflowId, Operation operation, CancellationToken ct = default)
-            => Task.FromResult(IsAllowed(operation));
+            => Task.FromResult(HasPermission(Scope.Workflow, operation));
 
         public Task<bool> CanAccessCredentialAsync(Guid userId, Guid credentialId, Operation operation, CancellationToken ct = default)
-            => Task.FromResult(IsAllowed(operation));
+            => Task.FromResult(HasPermission(Scope.Credential, operation));
 
         public Task<bool> CanAccessExecutionAsync(Guid userId, Guid executionId, Operation operation, CancellationToken ct = default)
-            => Task.FromResult(IsAllowed(operation));
+            => Task.FromResult(HasPermission(Scope.Execution, operation));
 
         public Task<bool> CanAccessTriggerAsync(Guid userId, Guid triggerId, Operation operation, CancellationToken ct = default)
-            => Task.FromResult(IsAllowed(operation));
+            => Task.FromResult(HasPermission(Scope.Trigger, operation));
 
         public bool ShouldMaskCredentialValues(IReadOnlyList<string> roles) => false;
 
-        private bool IsAllowed(Operation operation)
+        private bool HasPermission(Scope scope, Operation operation)
         {
-            var roles = userContext.Roles;
-            return operation switch
+            foreach (var roleStr in userContext.Roles)
             {
-                Operation.Read => roles.Contains(RoleConstants.Admin) || roles.Contains(RoleConstants.Editor) || roles.Contains(RoleConstants.Viewer),
-                Operation.Write => roles.Contains(RoleConstants.Admin) || roles.Contains(RoleConstants.Editor),
-                Operation.Delete or Operation.Execute => roles.Contains(RoleConstants.Admin),
-                _ => false,
-            };
+                if (Enum.TryParse<Role>(roleStr, ignoreCase: true, out var role) && PermissionMapping.HasPermission(role, scope, operation))
+                {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 }
