@@ -88,13 +88,12 @@ public class FilesController(
     [AuthorizePermission(Scope.File, Operation.Read)]
     public async Task<IActionResult> Download(Guid id, CancellationToken cancellationToken)
     {
-        var stream = await fileService.DownloadAsync(id, cancellationToken).ConfigureAwait(false);
+        var (stream, metadata) = await fileService.GetDownloadAsync(id, cancellationToken).ConfigureAwait(false);
         if (stream is null)
         {
             return NotFound();
         }
 
-        var metadata = await fileService.GetAsync(id, cancellationToken).ConfigureAwait(false);
         var contentType = metadata?.ContentType ?? "application/octet-stream";
         var fileName = metadata?.FileName ?? "download";
 

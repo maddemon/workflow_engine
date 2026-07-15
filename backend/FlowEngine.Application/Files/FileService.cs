@@ -107,6 +107,26 @@ public sealed class FileService(
     }
 
     /// <summary>
+    /// 获取文件下载流及元数据，合并为单次数据库查询。会校验用户对该文件所属项目的读取权限。
+    /// </summary>
+    public async Task<(Stream? Stream, StoredFileDto? Metadata)> GetDownloadAsync(Guid fileId, CancellationToken cancellationToken = default)
+    {
+        var file = await dbContext.StoredFiles
+            .FirstOrDefaultAsync(f => f.Id == fileId && !f.Deleted, cancellationToken)
+            .ConfigureAwait(false);
+
+        if (file is null)
+        {
+            return (null, null);
+        }
+
+        await EnsureCanAccessFileAsync(file, requireWrite: false, cancellationToken).ConfigureAwait(false);
+
+        var stream = await fileStorage.ReadAsync(file.StoragePath, cancellationToken).ConfigureAwait(false);
+        return (stream, MapToDto(file));
+    }
+
+    /// <summary>
     /// 获取文件下载流。会校验用户对该文件所属项目的读取权限。
     /// </summary>
     public async Task<Stream?> DownloadAsync(Guid fileId, CancellationToken cancellationToken = default)
