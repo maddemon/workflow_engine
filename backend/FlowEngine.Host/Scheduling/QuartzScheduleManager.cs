@@ -8,12 +8,13 @@ namespace FlowEngine.Host.Scheduling;
 
 /// <summary>
 /// 基于 Quartz.NET 的调度管理器实现。
+/// 调度器生命周期由 <c>AddQuartzHostedService</c> 管理的 <c>QuartzHostedService</c> 负责，
+/// 本类通过 <see cref="ISchedulerFactory.GetScheduler"/> 幂等获取已启动的调度器实例。
 /// </summary>
-public sealed class QuartzScheduleManager : IScheduleManager, IHostedService, IDisposable
+public sealed class QuartzScheduleManager : IScheduleManager
 {
     private readonly ISchedulerFactory _schedulerFactory;
     private readonly ILogger<QuartzScheduleManager> _logger;
-    private IScheduler? _scheduler;
 
     /// <summary>
     /// 初始化 Quartz 调度管理器。
@@ -27,21 +28,18 @@ public sealed class QuartzScheduleManager : IScheduleManager, IHostedService, ID
     }
 
     /// <inheritdoc />
-    public async Task StartAsync(CancellationToken cancellationToken = default)
+    public Task StartAsync(CancellationToken cancellationToken = default)
     {
-        _scheduler = await _schedulerFactory.GetScheduler(cancellationToken).ConfigureAwait(false);
-        await _scheduler.Start(cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation("Quartz 调度器已启动。");
+        // 调度器生命周期由 AddQuartzHostedService 管理的 QuartzHostedService 负责，
+        // 此处无需重复启动。
+        return Task.CompletedTask;
     }
 
     /// <inheritdoc />
-    public async Task StopAsync(CancellationToken cancellationToken = default)
+    public Task StopAsync(CancellationToken cancellationToken = default)
     {
-        if (_scheduler is not null)
-        {
-            await _scheduler.Shutdown(cancellationToken).ConfigureAwait(false);
-            _logger.LogInformation("Quartz 调度器已停止。");
-        }
+        // 调度器关闭由 QuartzHostedService 负责。
+        return Task.CompletedTask;
     }
 
     /// <inheritdoc />
@@ -54,18 +52,14 @@ public sealed class QuartzScheduleManager : IScheduleManager, IHostedService, ID
         DateTime? endAt = null,
         CancellationToken cancellationToken = default)
     {
-        if (_scheduler is null)
-        {
-            _logger.LogWarning("调度器未启动，无法注册触发器: {TriggerId}", triggerId);
-            return;
-        }
+        var scheduler = await _schedulerFactory.GetScheduler(cancellationToken).ConfigureAwait(false);
 
         var jobKey = new JobKey($"schedule-trigger-{triggerId}", "triggers");
         var triggerKey = new TriggerKey($"schedule-trigger-{triggerId}", "triggers");
 
-        if (await _scheduler.CheckExists(jobKey, cancellationToken).ConfigureAwait(false))
+        if (await scheduler.CheckExists(jobKey, cancellationToken).ConfigureAwait(false))
         {
-            await _scheduler.DeleteJob(jobKey, cancellationToken).ConfigureAwait(false);
+            await scheduler.DeleteJob(jobKey, cancellationToken).ConfigureAwait(false);
         }
 
         var job = JobBuilder.Create<ScheduleTriggerJob>()
@@ -96,7 +90,7 @@ public sealed class QuartzScheduleManager : IScheduleManager, IHostedService, ID
 
         var quartzTrigger = quartzTriggerBuilder.Build();
 
-        await _scheduler.ScheduleJob(job, quartzTrigger, cancellationToken).ConfigureAwait(false);
+        await scheduler.ScheduleJob(job, quartzTrigger, cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation(
             "已注册定时触发器: TriggerId={TriggerId}, Cron={Cron}",
@@ -106,12 +100,12 @@ public sealed class QuartzScheduleManager : IScheduleManager, IHostedService, ID
     /// <inheritdoc />
     public async Task UnregisterScheduleAsync(Guid triggerId, CancellationToken cancellationToken = default)
     {
-        if (_scheduler is null) return;
+        var scheduler = await _schedulerFactory.GetScheduler(cancellationToken).ConfigureAwait(false);
 
         var jobKey = new JobKey($"schedule-trigger-{triggerId}", "triggers");
-        if (await _scheduler.CheckExists(jobKey, cancellationToken).ConfigureAwait(false))
+        if (await scheduler.CheckExists(jobKey, cancellationToken).ConfigureAwait(false))
         {
-            await _scheduler.DeleteJob(jobKey, cancellationToken).ConfigureAwait(false);
+            await scheduler.DeleteJob(jobKey, cancellationToken).ConfigureAwait(false);
             _logger.LogInformation("已注销定时触发器: TriggerId={TriggerId}", triggerId);
         }
     }
@@ -119,17 +113,11 @@ public sealed class QuartzScheduleManager : IScheduleManager, IHostedService, ID
     /// <inheritdoc />
     public async Task<DateTime?> GetNextFireTimeAsync(Guid triggerId, CancellationToken cancellationToken = default)
     {
-        if (_scheduler is null) return null;
+        var scheduler = await _schedulerFactory.GetScheduler(cancellationToken).ConfigureAwait(false);
 
         var triggerKey = new TriggerKey($"schedule-trigger-{triggerId}", "triggers");
-        var trigger = await _scheduler.GetTrigger(triggerKey, cancellationToken).ConfigureAwait(false);
+        var trigger = await scheduler.GetTrigger(triggerKey, cancellationToken).ConfigureAwait(false);
         return trigger?.GetNextFireTimeUtc()?.UtcDateTime;
-    }
-
-    /// <inheritdoc />
-    public void Dispose()
-    {
-        (_scheduler as IDisposable)?.Dispose();
     }
 
     /// <inheritdoc />
@@ -139,18 +127,14 @@ public sealed class QuartzScheduleManager : IScheduleManager, IHostedService, ID
         int intervalSeconds,
         CancellationToken cancellationToken = default)
     {
-        if (_scheduler is null)
-        {
-            _logger.LogWarning("调度器未启动，无法注册轮询触发器: {TriggerId}", triggerId);
-            return;
-        }
+        var scheduler = await _schedulerFactory.GetScheduler(cancellationToken).ConfigureAwait(false);
 
         var jobKey = new JobKey($"poll-trigger-{triggerId}", "triggers");
         var triggerKey = new TriggerKey($"poll-trigger-{triggerId}", "triggers");
 
-        if (await _scheduler.CheckExists(jobKey, cancellationToken).ConfigureAwait(false))
+        if (await scheduler.CheckExists(jobKey, cancellationToken).ConfigureAwait(false))
         {
-            await _scheduler.DeleteJob(jobKey, cancellationToken).ConfigureAwait(false);
+            await scheduler.DeleteJob(jobKey, cancellationToken).ConfigureAwait(false);
         }
 
         var job = JobBuilder.Create<PollTriggerJob>()
@@ -169,7 +153,7 @@ public sealed class QuartzScheduleManager : IScheduleManager, IHostedService, ID
             .WithSchedule(scheduleBuilder)
             .Build();
 
-        await _scheduler.ScheduleJob(job, quartzTrigger, cancellationToken).ConfigureAwait(false);
+        await scheduler.ScheduleJob(job, quartzTrigger, cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation(
             "已注册轮询触发器: TriggerId={TriggerId}, Interval={IntervalSeconds}s",
@@ -179,12 +163,12 @@ public sealed class QuartzScheduleManager : IScheduleManager, IHostedService, ID
     /// <inheritdoc />
     public async Task UnregisterPollTriggerAsync(Guid triggerId, CancellationToken cancellationToken = default)
     {
-        if (_scheduler is null) return;
+        var scheduler = await _schedulerFactory.GetScheduler(cancellationToken).ConfigureAwait(false);
 
         var jobKey = new JobKey($"poll-trigger-{triggerId}", "triggers");
-        if (await _scheduler.CheckExists(jobKey, cancellationToken).ConfigureAwait(false))
+        if (await scheduler.CheckExists(jobKey, cancellationToken).ConfigureAwait(false))
         {
-            await _scheduler.DeleteJob(jobKey, cancellationToken).ConfigureAwait(false);
+            await scheduler.DeleteJob(jobKey, cancellationToken).ConfigureAwait(false);
             _logger.LogInformation("已注销轮询触发器: TriggerId={TriggerId}", triggerId);
         }
     }
