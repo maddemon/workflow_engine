@@ -52,6 +52,7 @@ export function ParameterPanel() {
   const workflowName = useWorkflowStore((s) => s.workflowName);
   const setWorkflowName = useWorkflowStore((s) => s.setWorkflowName);
   const isDirty = useWorkflowStore((s) => s.isDirty);
+  const workflowId = useWorkflowStore((s) => s.workflowId ?? '');
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const { isVisible } = useDisplayRule(selectedNode?.data.parameters ?? {});
@@ -119,7 +120,7 @@ export function ParameterPanel() {
             ]}
           />
           <Divider />
-          <TriggerConfig workflowId={useWorkflowStore.getState().workflowId ?? ''} isExecuting={isExecuting} reviewMode={reviewMode} />
+          <TriggerConfig workflowId={workflowId} isExecuting={isExecuting} reviewMode={reviewMode} />
         </Stack>
         <Group justify="space-between">
           <Text size="xs" c="dimmed">Nodes</Text>
