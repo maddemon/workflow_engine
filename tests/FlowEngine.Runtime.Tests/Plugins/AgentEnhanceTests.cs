@@ -148,27 +148,40 @@ public class InlineResolverTests
     [Fact]
     public async Task RunAsync_Creates_NodeExecutionRecord_With_ParentRecordId()
     {
+        var passThroughNode = CreateNodeDefinition("passthrough1", "passThrough");
+        var workflow = CreateWorkflow(passThroughNode);
+
         var callCount = 0;
         var llmClient = new MockLlmClient(_ =>
         {
             callCount++;
-            return new LlmResponse
+            if (callCount == 1)
             {
-                Content = null,
-                ToolCalls =
-                [
-                    new LlmToolCall
-                    {
-                        Id = $"call{callCount}",
-                        Name = "tool1",
-                        Arguments = "{}"
-                    }
-                ]
-            };
+                return new LlmResponse
+                {
+                    Content = null,
+                    ToolCalls =
+                    [
+                        new LlmToolCall
+                        {
+                            Id = "call1",
+                            Name = "tool1",
+                            Arguments = "{}"
+                        }
+                    ]
+                };
+            }
+            return new LlmResponse { Content = "Done" };
         });
 
-        var context = CreateContext();
-        var resolver = new InlineResolver(llmClient, [], context, maxIterations: 3, parentRecordId: Guid.NewGuid());
+        var tools = new List<ToolDefinition>
+        {
+            new() { Name = "tool1", Description = "test", TargetNodeDefinitionId = passThroughNode.Id }
+        };
+
+        var parentRecordId = Guid.NewGuid();
+        var context = CreateContext(workflow, llmClient);
+        var resolver = new InlineResolver(llmClient, tools, context, maxIterations: 3, parentRecordId: parentRecordId);
 
         var messages = new List<LlmMessage>
         {
@@ -177,7 +190,58 @@ public class InlineResolverTests
 
         var result = await resolver.RunAsync(messages);
 
-        Assert.Equal(InlineResolverStopReason.MaxIterationsReached, result.StoppedReason);
+        Assert.Equal(InlineResolverStopReason.Completed, result.StoppedReason);
+        Assert.NotEmpty(result.ToolExecutionRecords);
+        Assert.All(result.ToolExecutionRecords, r => Assert.Equal(parentRecordId, r.ParentRecordId));
+    }
+
+    [Fact]
+    public async Task RunAsync_Creates_NodeExecutionRecord_With_Null_ParentRecordId()
+    {
+        var passThroughNode = CreateNodeDefinition("passthrough1", "passThrough");
+        var workflow = CreateWorkflow(passThroughNode);
+
+        var callCount = 0;
+        var llmClient = new MockLlmClient(_ =>
+        {
+            callCount++;
+            if (callCount == 1)
+            {
+                return new LlmResponse
+                {
+                    Content = null,
+                    ToolCalls =
+                    [
+                        new LlmToolCall
+                        {
+                            Id = "call1",
+                            Name = "tool1",
+                            Arguments = "{}"
+                        }
+                    ]
+                };
+            }
+            return new LlmResponse { Content = "Done" };
+        });
+
+        var tools = new List<ToolDefinition>
+        {
+            new() { Name = "tool1", Description = "test", TargetNodeDefinitionId = passThroughNode.Id }
+        };
+
+        var context = CreateContext(workflow, llmClient);
+        var resolver = new InlineResolver(llmClient, tools, context, maxIterations: 3, parentRecordId: null);
+
+        var messages = new List<LlmMessage>
+        {
+            new() { Role = "user", Content = "Test" }
+        };
+
+        var result = await resolver.RunAsync(messages);
+
+        Assert.Equal(InlineResolverStopReason.Completed, result.StoppedReason);
+        Assert.NotEmpty(result.ToolExecutionRecords);
+        Assert.All(result.ToolExecutionRecords, r => Assert.Null(r.ParentRecordId));
     }
 
     [Fact]
