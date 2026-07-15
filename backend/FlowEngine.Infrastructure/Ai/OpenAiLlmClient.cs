@@ -60,6 +60,21 @@ public sealed class OpenAiLlmClient : ILlmClient
         }
     }
 
+    /// <summary>
+    /// 测试专用构造函数，允许注入预配置的 <see cref="OpenAIClient"/>。
+    /// </summary>
+    internal OpenAiLlmClient(
+        OpenAIClient client,
+        string model = "gpt-4",
+        float temperature = 0.7f,
+        int? maxTokens = null)
+    {
+        _client = client;
+        _model = model;
+        _temperature = Math.Clamp(temperature, 0f, 2f);
+        _maxTokens = maxTokens;
+    }
+
     /// <inheritdoc />
     public async Task<LlmResponse> ChatAsync(
         IReadOnlyList<LlmMessage> messages,
