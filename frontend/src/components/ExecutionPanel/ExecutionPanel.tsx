@@ -4,12 +4,11 @@ import { X, AlertCircle, Check, Clock, Loader as LoaderIcon, Square } from 'luci
 import type { ExecutionDto } from '../../types/workflow.ts';
 import { NodeOutputList } from './NodeOutputList.tsx';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
-import { cancelExecution } from '../../services/api.ts';
 
 interface ExecutionPanelProps {
   execution: ExecutionDto | null;
   onClose: () => void;
-  onCancel?: () => void;
+  onCancel?: () => Promise<void>;
   error?: string | null;
 }
 
@@ -57,15 +56,7 @@ export function ExecutionPanel({ execution, onClose, onCancel, error }: Executio
     if (!execution) return;
     setCancelling(true);
     try {
-      await cancelExecution(execution.id);
-      onCancel?.();
-    } catch (err: unknown) {
-      // 409 = 执行已结束，无需取消
-      const axiosErr = err as { response?: { status?: number } } | undefined;
-      if (axiosErr?.response?.status !== 409) {
-        console.error('Failed to cancel execution:', err);
-      }
-      onCancel?.();
+      await onCancel?.();
     } finally {
       setCancelling(false);
     }
