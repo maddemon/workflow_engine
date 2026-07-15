@@ -68,9 +68,15 @@ public sealed class ProjectServiceTests : IDisposable
         var ct = TestContext.Current.CancellationToken;
         var dto = new CreateProjectDto { Name = "Test" };
 
-        await _service.CreateAsync(dto, ct);
+        var result = await _service.CreateAsync(dto, ct);
 
-        Assert.True(_eventBus.PublishedEvents.Count > 0);
+        var auditEvent = Assert.Single(_eventBus.PublishedEvents);
+        var logEvent = Assert.IsType<AuditLogEvent>(auditEvent);
+        Assert.Equal(AuditEventTypes.ProjectCreated, logEvent.EventType);
+        Assert.Equal("Project", logEvent.ResourceType);
+        Assert.Equal(result.Id, logEvent.ResourceId);
+        Assert.NotNull(logEvent.Payload);
+        Assert.Equal("Test", logEvent.Payload["name"].ToString());
     }
 
     [Fact]
