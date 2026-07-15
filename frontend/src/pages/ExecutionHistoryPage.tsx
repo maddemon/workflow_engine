@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, Fragment } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Stack,
@@ -232,7 +232,7 @@ export function ExecutionHistoryPage() {
                         ? JSON.stringify(record.output, null, 2)
                         : null;
                       return (
-                        <>
+                        <Fragment key={record.id}>
                           <Table.Tr key={record.id}>
                             <Table.Td>{record.nodeDefinitionId.slice(0, 8)}</Table.Td>
                             <Table.Td>
@@ -289,7 +289,7 @@ export function ExecutionHistoryPage() {
                               </Table.Td>
                             </Table.Tr>
                           )}
-                        </>
+                        </Fragment>
                       );
                     })}
                   </Table.Tbody>
