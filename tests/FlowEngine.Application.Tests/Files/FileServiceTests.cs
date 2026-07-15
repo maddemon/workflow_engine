@@ -1,3 +1,4 @@
+using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Files;
 using FlowEngine.Application.Identity;
@@ -5,6 +6,7 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
+using FlowEngine.Core.Events;
 using FlowEngine.Core.Exceptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -18,6 +20,7 @@ public sealed class FileServiceTests : IDisposable
     private readonly FakeUserContext _userContext;
     private readonly FileStorageOptions _options;
     private readonly FileService _service;
+    private readonly InMemoryEventBus _eventBus;
 
     public FileServiceTests()
     {
@@ -28,6 +31,7 @@ public sealed class FileServiceTests : IDisposable
         _fileStorage = new FakeFileStorage();
         _userContext = new FakeUserContext();
         _options = new FileStorageOptions();
+        _eventBus = new InMemoryEventBus();
         _service = new FileService(_dbContext, _fileStorage, _userContext, AuthorizationGuardFactory.Create(_userContext, new FakeResourceAuthorizationService()), Options.Create(_options));
     }
 
@@ -312,6 +316,59 @@ public sealed class FileServiceTests : IDisposable
         public IReadOnlyList<string> Roles => [RoleConstants.Admin];
     }
 
+    [Fact]
+    public async Task UploadAsync_ResourceAuthorizationDenied_ThrowsPermissionDeniedException()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var projectId = Guid.NewGuid();
+        var content = new MemoryStream("test content"u8.ToArray());
+
+        var denyingAuthService = new DenyingResourceAuthorizationService();
+        var authGuard = AuthorizationGuardFactory.Create(_userContext, denyingAuthService, _eventBus);
+        var service = new FileService(_dbContext, _fileStorage, _userContext, authGuard, Options.Create(_options));
+
+        await Assert.ThrowsAsync<PermissionDeniedException>(() => service.UploadAsync("test.txt", content, "text/plain", projectId, ct));
+
+        var deniedEvent = _eventBus.PublishedEvents
+            .OfType<AuditLogEvent>()
+            .FirstOrDefault(e => e.EventType == AuditEventTypes.PermissionDenied);
+        Assert.NotNull(deniedEvent);
+        Assert.Equal(projectId, deniedEvent.ResourceId);
+    }
+
+    [Fact]
+    public async Task GetAllByProjectAsync_ResourceAuthorizationDenied_ThrowsPermissionDeniedException()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var projectId = Guid.NewGuid();
+
+        var denyingAuthService = new DenyingResourceAuthorizationService();
+        var authGuard = AuthorizationGuardFactory.Create(_userContext, denyingAuthService, _eventBus);
+        var service = new FileService(_dbContext, _fileStorage, _userContext, authGuard, Options.Create(_options));
+
+        await Assert.ThrowsAsync<PermissionDeniedException>(() => service.GetAllByProjectAsync(projectId, ct));
+    }
+
+    private sealed class DenyingResourceAuthorizationService : IResourceAuthorizationService
+    {
+        public Task<bool> CanAccessWorkflowAsync(Guid userId, Guid workflowId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(false);
+
+        public Task<bool> CanAccessCredentialAsync(Guid userId, Guid credentialId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(false);
+
+        public Task<bool> CanAccessExecutionAsync(Guid userId, Guid executionId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(false);
+
+        public Task<bool> CanAccessTriggerAsync(Guid userId, Guid triggerId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(false);
+
+        public Task<bool> CanAccessProjectAsync(Guid userId, Guid projectId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(false);
+
+        public bool ShouldMaskCredentialValues(IReadOnlyList<string> roles) => false;
+    }
+
     private sealed class FakeResourceAuthorizationService : IResourceAuthorizationService
     {
         public Task<bool> CanAccessWorkflowAsync(Guid userId, Guid workflowId, Operation operation, CancellationToken ct = default)
@@ -332,4 +389,23 @@ public sealed class FileServiceTests : IDisposable
         public bool ShouldMaskCredentialValues(IReadOnlyList<string> roles) => false;
     }
 
+    private sealed class InMemoryEventBus : IEventBus
+    {
+        public List<object> PublishedEvents { get; } = [];
+
+        public Task PublishAsync<TEvent>(TEvent eventInstance, CancellationToken cancellationToken = default)
+            where TEvent : IDomainEvent
+        {
+            PublishedEvents.Add(eventInstance!);
+            return Task.CompletedTask;
+        }
+
+        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler)
+            where TEvent : IDomainEvent => new Disposable();
+
+        private sealed class Disposable : IDisposable
+        {
+            public void Dispose() { }
+        }
+    }
 }
