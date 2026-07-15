@@ -23,7 +23,6 @@ public partial class AuthenticationService(
     private const int MaxFailedAttempts = 5;
     private static readonly TimeSpan AttemptWindow = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
-    private string? _clientIp;
 
     /// <summary>
     /// 用户注册。
@@ -96,7 +95,6 @@ public partial class AuthenticationService(
     /// <returns>登录结果（含 JWT 令牌）。</returns>
     public async Task<LoginResult> LoginAsync(LoginRequest request, CancellationToken ct = default, string? clientIp = null)
     {
-        _clientIp = clientIp;
         if (string.IsNullOrWhiteSpace(request.Email) || string.IsNullOrWhiteSpace(request.Password))
         {
             return new LoginResult
@@ -106,7 +104,7 @@ public partial class AuthenticationService(
             };
         }
 
-        if (IsLockedOut(request.Email))
+        if (IsLockedOut(request.Email, clientIp))
         {
             return new LoginResult
             {
@@ -118,7 +116,7 @@ public partial class AuthenticationService(
         var user = await userStore.GetByEmailAsync(request.Email, ct).ConfigureAwait(false);
         if (user is null || !user.IsActive)
         {
-            RecordFailedAttempt(request.Email);
+            RecordFailedAttempt(request.Email, clientIp);
             return new LoginResult
             {
                 Success = false,
@@ -129,7 +127,7 @@ public partial class AuthenticationService(
         var verifyResult = passwordHasher.VerifyPassword(user.PasswordHash, request.Password);
         if (verifyResult == PasswordVerifyResult.Failed)
         {
-            RecordFailedAttempt(request.Email);
+            RecordFailedAttempt(request.Email, clientIp);
             return new LoginResult
             {
                 Success = false,
@@ -144,7 +142,7 @@ public partial class AuthenticationService(
             await userStore.UpdateAsync(user, ct).ConfigureAwait(false);
         }
 
-        ClearFailedAttempts(request.Email);
+        ClearFailedAttempts(request.Email, clientIp);
 
         var roles = await userStore.GetRolesAsync(user.Id, ct).ConfigureAwait(false);
         var roleNames = roles.Select(r => r.Role).ToList();
@@ -177,20 +175,20 @@ public partial class AuthenticationService(
         };
     }
 
-    private string GetAttemptCacheKey(string email)
+    private string GetAttemptCacheKey(string email, string? clientIp)
     {
-        var ip = string.IsNullOrEmpty(_clientIp) ? "unknown" : _clientIp;
+        var ip = string.IsNullOrEmpty(clientIp) ? "unknown" : clientIp;
         return $"login-attempts:{email.ToLowerInvariant()}:{ip}";
     }
 
-    private bool IsLockedOut(string email)
+    private bool IsLockedOut(string email, string? clientIp)
     {
         if (memoryCache is null)
         {
             return false;
         }
 
-        var key = GetAttemptCacheKey(email);
+        var key = GetAttemptCacheKey(email, clientIp);
         if (!memoryCache.TryGetValue(key, out LoginAttemptState? state) || state is null)
         {
             return false;
@@ -204,14 +202,14 @@ public partial class AuthenticationService(
         return false;
     }
 
-    private void RecordFailedAttempt(string email)
+    private void RecordFailedAttempt(string email, string? clientIp)
     {
         if (memoryCache is null)
         {
             return;
         }
 
-        var key = GetAttemptCacheKey(email);
+        var key = GetAttemptCacheKey(email, clientIp);
         var state = memoryCache.TryGetValue(key, out LoginAttemptState? existing) && existing is not null
             ? existing
             : new LoginAttemptState();
@@ -235,9 +233,9 @@ public partial class AuthenticationService(
         memoryCache.Set(key, state, LockoutDuration);
     }
 
-    private void ClearFailedAttempts(string email)
+    private void ClearFailedAttempts(string email, string? clientIp)
     {
-        memoryCache?.Remove(GetAttemptCacheKey(email));
+        memoryCache?.Remove(GetAttemptCacheKey(email, clientIp));
     }
 
     [GeneratedRegex(@"^[^@\s]+@[^@\s]+\.[^@\s]+$")]
