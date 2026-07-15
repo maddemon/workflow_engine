@@ -1,6 +1,10 @@
 using System.Security.Claims;
+using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
+using FlowEngine.Application.Identity;
+using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
+using FlowEngine.Core.Events;
 using FlowEngine.Host.Middlewares;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -13,6 +17,8 @@ namespace FlowEngine.Host.Tests.Middlewares;
 public class AuthorizationMiddlewareTests
 {
     private readonly AuthorizationService _authService = new();
+    private readonly InMemoryEventBus _eventBus = new();
+    private readonly AuditEventFactory _auditFactory = new(new FakeUserContext { UserId = Guid.NewGuid() });
 
     [Fact]
     public async Task EndpointWithAttribute_ChecksPermission_DeniedReturns403()
@@ -22,7 +28,7 @@ public class AuthorizationMiddlewareTests
         context.SetEndpoint(endpoint);
 
         var middleware = new RbacAuthorizationMiddleware(_ => Task.CompletedTask);
-        await middleware.InvokeAsync(context, _authService);
+        await middleware.InvokeAsync(context, _authService, _eventBus, _auditFactory);
 
         Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
     }
@@ -34,7 +40,7 @@ public class AuthorizationMiddlewareTests
         var nextCalled = false;
         var middleware = new RbacAuthorizationMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
 
-        await middleware.InvokeAsync(context, _authService);
+        await middleware.InvokeAsync(context, _authService, _eventBus, _auditFactory);
 
         Assert.True(nextCalled);
     }
@@ -47,7 +53,7 @@ public class AuthorizationMiddlewareTests
         context.SetEndpoint(endpoint);
 
         var middleware = new RbacAuthorizationMiddleware(_ => Task.CompletedTask);
-        await middleware.InvokeAsync(context, _authService);
+        await middleware.InvokeAsync(context, _authService, _eventBus, _auditFactory);
 
         Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
 
@@ -67,7 +73,7 @@ public class AuthorizationMiddlewareTests
 
         var nextCalled = false;
         var middleware = new RbacAuthorizationMiddleware(_ => { nextCalled = true; return Task.CompletedTask; });
-        await middleware.InvokeAsync(context, _authService);
+        await middleware.InvokeAsync(context, _authService, _eventBus, _auditFactory);
 
         Assert.True(nextCalled);
         Assert.Equal(200, context.Response.StatusCode);
@@ -90,6 +96,23 @@ public class AuthorizationMiddlewareTests
             _ => Task.CompletedTask,
             new EndpointMetadataCollection(metadata),
             "TestEndpoint");
+    }
+
+    private sealed class InMemoryEventBus : IEventBus
+    {
+        public Task PublishAsync<TEvent>(TEvent eventInstance, CancellationToken cancellationToken = default)
+            where TEvent : IDomainEvent => Task.CompletedTask;
+        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler)
+            where TEvent : IDomainEvent => new Disposable();
+        private sealed class Disposable : IDisposable { public void Dispose() { } }
+    }
+
+    private sealed class FakeUserContext : IUserContext
+    {
+        public bool IsAuthenticated => UserId.HasValue;
+        public Guid? UserId { get; init; } = Guid.NewGuid();
+        public string? Email => "test@example.com";
+        public IReadOnlyList<string> Roles { get; init; } = ["Admin"];
     }
 }
 

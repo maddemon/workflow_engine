@@ -1,9 +1,11 @@
 using System.Text.Json;
 using FlowEngine.Application.Audit;
+using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -258,7 +260,8 @@ public sealed class WorkflowImportExportTests
             registry,
             new WorkflowValidator(registry),
             new FakeEventBus(),
-            new AuditEventFactory(new FakeUserContext()));
+            new AuditEventFactory(new FakeUserContext()),
+            new StubAuthorizationGuard());
     }
 
     private static NodeTypeDescriptor CreateDescriptor(
@@ -332,5 +335,12 @@ public sealed class WorkflowImportExportTests
         public bool IsAuthenticated => true;
         public string? Email => "test@test.com";
         public IReadOnlyList<string> Roles => [];
+    }
+
+    private sealed class StubAuthorizationGuard : IAuthorizationGuard
+    {
+        public Task RequireAccessAsync(ResourceKind kind, Guid resourceId, Operation operation, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RequireScopeAsync(Scope scope, Operation operation, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RequireAdminAsync(Operation operation, CancellationToken ct = default) => Task.CompletedTask;
     }
 }

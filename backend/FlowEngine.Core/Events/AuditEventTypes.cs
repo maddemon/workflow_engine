@@ -113,6 +113,12 @@ public static class AuditEventTypes
     /// <summary>项目删除。</summary>
     public const string ProjectDeleted = "Project.Deleted";
 
+    /// <summary>成员添加。</summary>
+    public const string MemberAdded = "Member.Added";
+
+    /// <summary>成员角色变更。</summary>
+    public const string MemberRoleChanged = "Member.RoleChanged";
+
 
 
     /// <summary>

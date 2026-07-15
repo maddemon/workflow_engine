@@ -12,6 +12,7 @@ using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.Exceptions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FlowEngine.Application.Tests.Workflows;
 
@@ -34,12 +35,12 @@ public sealed class WorkflowServiceAuthorizationTests : IDisposable
         var scheduleManager = new FakeScheduleManager();
         var resourceAuthorization = new RoleBasedResourceAuthorizationService(_userContext);
         var authGuard = AuthorizationGuardFactory.Create(_userContext, resourceAuthorization);
-        var triggerService = new TriggerService(_dbContext, eventBus, auditFactory, scheduleManager, authGuard, new WebhookRouteService(_dbContext));
+        var triggerService = new TriggerService(_dbContext, eventBus, auditFactory, scheduleManager, authGuard, new WebhookRouteService(_dbContext), NullLogger<TriggerService>.Instance);
         var validator = new WorkflowValidator(new FakeNodeRegistry());
         var handler = new AuthorizedOperationHandler(authGuard, eventBus, auditFactory);
         var statisticsLoader = new WorkflowStatisticsLoader(_dbContext);
         var triggerSync = new WorkflowTriggerSync(triggerService, handler);
-        _service = new WorkflowService(_dbContext, validator, eventBus, auditFactory, triggerService, authGuard, handler, statisticsLoader, triggerSync);
+        _service = new WorkflowService(_dbContext, validator, eventBus, auditFactory, triggerService, authGuard, handler, statisticsLoader, triggerSync, NullLogger<WorkflowService>.Instance);
     }
 
     public void Dispose()

@@ -1,10 +1,12 @@
 #pragma warning disable xUnit1051 // Use TestContext.Current.CancellationToken
 
 using FlowEngine.Application.Audit;
+using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -72,7 +74,7 @@ public sealed class WorkflowModificationServiceTests : IDisposable
         _workflowValidator = new WorkflowValidator(_registry);
         var eventBus = new InMemoryEventBus();
         var auditFactory = new AuditEventFactory(new StubUserContext());
-        _service = new WorkflowModificationService(_registry, _dbContext, _workflowValidator, eventBus, auditFactory);
+        _service = new WorkflowModificationService(_registry, _dbContext, _workflowValidator, eventBus, auditFactory, new StubAuthorizationGuard());
     }
 
     public void Dispose()
@@ -416,5 +418,12 @@ public sealed class WorkflowModificationServiceTests : IDisposable
         public string? Email => "test@example.com";
         public IReadOnlyList<string> Roles => ["admin"];
         public bool IsAuthenticated => true;
+    }
+
+    private sealed class StubAuthorizationGuard : IAuthorizationGuard
+    {
+        public Task RequireAccessAsync(ResourceKind kind, Guid resourceId, Operation operation, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RequireScopeAsync(Scope scope, Operation operation, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RequireAdminAsync(Operation operation, CancellationToken ct = default) => Task.CompletedTask;
     }
 }

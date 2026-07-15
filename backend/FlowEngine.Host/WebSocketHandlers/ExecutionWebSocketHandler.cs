@@ -1,3 +1,4 @@
+using System.Buffers;
 using System.Net.WebSockets;
 using System.Text;
 using FlowEngine.Application.Authorization;
@@ -87,7 +88,7 @@ public sealed class ExecutionWebSocketHandler
 
     private async Task ProcessConnectionAsync(WebSocketConnection connection, CancellationToken cancellationToken)
     {
-        var buffer = new byte[4096];
+        var buffer = ArrayPool<byte>.Shared.Rent(4096);
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var heartbeatCts = new CancellationTokenSource();
         cts.Token.Register(() => heartbeatCts.Cancel());
@@ -108,7 +109,40 @@ public sealed class ExecutionWebSocketHandler
 
                 if (result.MessageType == WebSocketMessageType.Text)
                 {
-                    var message = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                    // 大消息处理：若非 EndOfMessage，用 MemoryStream 动态扩容拼接。
+                    string message;
+                    if (result.EndOfMessage)
+                    {
+                        message = Encoding.UTF8.GetString(buffer, 0, result.Count);
+                    }
+                    else
+                    {
+                        using var ms = new MemoryStream();
+                        ms.Write(buffer, 0, result.Count);
+
+                        while (true)
+                        {
+                            var chunk = await connection.WebSocket.ReceiveAsync(
+                                new ArraySegment<byte>(buffer), cts.Token).ConfigureAwait(false);
+
+                            if (chunk.MessageType == WebSocketMessageType.Close)
+                            {
+                                // 大消息中间收到 Close，退出外层循环。
+                                ArrayPool<byte>.Shared.Return(buffer);
+                                return;
+                            }
+
+                            ms.Write(buffer, 0, chunk.Count);
+
+                            if (chunk.EndOfMessage)
+                            {
+                                break;
+                            }
+                        }
+
+                        message = Encoding.UTF8.GetString(ms.GetBuffer().AsSpan(0, (int)ms.Length));
+                    }
+
                     await _subscriptions.HandleMessageAsync(connection, message, _heartbeat, cts.Token)
                         .ConfigureAwait(false);
                 }
@@ -121,6 +155,7 @@ public sealed class ExecutionWebSocketHandler
         }
         finally
         {
+            ArrayPool<byte>.Shared.Return(buffer);
             heartbeatCts.Cancel();
             heartbeatCts.Dispose();
         }

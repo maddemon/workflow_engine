@@ -10,6 +10,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FlowEngine.Application.Tests.Triggers;
 
@@ -30,7 +31,7 @@ public class TriggerServiceTests : IDisposable
         var auditFactory = new AuditEventFactory(userContext);
         var scheduleManager = new FakeScheduleManager();
         var resourceAuthorization = new StubResourceAuthorizationService();
-        _service = new TriggerService(_dbContext, _eventBus, auditFactory, scheduleManager, AuthorizationGuardFactory.Create(userContext, resourceAuthorization), new WebhookRouteService(_dbContext));
+        _service = new TriggerService(_dbContext, _eventBus, auditFactory, scheduleManager, AuthorizationGuardFactory.Create(userContext, resourceAuthorization), new WebhookRouteService(_dbContext), NullLogger<TriggerService>.Instance);
     }
 
     public void Dispose()

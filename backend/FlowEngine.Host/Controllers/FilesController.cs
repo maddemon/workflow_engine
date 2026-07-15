@@ -4,6 +4,7 @@ using FlowEngine.Application.Files;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Events;
+using FlowEngine.Core.Exceptions;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -47,7 +48,7 @@ public class FilesController(
 
             return Ok(result);
         }
-        catch (UnauthorizedAccessException ex)
+        catch (PermissionDeniedException ex)
         {
             await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
                 AuditEventTypes.FileAccessDenied,
@@ -61,7 +62,7 @@ public class FilesController(
                 }),
                 cancellationToken).ConfigureAwait(false);
 
-            return Problem(ex.Message, statusCode: StatusCodes.Status403Forbidden);
+            throw;
         }
         catch (InvalidOperationException ex)
         {

@@ -1,6 +1,8 @@
 using FlowEngine.Application.Audit;
+using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -18,7 +20,8 @@ public sealed class WorkflowModificationService(
     FlowEngineDbContext dbContext,
     WorkflowValidator workflowValidator,
     IEventBus eventBus,
-    AuditEventFactory auditFactory)
+    AuditEventFactory auditFactory,
+    IAuthorizationGuard authGuard)
     : IWorkflowModificationService
 {
     /// <summary>
@@ -35,6 +38,9 @@ public sealed class WorkflowModificationService(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(request);
+
+        // RBAC：修改前校验工作流写权限。
+        await authGuard.RequireAccessAsync(ResourceKind.Workflow, workflowId, Operation.Write, cancellationToken).ConfigureAwait(false);
 
         // ── 1. 加载现有工作流 ──────────────────────────────────
         var existing = await dbContext.Workflows

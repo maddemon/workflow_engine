@@ -1,6 +1,9 @@
 using System.Security.Claims;
+using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
+using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
+using FlowEngine.Core.Events;
 
 namespace FlowEngine.Host.Middlewares;
 
@@ -12,7 +15,11 @@ public class RbacAuthorizationMiddleware(RequestDelegate next)
     /// <summary>
     /// 处理请求：若端点带有 <see cref="AuthorizePermissionAttribute"/>，则验证用户角色权限。
     /// </summary>
-    public async Task InvokeAsync(HttpContext context, AuthorizationService authorizationService)
+    public async Task InvokeAsync(
+        HttpContext context,
+        AuthorizationService authorizationService,
+        IEventBus eventBus,
+        AuditEventFactory auditFactory)
     {
         var endpoint = context.GetEndpoint();
         var attribute = endpoint?.Metadata.GetMetadata<AuthorizePermissionAttribute>();
@@ -26,6 +33,19 @@ public class RbacAuthorizationMiddleware(RequestDelegate next)
 
             if (!authorizationService.HasPermission(roles, attribute.Scope, attribute.Operation))
             {
+                // 审计：权限拒绝时记录审计事件。
+                await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                    AuditEventTypes.PermissionDenied,
+                    attribute.Scope.ToString(),
+                    Guid.Empty,
+                    new Dictionary<string, object>
+                    {
+                        ["scope"] = attribute.Scope.ToString(),
+                        ["operation"] = attribute.Operation.ToString(),
+                        ["path"] = context.Request.Path.Value ?? string.Empty,
+                    }),
+                    context.RequestAborted).ConfigureAwait(false);
+
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 await context.Response.WriteAsJsonAsync(new
                 {

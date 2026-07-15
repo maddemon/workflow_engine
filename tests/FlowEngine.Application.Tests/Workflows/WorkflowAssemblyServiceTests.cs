@@ -14,6 +14,7 @@ using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.Exceptions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FlowEngine.Application.Tests.Workflows;
 
@@ -443,7 +444,8 @@ public sealed class WorkflowAssemblyServiceTests : IDisposable
             new StubCoreAuthorizationGuard(),
             null!, // AuthorizedOperationHandler - not used in CreateDraftAsync
             null!, // WorkflowStatisticsLoader - not used in CreateDraftAsync
-            null!  // WorkflowTriggerSync - not used in CreateDraftAsync
+            null!, // WorkflowTriggerSync - not used in CreateDraftAsync
+            NullLogger<WorkflowService>.Instance
         );
     }
 

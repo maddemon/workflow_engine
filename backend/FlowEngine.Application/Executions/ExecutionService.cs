@@ -163,6 +163,9 @@ public sealed class ExecutionService(
         Guid? projectId = null,
         CancellationToken cancellationToken = default)
     {
+        // RBAC：查询工作流执行列表前校验工作流读权限。
+        await authGuard.RequireAccessAsync(ResourceKind.Workflow, workflowId, Operation.Read, cancellationToken);
+
         var query = dbContext.ExecutionRecords
             .Where(e => e.WorkflowDefinitionId == workflowId);
 

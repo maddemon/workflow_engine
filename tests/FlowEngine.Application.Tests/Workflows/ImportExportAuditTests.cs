@@ -1,9 +1,11 @@
 using System.Text.Json;
 using FlowEngine.Application.Audit;
+using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -33,7 +35,7 @@ public sealed class ImportExportAuditTests : IDisposable
         _dbContext = new FlowEngineDbContext(options);
         _eventBus = new CapturingEventBus();
         _auditFactory = new AuditEventFactory(new FakeUserContext { UserId = Guid.NewGuid() });
-        _exportService = new WorkflowExportService(_dbContext, _eventBus, _auditFactory);
+        _exportService = new WorkflowExportService(_dbContext, _eventBus, _auditFactory, new StubAuthorizationGuard());
     }
 
     public void Dispose() => _dbContext.Dispose();
@@ -86,7 +88,7 @@ public sealed class ImportExportAuditTests : IDisposable
                 new PortDefinition { Name = "output", Direction = PortDirection.Output, Type = PortType.Main },
             ]),
         ]);
-        var importService = new WorkflowImportService(_dbContext, registry, new WorkflowValidator(registry), _eventBus, _auditFactory);
+        var importService = new WorkflowImportService(_dbContext, registry, new WorkflowValidator(registry), _eventBus, _auditFactory, new StubAuthorizationGuard());
 
         var export = new WorkflowExportResult
         {
@@ -125,7 +127,7 @@ public sealed class ImportExportAuditTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
         var registry = new StubNodeRegistry([]);
-        var importService = new WorkflowImportService(_dbContext, registry, new WorkflowValidator(registry), _eventBus, _auditFactory);
+        var importService = new WorkflowImportService(_dbContext, registry, new WorkflowValidator(registry), _eventBus, _auditFactory, new StubAuthorizationGuard());
 
         var export = new WorkflowExportResult
         {
@@ -216,5 +218,12 @@ public sealed class ImportExportAuditTests : IDisposable
         public IReadOnlyCollection<NodeTypeDescriptor> GetDescriptors() => descriptors;
         public NodeTypeDescriptor GetDescriptor(string typeName) =>
             descriptors.First(d => d.TypeName.Equals(typeName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private sealed class StubAuthorizationGuard : IAuthorizationGuard
+    {
+        public Task RequireAccessAsync(ResourceKind kind, Guid resourceId, Operation operation, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RequireScopeAsync(Scope scope, Operation operation, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RequireAdminAsync(Operation operation, CancellationToken ct = default) => Task.CompletedTask;
     }
 }

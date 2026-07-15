@@ -10,6 +10,7 @@ using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.Exceptions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Application.Triggers;
 
@@ -22,7 +23,8 @@ public sealed class TriggerService(
     AuditEventFactory auditFactory,
     IScheduleManager scheduleManager,
     IAuthorizationGuard authGuard,
-    WebhookRouteService webhookRouteService)
+    WebhookRouteService webhookRouteService,
+    ILogger<TriggerService> logger)
 {
     /// <summary>
     /// 创建触发器。
@@ -105,6 +107,9 @@ public sealed class TriggerService(
     public async Task<IReadOnlyCollection<TriggerDto>> GetByWorkflowDefinitionIdAsync(
         Guid workflowDefinitionId, CancellationToken cancellationToken = default)
     {
+        // RBAC：查询工作流触发器列表前校验工作流读权限。
+        await authGuard.RequireAccessAsync(ResourceKind.Workflow, workflowDefinitionId, Operation.Read, cancellationToken);
+
         var triggers = await dbContext.Triggers
             .Where(t => t.WorkflowDefinitionId == workflowDefinitionId)
             .ToListAsync(cancellationToken)
@@ -159,14 +164,34 @@ public sealed class TriggerService(
             await webhookRouteService.UpdateRouteAsync(trigger, trigger.Settings, cancellationToken).ConfigureAwait(false);
         }
 
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
+        // 先注销：Poll 触发器先注销旧调度。
         if (trigger.Type == TriggerType.Poll)
         {
-            await UnregisterPollTriggerAsync(trigger.Id, cancellationToken).ConfigureAwait(false);
-            if (trigger.IsActive)
+            try
+            {
+                await UnregisterPollTriggerAsync(trigger.Id, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "触发器 {TriggerId} 注销旧调度失败，继续更新数据库。", trigger.Id);
+            }
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        // 注册新调度：SaveChanges 成功后，尝试注册新调度。
+        if (trigger.Type == TriggerType.Poll && trigger.IsActive)
+        {
+            try
             {
                 await RegisterPollTriggerAsync(trigger, trigger.Settings, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // 补偿日志：注册新调度失败，数据库已保存但调度未恢复，需人工补偿。
+                logger.LogError(ex,
+                    "触发器 {TriggerId} 更新后注册新调度失败，数据库已保存但调度未恢复，需人工补偿。",
+                    trigger.Id);
             }
         }
 
@@ -207,13 +232,21 @@ public sealed class TriggerService(
             await webhookRouteService.RemoveRoutesByTriggerIdAsync(id, cancellationToken).ConfigureAwait(false);
         }
 
-        dbContext.Triggers.Remove(trigger);
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
+        // 先注销：Poll 触发器先注销调度。
         if (trigger.Type == TriggerType.Poll)
         {
-            await UnregisterPollTriggerAsync(trigger.Id, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await UnregisterPollTriggerAsync(trigger.Id, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "触发器 {TriggerId} 注销调度失败，继续删除数据库记录。", trigger.Id);
+            }
         }
+
+        dbContext.Triggers.Remove(trigger);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
             AuditEventTypes.TriggerDeleted,

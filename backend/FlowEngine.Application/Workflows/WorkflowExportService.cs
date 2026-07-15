@@ -1,8 +1,10 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Application.Audit;
+using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.Exceptions;
@@ -16,7 +18,8 @@ namespace FlowEngine.Application.Workflows;
 public sealed class WorkflowExportService(
     FlowEngineDbContext dbContext,
     IEventBus eventBus,
-    AuditEventFactory auditFactory)
+    AuditEventFactory auditFactory,
+    IAuthorizationGuard authGuard)
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -39,6 +42,9 @@ public sealed class WorkflowExportService(
     /// </summary>
     public async Task<string> ExportAsync(Guid workflowId, string exportedBy, CancellationToken cancellationToken = default)
     {
+        // RBAC：导出前校验工作流读权限。
+        await authGuard.RequireAccessAsync(ResourceKind.Workflow, workflowId, Operation.Read, cancellationToken).ConfigureAwait(false);
+
         var workflow = await dbContext.Workflows
             .FirstOrDefaultAsync(w => w.Id == workflowId, cancellationToken)
             .ConfigureAwait(false);
@@ -69,6 +75,13 @@ public sealed class WorkflowExportService(
         CancellationToken cancellationToken = default)
     {
         var idList = ids.ToList();
+
+        // RBAC：对每个工作流单独校验读权限。
+        foreach (var id in idList)
+        {
+            await authGuard.RequireAccessAsync(ResourceKind.Workflow, id, Operation.Read, cancellationToken).ConfigureAwait(false);
+        }
+
         var workflows = await dbContext.Workflows
             .Where(w => idList.Contains(w.Id))
             .ToListAsync(cancellationToken)

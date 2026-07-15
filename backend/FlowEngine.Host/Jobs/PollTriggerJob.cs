@@ -61,6 +61,12 @@ public sealed class PollTriggerJob(
         if (trigger is null || !trigger.IsActive)
         {
             logger.LogWarning("轮询触发器不存在或已停用: TriggerId={TriggerId}", triggerId);
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.PollSkipped,
+                "Trigger",
+                triggerId,
+                new Dictionary<string, object> { ["reason"] = "inactive" }),
+                context.CancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -68,6 +74,12 @@ public sealed class PollTriggerJob(
         if (settings is null || string.IsNullOrEmpty(settings.PollNodeId))
         {
             logger.LogWarning("轮询触发器缺少配置: TriggerId={TriggerId}", triggerId);
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.PollSkipped,
+                "Trigger",
+                triggerId,
+                new Dictionary<string, object> { ["reason"] = "missing_settings" }),
+                context.CancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -77,6 +89,12 @@ public sealed class PollTriggerJob(
             logger.LogInformation(
                 "轮询触发器跳过（上一次执行仍在运行）: TriggerId={TriggerId}",
                 triggerId);
+            await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                AuditEventTypes.PollSkipped,
+                "Trigger",
+                triggerId,
+                new Dictionary<string, object> { ["reason"] = "skip_if_running" }),
+                context.CancellationToken).ConfigureAwait(false);
             return;
         }
 
@@ -88,6 +106,12 @@ public sealed class PollTriggerJob(
                 logger.LogWarning(
                     "轮询触发器节点类型未注册: TriggerId={TriggerId}, PollNodeId={PollNodeId}",
                     triggerId, settings.PollNodeId);
+                await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                    AuditEventTypes.PollSkipped,
+                    "Trigger",
+                    triggerId,
+                    new Dictionary<string, object> { ["reason"] = "node_not_registered", ["pollNodeId"] = settings.PollNodeId }),
+                    context.CancellationToken).ConfigureAwait(false);
                 return;
             }
 
@@ -103,6 +127,12 @@ public sealed class PollTriggerJob(
                 logger.LogWarning(
                     "轮询节点执行失败: TriggerId={TriggerId}, Error={Error}",
                     triggerId, executionResult.Error?.Message);
+                await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+                    AuditEventTypes.PollSkipped,
+                    "Trigger",
+                    triggerId,
+                    new Dictionary<string, object> { ["reason"] = "node_failed", ["error"] = executionResult.Error?.Message ?? string.Empty }),
+                    context.CancellationToken).ConfigureAwait(false);
                 return;
             }
 

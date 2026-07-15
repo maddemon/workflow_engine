@@ -1,9 +1,11 @@
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Application.Audit;
+using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Identity;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Events;
@@ -29,7 +31,7 @@ public sealed class WorkflowExportServiceTests : IDisposable
         _dbContext = new FlowEngineDbContext(options);
         var eventBus = new InMemoryEventBus();
         var auditFactory = new AuditEventFactory(new FakeUserContext { UserId = Guid.NewGuid() });
-        _service = new WorkflowExportService(_dbContext, eventBus, auditFactory);
+        _service = new WorkflowExportService(_dbContext, eventBus, auditFactory, new StubAuthorizationGuard());
     }
 
     public void Dispose() => _dbContext.Dispose();
@@ -222,6 +224,13 @@ public sealed class WorkflowExportServiceTests : IDisposable
         public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler)
             where TEvent : IDomainEvent => new Disposable();
         private sealed class Disposable : IDisposable { public void Dispose() { } }
+    }
+
+    private sealed class StubAuthorizationGuard : IAuthorizationGuard
+    {
+        public Task RequireAccessAsync(ResourceKind kind, Guid resourceId, Operation operation, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RequireScopeAsync(Scope scope, Operation operation, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RequireAdminAsync(Operation operation, CancellationToken ct = default) => Task.CompletedTask;
     }
 
     /// <summary>

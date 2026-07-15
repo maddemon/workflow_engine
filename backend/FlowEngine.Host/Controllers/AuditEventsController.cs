@@ -10,7 +10,7 @@ namespace FlowEngine.Host.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/v1/audit-events")]
-[Authorize]
+[Authorize(Roles = "Admin")]
 public class AuditEventsController(IAuditLogReader reader) : ControllerBase
 {
     /// <summary>

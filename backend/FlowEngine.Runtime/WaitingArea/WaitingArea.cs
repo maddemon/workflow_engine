@@ -116,12 +116,33 @@ public sealed class WaitingArea
                 if (_inputs.TryGetValue(portName, out var existing))
                 {
                     var merged = new DataBatch();
-                    merged.Items.AddRange(existing.Items);
-                    merged.Items.AddRange(data.Items);
 
-                    for (var i = 0; i < merged.Items.Count; i++)
+                    // 复制已有项（创建副本，不修改原 item 的 SourceIndex）。
+                    for (var i = 0; i < existing.Items.Count; i++)
                     {
-                        merged.Items[i].SourceIndex = i;
+                        var item = existing.Items[i];
+                        merged.Items.Add(new DataItem
+                        {
+                            Data = item.Data,
+                            Success = item.Success,
+                            Error = item.Error,
+                            SourceIndex = i,
+                            AttachmentId = item.AttachmentId,
+                        });
+                    }
+
+                    // 追加新项（创建副本）。
+                    for (var i = 0; i < data.Items.Count; i++)
+                    {
+                        var item = data.Items[i];
+                        merged.Items.Add(new DataItem
+                        {
+                            Data = item.Data,
+                            Success = item.Success,
+                            Error = item.Error,
+                            SourceIndex = existing.Items.Count + i,
+                            AttachmentId = item.AttachmentId,
+                        });
                     }
 
                     _inputs[portName] = merged;

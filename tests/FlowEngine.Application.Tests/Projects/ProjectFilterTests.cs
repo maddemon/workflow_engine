@@ -13,6 +13,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FlowEngine.Application.Tests.Projects;
 
@@ -170,7 +171,8 @@ public sealed class ProjectFilterTests : IDisposable
             authGuard,
             handler,
             statisticsLoader,
-            triggerSync);
+            triggerSync,
+            NullLogger<WorkflowService>.Instance);
     }
 
     private CredentialService CreateCredentialService()
@@ -204,7 +206,8 @@ public sealed class ProjectFilterTests : IDisposable
             new AuditEventFactory(userContext),
             new FakeScheduleManager(),
             AuthorizationGuardFactory.Create(userContext, resourceAuthorization),
-            new WebhookRouteService(_dbContext));
+            new WebhookRouteService(_dbContext),
+            NullLogger<TriggerService>.Instance);
     }
 
     private static Workflow CreateWorkflow(string name, Guid? projectId)

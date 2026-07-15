@@ -255,7 +255,7 @@ public sealed class WebSearchToolNode : INodeType
     private async Task<NodeExecutionResult> SearchSerpApiAsync(string query, string? apiKey, NodeExecutionContext context, CancellationToken cancellationToken)
     {
         // SerpAPI (Google Search)
-        var url = $"https://serpapi.com/search.json?q={Uri.EscapeDataString(query)}&api_key={apiKey}&hl={Language}&num={MaxResults}";
+        var url = $"https://serpapi.com/search.json?q={Uri.EscapeDataString(query)}&api_key={Uri.EscapeDataString(apiKey ?? string.Empty)}&hl={Language}&num={MaxResults}";
 
         var request = new HttpExecutionRequest
         {

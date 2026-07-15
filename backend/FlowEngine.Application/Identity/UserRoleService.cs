@@ -1,7 +1,11 @@
+using FlowEngine.Application.Audit;
 using FlowEngine.Application.Dtos;
+using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
+using FlowEngine.Core.Events;
 using FlowEngine.Core.Identity;
+using FlowEngine.Core.Exceptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Identity;
@@ -9,7 +13,10 @@ namespace FlowEngine.Application.Identity;
 /// <summary>
 /// 用户角色管理应用服务，封装角色查询/分配/撤销逻辑（A2），避免 Controller 直接依赖 DbContext。
 /// </summary>
-public sealed class UserRoleService(FlowEngineDbContext dbContext)
+public sealed class UserRoleService(
+    FlowEngineDbContext dbContext,
+    IEventBus eventBus,
+    AuditEventFactory auditFactory)
 {
     /// <inheritdoc />
     public async Task<IReadOnlyList<string>> GetRolesAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -33,6 +40,13 @@ public sealed class UserRoleService(FlowEngineDbContext dbContext)
             return (false, "无效的角色。");
         }
 
+        // 校验用户存在。
+        var userExists = await dbContext.Users.AnyAsync(u => u.Id == userId, cancellationToken).ConfigureAwait(false);
+        if (!userExists)
+        {
+            return (false, "用户不存在。");
+        }
+
         var normalizedRole = parsedRole.ToString();
 
         var exists = await dbContext.UserRoles
@@ -49,6 +63,14 @@ public sealed class UserRoleService(FlowEngineDbContext dbContext)
             Role = normalizedRole
         });
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        // 审计：角色分配成功后发布事件。
+        await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+            AuditEventTypes.MemberAdded,
+            "User",
+            userId,
+            new Dictionary<string, object> { ["role"] = normalizedRole }),
+            cancellationToken).ConfigureAwait(false);
 
         return (true, null);
     }
@@ -78,6 +100,14 @@ public sealed class UserRoleService(FlowEngineDbContext dbContext)
         userRole.Deleted = true;
         userRole.UpdatedAt = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        // 审计：角色撤销成功后发布事件。
+        await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
+            AuditEventTypes.MemberRoleChanged,
+            "User",
+            userId,
+            new Dictionary<string, object> { ["role"] = normalizedRole, ["action"] = "revoked" }),
+            cancellationToken).ConfigureAwait(false);
 
         return (true, null);
     }

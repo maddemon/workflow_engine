@@ -1,5 +1,6 @@
 using System.Reflection;
 using System.Runtime.Versioning;
+using System.Security.Cryptography;
 using FlowEngine.Core.Abstractions;
 using Microsoft.Extensions.Logging;
 
@@ -12,6 +13,7 @@ public sealed class PluginLoader
 {
     private readonly string _pluginsDirectory;
     private readonly ILogger<PluginLoader> _logger;
+    private readonly IReadOnlySet<string>? _hashWhitelist;
 
     // B9：宿主自身编译时的目标框架，用于拦截与宿主 TFM 不一致的陈旧插件。
     // 取自当前程序集的 TargetFrameworkAttribute，避免硬编码，随宿主 TFM 自动同步。
@@ -25,11 +27,13 @@ public sealed class PluginLoader
     /// </summary>
     /// <param name="pluginsDirectory">插件目录路径。</param>
     /// <param name="logger">日志记录器。</param>
-    public PluginLoader(string pluginsDirectory, ILogger<PluginLoader> logger)
+    /// <param name="hashWhitelist">允许加载的 DLL SHA256 哈希白名单（小写十六进制）。为 null 时跳过哈希校验。</param>
+    public PluginLoader(string pluginsDirectory, ILogger<PluginLoader> logger, IReadOnlySet<string>? hashWhitelist = null)
     {
         ArgumentException.ThrowIfNullOrEmpty(pluginsDirectory);
         _pluginsDirectory = pluginsDirectory;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+        _hashWhitelist = hashWhitelist;
     }
 
     /// <summary>
@@ -53,6 +57,19 @@ public sealed class PluginLoader
         {
             try
             {
+                // P1-12：加载前校验 DLL SHA256 哈希白名单，未通过记录警告并跳过。
+                if (_hashWhitelist is not null)
+                {
+                    var hash = ComputeFileSha256(dllPath);
+                    if (!_hashWhitelist.Contains(hash))
+                    {
+                        _logger.LogWarning(
+                            "跳过插件 {DllPath}：SHA256 哈希 {Hash} 不在白名单中。",
+                            dllPath, hash);
+                        continue;
+                    }
+                }
+
                 var context = new PluginLoadContext(dllPath);
                 var assembly = context.LoadFromAssemblyPath(Path.GetFullPath(dllPath));
 
@@ -169,5 +186,15 @@ public sealed class PluginLoader
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// 计算文件的 SHA256 哈希值（小写十六进制）。
+    /// </summary>
+    private static string ComputeFileSha256(string filePath)
+    {
+        using var stream = File.OpenRead(filePath);
+        var hashBytes = SHA256.HashData(stream);
+        return Convert.ToHexString(hashBytes).ToLowerInvariant();
     }
 }

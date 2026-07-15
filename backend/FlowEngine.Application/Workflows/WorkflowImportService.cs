@@ -1,7 +1,9 @@
 using System.Text.Json;
 using FlowEngine.Application.Audit;
+using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -18,7 +20,8 @@ public sealed class WorkflowImportService(
     INodeRegistry nodeRegistry,
     WorkflowValidator validator,
     IEventBus eventBus,
-    AuditEventFactory auditFactory)
+    AuditEventFactory auditFactory,
+    IAuthorizationGuard authGuard)
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -135,6 +138,12 @@ public sealed class WorkflowImportService(
         string importedBy,
         CancellationToken cancellationToken)
     {
+        // RBAC：导入前校验目标项目写权限。
+        if (projectId.HasValue)
+        {
+            await authGuard.RequireAccessAsync(ResourceKind.Project, projectId.Value, Operation.Write, cancellationToken).ConfigureAwait(false);
+        }
+
         var errors = ValidateExportData(exportResult);
         if (errors.Count > 0)
         {

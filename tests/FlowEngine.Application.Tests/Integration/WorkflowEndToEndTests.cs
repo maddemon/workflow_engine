@@ -14,6 +14,7 @@ using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.ValueObjects;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FlowEngine.Application.Tests.Integration;
 
@@ -41,12 +42,12 @@ public sealed class WorkflowEndToEndTests : IDisposable
         var scheduleManager = new FakeScheduleManager();
         var resourceAuthorization = new StubResourceAuthorizationService();
         var authGuard = AuthorizationGuardFactory.Create(userContext, resourceAuthorization);
-        var triggerService = new TriggerService(_dbContext, eventBus, auditFactory, scheduleManager, authGuard, new WebhookRouteService(_dbContext));
+        var triggerService = new TriggerService(_dbContext, eventBus, auditFactory, scheduleManager, authGuard, new WebhookRouteService(_dbContext), NullLogger<TriggerService>.Instance);
         var validator = new WorkflowValidator(new EmptyRegistry());
         var handler = new AuthorizedOperationHandler(authGuard, eventBus, auditFactory);
         var statisticsLoader = new WorkflowStatisticsLoader(_dbContext);
         var triggerSync = new WorkflowTriggerSync(triggerService, handler);
-        _workflowService = new WorkflowService(_dbContext, validator, eventBus, auditFactory, triggerService, authGuard, handler, statisticsLoader, triggerSync);
+        _workflowService = new WorkflowService(_dbContext, validator, eventBus, auditFactory, triggerService, authGuard, handler, statisticsLoader, triggerSync, NullLogger<WorkflowService>.Instance);
         _engine = new StubEngine(_dbContext);
         _executionService = new ExecutionService(_engine, _dbContext, new StubIdempotencyService(), AuthorizationGuardFactory.Create(userContext, resourceAuthorization), eventBus, auditFactory);
     }

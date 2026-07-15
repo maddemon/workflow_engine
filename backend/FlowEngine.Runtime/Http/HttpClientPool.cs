@@ -20,7 +20,8 @@ public sealed class HttpClientPool : IHttpClientPool, IDisposable
     {
         _handler = new SocketsHttpHandler
         {
-            ConnectCallback = SsrfGuard.CreateConnectCallback()
+            ConnectCallback = SsrfGuard.CreateConnectCallback(),
+            AllowAutoRedirect = false // 显式禁用自动重定向，防止重定向到内部地址绕过 SSRF 防护
         };
     }
 
