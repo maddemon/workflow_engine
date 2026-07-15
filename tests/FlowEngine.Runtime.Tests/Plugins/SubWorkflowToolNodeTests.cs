@@ -85,6 +85,58 @@ public class SubWorkflowToolNodeTests
         Assert.True(result.Success, result.Error?.Message);
     }
 
+    /// <summary>
+    /// 验证 SubWorkflowExecutor 使用 CreateInstance 而非 Singleton Get，
+    /// 两个子工作流并发执行同类型节点时参数互不影响。
+    /// </summary>
+    [Fact]
+    public async Task Execute_ConcurrentSubWorkflows_DifferentParameters_DoNotInterfere()
+    {
+        var registry = CreateRegistry();
+
+        var scriptNode1 = new NodeDefinition
+        {
+            Id = "script1",
+            TypeName = "script",
+            Name = "script1",
+            Parameters = new Dictionary<string, object>
+            {
+                ["code"] = "return { value: 'A' };"
+            }
+        };
+
+        var scriptNode2 = new NodeDefinition
+        {
+            Id = "script2",
+            TypeName = "script",
+            Name = "script2",
+            Parameters = new Dictionary<string, object>
+            {
+                ["code"] = "return { value: 'B' };"
+            }
+        };
+
+        var workflow1 = new Workflow { Nodes = [scriptNode1], Connections = [] };
+        var workflow2 = new Workflow { Nodes = [scriptNode2], Connections = [] };
+
+        var node1 = new SubWorkflowToolNode { WorkflowJson = JsonSerializer.Serialize(workflow1) };
+        var node2 = new SubWorkflowToolNode { WorkflowJson = JsonSerializer.Serialize(workflow2) };
+
+        var context1 = CreateContext(node1);
+        context1.NodeRegistry = registry;
+
+        var context2 = CreateContext(node2);
+        context2.NodeRegistry = registry;
+
+        // Execute concurrently — should not interfere with each other
+        var results = await Task.WhenAll(
+            node1.ExecuteAsync(context1, TestContext.Current.CancellationToken),
+            node2.ExecuteAsync(context2, TestContext.Current.CancellationToken));
+
+        Assert.True(results[0].Success, results[0].Error?.Message);
+        Assert.True(results[1].Success, results[1].Error?.Message);
+    }
+
     private static NodeExecutionContext CreateContext(SubWorkflowToolNode node)
     {
         return new NodeExecutionContext

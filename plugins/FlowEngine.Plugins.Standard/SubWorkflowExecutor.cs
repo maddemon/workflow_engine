@@ -57,7 +57,7 @@ internal sealed class SubWorkflowExecutor
                 continue;
             }
 
-            var nodeType = _nodeRegistry.Get(node.TypeName);
+            var nodeType = _nodeRegistry.CreateInstance(node.TypeName);
             var inputs = CollectInputs(node, workflow, nodeMap, nodeOutputs, entryNodes, triggerPayload);
             var context = BuildNodeContext(workflow, node, inputs, cancellationToken);
 
