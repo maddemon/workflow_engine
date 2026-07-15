@@ -1,6 +1,6 @@
 import { notifications } from '@mantine/notifications';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
-import type { NodeExecutionRecordDto } from '../../types/workflow.ts';
+import type { ExecutionDto, NodeExecutionRecordDto } from '../../types/workflow.ts';
 
 export type WebSocketStatus = 'connected' | 'disconnected' | 'error';
 
@@ -28,6 +28,7 @@ export interface MessageHandlerContext {
   store: ReturnType<typeof useWorkflowStore.getState>;
   notifications: typeof notifications;
   sendIfOpen: (data: string) => void;
+  updateExecutionMeta: (updater: (prev: ExecutionDto | null) => ExecutionDto | null) => void;
 }
 
 export const messageHandlers: Record<string, (msg: WebSocketPushMessage, ctx: MessageHandlerContext) => void> = {
@@ -124,8 +125,11 @@ export const messageHandlers: Record<string, (msg: WebSocketPushMessage, ctx: Me
   },
 
   execution_completed: (msg, ctx) => {
-    const { store, notifications: notif } = ctx;
+    const { store, notifications: notif, updateExecutionMeta } = ctx;
     store.setIsExecuting(false);
+    updateExecutionMeta((prev) =>
+      prev ? { ...prev, status: 'Completed', completedAt: msg.timestamp } : prev,
+    );
     if (msg.payload?.finalStatus === 'Completed') {
       notif.show({
         title: 'Execution Complete',
@@ -136,8 +140,13 @@ export const messageHandlers: Record<string, (msg: WebSocketPushMessage, ctx: Me
   },
 
   execution_failed: (msg, ctx) => {
-    const { store, notifications: notif } = ctx;
+    const { store, notifications: notif, updateExecutionMeta } = ctx;
     store.setIsExecuting(false);
+    updateExecutionMeta((prev) =>
+      prev
+        ? { ...prev, status: 'Failed', completedAt: msg.timestamp }
+        : prev,
+    );
     notif.show({
       title: 'Execution Failed',
       message: msg.payload?.error?.message ?? 'Workflow execution failed.',
@@ -145,9 +154,14 @@ export const messageHandlers: Record<string, (msg: WebSocketPushMessage, ctx: Me
     });
   },
 
-  execution_cancelled: (_msg, ctx) => {
-    const { store, notifications: notif } = ctx;
+  execution_cancelled: (msg, ctx) => {
+    const { store, notifications: notif, updateExecutionMeta } = ctx;
     store.setIsExecuting(false);
+    updateExecutionMeta((prev) =>
+      prev
+        ? { ...prev, status: 'Cancelled', completedAt: msg.timestamp }
+        : prev,
+    );
     notif.show({
       title: 'Execution Cancelled',
       message: 'Workflow execution was cancelled.',

@@ -90,7 +90,7 @@ describe('useWebSocketExecution SSE fallback', () => {
   it('does NOT append access_token to SSE URL (uses HttpOnly cookie auth)', () => {
     localStorage.setItem('auth_token', 'test-jwt-token');
 
-    const { result } = renderHook(() => useWebSocketExecution());
+    const { result } = renderHook(() => useWebSocketExecution({ updateExecutionMeta: () => {} }));
 
     act(() => {
       result.current.connect();
@@ -118,7 +118,7 @@ describe('useWebSocketExecution SSE fallback', () => {
   });
 
   it('creates an EventSource with the expected URL after WebSocket reconnects are exhausted', () => {
-    const { result } = renderHook(() => useWebSocketExecution());
+    const { result } = renderHook(() => useWebSocketExecution({ updateExecutionMeta: () => {} }));
 
     act(() => {
       result.current.connect();
@@ -143,7 +143,7 @@ describe('useWebSocketExecution SSE fallback', () => {
   });
 
   it('parses SSE messages and updates the workflow store', () => {
-    const { result } = renderHook(() => useWebSocketExecution());
+    const { result } = renderHook(() => useWebSocketExecution({ updateExecutionMeta: () => {} }));
 
     act(() => {
       result.current.connect();
@@ -185,7 +185,7 @@ describe('useWebSocketExecution SSE fallback', () => {
   });
 
   it('sets status to error when the EventSource reports an error', () => {
-    const { result } = renderHook(() => useWebSocketExecution());
+    const { result } = renderHook(() => useWebSocketExecution({ updateExecutionMeta: () => {} }));
 
     act(() => {
       result.current.connect();
@@ -213,7 +213,7 @@ describe('useWebSocketExecution SSE fallback', () => {
   });
 
   it('closes the active EventSource on disconnect', () => {
-    const { result } = renderHook(() => useWebSocketExecution());
+    const { result } = renderHook(() => useWebSocketExecution({ updateExecutionMeta: () => {} }));
 
     act(() => {
       result.current.connect();

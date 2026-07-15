@@ -8,12 +8,12 @@ describe('useWebSocketExecution', () => {
   });
 
   it('should initialize with disconnected status', () => {
-    const { result } = renderHook(() => useWebSocketExecution());
+    const { result } = renderHook(() => useWebSocketExecution({ updateExecutionMeta: () => {} }));
     expect(result.current.status).toBe('disconnected');
   });
 
   it('should expose connect, disconnect, subscribe, unsubscribe functions', () => {
-    const { result } = renderHook(() => useWebSocketExecution());
+    const { result } = renderHook(() => useWebSocketExecution({ updateExecutionMeta: () => {} }));
     expect(typeof result.current.connect).toBe('function');
     expect(typeof result.current.disconnect).toBe('function');
     expect(typeof result.current.subscribe).toBe('function');
@@ -21,12 +21,12 @@ describe('useWebSocketExecution', () => {
   });
 
   it('should start with lastSequence 0', () => {
-    const { result } = renderHook(() => useWebSocketExecution());
+    const { result } = renderHook(() => useWebSocketExecution({ updateExecutionMeta: () => {} }));
     expect(result.current.lastSequence).toBe(0);
   });
 
   it('disconnect should set status to disconnected', () => {
-    const { result } = renderHook(() => useWebSocketExecution());
+    const { result } = renderHook(() => useWebSocketExecution({ updateExecutionMeta: () => {} }));
     act(() => {
       result.current.disconnect();
     });

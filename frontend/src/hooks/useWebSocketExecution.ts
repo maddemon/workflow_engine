@@ -1,11 +1,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { notifications } from '@mantine/notifications';
 import { useWorkflowStore } from '../stores/workflowStore.ts';
+import type { ExecutionDto } from '../types/workflow.ts';
 import { messageHandlers, type WebSocketPushMessage, type WebSocketStatus } from './websocket/messageHandlers.ts';
 import { useWebSocketConnection } from './websocket/useWebSocketConnection.ts';
 import { useSseFallback } from './websocket/useSseFallback.ts';
 
-export function useWebSocketExecution() {
+interface UseWebSocketExecutionOptions {
+  updateExecutionMeta: (updater: (prev: ExecutionDto | null) => ExecutionDto | null) => void;
+}
+
+export function useWebSocketExecution(options: UseWebSocketExecutionOptions) {
+  const { updateExecutionMeta } = options;
   const [status, setStatus] = useState<WebSocketStatus>('disconnected');
   const [lastSequence, setLastSequence] = useState(0);
   const lastSequenceRef = useRef(0);
@@ -38,8 +44,9 @@ export function useWebSocketExecution() {
       store: useWorkflowStore.getState(),
       notifications,
       sendIfOpen,
+      updateExecutionMeta,
     });
-  }, [sendIfOpen]);
+  }, [sendIfOpen, updateExecutionMeta]);
 
   const { trySseFallback, closeSse } = useSseFallback({
     getSseUrl,

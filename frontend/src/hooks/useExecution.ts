@@ -29,7 +29,15 @@ export function useExecution() {
   const [status, setStatus] = useState<ExecutionHookStatus>('idle');
   const [error, setError] = useState<string | null>(null);
   const [dryRunLoading, setDryRunLoading] = useState(false);
-  const { subscribe, unsubscribe, connect, disconnect } = useWebSocketExecution();
+
+  const updateExecutionMeta = useCallback(
+    (updater: (prev: ExecutionDto | null) => ExecutionDto | null) => {
+      setExecutionMeta(updater);
+    },
+    [],
+  );
+
+  const { subscribe, unsubscribe, connect, disconnect } = useWebSocketExecution({ updateExecutionMeta });
   const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const stopPolling = useCallback(() => {
