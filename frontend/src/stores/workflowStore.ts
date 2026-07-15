@@ -446,7 +446,12 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     },
 
     deleteWorkflow: async (id: string) => {
-      await api.deleteWorkflow(id);
+      try {
+        await api.deleteWorkflow(id);
+      } catch (err) {
+        console.error('Failed to delete workflow:', err);
+        throw err;
+      }
     },
 
     validateAllNodes: () => {

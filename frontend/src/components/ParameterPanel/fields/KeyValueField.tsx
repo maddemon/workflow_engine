@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 import { TextInput, ActionIcon, Group, Text, Stack } from '@mantine/core';
 import { Plus, Trash, AlertTriangle } from 'lucide-react';
 import { InfoTooltip } from './InfoTooltip.tsx';
@@ -39,11 +39,16 @@ function entriesToJson(entries: KeyValueEntry[]): string {
 }
 
 export function KeyValueField({ definition, value, onChange, error }: KeyValueFieldProps) {
-  const [entries, setEntries] = useState<KeyValueEntry[]>(() => parseJsonToEntries(String(value ?? '')));
+  const valueStr = String(value ?? '');
+  const lastEmittedRef = useRef(valueStr);
+  const [entries, setEntries] = useState<KeyValueEntry[]>(() => parseJsonToEntries(valueStr));
 
-  useEffect(() => {
-    setEntries(parseJsonToEntries(String(value ?? '')));
-  }, [value]);
+  // 仅当 value 与上次发射值不同时（外部变更），才从 value 重新解析
+  if (valueStr !== lastEmittedRef.current) {
+    const parsed = parseJsonToEntries(valueStr);
+    setEntries(parsed);
+    lastEmittedRef.current = valueStr;
+  }
 
   const duplicateKeys = useMemo(() => {
     const seen = new Map<string, number>();
@@ -63,13 +68,17 @@ export function KeyValueField({ definition, value, onChange, error }: KeyValueFi
 
   const handleAddEntry = useCallback(() => {
     const next = [...entries, { key: '', value: '' }];
-    onChange(entriesToJson(next));
+    const json = entriesToJson(next);
+    lastEmittedRef.current = json;
+    onChange(json);
     setEntries(next);
   }, [entries, onChange]);
 
   const handleRemoveEntry = useCallback((index: number) => {
     const next = entries.filter((_, i) => i !== index);
-    onChange(entriesToJson(next));
+    const json = entriesToJson(next);
+    lastEmittedRef.current = json;
+    onChange(json);
     setEntries(next);
   }, [entries, onChange]);
 
@@ -77,8 +86,10 @@ export function KeyValueField({ definition, value, onChange, error }: KeyValueFi
     const updated = entries.map((entry, i) =>
       i === index ? { ...entry, [field]: newValue } : entry,
     );
+    const json = entriesToJson(updated);
+    lastEmittedRef.current = json;
     setEntries(updated);
-    onChange(entriesToJson(updated));
+    onChange(json);
   }, [entries, onChange]);
 
   return (

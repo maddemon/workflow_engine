@@ -4,7 +4,7 @@ import { CodeViewer } from './CodeViewer.tsx';
 import { AgentExecutionView } from '../ExecutionView/AgentExecutionView.tsx';
 import type { NodeExecutionRecordDto, ExecutionStatus } from '../../types/workflow.ts';
 import type { AgentExecutionData } from '../../types/agent-execution.ts';
-import { extractError, formatDuration, formatOutputSummary } from './nodeOutputUtils.ts';
+import { extractError, formatDuration, formatOutputSummary, isAgentOutput } from './nodeOutputUtils.ts';
 
 const statusConfig: Record<ExecutionStatus, { icon: React.ReactNode; shade: string; label: string }> = {
   Pending: { icon: <Clock size={13} />, shade: 'gray', label: 'Pending' },
@@ -36,7 +36,7 @@ export function StepItem({
     ? formatOutputSummary(record.output)
     : null;
 
-  const agentData = isAgent ? (record.output as AgentExecutionData) : null;
+  const agentData = (isAgent && isAgentOutput(record.output)) ? (record.output as AgentExecutionData) : null;
 
   const statusBg =
     record.status === 'Completed' ? 'var(--exec-success-bg)'

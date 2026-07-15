@@ -3,7 +3,6 @@ import { Check, X, AlertCircle } from 'lucide-react';
 import { useRequest } from 'ahooks';
 import { validateWorkflow } from '../../services/api.ts';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
-import type { ValidateWorkflowResult } from '../../types/workflow.ts';
 
 interface IValidationChecklistModalProps {
   opened: boolean;
@@ -14,7 +13,7 @@ interface IValidationChecklistModalProps {
 export function ValidationChecklistModal({ opened, onClose, onProceed }: IValidationChecklistModalProps) {
   const workflowId = useWorkflowStore((s) => s.workflowId);
 
-  const { data: result, loading, error, run } = useRequest(
+  const { data: result, loading, error } = useRequest(
     () => validateWorkflow(workflowId!),
     {
       manual: true,
