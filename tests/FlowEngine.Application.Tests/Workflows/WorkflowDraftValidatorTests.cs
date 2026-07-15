@@ -6,6 +6,7 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Application.Workflows;
+using FlowEngine.Application.Tests.TestSupport.Fakes;
 using Xunit;
 
 namespace FlowEngine.Application.Tests.Workflows;
@@ -339,27 +340,6 @@ public class WorkflowDraftValidatorTests
         var errors = new List<string>();
         WorkflowDraftValidator.CollectExpressionSyntaxErrors(node["parameters"], codeDescriptor, "n", errors);
         Assert.NotEmpty(errors);
-    }
-
-    private sealed class FakeNodeRegistry : INodeRegistry
-    {
-        private readonly IReadOnlyCollection<NodeTypeDescriptor> _descriptors;
-
-        public FakeNodeRegistry(IReadOnlyCollection<NodeTypeDescriptor> descriptors)
-            => _descriptors = descriptors;
-
-        public IReadOnlyCollection<NodeTypeDescriptor> GetDescriptors() => _descriptors;
-
-        public void Register(INodeType nodeType) => throw new System.NotSupportedException();
-        public INodeType Get(string typeName) => throw new System.NotSupportedException();
-        public bool TryGet(string typeName, out INodeType? nodeType)
-        {
-            nodeType = null;
-            return false;
-        }
-        public IReadOnlyCollection<INodeType> GetAll() => throw new System.NotSupportedException();
-        public INodeType CreateInstance(string typeName) => throw new System.NotSupportedException();
-        public NodeTypeDescriptor GetDescriptor(string typeName) => throw new System.NotSupportedException();
     }
 
     private sealed class FakeCredentialAccessor : ICredentialAccessor

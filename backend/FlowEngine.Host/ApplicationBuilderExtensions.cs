@@ -114,7 +114,7 @@ public static class ApplicationBuilderExtensions
 
     private static async Task UseInitialization(WebApplication app)
     {
-        using var scope = app.Services.CreateScope();
+        await using var scope = app.Services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
         var scheduleManager = scope.ServiceProvider.GetRequiredService<IScheduleManager>();
 
@@ -154,7 +154,7 @@ public static class ApplicationBuilderExtensions
 
     private static async Task SeedDefaultAdminAsync(WebApplication app)
     {
-        using var scope = app.Services.CreateScope();
+        await using var scope = app.Services.CreateAsyncScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
         var passwordHasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
         if (await dbContext.Set<User>().AnyAsync())

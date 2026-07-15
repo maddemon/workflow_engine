@@ -10,6 +10,7 @@ using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
+using FlowEngine.Application.Tests.TestSupport.Fakes;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Tests.Workflows;
@@ -174,14 +175,6 @@ public sealed class ImportExportAuditTests : IDisposable
             Category = "Test",
             Ports = ports ?? [],
         };
-    }
-
-    private sealed class FakeUserContext : IUserContext
-    {
-        public bool IsAuthenticated => UserId.HasValue;
-        public Guid? UserId { get; set; }
-        public string? Email => "test@test.com";
-        public IReadOnlyList<string> Roles { get; set; } = [];
     }
 
     private sealed class CapturingEventBus : IEventBus

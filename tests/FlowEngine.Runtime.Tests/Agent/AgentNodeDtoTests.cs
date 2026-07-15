@@ -136,6 +136,131 @@ public class AgentNodeDtoTests
         Assert.Contains("API error", dto.AgentInfo.ErrorMessage);
     }
 
+    [Fact]
+    public async Task ExecuteAsync_ToolCalls_Appear_In_Iterations_Dto()
+    {
+        var toolNode = CreateNodeDefinition("tool1", "passThrough");
+        var agentNode = CreateNodeDefinition("agent1", "agent", isEntry: true);
+
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "test",
+            CreatedBy = "test",
+            Nodes = [agentNode, toolNode],
+            Connections =
+            [
+                new Connection
+                {
+                    Id = Guid.NewGuid(),
+                    SourceNodeId = toolNode.Id,
+                    SourcePortName = FlowConstants.PortNames.Output,
+                    TargetNodeId = agentNode.Id,
+                    TargetPortName = FlowConstants.PortNames.Tools
+                }
+            ]
+        };
+
+        var callCount = 0;
+        var llmClient = new MockLlmClient(_ =>
+        {
+            callCount++;
+            if (callCount == 1)
+            {
+                return new LlmResponse
+                {
+                    Content = null,
+                    ToolCalls =
+                    [
+                        new LlmToolCall
+                        {
+                            Id = "call1",
+                            Name = "tool1",
+                            Arguments = "{\"value\": 42}"
+                        }
+                    ]
+                };
+            }
+            return new LlmResponse { Content = "Final answer" };
+        });
+
+        var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNode.Id);
+        var node = new AgentNode();
+
+        var result = await node.ExecuteAsync(context);
+
+        Assert.True(result.Success);
+        var dto = JsonSerializer.Deserialize<AgentExecutionResultDto>(
+            result.Output.Items[0].Data!.ToJsonString(),
+            JsonDefaults.Options);
+        Assert.NotNull(dto);
+        Assert.True(dto.Iterations.Count >= 2);
+        var toolCalls = dto.Iterations.SelectMany(i => i.ToolCalls).ToList();
+        Assert.NotEmpty(toolCalls);
+        Assert.Contains(toolCalls, t => t.ToolName == "tool1" && t.Status == "Completed" && t.Id == "call1");
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_SubRecords_Are_Empty_By_Default()
+    {
+        var agentNode = CreateNodeDefinition("agent1", "agent", isEntry: true);
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "test",
+            CreatedBy = "test",
+            Nodes = [agentNode],
+            Connections = []
+        };
+
+        var llmClient = new MockLlmClient(_ => new LlmResponse { Content = "Done" });
+        var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNode.Id);
+        var node = new AgentNode();
+
+        var result = await node.ExecuteAsync(context);
+
+        Assert.True(result.Success);
+        var dto = JsonSerializer.Deserialize<AgentExecutionResultDto>(
+            result.Output.Items[0].Data!.ToJsonString(),
+            JsonDefaults.Options);
+        Assert.NotNull(dto);
+        Assert.NotNull(dto.SubRecords);
+        Assert.Empty(dto.SubRecords);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Streaming_LlmChunks_Are_Populated()
+    {
+        var agentNode = CreateNodeDefinition("agent1", "agent", isEntry: true);
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "test",
+            CreatedBy = "test",
+            Nodes = [agentNode],
+            Connections = []
+        };
+
+        var llmClient = new StreamingMockLlmClient([
+            new LlmStreamChunk { Delta = "Hello, ", IsFinal = false },
+            new LlmStreamChunk { Delta = "world!", IsFinal = true }
+        ]);
+
+        var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNode.Id);
+        var node = new AgentNode();
+
+        var result = await node.ExecuteAsync(context);
+
+        Assert.True(result.Success);
+        var dto = JsonSerializer.Deserialize<AgentExecutionResultDto>(
+            result.Output.Items[0].Data!.ToJsonString(),
+            JsonDefaults.Options);
+        Assert.NotNull(dto);
+        Assert.Single(dto.Iterations);
+        Assert.Single(dto.Iterations[0].LlmChunks);
+        Assert.Equal("Hello, world!", dto.Iterations[0].LlmChunks[0].Content);
+    }
+
     private NodeExecutionContext CreateContext(
         Workflow? workflow = null,
         ILlmClient? llmClient = null,
@@ -206,6 +331,38 @@ public class AgentNodeDtoTests
             CancellationToken cancellationToken = default)
         {
             return await _responder(tools, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    private sealed class StreamingMockLlmClient : ILlmClient
+    {
+        private readonly IReadOnlyList<LlmStreamChunk> _chunks;
+
+        public string ModelName => "test-model";
+
+        public StreamingMockLlmClient(IReadOnlyList<LlmStreamChunk> chunks)
+        {
+            _chunks = chunks;
+        }
+
+        public Task<LlmResponse> ChatAsync(
+            IReadOnlyList<LlmMessage> messages,
+            IReadOnlyList<ToolDefinition> tools,
+            CancellationToken cancellationToken = default)
+        {
+            throw new NotSupportedException("Use ChatStreamAsync for streaming tests.");
+        }
+
+        public async IAsyncEnumerable<LlmStreamChunk> ChatStreamAsync(
+            IReadOnlyList<LlmMessage> messages,
+            IReadOnlyList<ToolDefinition> tools,
+            [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+        {
+            foreach (var chunk in _chunks)
+            {
+                await Task.Yield();
+                yield return chunk;
+            }
         }
     }
 

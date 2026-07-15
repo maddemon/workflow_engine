@@ -5,6 +5,7 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.Exceptions;
+using FlowEngine.Application.Tests.TestSupport.Fakes;
 
 namespace FlowEngine.Application.Tests.Authorization;
 
@@ -261,11 +262,4 @@ public sealed class AuthorizedOperationHandlerTests
         }
     }
 
-    private sealed class FakeUserContext : IUserContext
-    {
-        public bool IsAuthenticated => UserId.HasValue;
-        public Guid? UserId { get; set; } = Guid.NewGuid();
-        public string? Email => "test@test.com";
-        public IReadOnlyList<string> Roles { get; set; } = ["Admin"];
-    }
 }
