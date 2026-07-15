@@ -1,6 +1,21 @@
 namespace FlowEngine.Application.Identity;
 
 /// <summary>
+/// 密码验证结果。
+/// </summary>
+public enum PasswordVerifyResult
+{
+    /// <summary>验证失败。</summary>
+    Failed,
+
+    /// <summary>验证成功。</summary>
+    Success,
+
+    /// <summary>验证成功，但哈希算法需升级，应重新哈希存储。</summary>
+    SuccessRehashNeeded,
+}
+
+/// <summary>
 /// 密码哈希接口。
 /// </summary>
 public interface IPasswordHasher
@@ -17,6 +32,6 @@ public interface IPasswordHasher
     /// </summary>
     /// <param name="hashedPassword">已存储的哈希值。</param>
     /// <param name="password">待验证的明文密码。</param>
-    /// <returns>是否匹配。</returns>
-    bool VerifyPassword(string hashedPassword, string password);
+    /// <returns>验证结果。</returns>
+    PasswordVerifyResult VerifyPassword(string hashedPassword, string password);
 }

@@ -19,9 +19,14 @@ public class PasswordHasher : IPasswordHasher
     }
 
     /// <inheritdoc />
-    public bool VerifyPassword(string hashedPassword, string password)
+    public PasswordVerifyResult VerifyPassword(string hashedPassword, string password)
     {
         var result = InnerHasher.VerifyHashedPassword(HasherUser, hashedPassword, password);
-        return result == PasswordVerificationResult.Success;
+        return result switch
+        {
+            PasswordVerificationResult.SuccessRehashNeeded => PasswordVerifyResult.SuccessRehashNeeded,
+            PasswordVerificationResult.Success => PasswordVerifyResult.Success,
+            _ => PasswordVerifyResult.Failed,
+        };
     }
 }

@@ -296,7 +296,7 @@ public class AuthenticationServiceTests : IDisposable
 
         Assert.NotNull(hash);
         Assert.NotEqual(password, hash);
-        Assert.True(_passwordHasher.VerifyPassword(hash, password));
+        Assert.NotEqual(PasswordVerifyResult.Failed, _passwordHasher.VerifyPassword(hash, password));
     }
 
     [Fact]
@@ -304,7 +304,7 @@ public class AuthenticationServiceTests : IDisposable
     {
         var hash = _passwordHasher.HashPassword("CorrectP@ss1");
 
-        Assert.False(_passwordHasher.VerifyPassword(hash, "WrongP@ss2"));
+        Assert.Equal(PasswordVerifyResult.Failed, _passwordHasher.VerifyPassword(hash, "WrongP@ss2"));
     }
 
     [Fact]

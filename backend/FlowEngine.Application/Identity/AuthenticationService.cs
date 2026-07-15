@@ -126,7 +126,8 @@ public partial class AuthenticationService(
             };
         }
 
-        if (!passwordHasher.VerifyPassword(user.PasswordHash, request.Password))
+        var verifyResult = passwordHasher.VerifyPassword(user.PasswordHash, request.Password);
+        if (verifyResult == PasswordVerifyResult.Failed)
         {
             RecordFailedAttempt(request.Email);
             return new LoginResult
@@ -134,6 +135,13 @@ public partial class AuthenticationService(
                 Success = false,
                 ErrorMessage = "邮箱或密码错误",
             };
+        }
+
+        // SuccessRehashNeeded 视为成功，但需升级哈希算法
+        if (verifyResult == PasswordVerifyResult.SuccessRehashNeeded)
+        {
+            user.PasswordHash = passwordHasher.HashPassword(request.Password);
+            await userStore.UpdateAsync(user, ct).ConfigureAwait(false);
         }
 
         ClearFailedAttempts(request.Email);
