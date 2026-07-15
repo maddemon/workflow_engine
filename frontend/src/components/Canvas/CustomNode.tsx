@@ -5,6 +5,7 @@ import { Check, Loader, Play, X } from "lucide-react"
 import { memo, useLayoutEffect, useMemo } from "react"
 import type { WorkflowNode } from "../../stores/workflowStore.ts"
 import { useWorkflowStore } from "../../stores/workflowStore.ts"
+import { useShallow } from "zustand/shallow"
 import { getNodeCategoryColor } from "../../theme.ts"
 import type { PortDefinition } from "../../types/workflow.ts"
 import { computeDynamicPorts } from "../../utils/computeDynamicPorts.ts"
@@ -146,7 +147,7 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
   const inputPorts = ports.filter((p) => p.direction === "Input")
   const outputPorts = ports.filter((p) => p.direction === "Output")
   const styleSettings = useWorkflowStore((s) => s.styleSettings)
-  const edges = useWorkflowStore((s) => s.edges)
+  const edges = useWorkflowStore(useShallow((s) => s.edges.filter((e) => e.source === id || e.target === id)))
   const layoutDirection = styleSettings.layoutDirection
 
   const config = isConfigNode(ports)
