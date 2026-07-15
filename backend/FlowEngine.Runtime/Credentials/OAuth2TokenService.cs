@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
 using FlowEngine.Core.Exceptions;
+using FlowEngine.Core.Http;
 
 namespace FlowEngine.Runtime.Credentials;
 
@@ -137,6 +138,11 @@ public sealed class OAuth2TokenService : IOAuth2TokenService, IDisposable
             url = AppendQuery(url, requestParams);
         }
 
+        if (SsrfGuard.IsInternalTarget(request.TokenUrl))
+        {
+            throw new BusinessException("OAuth2 token URL 指向内部地址，已被 SSRF 防护拦截");
+        }
+
         using var httpRequest = new HttpRequestMessage(httpMethod, url);
         if (request.ParamLocation != OAuth2ParamLocation.Query && requestParams.Count > 0)
         {
@@ -152,13 +158,13 @@ public sealed class OAuth2TokenService : IOAuth2TokenService, IDisposable
         {
             // 5xx 由外层重试处理
             throw new HttpRequestException(
-                $"OAuth2 token 端点返回 {(int)response.StatusCode}：{Truncate(responseBody)}");
+                $"OAuth2 token 端点返回 HTTP {(int)response.StatusCode}");
         }
 
         if (!response.IsSuccessStatusCode)
         {
             throw new BusinessException(
-                $"OAuth2 token 端点返回 {(int)response.StatusCode}：{Truncate(responseBody)}");
+                $"OAuth2 token 端点返回 HTTP {(int)response.StatusCode}");
         }
 
         JsonNode? raw;
@@ -189,7 +195,7 @@ public sealed class OAuth2TokenService : IOAuth2TokenService, IDisposable
                 if (!isSuccess)
                 {
                     throw new BusinessException(
-                        $"OAuth2 令牌端点业务错误（{request.ResponseErrorPath}={errorValue}）：{Truncate(responseBody)}");
+                        $"OAuth2 令牌端点业务错误（{request.ResponseErrorPath}={errorValue}）");
                 }
             }
         }
@@ -372,16 +378,6 @@ public sealed class OAuth2TokenService : IOAuth2TokenService, IDisposable
         }
 
         return null;
-    }
-
-    private static string Truncate(string value, int maxLength = 500)
-    {
-        if (value.Length <= maxLength)
-        {
-            return value;
-        }
-
-        return value[..maxLength] + "...";
     }
 
     /// <summary>

@@ -1,5 +1,9 @@
+using System.IO;
 using System.Net;
+using System.Net.Http;
 using System.Net.Sockets;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace FlowEngine.Core.Http;
 
@@ -59,6 +63,57 @@ public static class SsrfGuard
             // 解析失败按不安全处理，避免 DNS 重绑定绕过。
             return true;
         }
+    }
+
+    /// <summary>
+    /// 创建 SSRF 安全的 <see cref="SocketsHttpHandler.ConnectCallback"/>。
+    /// 在 TCP 连接前解析主机名并 pin 住具体 IP，校验每个 IP 是否为内部/保留地址，
+    /// 通过则用该 IP 建立连接，避免 DNS 重绑定绕过。
+    /// </summary>
+    /// <returns>可用于 <see cref="SocketsHttpHandler.ConnectCallback"/> 的回调。</returns>
+    public static Func<SocketsHttpConnectionContext, CancellationToken, ValueTask<Stream>> CreateConnectCallback()
+    {
+        return async (context, cancellationToken) =>
+        {
+            var host = context.DnsEndPoint.Host;
+            var port = context.DnsEndPoint.Port;
+
+            IPAddress[] addresses;
+            try
+            {
+                addresses = await Dns.GetHostAddressesAsync(host, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception)
+            {
+                throw new InvalidOperationException($"SSRF 防护：DNS 解析失败 {host}");
+            }
+
+            if (addresses.Length == 0)
+            {
+                throw new InvalidOperationException($"SSRF 防护：未解析到地址 {host}");
+            }
+
+            foreach (var address in addresses)
+            {
+                if (IsInternalAddress(address))
+                {
+                    throw new InvalidOperationException($"SSRF 防护：目标地址 {address} 为内部/保留地址，已被拦截");
+                }
+            }
+
+            // pin 第一个非内部 IP 建立 TCP 连接
+            var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
+            try
+            {
+                await socket.ConnectAsync(new IPEndPoint(addresses[0], port), cancellationToken).ConfigureAwait(false);
+                return new NetworkStream(socket, ownsSocket: true);
+            }
+            catch
+            {
+                socket.Dispose();
+                throw;
+            }
+        };
     }
 
     private static bool IsInternalAddress(IPAddress address)
