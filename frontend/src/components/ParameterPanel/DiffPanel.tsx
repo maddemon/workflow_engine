@@ -73,7 +73,7 @@ export function DiffPanel({ diff, highlightedNodeIds, onNodeHighlight }: IDiffPa
           <Stack gap={4}>
             {diff.map((entry, idx) => (
               <Paper
-                key={idx}
+                key={`${entry.op}-${entry.nodeId ?? entry.field}-${idx}`}
                 p={4}
                 withBorder
                 style={{ cursor: entry.nodeId ? 'pointer' : 'default' }}
