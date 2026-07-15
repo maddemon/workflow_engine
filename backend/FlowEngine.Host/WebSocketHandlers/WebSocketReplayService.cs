@@ -10,15 +10,18 @@ namespace FlowEngine.Host.WebSocketHandlers;
 /// 事件重放服务，用于断线重连时补发缺失事件。
 /// 不直接订阅 EventBus —— 由 WebSocketEventPushService 将已赋序号的事件推送过来存储。
 /// 内存历史不可用时，从数据库执行记录重建事件。
+/// 采用 LRU 策略限制缓存的 execution 数量，防止内存泄漏。
 /// </summary>
 public sealed class WebSocketReplayService : IDisposable
 {
     private readonly ILogger<WebSocketReplayService> _logger;
     private readonly IServiceScopeFactory _scopeFactory;
-    private readonly Dictionary<Guid, List<WebSocketPushMessage>> _eventHistory = new();
+    private readonly Dictionary<Guid, LinkedListNode<ExecutionEventCache>> _eventHistory = new();
+    private readonly LinkedList<ExecutionEventCache> _lruList = new();
     private readonly object _lock = new();
 
     private const int MaxEventsPerExecution = 1000;
+    private const int MaxExecutions = 100;
 
     public WebSocketReplayService(
         ILogger<WebSocketReplayService> logger,
@@ -35,17 +38,35 @@ public sealed class WebSocketReplayService : IDisposable
     {
         lock (_lock)
         {
-            if (!_eventHistory.TryGetValue(executionId, out var events))
+            if (!_eventHistory.TryGetValue(executionId, out var node))
             {
-                events = new List<WebSocketPushMessage>();
-                _eventHistory[executionId] = events;
+                // 新 execution，超过上限时 LRU 淘汰最久未访问的
+                if (_eventHistory.Count >= MaxExecutions)
+                {
+                    var lru = _lruList.Last!;
+                    _eventHistory.Remove(lru.Value.ExecutionId);
+                    _lruList.RemoveLast();
+                    _logger.LogDebug(
+                        "LRU evicted execution {ExecutionId} to stay within limit {MaxExecutions}",
+                        lru.Value.ExecutionId, MaxExecutions);
+                }
+
+                var cache = new ExecutionEventCache(executionId, new List<WebSocketPushMessage>());
+                node = _lruList.AddFirst(cache);
+                _eventHistory[executionId] = node;
+            }
+            else
+            {
+                // 移到 LRU 最前
+                _lruList.Remove(node);
+                _lruList.AddFirst(node);
             }
 
-            events.Add(message);
+            node.Value.Events.Add(message);
 
-            if (events.Count > MaxEventsPerExecution)
+            if (node.Value.Events.Count > MaxEventsPerExecution)
             {
-                events.RemoveRange(0, events.Count - MaxEventsPerExecution);
+                node.Value.Events.RemoveRange(0, node.Value.Events.Count - MaxEventsPerExecution);
             }
         }
 
@@ -61,12 +82,16 @@ public sealed class WebSocketReplayService : IDisposable
     {
         lock (_lock)
         {
-            if (!_eventHistory.TryGetValue(executionId, out var events))
+            if (!_eventHistory.TryGetValue(executionId, out var node))
             {
                 return Array.Empty<WebSocketPushMessage>();
             }
 
-            return events.Where(e => e.Sequence > lastSequence).ToList().AsReadOnly();
+            // 移到 LRU 最前
+            _lruList.Remove(node);
+            _lruList.AddFirst(node);
+
+            return node.Value.Events.Where(e => e.Sequence > lastSequence).ToList().AsReadOnly();
         }
     }
 
@@ -195,6 +220,9 @@ public sealed class WebSocketReplayService : IDisposable
         lock (_lock)
         {
             _eventHistory.Clear();
+            _lruList.Clear();
         }
     }
+
+    private sealed record ExecutionEventCache(Guid ExecutionId, List<WebSocketPushMessage> Events);
 }
