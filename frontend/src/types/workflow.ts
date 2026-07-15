@@ -224,6 +224,8 @@ export interface ExecutionDto {
   status: ExecutionStatus;
   startedAt: string | null;
   completedAt: string | null;
+  /** 失败时的错误信息（仅 execution_failed 时填充）。 */
+  error?: { code: string; message: string } | null;
   nodeRecords: NodeExecutionRecordDto[];
 }
 

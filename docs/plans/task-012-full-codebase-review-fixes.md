@@ -716,6 +716,7 @@
 - [x] P1（30 项，其中 P1-17/P1-18 跳过：P1-17 需运行时多输出端口支持，P1-18 依赖 task-006 B1 未完成）
 - [x] P2（21 项）
 - [x] P3（25 项）
+- [x] **复审第二轮（2026-07-15）**：对原计划标记"已完成"的 9 项做独立 SubAgent 复审，发现 8 项为部分实现/虚假覆盖、1 项（P2-2）需跨库可移植决策；全部修复/定案。详见下方「主要修改记录 - 复审第二轮」。
 
 ## 主要修改记录
 - 2026-07-15 | SubAgent-A | P0a-1 | SsrfGuard 新增 CreateConnectCallback；HttpClientPool 改用 SocketsHttpHandler+ConnectCallback；OAuth2TokenService 入口 SSRF 校验+异常消息移除 responseBody | dotnet build 0 错误，OAuth2TokenServiceTests 9/9 通过
@@ -743,6 +744,18 @@
 - 2026-07-15 | SubAgent-L | P3-9~17 | 插件节点 Description/XML 注释、WebSearch Header/SSRF、Shell KillProcessTree、OAuth2/Wait/SubWorkflow 边界、WebSocket 清理、LocalFileStorage 单次查询、ExceptionHandler 403、CreateAsyncScope | 后端测试通过
 - 2026-07-15 | SubAgent-M | P3-18~25 | JWT Secret 占位符、AuthenticationService clientIp 参数化、PollTriggerJob 工厂注入、CredentialAccessor 行为统一、测试命名规范、AgentEnhanceTests 拆分、共享 Fakes、AgentNodeDto 补齐 | Application+Runtime 测试通过
 
+### 复审第二轮（2026-07-15，独立 SubAgent 复审后补丁）
+- 2026-07-15 | Review | P1-14 | TriggerService.UpdateAsync/DeleteAsync 的 SaveChanges 用 `Database.IsRelational()` 包裹 BeginTransactionAsync（InMemory 测试提供程序不支持事务，否则 2 个测试 BEGIN TRANSACTION 报错）；Quartz 调度作为外部状态保留在事务外 | dotnet build 0 错误，TriggerServiceTests 20/20 通过
+- 2026-07-15 | Review | P2-5 | TriggerService 其余只读查询补齐 AsNoTracking：GetByIdAsync/GetByWorkflowDefinitionIdAsync/GetAllForUserAsync/RegisterWorkflowSchedulesAsync/UnregisterWorkflowSchedulesAsync | TriggerServiceTests 20/20 通过
+- 2026-07-15 | Review | P2-7 | CredentialAccessor 两处 FirstOrDefaultAsync 补齐 AsNoTracking | Application.Tests 349/349 通过
+- 2026-07-15 | Review | P1-1 | WorkflowImportExportTests 新增 Import_CrossProjectAccessDenied_ThrowsPermissionDenied，断言跨项目导入抛 PermissionDeniedException（DenyingProjectAuthorizationGuard） | Application.Tests 349/349 通过
+- 2026-07-15 | Review | P0c-2 | ExecutionDto 新增 error 字段；messageHandlers execution_failed 分支写入 error；SSE/WebSocket 失败态前端正确展示错误 | npm run build 通过（tsc -b 0 错误）
+- 2026-07-15 | Review | P0d-1 | NodeExecutionResult 新增 ToolExecutionRecords 属性（非破坏性）；SubAgentToolNode Completed 分支回填；SubAgentToolNodeTests 由手工 InlineResolver 改为断言 result.ToolExecutionRecords 的 ParentRecordId 端到端匹配 | Runtime.Tests 343/343 通过
+- 2026-07-15 | Review | P2-13 | ExecutionSseFallbackTests 重写：真实驱动 SseController.Stream，断言 Content-Type=text/event-stream、含 event: connected 帧、订阅全部 8 个 ExecutionDomainEvents（原为仅构造 DTO 的虚假覆盖） | Host.Tests 195/195 通过
+- 2026-07-15 | Review | P0b-2 | 经复审确认：SubWorkflowExecutor 的 property.SetValue 为参数绑定循环（将字典参数拷回节点属性），属良性反射；真正缺陷（Activator.CreateInstance 不安全实例化）已在首轮经 NodeRegistry.CreateInstance 修复。维持现状，计划"移除反射"表述过强 | 无需改动
+- 2026-07-15 | Review | P2-2 | 调研结论：EF.Functions.Like 对 JSON 列仅 SQLite/SQL Server 可翻译，PostgreSQL(jsonb)/MySQL(JSON)/Dameng 会运行时报 SQL 错，不可移植。按项目"避免方言/可移植 SQL"规则，决议保持 AsNoTracking 内存过滤（已加 AsNoTracking），不做非可移植 Like；真正服务端过滤需新增派生 CredentialIds 索引列（schema 变更，按红线另批） | 维持现状，Application.Tests 349/349 通过
+- 2026-07-15 | Review | P2-21 | 补充 SuccessRehashNeeded 回归测试（之前仅实现无测试）：新增 `PasswordHasher_VerifyPassword_LegacyV2Hash_ReturnsSuccessRehashNeeded`（V2 哈希映射）与 `LoginAsync_LegacyV2HashAlgorithm_SucceedsAndUpgradesHash`（旧算法用户可登录且哈希升级为 V3），覆盖 AuthenticationService 的 SuccessRehashNeeded 分支 | Application.Tests 351/351 通过
+
 ## 风险与待定项
 - **P0a-1 SSRF**：`SocketsHttpHandler.ConnectCallback` 在 net10.0 可用（.NET 5+ 支持）；OAuth2 凭据测试需 mock SsrfGuard 避免影响真实 token 端点
 - **P0a-2 调度**：删除 IHostedService 实现后，`AddQuartzHostedService` 仍负责 scheduler 生命周期；`GetScheduler` 在 scheduler 未启动时是否自动启动需查 Quartz 文档（默认会）
@@ -753,6 +766,7 @@
 - **P0c-4 SSE 多订阅**：多 EventSource 可能触发浏览器连接数限制（HTTP/1.1 同源 6 个）
 - **P1-13/14 事务**：triggerSync 涉及 Quartz 外部状态无法纳入 DB 事务，采用"先注销→SaveChanges→注册新调度→失败补偿日志"模式
 - **P1-18 DbUpsertNode 超时**：依赖 task-006 B1 完成后执行
+- **P2-2 FindReferencingCredentialAsync 服务端过滤（可移植性）**：JSON 列 `Nodes` 经 `JsonColumnAttribute`+`JsonValueConverter` 映射为 jsonb/json 文本列；`EF.Functions.Like` 仅 SQLite/SQL Server 可翻译，PostgreSQL/MySQL/Dameng 运行时会报 SQL 错（违反可移植规则）。复审决议：保持 AsNoTracking 内存过滤（已加 AsNoTracking），真正服务端过滤需新增派生 CredentialIds 索引列（schema 变更，触发红线，需另批计划+迁移）
 - **P2-1 AsNoTracking**：已按方法级分类（纯只读 vs 写前读取），执行时严格按 checklist
 - **P2-14 测试 double 对齐**：修正 IsAllowed 表需对照 [AuthorizationServiceTests.cs#L36-42](file:///d:/Repos/flow_engine/tests/FlowEngine.Application.Tests/Authorization/AuthorizationServiceTests.cs#L36-L42) 真实策略
 - **P2-17 OAuth2 重试测试**：改 OAuth2TokenService 注入 TimeProvider 需改构造函数签名

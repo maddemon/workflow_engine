@@ -91,6 +91,7 @@ public sealed class TriggerService(
         await authGuard.RequireAccessAsync(ResourceKind.Trigger, id, Operation.Read, cancellationToken);
 
         var trigger = await dbContext.Triggers
+            .AsNoTracking()
             .FirstOrDefaultAsync(t => t.Id == id, cancellationToken)
             .ConfigureAwait(false);
         if (trigger is null)
@@ -111,6 +112,7 @@ public sealed class TriggerService(
         await authGuard.RequireAccessAsync(ResourceKind.Workflow, workflowDefinitionId, Operation.Read, cancellationToken);
 
         var triggers = await dbContext.Triggers
+            .AsNoTracking()
             .Where(t => t.WorkflowDefinitionId == workflowDefinitionId)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
@@ -125,7 +127,7 @@ public sealed class TriggerService(
         Guid? projectId = null,
         CancellationToken cancellationToken = default)
     {
-        var query = dbContext.Triggers.AsQueryable();
+        var query = dbContext.Triggers.AsNoTracking();
         if (projectId.HasValue)
         {
             query = query.Where(t => t.ProjectId == projectId.Value);
@@ -177,9 +179,28 @@ public sealed class TriggerService(
             }
         }
 
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        // 数据库事务包裹：仅包裹 SaveChanges（Quartz 调度为外部状态，置于事务外）。
+        // InMemory 测试提供程序不支持事务，仅在关系型提供程序下开启。
+        if (dbContext.Database.IsRelational())
+        {
+            await using var tx = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                throw;
+            }
+        }
+        else
+        {
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
 
-        // 注册新调度：SaveChanges 成功后，尝试注册新调度。
+        // 注册新调度：SaveChanges 成功后，尝试注册新调度（Quartz 外部状态，在事务外）。
         if (trigger.Type == TriggerType.Poll && trigger.IsActive)
         {
             try
@@ -246,7 +267,27 @@ public sealed class TriggerService(
         }
 
         dbContext.Triggers.Remove(trigger);
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        // 数据库事务包裹：仅包裹 SaveChanges（Quartz 调度为外部状态，置于事务外）。
+        // InMemory 测试提供程序不支持事务，仅在关系型提供程序下开启。
+        if (dbContext.Database.IsRelational())
+        {
+            await using var tx = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                throw;
+            }
+        }
+        else
+        {
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
 
         await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
             AuditEventTypes.TriggerDeleted,
@@ -288,6 +329,7 @@ public sealed class TriggerService(
     {
         var triggers = await dbContext.Triggers
             .Where(t => t.WorkflowDefinitionId == workflowDefinitionId && t.IsActive)
+            .AsNoTracking()
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
@@ -319,6 +361,7 @@ public sealed class TriggerService(
     {
         var triggers = await dbContext.Triggers
             .Where(t => t.WorkflowDefinitionId == workflowDefinitionId)
+            .AsNoTracking()
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 

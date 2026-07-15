@@ -156,7 +156,8 @@ public sealed class SubAgentToolNode : INodeType
                                         SourceIndex = 0,
                                     }
                                 ]
-                            }
+                            },
+                            ToolExecutionRecords = result.ToolExecutionRecords
                         };
                     }
 

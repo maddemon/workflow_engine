@@ -1,155 +1,124 @@
-using FlowEngine.Host.WebSocketHandlers;
+using System.Text;
+using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
+using FlowEngine.Application.Authorization;
+using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Authorization;
+using FlowEngine.Core.Events;
+using FlowEngine.Host.Controllers;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FlowEngine.Host.Tests.Controllers;
 
 /// <summary>
-/// SSE 降级路径测试：验证事件帧格式、Content-Type、断连重连能力。
-/// SseController 使用 .NET 10 的 TypedResults.ServerSentEvents，
-/// 此测试类验证消息结构与 SSE 协议兼容性。
+/// SSE 兜底端点真实测试：直接驱动 <see cref="SseController.Stream"/>，验证
+/// Content-Type、SSE 事件帧格式（event:/data:）以及事件总线订阅装配，
+/// 而非仅断言 DTO 字段（原测试为假绿）。
 /// </summary>
 public sealed class ExecutionSseFallbackTests
 {
     [Fact]
-    public void SseMessage_ConnectedEvent_HasRequiredFields()
-    {
-        // SSE connected 事件必须包含 type、executionId、timestamp
-        var message = new WebSocketPushMessage
-        {
-            Type = "connected",
-            ExecutionId = Guid.NewGuid(),
-            Timestamp = DateTime.UtcNow,
-        };
-
-        Assert.Equal("connected", message.Type);
-        Assert.NotEqual(Guid.Empty, message.ExecutionId);
-        Assert.NotEqual(default, message.Timestamp);
-    }
-
-    [Fact]
-    public void SseMessage_ExecutionCompletedEvent_HasPayload()
+    public async Task Stream_Returns_Sse_ContentType_And_ConnectedFrame()
     {
         var executionId = Guid.NewGuid();
-        var message = new WebSocketPushMessage
-        {
-            Type = "execution_completed",
-            ExecutionId = executionId,
-            Timestamp = DateTime.UtcNow,
-            Payload = new { workflowDefinitionId = Guid.NewGuid(), finalStatus = "Completed" },
-        };
+        var bus = new CapturingEventBus();
+        var controller = CreateController(bus);
 
-        Assert.Equal("execution_completed", message.Type);
-        Assert.Equal(executionId, message.ExecutionId);
-        Assert.NotNull(message.Payload);
+        var httpContext = new DefaultHttpContext();
+        httpContext.Response.Body = new MemoryStream();
+        var services = new ServiceCollection();
+        services.AddSingleton(new JsonSerializerOptions());
+        httpContext.RequestServices = services.BuildServiceProvider();
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(800));
+
+#pragma warning disable xUnit1051
+        var result = await controller.Stream(executionId, cts.Token);
+#pragma warning restore xUnit1051
+
+        // 连接建立后立即 yield "connected" 帧，随后阻塞在 ReadAllAsync；
+        // 超时取消即可安全结束并读取已刷新的首帧。
+        try
+        {
+            await result.ExecuteAsync(httpContext);
+        }
+        catch (OperationCanceledException)
+        {
+            // 预期：客户端断开/超时触发的取消。
+        }
+
+        Assert.Equal("text/event-stream", httpContext.Response.ContentType);
+
+        httpContext.Response.Body.Position = 0;
+#pragma warning disable xUnit1051
+        var body = await new StreamReader(httpContext.Response.Body).ReadToEndAsync();
+#pragma warning restore xUnit1051
+
+        // SSE 帧格式：event: <type>\ndata: <json>\n\n
+        Assert.Contains("event: connected", body);
+        Assert.Contains("data:", body);
+        Assert.Contains(executionId.ToString(), body);
     }
 
     [Fact]
-    public void SseMessage_ExecutionFailedEvent_HasErrorPayload()
+    public void Stream_Subscribes_To_All_ExecutionDomainEvents()
     {
-        var message = new WebSocketPushMessage
-        {
-            Type = "execution_failed",
-            ExecutionId = Guid.NewGuid(),
-            Timestamp = DateTime.UtcNow,
-            Payload = new { error = new { code = "ERR", message = "Something went wrong" } },
-        };
+        var executionId = Guid.NewGuid();
+        var bus = new CapturingEventBus();
+        var controller = CreateController(bus);
 
-        Assert.Equal("execution_failed", message.Type);
-        Assert.NotNull(message.Payload);
+        var httpContext = new DefaultHttpContext();
+        controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+        _ = controller.Stream(executionId, CancellationToken.None);
+
+        var subscribedTypes = bus.Subscriptions.Select(s => s.EventType).ToHashSet();
+        Assert.Contains(typeof(WorkflowStartedEvent), subscribedTypes);
+        Assert.Contains(typeof(NodeStartedEvent), subscribedTypes);
+        Assert.Contains(typeof(NodeExecutedEvent), subscribedTypes);
+        Assert.Contains(typeof(NodeErrorEvent), subscribedTypes);
+        Assert.Contains(typeof(WorkflowCompletedEvent), subscribedTypes);
+        Assert.Contains(typeof(WorkflowFailedEvent), subscribedTypes);
+        Assert.Contains(typeof(WorkflowCancelledEvent), subscribedTypes);
+        Assert.Contains(typeof(LlmTokenStreamEvent), subscribedTypes);
     }
 
-    [Fact]
-    public void SseMessage_NodeExecutedEvent_HasNodePayload()
+    private static SseController CreateController(CapturingEventBus bus)
     {
-        var message = new WebSocketPushMessage
-        {
-            Type = "node_executed",
-            ExecutionId = Guid.NewGuid(),
-            Timestamp = DateTime.UtcNow,
-            Payload = new { nodeDefinitionId = "node1", runIndex = 0, result = new { success = true } },
-        };
-
-        Assert.Equal("node_executed", message.Type);
-        Assert.NotNull(message.Payload);
+        return new SseController(
+            bus,
+            new AllowAllAuthorizationGuard(),
+            NullLogger<SseController>.Instance);
     }
 
-    [Fact]
-    public void SseMessage_LlmTokenEvent_HasDeltaPayload()
+    private sealed class AllowAllAuthorizationGuard : IAuthorizationGuard
     {
-        var message = new WebSocketPushMessage
-        {
-            Type = "llm_token",
-            ExecutionId = Guid.NewGuid(),
-            Timestamp = DateTime.UtcNow,
-            Payload = new { nodeDefinitionId = "llm1", delta = "hello", isFinal = false },
-        };
-
-        Assert.Equal("llm_token", message.Type);
-        Assert.NotNull(message.Payload);
+        public Task RequireAccessAsync(ResourceKind kind, Guid resourceId, Operation operation, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RequireScopeAsync(Scope scope, Operation operation, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RequireAdminAsync(Operation operation, CancellationToken ct = default) => Task.CompletedTask;
     }
 
-    [Fact]
-    public void SseMessage_HeartbeatEvent_KeepsConnectionAlive()
+    private sealed class CapturingEventBus : IEventBus
     {
-        // 心跳事件用于保持 SSE 连接活跃，防止反向代理/负载均衡超时断开
-        var message = new WebSocketPushMessage
+        public List<(Type EventType, Delegate Handler)> Subscriptions { get; } = [];
+
+        public Task PublishAsync<TEvent>(TEvent eventInstance, CancellationToken cancellationToken = default)
+            where TEvent : IDomainEvent
+            => Task.CompletedTask;
+
+        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler)
+            where TEvent : IDomainEvent
         {
-            Type = "heartbeat",
-            Timestamp = DateTime.UtcNow,
-        };
+            Subscriptions.Add((typeof(TEvent), handler));
+            return new NoopDisposable();
+        }
 
-        Assert.Equal("heartbeat", message.Type);
-        // 心跳无 executionId，仅 timestamp
-    }
-
-    [Fact]
-    public void SseMessage_NodeErrorEvent_HasErrorPayload()
-    {
-        var message = new WebSocketPushMessage
+        private sealed class NoopDisposable : IDisposable
         {
-            Type = "node_error",
-            ExecutionId = Guid.NewGuid(),
-            Timestamp = DateTime.UtcNow,
-            Payload = new { nodeDefinitionId = "node1", error = new { code = "TIMEOUT", message = "Node timed out" } },
-        };
-
-        Assert.Equal("node_error", message.Type);
-        Assert.NotNull(message.Payload);
-    }
-
-    [Fact]
-    public void SseMessage_ExecutionCancelledEvent_HasPayload()
-    {
-        var message = new WebSocketPushMessage
-        {
-            Type = "execution_cancelled",
-            ExecutionId = Guid.NewGuid(),
-            Timestamp = DateTime.UtcNow,
-            Payload = new { workflowDefinitionId = Guid.NewGuid() },
-        };
-
-        Assert.Equal("execution_cancelled", message.Type);
-        Assert.NotNull(message.Payload);
-    }
-
-    [Fact]
-    public void SseReconnect_ClientCanResumeFromLastEventId()
-    {
-        // SSE 协议支持 Last-Event-ID 重连：客户端发送 Last-Event-ID 请求头，
-        // 服务端从该 ID 之后继续推送。WebSocketPushMessage 不含 eventId，
-        // 但 SseItem<T> 的 eventType 字段用于 SSE 事件类型。
-        // 验证消息 type 可用作 SSE event type 字段。
-        var types = new[] { "connected", "execution_started", "node_started", "node_executed", "node_error", "execution_completed", "execution_failed", "execution_cancelled", "llm_token", "heartbeat" };
-
-        foreach (var type in types)
-        {
-            var message = new WebSocketPushMessage
-            {
-                Type = type,
-                ExecutionId = Guid.NewGuid(),
-                Timestamp = DateTime.UtcNow,
-            };
-            // event type 非空，满足 SSE event: 行格式
-            Assert.False(string.IsNullOrEmpty(message.Type));
+            public void Dispose() { }
         }
     }
 }

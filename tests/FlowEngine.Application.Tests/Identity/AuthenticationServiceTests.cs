@@ -2,11 +2,14 @@ using FlowEngine.Application.Audit;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
 using FlowEngine.Core.Abstractions;
-using FlowEngine.Core.Events;
-using FlowEngine.Infrastructure.Identity;
 using FlowEngine.Core.Data;
+using FlowEngine.Core.Events;
+using FlowEngine.Core.Identity;
+using FlowEngine.Infrastructure.Identity;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Application.Tests.Identity;
 
@@ -305,6 +308,70 @@ public class AuthenticationServiceTests : IDisposable
         var hash = _passwordHasher.HashPassword("CorrectP@ss1");
 
         Assert.Equal(PasswordVerifyResult.Failed, _passwordHasher.VerifyPassword(hash, "WrongP@ss2"));
+    }
+
+    [Fact]
+    public void PasswordHasher_VerifyPassword_LegacyV2Hash_ReturnsSuccessRehashNeeded()
+    {
+        // 存量用户可能使用旧版（IdentityV2/SHA1）算法哈希；当前默认 V3 校验器应判定为
+        // 成功但需升级（SuccessRehashNeeded），而非失败。
+        var password = "LegacyP@ss1";
+        var legacyHash = CreateLegacyV2Hash(password);
+
+        var result = _passwordHasher.VerifyPassword(legacyHash, password);
+
+        Assert.Equal(PasswordVerifyResult.SuccessRehashNeeded, result);
+    }
+
+    [Fact]
+    public async Task LoginAsync_LegacyV2HashAlgorithm_SucceedsAndUpgradesHash()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        const string email = "legacy@example.com";
+        const string password = "LegacyP@ss1";
+
+        // 模拟算法升级前的存量用户：密码以旧版 V2 哈希存储。
+        var user = new User
+        {
+            Email = email,
+            UserName = "legacyuser",
+            DisplayName = "Legacy User",
+            PasswordHash = CreateLegacyV2Hash(password),
+            IsActive = true,
+        };
+        await _userStore.CreateAsync(user, ct);
+        // 解绑种子用户：本测试共用单一 _dbContext，CreateAsync 后该实例仍被跟踪；
+        // 若不解绑，LoginAsync 内 AsNoTracking 重新加载的实例在 UpdateAsync 时会与被跟踪实例主键冲突。
+        // 生产环境按请求作用域使用全新 DbContext，不存在此问题。
+        _dbContext.Entry(user).State = EntityState.Detached;
+
+        var loginResult = await _authService.LoginAsync(new LoginRequest
+        {
+            Email = email,
+            Password = password,
+        }, ct);
+
+        // 完成判定（P2-21）：算法升级用户可登录。
+        Assert.True(loginResult.Success);
+        Assert.NotNull(loginResult.Token);
+
+        // 登录后哈希应被升级为当前 V3 算法，不再等于旧 V2 哈希。
+        var updated = await _userStore.GetByEmailAsync(email, ct);
+        Assert.NotNull(updated);
+        Assert.NotEqual(user.PasswordHash, updated!.PasswordHash);
+        Assert.StartsWith("AQ", updated.PasswordHash);
+    }
+
+    /// <summary>
+    /// 生成旧版（IdentityV2/SHA1）密码哈希，用于模拟算法升级前的存量用户。
+    /// </summary>
+    private static string CreateLegacyV2Hash(string password)
+    {
+        var legacyHasher = new PasswordHasher<User>(Options.Create(new PasswordHasherOptions
+        {
+            CompatibilityMode = PasswordHasherCompatibilityMode.IdentityV2,
+        }));
+        return legacyHasher.HashPassword(new User(), password);
     }
 
     [Fact]

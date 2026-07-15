@@ -187,45 +187,11 @@ public class SubAgentToolNodeTests
         Assert.Equal("test-model", dto.AgentInfo.Model);
         Assert.NotNull(dto.AgentInfo.CompletedAt);
 
-        // SubAgentToolNode 解析 parentRecordId = NodeExecutionRecordId != Guid.Empty ? NodeExecutionRecordId : ExecutionId。
-        // 此处 NodeExecutionRecordId 已设置，parentRecordId == nodeExecutionRecordId。
-        // InlineResolver 将 parentRecordId 透传到 ToolExecutionRecords，此处直接验证透传链路。
-        var resolverCallCount = 0;
-        var resolverLlmClient = new MockLlmClient(_ =>
-        {
-            resolverCallCount++;
-            if (resolverCallCount == 1)
-            {
-                return new LlmResponse
-                {
-                    Content = null,
-                    ToolCalls =
-                    [
-                        new LlmToolCall { Id = "r-call1", Name = "tool1", Arguments = "{}" }
-                    ]
-                };
-            }
-
-            return new LlmResponse { Content = "Done" };
-        });
-
-        var tools = new List<ToolDefinition>
-        {
-            new() { Name = "tool1", Description = "test", TargetNodeDefinitionId = toolNode.Id }
-        };
-
-        var resolver = new InlineResolver(
-            resolverLlmClient,
-            tools,
-            context,
-            maxIterations: 3,
-            parentRecordId: nodeExecutionRecordId);
-
-        var resolverMessages = new List<LlmMessage> { new() { Role = "user", Content = "Test" } };
-        var resolverResult = await resolver.RunAsync(resolverMessages);
-
-        Assert.NotEmpty(resolverResult.ToolExecutionRecords);
-        Assert.All(resolverResult.ToolExecutionRecords, r => Assert.Equal(nodeExecutionRecordId, r.ParentRecordId));
+        // 端到端断言：节点内部创建的 InlineResolver 已将 parentRecordId 透传到工具调用记录。
+        // parentRecordId = NodeExecutionRecordId != Guid.Empty ? NodeExecutionRecordId : ExecutionId；
+        // 此处 NodeExecutionRecordId 已设置，故 ParentRecordId == nodeExecutionRecordId。
+        Assert.NotEmpty(result.ToolExecutionRecords);
+        Assert.All(result.ToolExecutionRecords, r => Assert.Equal(nodeExecutionRecordId, r.ParentRecordId));
     }
 
     [Fact]
@@ -278,43 +244,9 @@ public class SubAgentToolNodeTests
         Assert.True(result.Success);
         Assert.Equal(2, callCount);
 
-        // 验证回退逻辑：parentRecordId == executionId（因 NodeExecutionRecordId == Guid.Empty）。
-        var resolverCallCount = 0;
-        var resolverLlmClient = new MockLlmClient(_ =>
-        {
-            resolverCallCount++;
-            if (resolverCallCount == 1)
-            {
-                return new LlmResponse
-                {
-                    Content = null,
-                    ToolCalls =
-                    [
-                        new LlmToolCall { Id = "r-call1", Name = "tool1", Arguments = "{}" }
-                    ]
-                };
-            }
-
-            return new LlmResponse { Content = "Done" };
-        });
-
-        var tools = new List<ToolDefinition>
-        {
-            new() { Name = "tool1", Description = "test", TargetNodeDefinitionId = toolNode.Id }
-        };
-
-        var resolver = new InlineResolver(
-            resolverLlmClient,
-            tools,
-            context,
-            maxIterations: 3,
-            parentRecordId: executionId);
-
-        var resolverMessages = new List<LlmMessage> { new() { Role = "user", Content = "Test" } };
-        var resolverResult = await resolver.RunAsync(resolverMessages);
-
-        Assert.NotEmpty(resolverResult.ToolExecutionRecords);
-        Assert.All(resolverResult.ToolExecutionRecords, r => Assert.Equal(executionId, r.ParentRecordId));
+        // 端到端断言：NodeExecutionRecordId 为 Guid.Empty 时，节点回退到 ExecutionId 作为 parentRecordId。
+        Assert.NotEmpty(result.ToolExecutionRecords);
+        Assert.All(result.ToolExecutionRecords, r => Assert.Equal(executionId, r.ParentRecordId));
     }
 
     [Fact]

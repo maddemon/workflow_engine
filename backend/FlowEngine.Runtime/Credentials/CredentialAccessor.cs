@@ -32,6 +32,7 @@ public sealed class CredentialAccessor : ICredentialAccessor
     public async Task<CredentialValue> GetCredentialAsync(Guid credentialId, CancellationToken cancellationToken = default)
     {
         var credential = await _dbContext.Credentials
+            .AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == credentialId, cancellationToken)
             .ConfigureAwait(false);
 
@@ -47,6 +48,7 @@ public sealed class CredentialAccessor : ICredentialAccessor
     public async Task<CredentialValue?> GetCredentialByNameAsync(string name, CancellationToken cancellationToken = default)
     {
         var credential = await _dbContext.Credentials
+            .AsNoTracking()
             .FirstOrDefaultAsync(c => c.Name == name, cancellationToken)
             .ConfigureAwait(false);
 

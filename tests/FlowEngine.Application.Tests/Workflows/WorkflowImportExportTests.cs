@@ -9,6 +9,7 @@ using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Tests.Workflows;
@@ -249,6 +250,43 @@ public sealed class WorkflowImportExportTests
         Assert.True(result.FailureCount >= 1);
     }
 
+    [Fact]
+    public async Task Import_CrossProjectAccessDenied_ThrowsPermissionDenied()
+    {
+        // P1-1：导入前 RBAC 校验应拒绝无写权限的目标项目，且异常向上传播。
+        var deniedProject = Guid.NewGuid();
+        var registry = new StubNodeRegistry([
+            CreateDescriptor("start", ports:
+            [
+                new PortDefinition { Name = "output", Direction = PortDirection.Output, Type = PortType.Main },
+            ]),
+        ]);
+        var service = CreateImportService(registry, new DenyingProjectAuthorizationGuard(deniedProject));
+
+        var export = new WorkflowExportResult
+        {
+            Name = "Cross Project",
+            Nodes =
+            [
+                new NodeDefinitionDto
+                {
+                    Id = "n1",
+                    TypeName = "start",
+                    Name = "Start",
+                    IsEntry = true,
+                    Ports =
+                    [
+                        new PortInstance { Name = "output", Direction = PortDirection.Output, Type = PortType.Main },
+                    ],
+                },
+            ],
+        };
+        var json = JsonSerializer.Serialize(export, JsonOptions);
+
+        await Assert.ThrowsAsync<PermissionDeniedException>(() =>
+            service.ImportAsync(json, deniedProject, "user", TestContext.Current.CancellationToken));
+    }
+
     private static WorkflowImportService CreateImportService(INodeRegistry registry)
     {
         var options = new DbContextOptionsBuilder<FlowEngineDbContext>()
@@ -262,6 +300,21 @@ public sealed class WorkflowImportExportTests
             new FakeEventBus(),
             new AuditEventFactory(new FakeUserContext()),
             new StubAuthorizationGuard());
+    }
+
+    private static WorkflowImportService CreateImportService(INodeRegistry registry, IAuthorizationGuard authGuard)
+    {
+        var options = new DbContextOptionsBuilder<FlowEngineDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        var dbContext = new FlowEngineDbContext(options);
+        return new WorkflowImportService(
+            dbContext,
+            registry,
+            new WorkflowValidator(registry),
+            new FakeEventBus(),
+            new AuditEventFactory(new FakeUserContext()),
+            authGuard);
     }
 
     private static NodeTypeDescriptor CreateDescriptor(
@@ -340,6 +393,22 @@ public sealed class WorkflowImportExportTests
     private sealed class StubAuthorizationGuard : IAuthorizationGuard
     {
         public Task RequireAccessAsync(ResourceKind kind, Guid resourceId, Operation operation, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RequireScopeAsync(Scope scope, Operation operation, CancellationToken ct = default) => Task.CompletedTask;
+        public Task RequireAdminAsync(Operation operation, CancellationToken ct = default) => Task.CompletedTask;
+    }
+
+    private sealed class DenyingProjectAuthorizationGuard(Guid deniedProjectId) : IAuthorizationGuard
+    {
+        public Task RequireAccessAsync(ResourceKind kind, Guid resourceId, Operation operation, CancellationToken ct = default)
+        {
+            if (kind == ResourceKind.Project && resourceId == deniedProjectId)
+            {
+                throw new PermissionDeniedException($"无权限导入到项目 {resourceId}。");
+            }
+
+            return Task.CompletedTask;
+        }
+
         public Task RequireScopeAsync(Scope scope, Operation operation, CancellationToken ct = default) => Task.CompletedTask;
         public Task RequireAdminAsync(Operation operation, CancellationToken ct = default) => Task.CompletedTask;
     }
