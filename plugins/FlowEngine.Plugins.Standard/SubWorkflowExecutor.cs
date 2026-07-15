@@ -79,7 +79,7 @@ internal sealed class SubWorkflowExecutor
 
             if (result.Success)
             {
-                nodeOutputs[node.Name] = result.Output;
+                nodeOutputs[node.Id] = result.Output;
             }
 
             EnqueueOutgoing(node, nodeType, result, connectionsBySource, nodeMap, executed, queue);
@@ -119,7 +119,7 @@ internal sealed class SubWorkflowExecutor
             foreach (var conn in incomingConnections)
             {
                 if (nodeMap.TryGetValue(conn.SourceNodeId, out var sourceNode)
-                    && nodeOutputs.TryGetValue(sourceNode.Name, out var batch))
+                    && nodeOutputs.TryGetValue(sourceNode.Id, out var batch))
                 {
                     var resolvedPort = conn.TargetPortName ?? FlowConstants.PortNames.Input;
                     inputs[resolvedPort] = batch;

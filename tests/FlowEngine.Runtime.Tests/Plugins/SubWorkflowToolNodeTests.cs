@@ -138,6 +138,83 @@ public class SubWorkflowToolNodeTests
     }
 
     /// <summary>
+    /// 验证 nodeOutputs 以 node.Id 为键而非 node.Name，
+    /// 两个同 Name 不同 Id 的节点输出不会互相覆盖。
+    /// 场景：A(Name="same",Id="a1") 和 B(Name="same",Id="b2") 同为入口节点，
+    /// C 依赖 A。若键为 Name，B 的输出会覆盖 A 的，C 收到 B 的数据（bug）。
+    /// </summary>
+    [Fact]
+    public async Task Execute_SameNameDifferentId_OutputsNotOverwritten()
+    {
+        var nodeA = new NodeDefinition
+        {
+            Id = "a1",
+            TypeName = "script",
+            Name = "same",
+            Parameters = new Dictionary<string, object>
+            {
+                ["code"] = "return { value: 'A' };"
+            }
+        };
+
+        var nodeB = new NodeDefinition
+        {
+            Id = "b2",
+            TypeName = "script",
+            Name = "same",
+            Parameters = new Dictionary<string, object>
+            {
+                ["code"] = "return { value: 'B' };"
+            }
+        };
+
+        var nodeC = new NodeDefinition
+        {
+            Id = "c3",
+            TypeName = "script",
+            Name = "consumer",
+            Parameters = new Dictionary<string, object>
+            {
+                ["code"] = "return $input.first();"
+            }
+        };
+
+        var workflow = new Workflow
+        {
+            Nodes = [nodeA, nodeB, nodeC],
+            Connections =
+            [
+                new Connection
+                {
+                    SourceNodeId = "a1",
+                    SourcePortName = FlowConstants.PortNames.Output,
+                    TargetNodeId = "c3",
+                    TargetPortName = FlowConstants.PortNames.Input
+                }
+            ]
+        };
+
+        var node = new SubWorkflowToolNode
+        {
+            WorkflowJson = JsonSerializer.Serialize(workflow)
+        };
+
+        var context = CreateContext(node);
+        context.NodeRegistry = CreateRegistry();
+
+        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success, result.Error?.Message);
+        Assert.NotNull(result.Output);
+        Assert.Single(result.Output.Items);
+
+        // C should receive A's output {value:"A"}, not B's {value:"B"}
+        var data = result.Output.Items[0].Data;
+        Assert.NotNull(data);
+        Assert.Equal("A", data?["value"]?.GetValue<string>());
+    }
+
+    /// <summary>
     /// 验证嵌套深度超过限制时返回 MaxNestingDepthExceeded 错误。
     /// </summary>
     [Fact]
