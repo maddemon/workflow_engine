@@ -715,7 +715,7 @@
 - [x] P0d 测试虚假覆盖（3 项）
 - [x] P1（30 项，其中 P1-17/P1-18 跳过：P1-17 需运行时多输出端口支持，P1-18 依赖 task-006 B1 未完成）
 - [x] P2（21 项）
-- [ ] P3（25 项）
+- [x] P3（25 项）
 
 ## 主要修改记录
 - 2026-07-15 | SubAgent-A | P0a-1 | SsrfGuard 新增 CreateConnectCallback；HttpClientPool 改用 SocketsHttpHandler+ConnectCallback；OAuth2TokenService 入口 SSRF 校验+异常消息移除 responseBody | dotnet build 0 错误，OAuth2TokenServiceTests 9/9 通过
@@ -731,6 +731,17 @@
 - 2026-07-15 | SubAgent-D | P0d-1 | SubAgentToolNodeTests 补 parentRecordId 断言 + Guid.Empty 回退用例 | 10 tests 通过
 - 2026-07-15 | SubAgent-D | P0d-2 | AgentEnhanceTests 补 parentRecordId 匹配断言 + null 对比用例 | 12 tests 通过
 - 2026-07-15 | SubAgent-D | P0d-3 | JsEngineSecurityTests 新增 8 个沙箱边界测试（require/process/eval/__proto__/constructor/超时/递归/内存） | 21 tests 通过
+- 2026-07-15 | SubAgent-E | P1-1~6 | Import/Export/Modification/AuditEvents/Execution/Trigger 增加 RBAC 校验 | Application.Tests 348/348 通过
+- 2026-07-15 | SubAgent-E | P1-7~12 | 补齐 PermissionDenied/MemberAdded/MemberRoleChanged/FileAccessDenied/PollSkipped 审计事件；ParameterDiscoverer 异步化；PluginLoader DLL 校验 | Application+Host.Tests 通过
+- 2026-07-15 | SubAgent-E | P1-13~16 | Workflow/Trigger Service 事务包裹；WaitingArea 副本；WebSocketHandler ArrayPool | Application+Host.Tests 通过
+- 2026-07-15 | SubAgent-F | P1-19~24 | MergeNode ToLookup、SortNode 异构排序、DataQualityNode DeepClone+customExpression、LoopNode BatchSize 边界、SubWorkflowExecutor 用 Id 为键 | Runtime.Tests 通过（P1-17/P1-18 跳过）
+- 2026-07-15 | SubAgent-G | P1-26~30 | 前端响应式订阅、useRequest 重构、onCancel 回调、deleteWorkflow try/catch、类型守卫、KeyValueField 单一数据源 | 前端 97 tests 通过
+- 2026-07-15 | SubAgent-H | P2-1~9 | AuditLogReader 流式 TopN、多 Service AsNoTracking 分类整改、CustomNode edges 选择器优化 | 后端测试通过
+- 2026-07-15 | SubAgent-I | P2-10~17 | RBAC 审计断言、PollTriggerJob 测试、FileService 失败用例、SSE 降级测试、权限表对齐、OpenAiLlmClient HTTP 测试、CredentialEncryptionService AesGcm 测试、OAuth2 重试墙钟 flaky 修复 | 后端测试通过
+- 2026-07-15 | SubAgent-J | P2-18~21 | ProjectCreated 审计严格断言、FilesController 单次查询、WebSocketReplayService LRU 上限、PasswordHasher SuccessRehashNeeded | 后端测试通过
+- 2026-07-15 | SubAgent-K | P3-1~8 | React key 稳定化、useExecution 选择器、PaginateNode/LoopNode/JSNode/CodeSnippetToolNode 死代码清理 | 前端 97 tests 通过
+- 2026-07-15 | SubAgent-L | P3-9~17 | 插件节点 Description/XML 注释、WebSearch Header/SSRF、Shell KillProcessTree、OAuth2/Wait/SubWorkflow 边界、WebSocket 清理、LocalFileStorage 单次查询、ExceptionHandler 403、CreateAsyncScope | 后端测试通过
+- 2026-07-15 | SubAgent-M | P3-18~25 | JWT Secret 占位符、AuthenticationService clientIp 参数化、PollTriggerJob 工厂注入、CredentialAccessor 行为统一、测试命名规范、AgentEnhanceTests 拆分、共享 Fakes、AgentNodeDto 补齐 | Application+Runtime 测试通过
 
 ## 风险与待定项
 - **P0a-1 SSRF**：`SocketsHttpHandler.ConnectCallback` 在 net10.0 可用（.NET 5+ 支持）；OAuth2 凭据测试需 mock SsrfGuard 避免影响真实 token 端点
