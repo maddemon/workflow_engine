@@ -26,13 +26,14 @@ public sealed class CredentialServiceAuthorizationTests : IDisposable
     {
         var options = new DbContextOptionsBuilder<FlowEngineDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         _dbContext = new FlowEngineDbContext(options);
         _eventBus = new InMemoryEventBus();
         _userContext = new FakeUserContext();
         var auditFactory = new AuditEventFactory(_userContext);
         var resourceAuthService = new RoleBasedResourceAuthorizationService(_userContext);
-        var authGuard = AuthorizationGuardFactory.Create(_userContext, resourceAuthService);
+        var authGuard = AuthorizationGuardFactory.Create(_userContext, resourceAuthService, _eventBus);
         var handler = new AuthorizedOperationHandler(authGuard, _eventBus, auditFactory);
         _service = new CredentialService(
             _dbContext,
@@ -93,6 +94,15 @@ public sealed class CredentialServiceAuthorizationTests : IDisposable
         };
 
         await Assert.ThrowsAsync<PermissionDeniedException>(() => _service.UpdateAsync(credential.Id, dto, ct));
+
+        var deniedEvent = _eventBus.PublishedEvents
+            .OfType<AuditLogEvent>()
+            .FirstOrDefault(e => e.EventType == AuditEventTypes.PermissionDenied);
+        Assert.NotNull(deniedEvent);
+        Assert.Equal(credential.Id, deniedEvent.ResourceId);
+        Assert.NotNull(deniedEvent.Payload);
+        Assert.Equal("Write", deniedEvent.Payload!["operation"].ToString());
+        Assert.Equal("role", deniedEvent.Payload!["reason"].ToString());
     }
 
     [Fact]
@@ -126,6 +136,14 @@ public sealed class CredentialServiceAuthorizationTests : IDisposable
         _userContext.Roles = [RoleConstants.Viewer];
 
         await Assert.ThrowsAsync<PermissionDeniedException>(() => _service.DeleteAsync(credential.Id, ct));
+
+        var deniedEvent = _eventBus.PublishedEvents
+            .OfType<AuditLogEvent>()
+            .FirstOrDefault(e => e.EventType == AuditEventTypes.PermissionDenied);
+        Assert.NotNull(deniedEvent);
+        Assert.Equal(credential.Id, deniedEvent.ResourceId);
+        Assert.NotNull(deniedEvent.Payload);
+        Assert.Equal("Delete", deniedEvent.Payload!["operation"].ToString());
     }
 
     [Fact]

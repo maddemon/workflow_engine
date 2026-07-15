@@ -20,6 +20,7 @@ public sealed class ExecutionServiceAuthorizationTests : IDisposable
     private readonly FlowEngineDbContext _dbContext;
     private readonly FakeUserContext _userContext;
     private readonly ExecutionService _service;
+    private readonly InMemoryEventBus _eventBus;
 
     public ExecutionServiceAuthorizationTests()
     {
@@ -32,9 +33,9 @@ public sealed class ExecutionServiceAuthorizationTests : IDisposable
         var resourceAuthorization = new RoleBasedResourceAuthorizationService(_userContext);
         var engine = new StubEngine();
         var idempotencyService = new StubIdempotencyService();
-        var eventBus = new InMemoryEventBus();
+        _eventBus = new InMemoryEventBus();
         var auditFactory = new AuditEventFactory(_userContext);
-        _service = new ExecutionService(engine, _dbContext, idempotencyService, AuthorizationGuardFactory.Create(_userContext, resourceAuthorization), eventBus, auditFactory);
+        _service = new ExecutionService(engine, _dbContext, idempotencyService, AuthorizationGuardFactory.Create(_userContext, resourceAuthorization, _eventBus), _eventBus, auditFactory);
     }
 
     public void Dispose()
@@ -61,6 +62,14 @@ public sealed class ExecutionServiceAuthorizationTests : IDisposable
         _userContext.Roles = []; // 没有任何角色
 
         await Assert.ThrowsAsync<PermissionDeniedException>(() => _service.GetAsync(execution.Id, ct));
+
+        var deniedEvent = _eventBus.PublishedEvents
+            .OfType<AuditLogEvent>()
+            .FirstOrDefault(e => e.EventType == AuditEventTypes.PermissionDenied);
+        Assert.NotNull(deniedEvent);
+        Assert.Equal(execution.Id, deniedEvent.ResourceId);
+        Assert.NotNull(deniedEvent.Payload);
+        Assert.Equal("Read", deniedEvent.Payload!["operation"].ToString());
     }
 
     [Fact]
@@ -115,6 +124,14 @@ public sealed class ExecutionServiceAuthorizationTests : IDisposable
         _userContext.Roles = [RoleConstants.Viewer];
 
         await Assert.ThrowsAsync<PermissionDeniedException>(() => _service.ExecuteAsync(workflow.Id, cancellationToken: ct));
+
+        var deniedEvent = _eventBus.PublishedEvents
+            .OfType<AuditLogEvent>()
+            .FirstOrDefault(e => e.EventType == AuditEventTypes.PermissionDenied);
+        Assert.NotNull(deniedEvent);
+        Assert.Equal(workflow.Id, deniedEvent.ResourceId);
+        Assert.NotNull(deniedEvent.Payload);
+        Assert.Equal("Execute", deniedEvent.Payload!["operation"].ToString());
     }
 
     [Fact]
@@ -170,8 +187,14 @@ public sealed class ExecutionServiceAuthorizationTests : IDisposable
 
     private sealed class InMemoryEventBus : IEventBus
     {
+        public List<object> PublishedEvents { get; } = [];
+
         public Task PublishAsync<TEvent>(TEvent eventInstance, CancellationToken cancellationToken = default)
-            where TEvent : IDomainEvent => Task.CompletedTask;
+            where TEvent : IDomainEvent
+        {
+            PublishedEvents.Add(eventInstance!);
+            return Task.CompletedTask;
+        }
         public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler)
             where TEvent : IDomainEvent => new Disposable();
         private sealed class Disposable : IDisposable { public void Dispose() { } }

@@ -21,26 +21,27 @@ public sealed class WorkflowServiceAuthorizationTests : IDisposable
     private readonly FlowEngineDbContext _dbContext;
     private readonly FakeUserContext _userContext;
     private readonly WorkflowService _service;
+    private readonly InMemoryEventBus _eventBus;
 
     public WorkflowServiceAuthorizationTests()
     {
         var options = new DbContextOptionsBuilder<FlowEngineDbContext>()
             .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .ConfigureWarnings(w => w.Ignore(Microsoft.EntityFrameworkCore.Diagnostics.InMemoryEventId.TransactionIgnoredWarning))
             .Options;
         _dbContext = new FlowEngineDbContext(options);
         _userContext = new FakeUserContext();
-
-        var eventBus = new InMemoryEventBus();
+        _eventBus = new InMemoryEventBus();
         var auditFactory = new AuditEventFactory(_userContext);
         var scheduleManager = new FakeScheduleManager();
         var resourceAuthorization = new RoleBasedResourceAuthorizationService(_userContext);
-        var authGuard = AuthorizationGuardFactory.Create(_userContext, resourceAuthorization);
-        var triggerService = new TriggerService(_dbContext, eventBus, auditFactory, scheduleManager, authGuard, new WebhookRouteService(_dbContext), NullLogger<TriggerService>.Instance);
+        var authGuard = AuthorizationGuardFactory.Create(_userContext, resourceAuthorization, _eventBus);
+        var triggerService = new TriggerService(_dbContext, _eventBus, auditFactory, scheduleManager, authGuard, new WebhookRouteService(_dbContext), NullLogger<TriggerService>.Instance);
         var validator = new WorkflowValidator(new FakeNodeRegistry());
-        var handler = new AuthorizedOperationHandler(authGuard, eventBus, auditFactory);
+        var handler = new AuthorizedOperationHandler(authGuard, _eventBus, auditFactory);
         var statisticsLoader = new WorkflowStatisticsLoader(_dbContext);
         var triggerSync = new WorkflowTriggerSync(triggerService, handler);
-        _service = new WorkflowService(_dbContext, validator, eventBus, auditFactory, triggerService, authGuard, handler, statisticsLoader, triggerSync, NullLogger<WorkflowService>.Instance);
+        _service = new WorkflowService(_dbContext, validator, _eventBus, auditFactory, triggerService, authGuard, handler, statisticsLoader, triggerSync, NullLogger<WorkflowService>.Instance);
     }
 
     public void Dispose()
@@ -90,6 +91,14 @@ public sealed class WorkflowServiceAuthorizationTests : IDisposable
         };
 
         await Assert.ThrowsAsync<PermissionDeniedException>(() => _service.UpdateAsync(workflow.Id, dto, ct));
+
+        var deniedEvent = _eventBus.PublishedEvents
+            .OfType<AuditLogEvent>()
+            .FirstOrDefault(e => e.EventType == AuditEventTypes.PermissionDenied);
+        Assert.NotNull(deniedEvent);
+        Assert.Equal(workflow.Id, deniedEvent.ResourceId);
+        Assert.NotNull(deniedEvent.Payload);
+        Assert.Equal("Write", deniedEvent.Payload!["operation"].ToString());
     }
 
     [Fact]
@@ -125,6 +134,14 @@ public sealed class WorkflowServiceAuthorizationTests : IDisposable
         _userContext.Roles = [RoleConstants.Viewer];
 
         await Assert.ThrowsAsync<PermissionDeniedException>(() => _service.DeleteAsync(workflow.Id, ct));
+
+        var deniedEvent = _eventBus.PublishedEvents
+            .OfType<AuditLogEvent>()
+            .FirstOrDefault(e => e.EventType == AuditEventTypes.PermissionDenied);
+        Assert.NotNull(deniedEvent);
+        Assert.Equal(workflow.Id, deniedEvent.ResourceId);
+        Assert.NotNull(deniedEvent.Payload);
+        Assert.Equal("Delete", deniedEvent.Payload!["operation"].ToString());
     }
 
     [Fact]
@@ -178,8 +195,14 @@ public sealed class WorkflowServiceAuthorizationTests : IDisposable
 
     private sealed class InMemoryEventBus : IEventBus
     {
+        public List<object> PublishedEvents { get; } = [];
+
         public Task PublishAsync<TEvent>(TEvent eventInstance, CancellationToken cancellationToken = default)
-            where TEvent : IDomainEvent => Task.CompletedTask;
+            where TEvent : IDomainEvent
+        {
+            PublishedEvents.Add(eventInstance!);
+            return Task.CompletedTask;
+        }
         public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler)
             where TEvent : IDomainEvent => new Disposable();
         private sealed class Disposable : IDisposable { public void Dispose() { } }
