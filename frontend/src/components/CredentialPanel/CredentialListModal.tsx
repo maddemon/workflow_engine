@@ -24,7 +24,7 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formName, setFormName] = useState('');
   const [formType, setFormType] = useState('apiKey');
-  const [formFields, setFormFields] = useState<{ key: string; value: string }[]>([{ key: '', value: '' }]);
+  const [formFields, setFormFields] = useState<{ id: string; key: string; value: string }[]>([{ id: crypto.randomUUID(), key: '', value: '' }]);
 
   const { data: credentials = [], loading, error, refresh: refreshCredentials } = useRequest(
     getCredentials,
@@ -52,7 +52,7 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
       setShowForm(false);
       setFormName('');
       setFormType('apiKey');
-      setFormFields([{ key: '', value: '' }]);
+      setFormFields([{ id: crypto.randomUUID(), key: '', value: '' }]);
       await refreshCredentials();
       useWorkflowStore.getState().bumpCredentialRevision();
     } catch (err) {
@@ -83,8 +83,8 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
     setEditingId(cred.id);
     setFormName(cred.name);
     setFormType(cred.type);
-    const existing = Object.entries(cred.fields ?? {}).map(([key, value]) => ({ key, value }));
-    setFormFields(existing.length > 0 ? existing : [{ key: '', value: '' }]);
+    const existing = Object.entries(cred.fields ?? {}).map(([key, value]) => ({ id: crypto.randomUUID(), key, value }));
+    setFormFields(existing.length > 0 ? existing : [{ id: crypto.randomUUID(), key: '', value: '' }]);
     setShowForm(true);
   };
 
@@ -102,7 +102,7 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
       setEditingId(null);
       setFormName('');
       setFormType('apiKey');
-      setFormFields([{ key: '', value: '' }]);
+      setFormFields([{ id: crypto.randomUUID(), key: '', value: '' }]);
       await refreshCredentials();
       useWorkflowStore.getState().bumpCredentialRevision();
     } catch (err) {
@@ -133,7 +133,7 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
           />
           <Divider label="Fields" labelPosition="center" />
           {formFields.map((field, index) => (
-            <Group key={index} gap="xs">
+            <Group key={field.id} gap="xs">
               <TextInput
                 placeholder="Key"
                 value={field.key}
@@ -169,7 +169,7 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
             variant="subtle"
             size="xs"
             leftSection={<Plus size={14} />}
-            onClick={() => setFormFields([...formFields, { key: '', value: '' }])}
+            onClick={() => setFormFields([...formFields, { id: crypto.randomUUID(), key: '', value: '' }])}
           >
             Add Field
           </Button>
@@ -193,7 +193,7 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
           <Button
             size="xs"
             leftSection={<Plus size={14} />}
-            onClick={() => { setShowForm(true); setEditingId(null); setFormName(''); setFormType('apiKey'); setFormFields([{ key: '', value: '' }]); }}
+            onClick={() => { setShowForm(true); setEditingId(null); setFormName(''); setFormType('apiKey'); setFormFields([{ id: crypto.randomUUID(), key: '', value: '' }]); }}
           >
             Add Credential
           </Button>
