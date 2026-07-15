@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
 import { Modal, Stack, Text, Group, Badge, Button, Loader } from '@mantine/core';
 import { Check, X, AlertCircle } from 'lucide-react';
+import { useRequest } from 'ahooks';
 import { validateWorkflow } from '../../services/api.ts';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
 import type { ValidateWorkflowResult } from '../../types/workflow.ts';
@@ -13,34 +13,21 @@ interface IValidationChecklistModalProps {
 
 export function ValidationChecklistModal({ opened, onClose, onProceed }: IValidationChecklistModalProps) {
   const workflowId = useWorkflowStore((s) => s.workflowId);
-  const [result, setResult] = useState<ValidateWorkflowResult | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
 
-  const runValidation = async () => {
-    if (!workflowId) return;
-    setLoading(true);
-    setError(null);
-    try {
-      const res = await validateWorkflow(workflowId);
-      setResult(res);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Validation failed');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // auto-run on open
-  useEffect(() => {
-    if (opened) runValidation();
-  }, [opened]);
+  const { data: result, loading, error, run } = useRequest(
+    () => validateWorkflow(workflowId!),
+    {
+      manual: true,
+      ready: opened && !!workflowId,
+      refreshDeps: [workflowId],
+    },
+  );
 
   const handleClose = () => {
-    setResult(null);
-    setError(null);
     onClose();
   };
+
+  const errorMessage = error instanceof Error ? error.message : error ? String(error) : null;
 
   return (
     <Modal opened={opened} onClose={handleClose} title="Pre-flight Checklist" size="lg" centered>
@@ -56,10 +43,10 @@ export function ValidationChecklistModal({ opened, onClose, onProceed }: IValida
           </Group>
         )}
 
-        {error && (
+        {errorMessage && (
           <Group gap={4} c="red">
             <AlertCircle size={14} />
-            <Text size="sm">{error}</Text>
+            <Text size="sm">{errorMessage}</Text>
           </Group>
         )}
 
