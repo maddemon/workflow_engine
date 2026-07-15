@@ -136,7 +136,7 @@ public sealed class SubWorkflowToolNode : INodeType
 
             if (!context.TryParseJson<Workflow>(WorkflowJson, out workflow, out var parseError, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }))
             {
-                return context.ErrorResult("InvalidWorkflowJson", $"Failed to parse workflow JSON.");
+                return context.ErrorResult("InvalidWorkflowJson", $"Failed to parse workflow JSON: {parseError}");
             }
         }
 

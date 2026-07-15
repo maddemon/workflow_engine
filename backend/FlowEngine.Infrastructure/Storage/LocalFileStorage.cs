@@ -32,7 +32,8 @@ public sealed class LocalFileStorage : IFileStorage
         var projectDir = Path.Combine(_basePath, projectId);
         Directory.CreateDirectory(projectDir);
 
-        var storagePath = Path.Combine(projectDir, $"{fileId}_{SanitizeFileName(fileName)}");
+        var relativePath = $"{projectId}/{fileId}_{SanitizeFileName(fileName)}";
+        var storagePath = Path.Combine(_basePath, relativePath);
 
         await using var fileStream = new FileStream(
             storagePath, FileMode.Create, FileAccess.Write, FileShare.None,
@@ -42,7 +43,7 @@ public sealed class LocalFileStorage : IFileStorage
 
         _logger?.LogDebug("文件已保存: {Path}", storagePath);
 
-        return fileId;
+        return relativePath;
     }
 
     /// <inheritdoc/>
@@ -50,7 +51,11 @@ public sealed class LocalFileStorage : IFileStorage
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
 
-        var filePath = FindFile(fileId);
+        // 优先直接拼接路径（新格式：projectId/fileId_fileName）
+        var filePath = TryResolveDirectPath(fileId);
+        // 兼容旧数据（仅 fileId）：回退到全盘扫描
+        filePath ??= FindFile(fileId);
+
         if (filePath is null)
         {
             return Task.FromResult<Stream?>(null);
@@ -68,7 +73,7 @@ public sealed class LocalFileStorage : IFileStorage
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
 
-        var filePath = FindFile(fileId);
+        var filePath = TryResolveDirectPath(fileId) ?? FindFile(fileId);
         if (filePath is null)
         {
             return Task.FromResult(false);
@@ -85,7 +90,7 @@ public sealed class LocalFileStorage : IFileStorage
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(fileId);
 
-        return Task.FromResult(FindFile(fileId) is not null);
+        return Task.FromResult((TryResolveDirectPath(fileId) ?? FindFile(fileId)) is not null);
     }
 
     private static void ValidateProjectId(string projectId)
@@ -110,6 +115,31 @@ public sealed class LocalFileStorage : IFileStorage
         return new string(sanitized);
     }
 
+    /// <summary>
+    /// 尝试直接拼接路径（新格式 fileId 含相对路径 projectId/fileId_fileName）。
+    /// 返回 null 表示 fileId 为旧格式（纯 GUID），需要走 FindFile 回退。
+    /// </summary>
+    private string? TryResolveDirectPath(string fileId)
+    {
+        // 新格式包含目录分隔符：projectId/fileId_fileName
+        if (!fileId.Contains('/') && !fileId.Contains('\\'))
+        {
+            return null;
+        }
+
+        // 防止路径遍历：确保拼接后仍在 _basePath 内
+        var fullPath = Path.GetFullPath(Path.Combine(_basePath, fileId));
+        if (!fullPath.StartsWith(_basePath, StringComparison.Ordinal))
+        {
+            return null;
+        }
+
+        return File.Exists(fullPath) ? fullPath : null;
+    }
+
+    /// <summary>
+    /// 全盘扫描查找文件（仅用于兼容旧格式 fileId）。
+    /// </summary>
     private string? FindFile(string fileId)
     {
         if (!Directory.Exists(_basePath))

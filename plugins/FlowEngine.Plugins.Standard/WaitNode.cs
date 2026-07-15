@@ -81,13 +81,14 @@ public sealed class WaitNode : INodeType
 
     private TimeSpan CalculateWaitTime()
     {
+        var effectiveAmount = Math.Max(0, Amount);
         var totalSeconds = Unit switch
         {
-            WaitUnit.Seconds => Amount,
-            WaitUnit.Minutes => Amount * 60,
-            WaitUnit.Hours => Amount * 3600,
-            WaitUnit.Days => Amount * 86400,
-            _ => Amount
+            WaitUnit.Seconds => effectiveAmount,
+            WaitUnit.Minutes => effectiveAmount * 60,
+            WaitUnit.Hours => effectiveAmount * 3600,
+            WaitUnit.Days => effectiveAmount * 86400,
+            _ => effectiveAmount
         };
 
         var maxSeconds = MaxWaitUnit switch

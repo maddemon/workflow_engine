@@ -16,10 +16,19 @@ namespace FlowEngine.Plugins.Standard;
 /// </summary>
 public sealed class DataQualityNode : INodeType
 {
+    /// <inheritdoc />
     public string TypeName => "dataQuality";
+
+    /// <inheritdoc />
     public string DisplayName => "Data Quality";
+
+    /// <inheritdoc />
     public string Category => "Core";
+
+    /// <inheritdoc />
     public string Icon => "shield-check";
+
+    /// <inheritdoc />
     public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
 
     /// <summary>
@@ -39,12 +48,14 @@ public sealed class DataQualityNode : INodeType
     [Description("Whether to pass data through on validation failure. When false, validation failure blocks data flow.")]
     public bool PassOnFailure { get; set; } = false;
 
+    /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
     [
         new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
         new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
     ];
 
+    /// <inheritdoc />
     public bool DefaultIsEntry => false;
 
     public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)

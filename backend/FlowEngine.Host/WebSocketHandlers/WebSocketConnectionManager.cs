@@ -138,25 +138,10 @@ public sealed class WebSocketConnection : IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
-        if (WebSocket.State is WebSocketState.Open or WebSocketState.CloseReceived)
-        {
-            _ = Task.Run(async () =>
-            {
-                try
-                {
-                    using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-                    await WebSocket.CloseAsync(
-                        WebSocketCloseStatus.NormalClosure,
-                        "Connection closed",
-                        cts.Token).ConfigureAwait(false);
-                }
-                catch
-                {
-                    // Best-effort close; socket will be disposed regardless.
-                }
-            });
-        }
-
+        // 仅 Dispose，不执行异步 CloseAsync。
+        // Dispose 会关闭底层连接，WebSocket 状态会变为 Aborted/Cl — 对端将收到连接重置。
+        // 异步 CloseAsync 在 Dispose 中无法安全等待（禁止 GetAwaiter().GetResult() 死锁风险），
+        // 原先 fire-and-forget Task.Run 方式会吞掉异常，改为直接 Dispose 更简洁可靠。
         WebSocket.Dispose();
     }
 }

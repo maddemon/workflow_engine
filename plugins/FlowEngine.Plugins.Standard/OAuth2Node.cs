@@ -62,7 +62,7 @@ public sealed class OAuth2Node : INodeType
             return context.ErrorResult("CredentialNotFound", $"Credential '{CredentialName}' not found.");
         }
 
-        if (!credential.Fields.TryGetValue("accessToken", out var accessToken))
+        if (!credential.Fields.TryGetValue("accessToken", out var accessToken) || string.IsNullOrWhiteSpace(accessToken))
         {
             return context.ErrorResult("MissingAccessToken", $"Credential '{CredentialName}' does not contain an accessToken.");
         }

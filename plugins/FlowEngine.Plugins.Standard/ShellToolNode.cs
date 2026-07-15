@@ -216,7 +216,7 @@ public sealed class ShellToolNode : INodeType
             // Timeout
             try
             {
-                process.Kill();
+                process.Kill(entireProcessTree: true);
             }
             catch
             {

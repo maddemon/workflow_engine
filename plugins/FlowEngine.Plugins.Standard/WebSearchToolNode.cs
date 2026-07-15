@@ -254,13 +254,20 @@ public sealed class WebSearchToolNode : INodeType
 
     private async Task<NodeExecutionResult> SearchSerpApiAsync(string query, string? apiKey, NodeExecutionContext context, CancellationToken cancellationToken)
     {
-        // SerpAPI (Google Search)
-        var url = $"https://serpapi.com/search.json?q={Uri.EscapeDataString(query)}&api_key={Uri.EscapeDataString(apiKey ?? string.Empty)}&hl={Language}&num={MaxResults}";
+        // SerpAPI (Google Search) — apiKey 优先通过 Header 传递，避免落入 URL 日志
+        var url = $"https://serpapi.com/search.json?q={Uri.EscapeDataString(query)}&hl={Language}&num={MaxResults}";
+
+        var headers = new Dictionary<string, string>();
+        if (!string.IsNullOrEmpty(apiKey))
+        {
+            headers["api_key"] = apiKey;
+        }
 
         var request = new HttpExecutionRequest
         {
             Url = url,
-            Method = HttpMethod.Get
+            Method = HttpMethod.Get,
+            Headers = headers
         };
 
         return await HttpService.ExecuteAsync(request, context, cancellationToken).ConfigureAwait(false);
