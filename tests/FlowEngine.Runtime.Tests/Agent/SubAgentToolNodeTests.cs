@@ -1,5 +1,7 @@
+using System.Text.Json;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Dtos;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Plugins.Standard;
@@ -101,7 +103,13 @@ public class SubAgentToolNodeTests
         Assert.True(result.Success);
         Assert.Equal(2, callCount);
         Assert.Single(result.Output.Items);
-        Assert.Equal("Done", result.Output.Items[0].Data?.ToString());
+
+        // Verify DTO consistency with AgentNode
+        var dto = result.Output.Items[0].Data?.Deserialize<AgentExecutionResultDto>(JsonDefaults.Options);
+        Assert.NotNull(dto);
+        Assert.Equal("Completed", dto.AgentInfo.Status);
+        Assert.Equal("test-model", dto.AgentInfo.Model);
+        Assert.NotNull(dto.AgentInfo.CompletedAt);
     }
 
     [Fact]

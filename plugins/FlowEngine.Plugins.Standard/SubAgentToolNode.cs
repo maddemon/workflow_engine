@@ -1,8 +1,10 @@
 using System.ComponentModel;
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Agent;
+using FlowEngine.Core.Dtos;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 
@@ -122,22 +124,41 @@ public sealed class SubAgentToolNode : INodeType
             switch (result.StoppedReason)
             {
                 case Core.Agent.InlineResolverStopReason.Completed:
-                    return new NodeExecutionResult
                     {
-                        Success = true,
-                        Output = new DataBatch
+                        var dto = new AgentExecutionResultDto
                         {
-                            Items =
-                            [
-                                new DataItem
-                                {
-                                    Data = result.Content,
-                                    Success = true,
-                                    SourceIndex = 0
-                                }
-                            ]
-                        }
-                    };
+                            AgentInfo = new AgentExecutionInfoDto
+                            {
+                                Model = context.LlmClient?.ModelName ?? "unknown",
+                                IterationCount = result.Iterations.Count,
+                                Status = "Completed",
+                                StartedAt = null,
+                                CompletedAt = DateTime.UtcNow,
+                                ErrorMessage = null,
+                                TokenUsage = null,
+                            },
+                            Iterations = result.Iterations,
+                            SubRecords = new List<SubRecordDto>(),
+                            SystemPrompt = null,
+                        };
+
+                        return new NodeExecutionResult
+                        {
+                            Success = true,
+                            Output = new DataBatch
+                            {
+                                Items =
+                                [
+                                    new DataItem
+                                    {
+                                        Data = JsonSerializer.SerializeToNode(dto, JsonDefaults.Options),
+                                        Success = true,
+                                        SourceIndex = 0,
+                                    }
+                                ]
+                            }
+                        };
+                    }
 
                 case Core.Agent.InlineResolverStopReason.MaxIterationsReached:
                     return context.ErrorResult(
