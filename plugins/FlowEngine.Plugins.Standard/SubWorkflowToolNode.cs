@@ -15,6 +15,10 @@ namespace FlowEngine.Plugins.Standard;
 /// </summary>
 public sealed class SubWorkflowToolNode : INodeType
 {
+    private const int DefaultMaxNestingDepth = 5;
+    private const int MinMaxNestingDepth = 1;
+    private const int MaxMaxNestingDepth = 20;
+
     /// <inheritdoc />
     public string TypeName => "workflowTool";
 
@@ -69,6 +73,12 @@ public sealed class SubWorkflowToolNode : INodeType
     [Description("Sub-workflow execution timeout in seconds. Empty means no timeout.")]
     public int? TimeoutSeconds { get; set; }
 
+    /// <summary>
+    /// 最大嵌套深度，防止无限递归。
+    /// </summary>
+    [Description("Maximum nesting depth to prevent infinite recursion.")]
+    public int MaxNestingDepth { get; set; } = DefaultMaxNestingDepth;
+
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
     [
@@ -83,6 +93,15 @@ public sealed class SubWorkflowToolNode : INodeType
     /// <inheritdoc />
     public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
+        var effectiveMaxNestingDepth = ResolveMaxNestingDepth(context);
+
+        if (context.NestingDepth >= effectiveMaxNestingDepth)
+        {
+            return context.ErrorResult(
+                "MaxNestingDepthExceeded",
+                $"SubWorkflow nesting depth {context.NestingDepth} exceeds maximum allowed depth of {effectiveMaxNestingDepth}.");
+        }
+
         Workflow? workflow = null;
 
         if (Source == WorkflowSource.Database)
@@ -140,7 +159,7 @@ public sealed class SubWorkflowToolNode : INodeType
 
         try
         {
-            var executor = new SubWorkflowExecutor(context.NodeRegistry);
+            var executor = new SubWorkflowExecutor(context.NodeRegistry, context.NestingDepth + 1);
             var inputBatch = context.GetInputBatch();
             var inputPayload = inputBatch.Items.Count > 0 ? inputBatch.Items[0].Data : null;
             var result = await executor.ExecuteAsync(workflow!, inputPayload, effectiveToken).ConfigureAwait(false);
@@ -154,6 +173,31 @@ public sealed class SubWorkflowToolNode : INodeType
         {
             return context.ErrorResult("SubWorkflowError", $"Sub-workflow execution failed: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// 从节点参数解析最大嵌套深度，未配置时使用属性默认值，并校验范围 [1, 20]。
+    /// </summary>
+    private int ResolveMaxNestingDepth(NodeExecutionContext context)
+    {
+        if (context.ResolvedParameters.TryGetValue("maxNestingDepth", out var val) &&
+            val is JsonValue jsonVal &&
+            jsonVal.TryGetValue<int>(out var depth))
+        {
+            if (depth < MinMaxNestingDepth)
+            {
+                return MinMaxNestingDepth;
+            }
+
+            if (depth > MaxMaxNestingDepth)
+            {
+                return MaxMaxNestingDepth;
+            }
+
+            return depth;
+        }
+
+        return MaxNestingDepth;
     }
 
 }

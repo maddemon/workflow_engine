@@ -15,10 +15,12 @@ namespace FlowEngine.Plugins.Standard;
 internal sealed class SubWorkflowExecutor
 {
     private readonly INodeRegistry? _nodeRegistry;
+    private readonly int _nestingDepth;
 
-    public SubWorkflowExecutor(INodeRegistry? nodeRegistry)
+    public SubWorkflowExecutor(INodeRegistry? nodeRegistry, int nestingDepth = 0)
     {
         _nodeRegistry = nodeRegistry;
+        _nestingDepth = nestingDepth;
     }
 
     public async Task<NodeExecutionResult> ExecuteAsync(
@@ -59,7 +61,7 @@ internal sealed class SubWorkflowExecutor
 
             var nodeType = _nodeRegistry.CreateInstance(node.TypeName);
             var inputs = CollectInputs(node, workflow, nodeMap, nodeOutputs, entryNodes, triggerPayload);
-            var context = BuildNodeContext(workflow, node, inputs, cancellationToken);
+            var context = BuildNodeContext(workflow, node, inputs, cancellationToken, _nestingDepth);
 
             NodeExecutionResult result;
             try
@@ -147,12 +149,14 @@ internal sealed class SubWorkflowExecutor
         Workflow workflow,
         NodeDefinition node,
         Dictionary<string, DataBatch> inputs,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        int nestingDepth)
     {
         return new NodeExecutionContext
         {
             Workflow = workflow,
             ExecutionId = Guid.NewGuid(),
+            NestingDepth = nestingDepth,
             Node = new NodeDefinition
             {
                 Id = node.Id,

@@ -137,6 +137,75 @@ public class SubWorkflowToolNodeTests
         Assert.True(results[1].Success, results[1].Error?.Message);
     }
 
+    /// <summary>
+    /// 验证嵌套深度超过限制时返回 MaxNestingDepthExceeded 错误。
+    /// </summary>
+    [Fact]
+    public async Task Execute_NestingDepthExceeded_ReturnsMaxNestingDepthExceeded()
+    {
+        var scriptNode = new NodeDefinition
+        {
+            Id = "echo",
+            TypeName = "script",
+            Name = "echo",
+            Parameters = new Dictionary<string, object>
+            {
+                ["code"] = "return { result: 'done' };"
+            }
+        };
+
+        var workflow = new Workflow { Nodes = [scriptNode], Connections = [] };
+
+        var node = new SubWorkflowToolNode
+        {
+            WorkflowJson = JsonSerializer.Serialize(workflow),
+            MaxNestingDepth = 3
+        };
+
+        var context = CreateContext(node);
+        context.NestingDepth = 3; // Equals MaxNestingDepth → should be rejected
+        context.NodeRegistry = CreateRegistry();
+
+        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+
+        Assert.False(result.Success);
+        Assert.Equal("MaxNestingDepthExceeded", result.Error?.Code);
+    }
+
+    /// <summary>
+    /// 验证嵌套深度在限制内时正常执行。
+    /// </summary>
+    [Fact]
+    public async Task Execute_NestingDepthWithinLimit_ExecutesSuccessfully()
+    {
+        var scriptNode = new NodeDefinition
+        {
+            Id = "echo",
+            TypeName = "script",
+            Name = "echo",
+            Parameters = new Dictionary<string, object>
+            {
+                ["code"] = "return { result: 'done' };"
+            }
+        };
+
+        var workflow = new Workflow { Nodes = [scriptNode], Connections = [] };
+
+        var node = new SubWorkflowToolNode
+        {
+            WorkflowJson = JsonSerializer.Serialize(workflow),
+            MaxNestingDepth = 5
+        };
+
+        var context = CreateContext(node);
+        context.NestingDepth = 2; // Less than MaxNestingDepth → should succeed
+        context.NodeRegistry = CreateRegistry();
+
+        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+
+        Assert.True(result.Success, result.Error?.Message);
+    }
+
     private static NodeExecutionContext CreateContext(SubWorkflowToolNode node)
     {
         return new NodeExecutionContext
