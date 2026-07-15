@@ -1,6 +1,8 @@
 using System.Text.Json.Nodes;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Scripting;
 using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Runtime.Tests.Scripting;
 
@@ -137,5 +139,95 @@ public class JsEngineSecurityTests
         using var js = JsEngine.Create(logger: NullLogger<JsEngine>.Instance);
         var ex = Record.Exception(() => js.Evaluate("console.warn('test')"));
         Assert.Null(ex);
+    }
+
+    [Fact]
+    public void GetOrPrepare_RequireIdentifier_ThrowsScriptSecurityException()
+    {
+        var cache = CreateCache();
+        var script = new Script { Source = "require('fs')" };
+
+        var ex = Assert.Throws<ScriptSecurityException>(() => cache.GetOrPrepare(script));
+        Assert.Equal("require", ex.Identifier);
+    }
+
+    [Fact]
+    public void GetOrPrepare_ProcessIdentifier_ThrowsScriptSecurityException()
+    {
+        var cache = CreateCache();
+        var script = new Script { Source = "return process.env" };
+
+        var ex = Assert.Throws<ScriptSecurityException>(() => cache.GetOrPrepare(script));
+        Assert.Equal("process", ex.Identifier);
+    }
+
+    [Fact]
+    public void GetOrPrepare_EvalIdentifier_ThrowsScriptSecurityException()
+    {
+        var cache = CreateCache();
+        var script = new Script { Source = "eval('1')" };
+
+        var ex = Assert.Throws<ScriptSecurityException>(() => cache.GetOrPrepare(script));
+        Assert.Equal("eval", ex.Identifier);
+    }
+
+    [Fact]
+    public void GetOrPrepare_ProtoIdentifier_ThrowsScriptSecurityException()
+    {
+        var cache = CreateCache();
+        var script = new Script { Source = "({}).__proto__" };
+
+        var ex = Assert.Throws<ScriptSecurityException>(() => cache.GetOrPrepare(script));
+        Assert.Equal("__proto__", ex.Identifier);
+    }
+
+    [Fact]
+    public void GetOrPrepare_ConstructorIdentifier_ThrowsScriptSecurityException()
+    {
+        var cache = CreateCache();
+        var script = new Script { Source = "({}).constructor" };
+
+        var ex = Assert.Throws<ScriptSecurityException>(() => cache.GetOrPrepare(script));
+        Assert.Equal("constructor", ex.Identifier);
+    }
+
+    [Fact]
+    public void Run_InfiniteLoop_ThrowsOnTimeout()
+    {
+        var options = new JsEngineOptions { ExecutionTimeoutMs = 100 };
+        using var js = JsEngine.Create(options);
+
+        var ex = Record.Exception(() => js.Run("while(true) { var x = 1; }"));
+        Assert.NotNull(ex);
+    }
+
+    [Fact]
+    public void Run_DeepRecursion_ThrowsOnRecursionLimit()
+    {
+        var options = new JsEngineOptions { RecursionDepthLimit = 10 };
+        using var js = JsEngine.Create(options);
+
+        var ex = Record.Exception(() => js.Run("function f(n) { if (n > 0) return f(n - 1); return 0; } return f(100);"));
+        Assert.NotNull(ex);
+    }
+
+    [Fact]
+    public void Run_LargeAllocation_ThrowsOnMemoryLimit()
+    {
+        var options = new JsEngineOptions
+        {
+            MemoryLimitBytes = 2_000_000,
+            MaxStatements = 500_000,
+            ArraySizeLimit = 1_000_000
+        };
+        using var js = JsEngine.Create(options);
+
+        var ex = Record.Exception(() => js.Run("var arr = []; for (var i = 0; i < 1000000; i++) { arr.push(i); } return arr.length;"));
+        Assert.NotNull(ex);
+    }
+
+    private static ScriptCache CreateCache(JsEngineOptions? options = null)
+    {
+        return new ScriptCache(Options.Create(options ?? new JsEngineOptions()));
     }
 }
