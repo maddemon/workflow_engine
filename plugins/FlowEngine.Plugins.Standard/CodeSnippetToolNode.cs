@@ -18,8 +18,6 @@ namespace FlowEngine.Plugins.Standard;
 /// </summary>
 public sealed class CodeSnippetToolNode : INodeType
 {
-    private const int DefaultTimeoutMs = 5000;
-
     /// <inheritdoc />
     public string TypeName => "codeTool";
 
