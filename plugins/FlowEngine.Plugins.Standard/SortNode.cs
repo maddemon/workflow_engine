@@ -91,29 +91,35 @@ public sealed class SortNode : INodeType
         });
     }
 
-    private IComparable GetSortKey(JsonNode? data, SortField field)
+    private static SortKey GetSortKey(JsonNode? data, SortField field)
     {
         var value = JsonPath.GetValue(data, field.FieldName);
+        return new SortKey(value);
+    }
 
-        if (value is null)
+    /// <summary>
+    /// 统一排序键，处理异构类型：同为数值时按数值比较，否则按字符串比较，避免类型不一致崩溃。
+    /// </summary>
+    private readonly struct SortKey : IComparable<SortKey>
+    {
+        private readonly string _stringValue;
+        private readonly double? _numericValue;
+
+        public SortKey(string? value)
         {
-            return string.Empty;
+            _stringValue = value ?? string.Empty;
+            _numericValue = double.TryParse(value, out var n) ? n : null;
         }
 
-        // Try to parse as number for numeric sorting
-        if (double.TryParse(value, out var number))
+        public int CompareTo(SortKey other)
         {
-            return number;
-        }
+            if (_numericValue.HasValue && other._numericValue.HasValue)
+            {
+                return _numericValue.Value.CompareTo(other._numericValue.Value);
+            }
 
-        // Try to parse as date for date sorting
-        if (DateTime.TryParse(value, out var date))
-        {
-            return date;
+            return string.Compare(_stringValue, other._stringValue, StringComparison.Ordinal);
         }
-
-        // Default to string comparison
-        return value;
     }
 
 }
