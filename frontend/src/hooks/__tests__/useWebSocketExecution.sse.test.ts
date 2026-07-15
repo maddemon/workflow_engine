@@ -220,25 +220,26 @@ describe('useWebSocketExecution SSE fallback', () => {
       }
     }
 
-    // SSE onerror 现在会尝试重连，需要耗尽重连次数后才到 error
-    // 第1次 onerror：触发重连
+    // SSE 已创建，初始 onerror 触发重连（attempts=0）
     act(() => {
       mockEventSources[0].onerror?.();
     });
 
     // 模拟5次重连均失败
     for (let attempt = 0; attempt < 5; attempt++) {
+      // 推进时间让 timeout 触发，创建新 EventSource
       act(() => {
         vi.advanceTimersByTime(2000 * Math.pow(2, attempt));
       });
-      // 重连创建新的 EventSource，立即触发 onerror
+      // 新创建的 EventSource 立即触发 onerror
       if (mockEventSources.length > 0) {
         act(() => {
-          mockEventSources[mockEventSources.length - 1].onerror?.();
+          mockEventSources[0].onerror?.();
         });
       }
     }
 
+    // 第5次重连失败后 attempts=5，不再重连，设置 error
     expect(result.current.status).toBe('error');
   });
 

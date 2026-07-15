@@ -48,7 +48,7 @@ export function useWebSocketExecution(options: UseWebSocketExecutionOptions) {
     });
   }, [sendIfOpen, updateExecutionMeta]);
 
-  const { trySseFallback, closeSse } = useSseFallback({
+  const { trySseFallback, closeSse, unsubscribeSse } = useSseFallback({
     getSseUrl,
     processMessage,
     lastSequenceRef,
@@ -74,6 +74,11 @@ export function useWebSocketExecution(options: UseWebSocketExecutionOptions) {
     subscribedExecutionsRef.current.clear();
   }, [closeConnection, closeSse]);
 
+  const unsubscribeWithSse = useCallback((executionId: string) => {
+    unsubscribe(executionId);
+    unsubscribeSse(executionId);
+  }, [unsubscribe, unsubscribeSse]);
+
   useEffect(() => {
     return () => {
       disconnect();
@@ -86,6 +91,6 @@ export function useWebSocketExecution(options: UseWebSocketExecutionOptions) {
     connect,
     disconnect,
     subscribe,
-    unsubscribe,
+    unsubscribe: unsubscribeWithSse,
   };
 }

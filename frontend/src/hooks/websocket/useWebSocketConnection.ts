@@ -73,8 +73,9 @@ export function useWebSocketConnection(options: UseWebSocketConnectionOptions) {
           connectFnRef.current();
         }, reconnectInterval * Math.pow(2, reconnectAttemptsRef.current));
       } else if (subscribedExecutionsRef.current.size > 0) {
-        const executionId = subscribedExecutionsRef.current.values().next().value as string;
-        trySseFallback(executionId);
+        for (const executionId of subscribedExecutionsRef.current) {
+          trySseFallback(executionId);
+        }
       }
     };
 

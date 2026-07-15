@@ -10,33 +10,43 @@ export interface UseSseFallbackOptions {
   setStatus: (status: WebSocketStatus) => void;
 }
 
+interface SseConnection {
+  eventSource: EventSource;
+  reconnectAttempts: number;
+  reconnectTimeout: ReturnType<typeof setTimeout> | null;
+}
+
 export function useSseFallback(options: UseSseFallbackOptions) {
   const { getSseUrl, processMessage, lastSequenceRef, setLastSequence, setStatus } = options;
-  const eventSourceRef = useRef<EventSource | null>(null);
-  const reconnectAttemptsRef = useRef(0);
-  const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const currentExecutionIdRef = useRef<string | null>(null);
-  const connectSseRef = useRef<(executionId: string) => void>(() => {});
+  const connectionsRef = useRef<Map<string, SseConnection>>(new Map());
   const maxReconnectAttempts = 5;
   const reconnectInterval = 2000;
 
-  const clearReconnectTimeout = useCallback(() => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
+  const closeConnection = useCallback((executionId: string) => {
+    const conn = connectionsRef.current.get(executionId);
+    if (conn) {
+      if (conn.reconnectTimeout) {
+        clearTimeout(conn.reconnectTimeout);
+      }
+      conn.eventSource.close();
+      connectionsRef.current.delete(executionId);
     }
   }, []);
 
-  const connectSse = useCallback((executionId: string) => {
-    eventSourceRef.current?.close();
-    eventSourceRef.current = null;
-    currentExecutionIdRef.current = executionId;
+  const connectSse = useCallback((executionId: string, initialAttempts = 0) => {
+    // 关闭已有连接
+    closeConnection(executionId);
 
     const eventSource = new EventSource(getSseUrl(executionId));
+    const conn: SseConnection = {
+      eventSource,
+      reconnectAttempts: initialAttempts,
+      reconnectTimeout: null,
+    };
 
     eventSource.onopen = () => {
       setStatus('connected');
-      reconnectAttemptsRef.current = 0;
+      conn.reconnectAttempts = 0;
     };
 
     eventSource.onmessage = (event) => {
@@ -52,41 +62,37 @@ export function useSseFallback(options: UseSseFallbackOptions) {
 
     eventSource.onerror = () => {
       eventSource.close();
-      eventSourceRef.current = null;
 
-      if (reconnectAttemptsRef.current < maxReconnectAttempts && currentExecutionIdRef.current) {
-        reconnectTimeoutRef.current = setTimeout(() => {
-          reconnectAttemptsRef.current++;
-          if (currentExecutionIdRef.current) {
-            connectSseRef.current(currentExecutionIdRef.current);
+      if (conn.reconnectAttempts < maxReconnectAttempts) {
+        const currentAttempts = conn.reconnectAttempts;
+        conn.reconnectTimeout = setTimeout(() => {
+          const nextAttempts = currentAttempts + 1;
+          if (connectionsRef.current.has(executionId)) {
+            connectSse(executionId, nextAttempts);
           }
-        }, reconnectInterval * Math.pow(2, reconnectAttemptsRef.current));
+        }, reconnectInterval * Math.pow(2, currentAttempts));
       } else {
         setStatus('error');
+        connectionsRef.current.delete(executionId);
       }
     };
 
-    eventSourceRef.current = eventSource;
-  }, [getSseUrl, processMessage, lastSequenceRef, setLastSequence, setStatus]);
-
-  // 保持 ref 与最新 connectSse 同步
-  connectSseRef.current = connectSse;
+    connectionsRef.current.set(executionId, conn);
+  }, [getSseUrl, processMessage, lastSequenceRef, setLastSequence, setStatus, closeConnection]);
 
   const trySseFallback = useCallback((executionId: string) => {
-    clearReconnectTimeout();
-    reconnectAttemptsRef.current = 0;
-    connectSse(executionId);
-  }, [connectSse, clearReconnectTimeout]);
+    connectSse(executionId, 0);
+  }, [connectSse]);
 
   const closeSse = useCallback(() => {
-    clearReconnectTimeout();
-    currentExecutionIdRef.current = null;
-    reconnectAttemptsRef.current = 0;
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-      eventSourceRef.current = null;
+    for (const [executionId] of connectionsRef.current) {
+      closeConnection(executionId);
     }
-  }, [clearReconnectTimeout]);
+  }, [closeConnection]);
 
-  return { trySseFallback, closeSse };
+  const unsubscribeSse = useCallback((executionId: string) => {
+    closeConnection(executionId);
+  }, [closeConnection]);
+
+  return { trySseFallback, closeSse, unsubscribeSse };
 }
