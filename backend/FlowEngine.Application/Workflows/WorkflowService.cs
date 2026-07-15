@@ -75,6 +75,7 @@ public sealed class WorkflowService(
         await authGuard.RequireAccessAsync(ResourceKind.Workflow, id, Operation.Read, cancellationToken);
 
         var workflow = await dbContext.Workflows
+            .AsNoTracking()
             .FirstOrDefaultAsync(w => w.Id == id, cancellationToken)
             .ConfigureAwait(false);
         if (workflow is null)
@@ -101,8 +102,8 @@ public sealed class WorkflowService(
         pageSize = Math.Clamp(pageSize, 1, 200);
 
         var query = projectId.HasValue
-            ? dbContext.Workflows.Where(w => w.ProjectId == projectId.Value)
-            : dbContext.Workflows.AsQueryable();
+            ? dbContext.Workflows.AsNoTracking().Where(w => w.ProjectId == projectId.Value)
+            : dbContext.Workflows.AsNoTracking().AsQueryable();
 
         var totalCount = await query.CountAsync(cancellationToken).ConfigureAwait(false);
         var workflows = await query
@@ -362,6 +363,7 @@ public sealed class WorkflowService(
         await authGuard.RequireAccessAsync(ResourceKind.Workflow, id, Operation.Read, cancellationToken);
 
         var workflow = await dbContext.Workflows
+            .AsNoTracking()
             .FirstOrDefaultAsync(w => w.Id == id && w.Version == version, cancellationToken)
             .ConfigureAwait(false);
         return workflow is null ? null : MapToDto(workflow);
@@ -376,6 +378,7 @@ public sealed class WorkflowService(
         await authGuard.RequireAccessAsync(ResourceKind.Workflow, id, Operation.Read, cancellationToken);
 
         return await dbContext.Workflows
+            .AsNoTracking()
             .Where(w => w.Id == id)
             .Select(w => w.Version)
             .ToListAsync(cancellationToken)
