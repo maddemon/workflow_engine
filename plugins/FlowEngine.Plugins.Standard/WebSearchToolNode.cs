@@ -69,6 +69,13 @@ public sealed class WebSearchToolNode : INodeType
     public string? ApiKeyCredentialId { get; set; }
 
     /// <summary>
+    /// Google Programmable Search Engine ID (cx)。
+    /// </summary>
+    [DisplayName("Search Engine ID")]
+    [Description("Google Programmable Search Engine ID (cx).")]
+    public string SearchEngineId { get; set; } = string.Empty;
+
+    /// <summary>
     /// 搜索语言。
     /// </summary>
     [DisplayName("Language")]
@@ -199,7 +206,7 @@ public sealed class WebSearchToolNode : INodeType
     private async Task<NodeExecutionResult> SearchGoogleAsync(string query, string? apiKey, NodeExecutionContext context, CancellationToken cancellationToken)
     {
         // Google Custom Search API
-        var url = $"https://www.googleapis.com/customsearch/v1?key={apiKey}&cx={apiKey}&q={Uri.EscapeDataString(query)}&num={MaxResults}&hl={Language}";
+        var url = $"https://www.googleapis.com/customsearch/v1?key={Uri.EscapeDataString(apiKey ?? string.Empty)}&cx={Uri.EscapeDataString(SearchEngineId)}&q={Uri.EscapeDataString(query)}&num={MaxResults}&hl={Language}";
 
         var request = new HttpExecutionRequest
         {
