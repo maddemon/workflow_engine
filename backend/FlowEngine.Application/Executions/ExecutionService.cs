@@ -56,6 +56,7 @@ public sealed class ExecutionService(
             {
                 // 返回已存在的执行记录
                 var existingRecord = await dbContext.ExecutionRecords
+                    .AsNoTracking()
                     .FirstOrDefaultAsync(e => e.Id == existingExecutionId.Value, cancellationToken)
                     .ConfigureAwait(false);
                 return existingRecord is not null ? MapToDto(existingRecord) : new ExecutionDto
@@ -91,6 +92,7 @@ public sealed class ExecutionService(
             cancellationToken).ConfigureAwait(false);
 
         var record = await dbContext.ExecutionRecords
+            .AsNoTracking()
             .FirstOrDefaultAsync(e => e.Id == executionId.Value, cancellationToken)
             .ConfigureAwait(false);
         if (record is null)
@@ -145,6 +147,7 @@ public sealed class ExecutionService(
         await authGuard.RequireAccessAsync(ResourceKind.Execution, executionId, Operation.Read, cancellationToken);
 
         var record = await dbContext.ExecutionRecords
+            .AsNoTracking()
             .FirstOrDefaultAsync(e => e.Id == executionId, cancellationToken)
             .ConfigureAwait(false);
         if (record is null)
@@ -167,6 +170,7 @@ public sealed class ExecutionService(
         await authGuard.RequireAccessAsync(ResourceKind.Workflow, workflowId, Operation.Read, cancellationToken);
 
         var query = dbContext.ExecutionRecords
+            .AsNoTracking()
             .Where(e => e.WorkflowDefinitionId == workflowId);
 
         if (projectId.HasValue)
