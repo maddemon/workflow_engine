@@ -544,7 +544,7 @@ function SingleImportResultView({ result }: { result: ImportResult }) {
       {result.errors.length > 0 && (
         <Stack gap={2}>
           {result.errors.map((err, idx) => (
-            <Text key={idx} size="xs" c="red">
+            <Text key={`${err.errorType}-${err.nodeId}-${idx}`} size="xs" c="red">
               [{err.errorType}] {err.message}
               {err.nodeId && ` (node: ${err.nodeId})`}
             </Text>
