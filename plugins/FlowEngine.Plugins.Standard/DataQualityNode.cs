@@ -282,10 +282,8 @@ public sealed class DataQualityNode : INodeType
         if (string.IsNullOrEmpty(expression))
             return (false, "customExpression 规则缺少 expression 参数");
 
-        // For simplicity, support basic comparisons in expressions
-        // Full JS expression support would need Jint integration which is more complex
-        // For now, return pass with a note that full expression support requires JSNode
-        return (true, string.Empty);
+        // customExpression 暂未支持实际求值，返回失败避免静默通过
+        return (false, "customExpression 暂未支持");
     }
 
 }

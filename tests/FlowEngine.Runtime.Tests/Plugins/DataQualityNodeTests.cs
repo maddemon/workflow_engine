@@ -105,4 +105,32 @@ public sealed class DataQualityNodeTests
         Assert.False(result.Success);
         Assert.Equal("DataQualityCheckFailed", result.Error?.Code);
     }
+
+    [Fact]
+    public async Task ExecuteAsync_CustomExpression_ReturnsFailure_NotAlwaysTrue()
+    {
+        var input = BuildBatch(1);
+        var rules = """[{"type":"customExpression","expression":"$json.value > 0"}]""";
+
+        var node = new DataQualityNode { Rules = rules, PassOnFailure = false };
+
+        var result = await node.ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
+
+        // customExpression should NOT silently pass — it returns failure
+        Assert.False(result.Success);
+        Assert.Equal("DataQualityCheckFailed", result.Error?.Code);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_CustomExpression_MissingExpression_ReturnsFailure()
+    {
+        var input = BuildBatch(1);
+        var rules = """[{"type":"customExpression"}]""";
+
+        var node = new DataQualityNode { Rules = rules, PassOnFailure = false };
+
+        var result = await node.ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
+
+        Assert.False(result.Success);
+    }
 }
