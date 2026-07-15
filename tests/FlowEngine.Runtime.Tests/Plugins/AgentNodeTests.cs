@@ -29,14 +29,14 @@ public class AgentNodeTests
     }
 
     [Fact]
-    public void AgentNode_Has_Correct_TypeName()
+    public void TypeName_Default_ReturnsAgent()
     {
         var node = new AgentNode();
         Assert.Equal("agent", node.TypeName);
     }
 
     [Fact]
-    public void AgentNode_Has_Correct_Ports()
+    public void Ports_Default_ReturnsExpectedPorts()
     {
         var node = new AgentNode();
 
@@ -48,7 +48,7 @@ public class AgentNodeTests
     }
 
     [Fact]
-    public void AgentNode_Default_Parameters()
+    public void DefaultParameters_Default_ReturnsExpectedDefaults()
     {
         var node = new AgentNode();
         Assert.Equal(10, node.MaxIterations);
