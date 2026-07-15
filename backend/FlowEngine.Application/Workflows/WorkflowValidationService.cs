@@ -7,6 +7,7 @@ using FlowEngine.Core.Ai;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Workflows;
@@ -382,17 +383,25 @@ public sealed class WorkflowValidationService(
 
         foreach (var credName in referencedCredentials)
         {
-            var existing = await credentialAccessor.GetCredentialByNameAsync(credName, cancellationToken)
-                .ConfigureAwait(false);
-            if (existing is null)
+            try
             {
-                errors.Add(new ValidationError
+                var existing = await credentialAccessor.GetCredentialByNameAsync(credName, cancellationToken)
+                    .ConfigureAwait(false);
+                if (existing is not null)
                 {
-                    ErrorType = "MissingCredential",
-                    Message = $"引用了不存在的凭据 \"{credName}\"。",
-                    SuggestedFix = $"请先创建凭据 \"{credName}\" 或修改参数引用。",
-                });
+                    continue;
+                }
             }
+            catch (NotFoundException)
+            {
+            }
+
+            errors.Add(new ValidationError
+            {
+                ErrorType = "MissingCredential",
+                Message = $"引用了不存在的凭据 \"{credName}\"。",
+                SuggestedFix = $"请先创建凭据 \"{credName}\" 或修改参数引用。",
+            });
         }
 
         var canAutoFix = errors.All(e =>

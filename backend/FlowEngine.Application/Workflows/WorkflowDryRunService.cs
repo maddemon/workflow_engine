@@ -7,6 +7,7 @@ using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Scripting;
 using FlowEngine.Runtime.Executor;
 using FlowEngine.Runtime.Security;
@@ -135,10 +136,17 @@ public sealed class WorkflowDryRunService(
                 var value = node.Parameters[key];
                 if (value is string credentialName)
                 {
-                    var credential = await credentialAccessor.GetCredentialByNameAsync(credentialName, cancellationToken).ConfigureAwait(false);
-                    if (credential is not null)
+                    try
                     {
-                        node.Parameters[key] = credential;
+                        var credential = await credentialAccessor.GetCredentialByNameAsync(credentialName, cancellationToken).ConfigureAwait(false);
+                        if (credential is not null)
+                        {
+                            node.Parameters[key] = credential;
+                        }
+                    }
+                    catch (NotFoundException)
+                    {
+                        // 临时凭据未找到时保留原名称，由执行阶段自行解析
                     }
                 }
             }

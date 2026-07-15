@@ -245,15 +245,22 @@ public sealed class WorkflowDraftValidator(
         // ── 凭据存在性 ──────────────────────────────────────────
         foreach (var credName in referencedCredentials)
         {
-            var existing = await credentialAccessor.GetCredentialByNameAsync(credName, cancellationToken)
-                .ConfigureAwait(false);
-            if (existing is null)
+            try
+            {
+                var existing = await credentialAccessor.GetCredentialByNameAsync(credName, cancellationToken)
+                    .ConfigureAwait(false);
+                if (existing is null)
+                {
+                    errors.Add($"引用了不存在的凭据 \"{credName}\"，请先通过 credential create 创建");
+                }
+                else
+                {
+                    warnings.Add($"凭据 \"{credName}\" 已存在");
+                }
+            }
+            catch (NotFoundException)
             {
                 errors.Add($"引用了不存在的凭据 \"{credName}\"，请先通过 credential create 创建");
-            }
-            else
-            {
-                warnings.Add($"凭据 \"{credName}\" 已存在");
             }
         }
 

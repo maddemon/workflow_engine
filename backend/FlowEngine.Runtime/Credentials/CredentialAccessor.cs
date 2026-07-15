@@ -1,6 +1,7 @@
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
+using FlowEngine.Core.Exceptions;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Runtime.Credentials;
@@ -36,13 +37,7 @@ public sealed class CredentialAccessor : ICredentialAccessor
 
         if (credential is null)
         {
-            return new CredentialValue
-            {
-                Name = string.Empty,
-                Type = string.Empty,
-                Fields = new Dictionary<string, string> { ["__error"] = $"凭据 {credentialId} 不存在" },
-                BinaryFields = []
-            };
+            throw new NotFoundException($"凭据 {credentialId} 不存在");
         }
 
         return DecryptCredential(credential);
@@ -57,7 +52,7 @@ public sealed class CredentialAccessor : ICredentialAccessor
 
         if (credential is null)
         {
-            return null;
+            throw new NotFoundException($"凭据 '{name}' 不存在");
         }
 
         return DecryptCredential(credential);
