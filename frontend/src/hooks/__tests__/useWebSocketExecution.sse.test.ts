@@ -35,6 +35,7 @@ class MockWebSocket {
 
 class MockEventSource {
   url: string;
+  onopen: (() => void) | null = null;
   onmessage: ((event: MessageEvent) => void) | null = null;
   onerror: (() => void) | null = null;
 
@@ -112,6 +113,11 @@ describe('useWebSocketExecution SSE fallback', () => {
     expect(mockEventSources.length).toBe(1);
     // 安全加固：SSE 不再通过 query 暴露令牌，改由同源 HttpOnly Cookie（fe_auth）携带，避免 URL 泄露
     expect(mockEventSources[0].url).toBe('/api/v1/executions/exec-jwt/stream');
+
+    // 触发 onopen 确认 connected 状态
+    act(() => {
+      mockEventSources[0].onopen?.();
+    });
     expect(result.current.status).toBe('connected');
 
     localStorage.removeItem('auth_token');
@@ -139,6 +145,11 @@ describe('useWebSocketExecution SSE fallback', () => {
 
     expect(mockEventSources.length).toBe(1);
     expect(mockEventSources[0].url).toBe('/api/v1/executions/exec-123/stream');
+
+    // 触发 onopen 确认 connected 状态
+    act(() => {
+      mockEventSources[0].onopen?.();
+    });
     expect(result.current.status).toBe('connected');
   });
 
@@ -162,6 +173,11 @@ describe('useWebSocketExecution SSE fallback', () => {
       }
     }
 
+    // 触发 onopen 使 SSE 进入 connected 状态
+    act(() => {
+      mockEventSources[0].onopen?.();
+    });
+
     act(() => {
       mockEventSources[0].onmessage?.(
         { data: JSON.stringify({
@@ -184,7 +200,7 @@ describe('useWebSocketExecution SSE fallback', () => {
     expect(record.status).toBe('Completed');
   });
 
-  it('sets status to error when the EventSource reports an error', () => {
+  it('sets status to error when the EventSource reports an error after reconnects exhausted', () => {
     const { result } = renderHook(() => useWebSocketExecution({ updateExecutionMeta: () => {} }));
 
     act(() => {
@@ -204,12 +220,26 @@ describe('useWebSocketExecution SSE fallback', () => {
       }
     }
 
+    // SSE onerror 现在会尝试重连，需要耗尽重连次数后才到 error
+    // 第1次 onerror：触发重连
     act(() => {
       mockEventSources[0].onerror?.();
     });
 
+    // 模拟5次重连均失败
+    for (let attempt = 0; attempt < 5; attempt++) {
+      act(() => {
+        vi.advanceTimersByTime(2000 * Math.pow(2, attempt));
+      });
+      // 重连创建新的 EventSource，立即触发 onerror
+      if (mockEventSources.length > 0) {
+        act(() => {
+          mockEventSources[mockEventSources.length - 1].onerror?.();
+        });
+      }
+    }
+
     expect(result.current.status).toBe('error');
-    expect(mockEventSources.length).toBe(0);
   });
 
   it('closes the active EventSource on disconnect', () => {
@@ -234,6 +264,92 @@ describe('useWebSocketExecution SSE fallback', () => {
 
     act(() => {
       result.current.disconnect();
+    });
+
+    expect(mockEventSources.length).toBe(0);
+  });
+
+  it('reconnects SSE with exponential backoff on error', () => {
+    const { result } = renderHook(() => useWebSocketExecution({ updateExecutionMeta: () => {} }));
+
+    act(() => {
+      result.current.connect();
+      result.current.subscribe('exec-reconnect');
+    });
+
+    // 耗尽 WebSocket 重连，触发 SSE fallback
+    for (let i = 0; i < 6; i++) {
+      act(() => {
+        const current = mockWebSockets[mockWebSockets.length - 1];
+        current?.close();
+      });
+      if (i < 5) {
+        act(() => {
+          vi.advanceTimersByTime(2000 * Math.pow(2, i));
+        });
+      }
+    }
+
+    // SSE 已创建，触发 onopen
+    act(() => {
+      mockEventSources[0].onopen?.();
+    });
+    expect(result.current.status).toBe('connected');
+
+    // SSE onerror 触发重连
+    act(() => {
+      mockEventSources[0].onerror?.();
+    });
+
+    // 推进时间触发第1次重连
+    act(() => {
+      vi.advanceTimersByTime(2000);
+    });
+
+    // 重连创建新的 EventSource
+    expect(mockEventSources.length).toBe(1);
+
+    // 触发 onopen 重置 attempts
+    act(() => {
+      mockEventSources[0].onopen?.();
+    });
+    expect(result.current.status).toBe('connected');
+  });
+
+  it('clears reconnect timeout on disconnect', () => {
+    const { result } = renderHook(() => useWebSocketExecution({ updateExecutionMeta: () => {} }));
+
+    act(() => {
+      result.current.connect();
+      result.current.subscribe('exec-timeout');
+    });
+
+    // 耗尽 WebSocket 重连
+    for (let i = 0; i < 6; i++) {
+      act(() => {
+        const current = mockWebSockets[mockWebSockets.length - 1];
+        current?.close();
+      });
+      if (i < 5) {
+        act(() => {
+          vi.advanceTimersByTime(2000 * Math.pow(2, i));
+        });
+      }
+    }
+
+    // SSE onerror 触发重连（但不推进时间）
+    act(() => {
+      mockEventSources[0].onerror?.();
+    });
+
+    // 在重连 timer 触发之前 disconnect，应清理 timeout
+    act(() => {
+      result.current.disconnect();
+    });
+
+    // 推进时间，不应创建新的 EventSource
+    act(() => {
+      vi.advanceTimersByTime(2000 * 32);
     });
 
     expect(mockEventSources.length).toBe(0);
