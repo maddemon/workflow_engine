@@ -27,6 +27,11 @@ public sealed class OAuth2TokenService : IOAuth2TokenService, IDisposable
     public int MaxRetries { get; set; } = 3;
 
     /// <summary>
+    /// 重试基础延迟（毫秒）。默认 1000ms，实际延迟 = RetryBaseDelayMs * (2 ^ attempt)。
+    /// </summary>
+    internal int RetryBaseDelayMs { get; set; } = 1000;
+
+    /// <summary>
     /// 初始化令牌服务。
     /// </summary>
     public OAuth2TokenService(IHttpClientFactory httpClientFactory)
@@ -87,7 +92,7 @@ public sealed class OAuth2TokenService : IOAuth2TokenService, IDisposable
 
             if (attempt < MaxRetries)
             {
-                var delayMs = 1000 * (1 << attempt);
+                var delayMs = RetryBaseDelayMs * (1 << attempt);
                 await Task.Delay(delayMs, cancellationToken).ConfigureAwait(false);
             }
 

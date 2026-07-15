@@ -5,6 +5,10 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="FlowEngine.Runtime.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\FlowEngine.Core\FlowEngine.Core.csproj" />
   </ItemGroup>
 

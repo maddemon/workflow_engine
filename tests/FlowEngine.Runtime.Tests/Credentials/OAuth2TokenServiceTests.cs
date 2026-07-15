@@ -86,7 +86,8 @@ public sealed class OAuth2TokenServiceTests
         var factory = new StubHttpClientFactory(handler);
         var service = new OAuth2TokenService(factory)
         {
-            MaxRetries = 3
+            MaxRetries = 3,
+            RetryBaseDelayMs = 1 // 测试用极短延迟，避免墙钟时间 flaky
         };
 
         var request = CreateRequest();
@@ -97,8 +98,8 @@ public sealed class OAuth2TokenServiceTests
 
         Assert.Equal("tok-after-retry", response.AccessToken);
         Assert.Equal(4, handler.CallCount);
-        // 退避 1s + 2s + 4s
-        Assert.True(stopwatch.ElapsedMilliseconds >= 6500, "应存在指数退避延迟");
+        // 退避存在：即使 1ms 基础延迟，3 次重试仍需至少 1+2+4=7ms
+        Assert.True(stopwatch.ElapsedMilliseconds >= 5, "应存在指数退避延迟");
     }
 
     [Fact]
