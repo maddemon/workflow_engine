@@ -9,6 +9,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.ValueObjects;
+using FlowEngine.Runtime.Executor;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
@@ -27,7 +28,8 @@ public sealed class PollTriggerJob(
     IExecutionIdempotencyService idempotencyService,
     ILogger<PollTriggerJob> logger,
     IEventBus eventBus,
-    AuditEventFactory auditFactory) : IJob
+    AuditEventFactory auditFactory,
+    NodeExecutionContextFactory contextFactory) : IJob
 {
     /// <summary>
     /// JobDataMap 中触发器 ID 的键。
@@ -115,8 +117,25 @@ public sealed class PollTriggerJob(
                 return;
             }
 
-            // 创建节点执行上下文（简化版，用于轮询）
-            var nodeExecutionContext = CreateNodeExecutionContext(settings, context.CancellationToken);
+            // 使用节点执行上下文工厂创建轮询上下文
+            var nodeDefinition = new NodeDefinition
+            {
+                Id = "trigger",
+                TypeName = settings.PollNodeId ?? string.Empty,
+                Parameters = new Dictionary<string, object>(),
+            };
+            var workflow = new Workflow();
+            var execution = new ExecutionRecord { Id = Guid.NewGuid() };
+            var nodeExecutionContext = await contextFactory.CreateAsync(
+                workflow,
+                execution,
+                nodeDefinition,
+                nodeType,
+                new Dictionary<string, DataBatch>(),
+                new Dictionary<string, DataBatch>(),
+                new Dictionary<string, DataBatch>(),
+                0,
+                context.CancellationToken).ConfigureAwait(false);
 
             // 执行节点以获取数据
             var executionResult = await nodeType.ExecuteAsync(nodeExecutionContext, context.CancellationToken)
@@ -249,29 +268,6 @@ public sealed class PollTriggerJob(
         {
             _runningJobs.TryRemove(triggerId, out _);
         }
-    }
-
-    private static NodeExecutionContext CreateNodeExecutionContext(TriggerSettings settings, CancellationToken cancellationToken)
-    {
-        // 创建一个简化的节点执行上下文用于轮询
-        var nodeDefinition = new NodeDefinition
-        {
-            Id = "trigger",
-            TypeName = settings.PollNodeId ?? string.Empty,
-            Parameters = new Dictionary<string, object>(),
-        };
-
-        return new NodeExecutionContext
-        {
-            Workflow = new Workflow(),
-            ExecutionId = Guid.NewGuid(),
-            Node = nodeDefinition,
-            RunIndex = 0,
-            Inputs = new Dictionary<string, DataBatch>(),
-            RawParameters = new Dictionary<string, object>(),
-            ResolvedParameters = new Dictionary<string, object>(),
-            CancellationToken = cancellationToken,
-        };
     }
 
     /// <summary>

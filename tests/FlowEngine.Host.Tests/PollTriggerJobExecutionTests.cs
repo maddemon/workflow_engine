@@ -7,9 +7,15 @@ using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.ValueObjects;
 using FlowEngine.Host.Jobs;
+using FlowEngine.Runtime.Credentials;
+using FlowEngine.Runtime.Executor;
+using FlowEngine.Runtime.Expressions;
+using FlowEngine.Core.Scripting;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
+using Microsoft.Extensions.Options;
 using Moq;
 using Quartz;
 
@@ -42,6 +48,25 @@ public sealed class PollTriggerJobExecutionTests : IDisposable
         _auditFactory = new AuditEventFactory(_userContext);
         var logger = new Mock<ILogger<PollTriggerJob>>().Object;
 
+        _nodeRegistryMock
+            .Setup(r => r.GetDescriptor(It.IsAny<string>()))
+            .Returns((string typeName) => new NodeTypeDescriptor
+            {
+                TypeName = typeName,
+                DisplayName = typeName,
+                Parameters = [],
+                Ports = [],
+            });
+
+        var jsOptions = Options.Create(new JsEngineOptions());
+        var contextFactory = new NodeExecutionContextFactory(
+            _nodeRegistryMock.Object,
+            new ScriptCache(jsOptions),
+            new ParameterResolver(NullLogger<ParameterResolver>.Instance, jsOptions, new ScriptCache(jsOptions)),
+            Mock.Of<ICredentialAccessor>(),
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            tokenService: Mock.Of<IOAuth2TokenService>());
+
         _job = new PollTriggerJob(
             _engineMock.Object,
             _dbContext,
@@ -50,7 +75,8 @@ public sealed class PollTriggerJobExecutionTests : IDisposable
             _idempotencyMock.Object,
             logger,
             _eventBus,
-            _auditFactory);
+            _auditFactory,
+            contextFactory);
     }
 
     public void Dispose()
