@@ -3,8 +3,10 @@ using FlowEngine.Application.Executions;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Exceptions;
+using FlowEngine.Resources;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Localization;
 
 namespace FlowEngine.Host.Controllers;
 
@@ -20,7 +22,8 @@ public class AiWorkflowsController(
     IWorkflowModificationService modificationService,
     IWorkflowValidationService validationService,
     IWorkflowExecutionFeedbackService feedbackService,
-    IWorkflowService workflowService) : ControllerBase
+    IWorkflowService workflowService,
+    IStringLocalizer<SharedResource> localizer) : ControllerBase
 {
     /// <summary>
     /// 装配 AI 草稿为完整工作流。
@@ -43,7 +46,7 @@ public class AiWorkflowsController(
             {
                 success = false,
                 errorCode = "AssembleFailed",
-                message = ex.Message,
+                message = localizer["AssembleFailed", ex.Message],
             });
         }
     }
@@ -70,7 +73,7 @@ public class AiWorkflowsController(
             {
                 success = false,
                 errorCode = "ModifyFailed",
-                message = ex.Message,
+                message = localizer["ModifyFailed", ex.Message],
             });
         }
     }
@@ -136,7 +139,7 @@ public class AiWorkflowsController(
             {
                 success = false,
                 errorCode = "ExecutionNotFound",
-                message = $"执行 '{executionId}' 不存在。",
+                message = localizer["ExecutionNotFoundFormat", executionId],
             });
         }
 

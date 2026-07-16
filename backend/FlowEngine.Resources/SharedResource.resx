@@ -75,4 +75,25 @@
   <data name="WebhookPathInUse" xml:space="preserve">
     <value>Webhook path "{0}" is already in use.</value>
   </data>
+  <data name="FileRequired" xml:space="preserve">
+    <value>File must not be empty.</value>
+  </data>
+  <data name="RegistrationDisabled" xml:space="preserve">
+    <value>Self-registration is disabled. Please contact an administrator to create an account.</value>
+  </data>
+  <data name="ExecutionNotFoundFormat" xml:space="preserve">
+    <value>Execution '{0}' does not exist.</value>
+  </data>
+  <data name="WorkflowNotFoundFormat" xml:space="preserve">
+    <value>Workflow '{0}' does not exist.</value>
+  </data>
+  <data name="ExecutionCannotCancelFormat" xml:space="preserve">
+    <value>Execution '{0}' is currently '{1}' and cannot be cancelled.</value>
+  </data>
+  <data name="NodeNotFoundFormat" xml:space="preserve">
+    <value>Node '{0}' not found.</value>
+  </data>
+  <data name="CredentialInUse" xml:space="preserve">
+    <value>Credential is referenced by workflows and cannot be deleted.</value>
+  </data>
 </root>

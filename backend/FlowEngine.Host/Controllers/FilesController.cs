@@ -5,8 +5,10 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.Exceptions;
+using FlowEngine.Resources;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Localization;
 
 namespace FlowEngine.Host.Controllers;
 
@@ -19,7 +21,8 @@ namespace FlowEngine.Host.Controllers;
 public class FilesController(
     FileService fileService,
     IEventBus eventBus,
-    AuditEventFactory auditFactory) : ControllerBase
+    AuditEventFactory auditFactory,
+    IStringLocalizer<SharedResource> localizer) : ControllerBase
 {
     /// <summary>
     /// 上传文件。
@@ -33,7 +36,7 @@ public class FilesController(
     {
         if (file.Length == 0)
         {
-            return BadRequest("文件不能为空。");
+            return BadRequest(localizer["FileRequired"]);
         }
 
         await using var stream = file.OpenReadStream();

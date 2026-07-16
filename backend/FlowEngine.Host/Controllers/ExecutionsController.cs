@@ -1,8 +1,10 @@
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Executions;
 using FlowEngine.Core.Authorization;
+using FlowEngine.Resources;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Localization;
 
 namespace FlowEngine.Host.Controllers;
 
@@ -12,7 +14,9 @@ namespace FlowEngine.Host.Controllers;
 [ApiController]
 [Authorize]
 [Route("api/v1")]
-public class ExecutionsController(ExecutionService executionService) : ControllerBase
+public class ExecutionsController(
+    ExecutionService executionService,
+    IStringLocalizer<SharedResource> localizer) : ControllerBase
 {
     /// <summary>
     /// 启动工作流执行。
@@ -33,7 +37,12 @@ public class ExecutionsController(ExecutionService executionService) : Controlle
             dto?.Inputs).ConfigureAwait(false);
         if (execution is null)
         {
-            return NotFound(new { message = $"工作流 '{workflowId}' 不存在。" });
+            return NotFound(new
+            {
+                success = false,
+                errorCode = "WorkflowNotFound",
+                message = localizer["WorkflowNotFoundFormat", workflowId],
+            });
         }
 
         return Ok(execution);
@@ -54,7 +63,12 @@ public class ExecutionsController(ExecutionService executionService) : Controlle
 
         if (conflict)
         {
-            return Conflict(new { message = $"执行 '{id}' 当前状态为 '{execution.Status}'，无法取消。" });
+            return Conflict(new
+            {
+                success = false,
+                errorCode = "ExecutionCannotCancel",
+                message = localizer["ExecutionCannotCancelFormat", id, execution.Status],
+            });
         }
 
         return Ok(execution);

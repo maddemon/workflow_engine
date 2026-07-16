@@ -75,4 +75,25 @@
   <data name="WebhookPathInUse" xml:space="preserve">
     <value>Webhook 路径“{0}”已被使用。</value>
   </data>
+  <data name="FileRequired" xml:space="preserve">
+    <value>文件不能为空。</value>
+  </data>
+  <data name="RegistrationDisabled" xml:space="preserve">
+    <value>自助注册已关闭，请联系管理员创建账号。</value>
+  </data>
+  <data name="ExecutionNotFoundFormat" xml:space="preserve">
+    <value>执行 '{0}' 不存在。</value>
+  </data>
+  <data name="WorkflowNotFoundFormat" xml:space="preserve">
+    <value>工作流 '{0}' 不存在。</value>
+  </data>
+  <data name="ExecutionCannotCancelFormat" xml:space="preserve">
+    <value>执行 '{0}' 当前状态为 '{1}'，无法取消。</value>
+  </data>
+  <data name="NodeNotFoundFormat" xml:space="preserve">
+    <value>节点 '{0}' 不存在。</value>
+  </data>
+  <data name="CredentialInUse" xml:space="preserve">
+    <value>凭据被工作流引用，无法删除。</value>
+  </data>
 </root>

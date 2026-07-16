@@ -1,6 +1,8 @@
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Ai;
+using FlowEngine.Resources;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Localization;
 
 namespace FlowEngine.Host.Controllers;
 
@@ -9,7 +11,9 @@ namespace FlowEngine.Host.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/v1/node-catalog")]
-public class NodeCatalogController(CatalogService catalogService) : ControllerBase
+public class NodeCatalogController(
+    CatalogService catalogService,
+    IStringLocalizer<SharedResource> localizer) : ControllerBase
 {
     /// <summary>
     /// 获取所有节点摘要列表。
@@ -37,7 +41,7 @@ public class NodeCatalogController(CatalogService catalogService) : ControllerBa
             {
                 success = false,
                 errorCode = "NodeNotFound",
-                message = $"节点 '{name}' 不存在",
+                message = localizer["NodeNotFoundFormat", name],
             });
         }
 

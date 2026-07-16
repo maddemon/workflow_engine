@@ -2,8 +2,10 @@ using FlowEngine.Application.Credentials;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Credentials;
+using FlowEngine.Resources;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Localization;
 
 namespace FlowEngine.Host.Controllers;
 
@@ -15,7 +17,8 @@ namespace FlowEngine.Host.Controllers;
 [Route("api/v1/credentials")]
 public class CredentialsController(
     CredentialService credentialService,
-    CredentialTypeRegistry credentialTypeRegistry) : ControllerBase
+    CredentialTypeRegistry credentialTypeRegistry,
+    IStringLocalizer<SharedResource> localizer) : ControllerBase
 {
     /// <summary>
     /// 获取所有凭据摘要列表。
@@ -114,8 +117,10 @@ public class CredentialsController(
         {
             return Conflict(new
             {
-                message = "凭据被工作流引用，无法删除。",
-                referencedBy = result.ReferencedBy
+                success = false,
+                errorCode = "CredentialInUse",
+                message = localizer["CredentialInUse"],
+                referencedBy = result.ReferencedBy,
             });
         }
 

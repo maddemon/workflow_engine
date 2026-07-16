@@ -1,8 +1,10 @@
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Authorization;
+using FlowEngine.Resources;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Localization;
 
 namespace FlowEngine.Host.Controllers;
 
@@ -16,7 +18,8 @@ public class WorkflowsController(
     WorkflowService workflowService,
     WorkflowExportService exportService,
     WorkflowImportService importService,
-    WorkflowDryRunService dryRunService) : ControllerBase
+    WorkflowDryRunService dryRunService,
+    IStringLocalizer<SharedResource> localizer) : ControllerBase
 {
     /// <summary>
     /// 分页获取工作流摘要列表。
@@ -98,12 +101,12 @@ public class WorkflowsController(
     {
         if (request.Nodes is null || request.Nodes.Count == 0)
         {
-            return this.BadRequestError("Nodes 不能为空。");
+            return this.BadRequestError(localizer["NodesRequired"]);
         }
 
         if (request.Connections is null || request.Connections.Count == 0)
         {
-            return this.BadRequestError("Connections 不能为空。");
+            return this.BadRequestError(localizer["ConnectionsRequired"]);
         }
 
         var result = await dryRunService.DryRunAsync(request, cancellationToken).ConfigureAwait(false);
@@ -164,7 +167,7 @@ public class WorkflowsController(
     {
         if (request.Ids is null || request.Ids.Count == 0)
         {
-            return this.BadRequestError("工作流 ID 列表不能为空。");
+            return this.BadRequestError(localizer["WorkflowIdListRequired"]);
         }
 
         var exportedBy = User.Identity?.Name ?? "unknown";
@@ -175,9 +178,9 @@ public class WorkflowsController(
             var results = System.Text.Json.JsonSerializer.Deserialize<List<WorkflowExportResult>>(json);
             return this.OkOrNotFound(results);
         }
-        catch (InvalidOperationException ex)
+        catch (InvalidOperationException)
         {
-            return this.BadRequestError(ex.Message);
+            return this.BadRequestError(localizer["ExportFailed"]);
         }
     }
 

@@ -48,7 +48,7 @@ public sealed class ErrorStrategyHandler
                         Error = new NodeError
                         {
                             Code = "InputTimeout",
-                            Message = "等待输入超时。",
+                            Message = "Input timed out.",
                             NodeDefinitionId = nodeDefinitionId
                         }
                     }
@@ -62,7 +62,7 @@ public sealed class ErrorStrategyHandler
         var error = original.Error ?? new NodeError
         {
             Code = "NodeError",
-            Message = "节点执行失败。",
+            Message = "Node execution failed.",
             NodeDefinitionId = nodeDefinitionId
         };
 
