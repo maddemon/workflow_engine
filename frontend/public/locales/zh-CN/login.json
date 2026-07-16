@@ -5,6 +5,6 @@
   "password": "密码",
   "signIn": "登录",
   "failed": "登录失败",
+  "invalidCredentials": "凭据无效",
   "unexpectedError": "发生了意外错误"
-} "unexpectedError": "发生了意外错误"
 }

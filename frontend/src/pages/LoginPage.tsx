@@ -45,7 +45,7 @@ export function LoginPage() {
             <TextInput
               label={t('email')}
               type="email"
-              placeholder="your@email.com"
+              placeholder={t('email')}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
@@ -53,7 +53,7 @@ export function LoginPage() {
             />
             <PasswordInput
               label={t('password')}
-              placeholder="Your password"
+              placeholder={t('password')}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
