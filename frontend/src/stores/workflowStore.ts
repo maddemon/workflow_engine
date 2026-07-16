@@ -38,6 +38,7 @@ interface WorkflowState {
   selectedNodeId: string | null;
   nodeTypes: NodeTypeDescriptor[];
   workflowId: string | null;
+  projectId: string | null;
   workflowName: string;
   workflowVersion: number;
   isActive: boolean;
@@ -78,6 +79,7 @@ interface WorkflowState {
   setWorkflowName: (name: string) => void;
   setIsActive: (active: boolean) => void;
   setStyleSettings: (settings: WorkflowStyleSettings) => void;
+  setProjectId: (projectId: string | null) => void;
   loadWorkflow: (id: string) => Promise<void>;
   saveWorkflow: () => Promise<boolean>;
   deleteWorkflow: (id: string) => Promise<void>;
@@ -178,6 +180,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
     selectedNodeId: null,
     nodeTypes: [],
     workflowId: null,
+    projectId: null,
     workflowName: '',
     workflowVersion: 1,
     isActive: false,
@@ -334,6 +337,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
 
     setStyleSettings: (settings) => set({ styleSettings: settings, isDirty: true }),
 
+    setProjectId: (projectId) => set({ projectId }),
+
     setReviewMode: (mode) => set({ reviewMode: mode }),
     setDraftSource: (source) => set({ draftSource: source }),
     setDraftStatus: (status) => set({ draftStatus: status }),
@@ -359,6 +364,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
         redoStack.length = 0;
         set({
           workflowId: workflow.id,
+          projectId: workflow.projectId,
           workflowName: workflow.name,
           workflowVersion: workflow.version,
           isActive: workflow.isActive,
@@ -388,7 +394,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       flushPositions();
       if (!get().validateAllNodes()) return false;
 
-      const { workflowId, workflowName, isActive, styleSettings, nodes, edges } = get();
+      const { workflowId, workflowName, isActive, styleSettings, nodes, edges, projectId } = get();
       const { nodeDefinitions, connections } = serializeWorkflow(nodes, edges, workflowName);
 
       set({ saving: true });
@@ -405,6 +411,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           const created = await api.createWorkflow({
             name: workflowName || 'Untitled Workflow',
             createdBy: 'user',
+            projectId: projectId ?? undefined,
             nodes: nodeDefinitions,
             connections,
           });
@@ -425,6 +432,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
       redoStack.length = 0;
       set({
         workflowId: null,
+        projectId: null,
         workflowName: '',
         isActive: false,
     styleSettings: { ...DEFAULT_STYLE_SETTINGS },

@@ -10,10 +10,11 @@ import { useNodeTypes } from "../hooks/useNodeTypes.ts"
 import { useWorkflowStore } from "../stores/workflowStore.ts"
 import { DiffPanel } from "../components/ParameterPanel/DiffPanel.tsx"
 import { ValidationChecklistModal } from "../components/ParameterPanel/ValidationChecklistModal.tsx"
-import { Stack, Text, Badge, Group, Button, Divider, Modal, Textarea } from "@mantine/core"
+import { Alert, Anchor, Stack, Text, Badge, Group, Button, Divider, Modal, Textarea } from "@mantine/core"
 import { notifications } from "@mantine/notifications"
-import { Eye, Play, Check, X } from "lucide-react"
+import { Eye, Play, Check, RefreshCw, X } from "lucide-react"
 import { confirmWorkflow, rejectDraft } from "../services/api.ts"
+import { useWorkflowVersionPolling } from "../hooks/useWorkflowVersionPolling.ts"
 
 interface WorkflowEditorPageProps {
   onLayoutChange?: (navbar: React.ReactNode | null, aside: React.ReactNode | null) => void
@@ -29,11 +30,13 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
   const setReviewMode = useWorkflowStore((s) => s.setReviewMode)
   const structuredDiff = useWorkflowStore((s) => s.structuredDiff)
   const workflowId = useWorkflowStore((s) => s.workflowId)
+  const workflowVersion = useWorkflowStore((s) => s.workflowVersion)
 
   const [highlightedNodeIds, setHighlightedNodeIds] = useState<string[]>([])
   const [validationModalOpen, setValidationModalOpen] = useState(false)
   const [rejectModalOpen, setRejectModalOpen] = useState(false)
   const [rejectReason, setRejectReason] = useState("")
+  const { changed, newVersion, dismiss } = useWorkflowVersionPolling(workflowId)
 
   useEffect(() => {
     if (!ready) return
@@ -91,7 +94,7 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
     }
 
     return <ParameterPanel />
-  }, [execution, clearExecution, cancelExecution, error, reviewMode, structuredDiff, highlightedNodeIds, dryRun, dryRunLoading])
+  }, [execution, clearExecution, cancelExecution, error, reviewMode, setReviewMode, structuredDiff, highlightedNodeIds, dryRun, dryRunLoading])
 
   const handleLayoutChange = useCallback(() => {
     onLayoutChange?.(navbar, aside)
@@ -126,6 +129,35 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
   }, [handleLayoutChange, onLayoutChange])
 
   return (
+    <>
+      {changed && (
+        <Alert
+          icon={<RefreshCw size={16} />}
+          color="blue"
+          variant="light"
+          withCloseButton
+          onClose={dismiss}
+          style={{ margin: 8 }}
+        >
+          This workflow has been modified externally (v{workflowVersion ?? '?'} → v{newVersion}).
+          <Anchor
+            component="button"
+            ml="xs"
+            onClick={() => {
+              const store = useWorkflowStore.getState();
+              if (store.isDirty) {
+                if (!window.confirm('You have unsaved changes. Load the new version anyway? Unsaved changes will be lost.')) return;
+              }
+              if (workflowId) {
+                loadWorkflow(workflowId);
+                dismiss();
+              }
+            }}
+          >
+            Load new version
+          </Anchor>
+        </Alert>
+      )}
     <ReactFlowProvider>
       <WorkflowCanvas onExecute={execute} onCancel={cancelExecution} onDryRun={dryRun} dryRunLoading={dryRunLoading} />
 
@@ -151,5 +183,6 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
         </Stack>
       </Modal>
     </ReactFlowProvider>
+    </>
   )
 }

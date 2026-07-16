@@ -13,15 +13,25 @@ import {
   useComputedColorScheme,
   useMantineColorScheme,
 } from "@mantine/core"
-import { Bell, BookOpen, Home, Key, LogOut, Moon, Sun, User, Workflow } from "lucide-react"
-import { useState } from "react"
+import { Bell, BookOpen, Home, Key, LogOut, Moon, Settings, Shield, Sun, User, Workflow } from "lucide-react"
+import { useMemo, useState } from "react"
+import { useRequest } from "ahooks"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { CredentialListModal } from "../CredentialPanel/CredentialListModal.tsx"
 import { useAuth } from "../../hooks/AuthContext.tsx"
+import { useRoles } from "../../hooks/useRoles.ts"
+import { getWorkflows } from "../../services/api.ts"
 
 const navItems = [
   { label: "Workflows", icon: Home, path: "/" },
   { label: "Documents", icon: BookOpen, path: "/help" },
+]
+
+const adminNavItems = [
+  { label: "User Management", icon: Shield, path: "/admin/users" },
+  { label: "Project Classification", icon: Shield, path: "/admin/projects" },
+  { label: "Audit Log", icon: Shield, path: "/admin/audit" },
+  { label: "File Management", icon: Shield, path: "/admin/files" },
 ]
 
 export function HeaderToolbar() {
@@ -31,6 +41,15 @@ export function HeaderToolbar() {
   const location = useLocation()
   const navigate = useNavigate()
   const { user, logout } = useAuth()
+  const { hasRole } = useRoles()
+  const { data: workflows = [] } = useRequest(getWorkflows, {
+    pollingInterval: 60000,
+  });
+
+  const pendingAiDrafts = useMemo(
+    () => workflows.filter((w) => w.source === 'ai' && w.draftStatus === 'pending').length,
+    [workflows],
+  );
 
   const handleLogout = async () => {
     await logout()
@@ -51,6 +70,36 @@ export function HeaderToolbar() {
             </Flex>
           </Anchor>
           <Divider orientation="vertical" />
+          {hasRole('Admin') && (
+            <Menu shadow="md" width={180} trigger="hover" openDelay={100}>
+              <Menu.Target>
+                <Anchor
+                  component="button"
+                  underline="never"
+                  className={`nav-item${location.pathname.startsWith('/admin/') ? ' active' : ''}`}
+                >
+                  <Group gap={4} wrap="nowrap">
+                    <Shield size={13} />
+                    <Text size="xs">System</Text>
+                    {pendingAiDrafts > 0 && (
+                      <Badge size="xs" variant="filled" color="red">{pendingAiDrafts}</Badge>
+                    )}
+                  </Group>
+                </Anchor>
+              </Menu.Target>
+              <Menu.Dropdown>
+                {adminNavItems.map((item) => (
+                  <Menu.Item
+                    key={item.path}
+                    leftSection={<item.icon size={14} />}
+                    onClick={() => navigate(item.path)}
+                  >
+                    {item.label}
+                  </Menu.Item>
+                ))}
+              </Menu.Dropdown>
+            </Menu>
+          )}
           {navItems.map((item) => {
             const active =
               item.path === "/"
@@ -107,11 +156,14 @@ export function HeaderToolbar() {
                 </Avatar>
               </ActionIcon>
             </Menu.Target>
-            <Menu.Dropdown>
+              <Menu.Dropdown>
               <Text size="xs" px="sm" py={4} c="dimmed" ta="center">
                 {user?.email ?? "Not signed in"}
               </Text>
               <Menu.Divider />
+              <Menu.Item leftSection={<Settings size={14} />} onClick={() => navigate('/settings')}>
+                Settings
+              </Menu.Item>
               <Menu.Item leftSection={<LogOut size={14} />} color="red" onClick={handleLogout}>
                 Logout
               </Menu.Item>

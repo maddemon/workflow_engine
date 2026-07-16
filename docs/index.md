@@ -55,6 +55,13 @@ Flow Engine 是一个节点可热插拔的工作流自动化引擎。后端用 C
 | [plans/ga/plan-ga-00-readme.md](plans/ga/plan-ga-00-readme.md) | GA 阶段说明（队列/Worker/监控/SSO，8 个模块计划） |
 | [plans/enterprise/plan-enterprise-00-readme.md](plans/enterprise/plan-enterprise-00-readme.md) | Enterprise 阶段说明（Git/协作/MCP/AI Builder，7 个模块计划） |
 | [plans/plan-cleanup-01-obsolete-markers.md](plans/plan-cleanup-01-obsolete-markers.md) | 基础设施/交叉清理：清理全仓 `[Obsolete]` 标记及其废弃实现 |
+| [plans/plan-frontend-management-ui.md](plans/plan-frontend-management-ui.md) | 前端管理后台 UI 总索引（6 模块：RBAC/项目/审计/文件/外部凭据/设置） |
+| [plans/beta/plan-beta-12-frontend-rbac.md](plans/beta/plan-beta-12-frontend-rbac.md) | 前端用户与权限管理（RBAC）UI 子计划（Beta） |
+| [plans/beta/plan-beta-13-frontend-project-classification.md](plans/beta/plan-beta-13-frontend-project-classification.md) | 前端项目分类管理 UI 子计划（Beta） |
+| [plans/alpha/plan-alpha-10-frontend-audit-log.md](plans/alpha/plan-alpha-10-frontend-audit-log.md) | 前端审计日志查看器子计划（Alpha） |
+| [plans/beta/plan-beta-14-frontend-file-storage.md](plans/beta/plan-beta-14-frontend-file-storage.md) | 前端文件存储管理 UI 子计划（Beta） |
+| [plans/alpha/plan-alpha-11-frontend-settings.md](plans/alpha/plan-alpha-11-frontend-settings.md) | 前端设置页与导航补齐子计划（Alpha） |
+| [plans/enterprise/plan-enterprise-07-frontend-external-credentials.md](plans/enterprise/plan-enterprise-07-frontend-external-credentials.md) | 前端外部凭据提供方配置 UI（暂缓，待后端 enterprise-03） |
 
 ### 设计文档
 

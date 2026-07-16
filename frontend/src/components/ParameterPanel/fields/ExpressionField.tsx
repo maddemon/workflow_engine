@@ -67,7 +67,7 @@ export function ExpressionField({ definition, value, onChange, error }: Expressi
 
   const currentValue = extractScriptSource(value);
   const scriptLanguage = getScriptLanguage(definition);
-  const LanguageIcon = getLanguageIcon(scriptLanguage);
+  const languageIcon = getLanguageIcon(scriptLanguage);
 
   // 从 hintProperties 获取自定义帮助内容
   const helpContent = definition.hintProperties?.helpContent as typeof DEFAULT_HELP_CONTENT | undefined
@@ -102,7 +102,7 @@ export function ExpressionField({ definition, value, onChange, error }: Expressi
   const helpPanel = (
     <Stack gap="xs" p="xs">
       <Group gap={4}>
-        <LanguageIcon size={14} />
+        <>{languageIcon}</>
         <Text size="xs" fw={600}>{helpContent.title} ({scriptLanguage})</Text>
       </Group>
       {helpContent.sections.map((section, i) => (
@@ -178,7 +178,7 @@ export function ExpressionField({ definition, value, onChange, error }: Expressi
               }}
               mr={4}
             >
-              <LanguageIcon size={14} />
+              <>{languageIcon}</>
             </ActionIcon>
           </Tooltip>
         }

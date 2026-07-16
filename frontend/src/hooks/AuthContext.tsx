@@ -1,15 +1,17 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
+/* eslint-disable react-refresh/only-export-components */
+import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react';
 import { notifications } from '@mantine/notifications';
 import { useRequest } from 'ahooks';
-import type { UserDto, RegisterRequest, LoginRequest, RegisterResult } from '../types/workflow.ts';
+import type { UserDto, LoginRequest } from '../types/workflow.ts';
 import * as api from '../services/api.ts';
 
 interface AuthContextValue {
   user: UserDto | null;
   isAuthenticated: boolean;
   isLoading: boolean;
+  roles: string[];
+  hasRole: (role: string) => boolean;
   login: (data: LoginRequest) => Promise<{ success: boolean; error?: string }>;
-  register: (data: RegisterRequest) => Promise<RegisterResult>;
   logout: () => Promise<void>;
 }
 
@@ -57,15 +59,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const register = useCallback(async (data: RegisterRequest) => {
-    try {
-      const result = await api.register(data);
-      return result;
-    } catch {
-      return { success: false, errorMessage: 'Registration failed' };
-    }
-  }, []);
-
   const logout = useCallback(async () => {
     try {
       await api.logout();
@@ -75,8 +68,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     notifications.show({ title: 'Logged out', message: 'You have been logged out', color: 'blue' });
   }, []);
 
+  const roles = useMemo(() => user?.roles ?? [], [user?.roles]);
+  const hasRole = useCallback((role: string) => roles.includes(role), [roles]);
+
   return (
-    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, isAuthenticated: !!user, isLoading, roles, hasRole, login, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -8,15 +8,16 @@ interface FieldResolverProps {
   value: unknown;
   onChange: (value: unknown) => void;
   error?: string;
+  projectId?: string | null;
 }
 
 /**
  * 字段分发组件。
  * 优先级：definition.hint > 前端自动规则 > definition.type。
  */
-export function FieldResolver({ definition, value, onChange, error }: FieldResolverProps) {
+export function FieldResolver({ definition, value, onChange, error, projectId }: FieldResolverProps) {
   const hint = resolveHint(definition);
 
   const Field = hintFieldMap[hint] ?? typeFieldMap[definition.type] ?? StringField;
-  return <Field definition={definition} value={value} onChange={onChange} error={error} />;
+  return <Field definition={definition} value={value} onChange={onChange} error={error} projectId={projectId} />;
 }

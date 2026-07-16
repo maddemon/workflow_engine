@@ -25,6 +25,7 @@ export interface FieldProps {
   value: unknown;
   onChange: (value: unknown) => void;
   error?: string;
+  projectId?: string | null;
 }
 
 type FieldComponent = FC<FieldProps>;

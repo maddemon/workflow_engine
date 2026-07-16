@@ -1,4 +1,4 @@
-import { useCallback, useRef } from 'react';
+import { useCallback, useEffect, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 import type { WebSocketPushMessage, WebSocketStatus } from './messageHandlers.ts';
 
@@ -32,6 +32,8 @@ export function useSseFallback(options: UseSseFallbackOptions) {
       connectionsRef.current.delete(executionId);
     }
   }, []);
+
+  const connectSseRef = useRef<((executionId: string, initialAttempts?: number) => void) | null>(null);
 
   const connectSse = useCallback((executionId: string, initialAttempts = 0) => {
     // 关闭已有连接
@@ -68,7 +70,7 @@ export function useSseFallback(options: UseSseFallbackOptions) {
         conn.reconnectTimeout = setTimeout(() => {
           const nextAttempts = currentAttempts + 1;
           if (connectionsRef.current.has(executionId)) {
-            connectSse(executionId, nextAttempts);
+            connectSseRef.current?.(executionId, nextAttempts);
           }
         }, reconnectInterval * Math.pow(2, currentAttempts));
       } else {
@@ -79,6 +81,11 @@ export function useSseFallback(options: UseSseFallbackOptions) {
 
     connectionsRef.current.set(executionId, conn);
   }, [getSseUrl, processMessage, lastSequenceRef, setLastSequence, setStatus, closeConnection]);
+
+  // Keep ref in sync with latest callback (avoids before-declaration and ref-during-render issues)
+  useEffect(() => {
+    connectSseRef.current = connectSse;
+  }, [connectSse]);
 
   const trySseFallback = useCallback((executionId: string) => {
     connectSse(executionId, 0);

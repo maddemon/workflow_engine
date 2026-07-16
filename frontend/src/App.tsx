@@ -3,12 +3,17 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { LayoutProvider } from './components/Layout/LayoutContext.tsx';
 import { MainLayout } from './components/Layout/MainLayout.tsx';
 import { AuthProvider, useAuth } from './hooks/AuthContext.tsx';
+import { RequireRole } from './components/common/RequireRole.tsx';
 import { WorkflowListPage } from './components/WorkflowList/WorkflowListPage.tsx';
 import { WorkflowEditorPage } from './pages/WorkflowEditorPage.tsx';
 import { ExecutionHistoryPage } from './pages/ExecutionHistoryPage.tsx';
 import { HelpPage } from './pages/HelpPage.tsx';
+import { SettingsPage } from './pages/SettingsPage.tsx';
+import { AdminUsersPage } from './pages/AdminUsersPage.tsx';
+import { AdminAuditPage } from './pages/AdminAuditPage.tsx';
+import { AdminFilesPage } from './pages/AdminFilesPage.tsx';
+import { AdminProjectsPage } from './pages/AdminProjectsPage.tsx';
 import { LoginPage } from './pages/LoginPage.tsx';
-import { RegisterPage } from './pages/RegisterPage.tsx';
 import { LoadingOverlay } from '@mantine/core';
 import './App.css';
 
@@ -55,7 +60,6 @@ function AppRoutes() {
     <Routes>
       {/* Auth pages - no header/sidebar */}
       <Route path="/login" element={<AuthLayout><LoginPage /></AuthLayout>} />
-      <Route path="/register" element={<AuthLayout><RegisterPage /></AuthLayout>} />
       {/* App pages - with header/sidebar */}
       <Route
         path="/"
@@ -102,6 +106,39 @@ function AppRoutes() {
                 <HelpPage />
               </MainLayout>
             </LayoutProvider>
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/settings"
+        element={
+          <ProtectedRoute>
+            <LayoutProvider value={layoutValue}>
+              <MainLayout>
+                <SettingsPage />
+              </MainLayout>
+            </LayoutProvider>
+          </ProtectedRoute>
+        }
+      />
+      {/* Admin routes (role-protected) — must precede catch-all */}
+      <Route
+        path="/admin/*"
+        element={
+          <ProtectedRoute>
+            <RequireRole role="Admin">
+              <LayoutProvider value={layoutValue}>
+                <MainLayout>
+                  <Routes>
+                    <Route path="users" element={<AdminUsersPage />} />
+                    <Route path="audit" element={<AdminAuditPage />} />
+                    <Route path="projects" element={<AdminProjectsPage />} />
+                    <Route path="files" element={<AdminFilesPage />} />
+                    <Route path="*" element={<Navigate to="/admin/users" replace />} />
+                  </Routes>
+                </MainLayout>
+              </LayoutProvider>
+            </RequireRole>
           </ProtectedRoute>
         }
       />

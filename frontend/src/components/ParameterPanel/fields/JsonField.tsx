@@ -17,6 +17,7 @@ export function JsonField({ definition, value, onChange, error }: JsonFieldProps
   // 实时校验 JSON 格式
   useEffect(() => {
     if (displayValue.trim() === '') {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setParseError(null);
       return;
     }

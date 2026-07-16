@@ -31,12 +31,14 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
     { ready: opened },
   );
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     if (opened) {
       setShowForm(false);
       setEditingId(null);
     }
   }, [opened]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const { data: typeOptions = defaultTypeOptions } = useRequest(getCredentialTypes);
 

@@ -82,7 +82,7 @@ interface CronBuilderProps {
 }
 
 export function CronBuilder({ value, onChange, disabled }: CronBuilderProps) {
-  const initialPreset = useMemo(() => parseCronToPreset(value), []);
+  const initialPreset = useMemo(() => parseCronToPreset(value), [value]);
 
   const [presetType, setPresetType] = useState<SchedulePreset['type']>(
     initialPreset?.type ?? 'daily'

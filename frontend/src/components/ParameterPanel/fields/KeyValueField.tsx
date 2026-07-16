@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useRef } from 'react';
+import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { TextInput, ActionIcon, Group, Text, Stack } from '@mantine/core';
 import { Plus, Trash, AlertTriangle } from 'lucide-react';
 import { InfoTooltip } from './InfoTooltip.tsx';
@@ -44,11 +44,13 @@ export function KeyValueField({ definition, value, onChange, error }: KeyValueFi
   const [entries, setEntries] = useState<KeyValueEntry[]>(() => parseJsonToEntries(valueStr));
 
   // 仅当 value 与上次发射值不同时（外部变更），才从 value 重新解析
-  if (valueStr !== lastEmittedRef.current) {
-    const parsed = parseJsonToEntries(valueStr);
-    setEntries(parsed);
-    lastEmittedRef.current = valueStr;
-  }
+  useEffect(() => {
+    if (valueStr !== lastEmittedRef.current) {
+      const parsed = parseJsonToEntries(valueStr);
+      setEntries(parsed);
+      lastEmittedRef.current = valueStr;
+    }
+  }, [valueStr]);
 
   const duplicateKeys = useMemo(() => {
     const seen = new Map<string, number>();

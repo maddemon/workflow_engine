@@ -15,8 +15,6 @@ import type {
   TriggerDto,
   CreateTriggerDto,
   UpdateTriggerDto,
-  RegisterRequest,
-  RegisterResult,
   LoginRequest,
   LoginResult,
   UserDto,
@@ -71,7 +69,7 @@ api.interceptors.response.use(
         // 整页刷新会重新挂载 AuthProvider 再次请求，形成 401→刷新→401 死循环
         // （速率限制触发后又表现为 429 死循环）。是否跳转交给 React Router 的
         // ProtectedRoute / AuthLayout 依据 isAuthenticated 处理即可。
-        if (window.location.pathname !== '/login' && window.location.pathname !== '/register') {
+        if (window.location.pathname !== '/login') {
           window.location.href = '/login';
         }
       }
@@ -205,11 +203,6 @@ export async function deleteTrigger(_workflowId: string, triggerId: string): Pro
 
 // -- Auth --
 
-export async function register(data: RegisterRequest): Promise<RegisterResult> {
-  const res = await api.post<RegisterResult>('/auth/register', data);
-  return res.data;
-}
-
 export async function login(data: LoginRequest): Promise<LoginResult> {
   const res = await api.post<LoginResult>('/auth/login', data);
   return res.data;
@@ -277,4 +270,115 @@ export async function importWorkflowsBatch(data: ImportBatchRequest): Promise<Ba
 export async function createApiKey(name: string, expiresAt?: string | null): Promise<CreateApiKeyResult> {
   const res = await api.post<CreateApiKeyResult>('/auth/api-keys', { name, expiresAt });
   return res.data;
+}
+
+/** API Key list item DTO (returned by listApiKeys, no plaintext key). */
+export interface ApiKeyDto {
+  id: string;
+  name: string;
+  prefix: string;
+  createdAt: string;
+  expiresAt: string | null;
+  revokedAt: string | null;
+}
+
+export async function listApiKeys(): Promise<ApiKeyDto[]> {
+  const res = await api.get<ApiKeyDto[]>('/auth/api-keys');
+  return res.data;
+}
+
+export async function revokeApiKey(id: string): Promise<void> {
+  await api.delete(`/auth/api-keys/${id}`);
+}
+
+// --- User Roles ---
+
+export async function listUsers(): Promise<UserDto[]> {
+  const res = await api.get<{ items: UserDto[] }>('/users');
+  return res.data.items;
+}
+
+export async function getUserRoles(userId: string): Promise<string[]> {
+  const res = await api.get<string[]>(`/users/${userId}/roles`);
+  return res.data;
+}
+
+export async function assignRole(userId: string, role: string): Promise<void> {
+  await api.post(`/users/${userId}/roles`, { role });
+}
+
+export async function revokeRole(userId: string, role: string): Promise<void> {
+  await api.delete(`/users/${userId}/roles/${role}`);
+}
+
+// --- Audit Events ---
+
+export interface AuditQueryParams {
+  eventType?: string;
+  from?: string;
+  to?: string;
+  resourceType?: string;
+  resourceId?: string;
+  offset: number;
+  limit: number;
+}
+
+export interface AuditQueryResult {
+  total: number;
+  offset: number;
+  limit: number;
+  events: Record<string, unknown>[];
+}
+
+export async function queryAuditEvents(params: AuditQueryParams): Promise<AuditQueryResult> {
+  const res = await api.get<AuditQueryResult>('/audit-events', { params });
+  return res.data;
+}
+
+// --- File Storage ---
+
+export interface StoredFileDto {
+  id: string;
+  fileName: string;
+  contentType: string;
+  fileSize: number;
+  createdAt: string;
+}
+
+export interface UploadFileResult {
+  id: string;
+  fileName: string;
+  fileSize: number;
+}
+
+export async function uploadFile(file: File, projectId: string): Promise<UploadFileResult> {
+  const formData = new FormData();
+  formData.append('file', file);
+  const res = await api.post<UploadFileResult>(`/files/upload?projectId=${projectId}`, formData, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  });
+  return res.data;
+}
+
+export async function listFiles(projectId: string): Promise<StoredFileDto[]> {
+  const res = await api.get<{ items: StoredFileDto[] }>('/files', { params: { projectId } });
+  return res.data.items;
+}
+
+export async function downloadFile(id: string): Promise<Blob> {
+  const res = await api.get<Blob>(`/files/${id}/download`, { responseType: 'blob' });
+  return res.data;
+}
+
+export async function deleteFile(id: string): Promise<void> {
+  await api.delete(`/files/${id}`);
+}
+
+/** Format file size in human-readable form */
+export function formatFileSize(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB'];
+  const k = 1024;
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${units[i]}`;
 }

@@ -337,21 +337,6 @@ export interface UpdateTriggerDto {
 
 // --- Auth ---
 
-export interface RegisterRequest {
-  email: string;
-  password: string;
-  userName: string;
-  displayName?: string;
-}
-
-export interface RegisterResult {
-  success: boolean;
-  userId?: string;
-  email?: string;
-  errorMessage?: string;
-  errors?: Record<string, string[]>;
-}
-
 export interface LoginRequest {
   email: string;
   password: string;
@@ -369,6 +354,7 @@ export interface UserDto {
   email: string;
   userName: string;
   displayName: string;
+  roles: string[];
   isActive: boolean;
   createdAt: string;
   updatedAt: string;

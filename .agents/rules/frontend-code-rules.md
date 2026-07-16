@@ -11,7 +11,7 @@ globs: ["**/*.ts", "**/*.tsx"]
 - React 18+（当前 React 19）
 - TypeScript（严格模式）
 - Vite（构建工具）
-- ahooks（通用 hooks 库，优先替代手写 useState/useEffect；当前未引入，新增请求/防抖等场景时引入）
+- ahooks（通用 hooks 库，优先替代手写 useState/useEffect；已引入，`AuthContext.tsx` 已使用 `useRequest`，新增请求/防抖等场景直接复用）
 - Zustand（状态管理）
 - React Flow（画布，`@xyflow/react`）
 - Mantine（UI 组件库，`@mantine/core` + `@mantine/hooks` + `@mantine/notifications` + `@mantine/code-highlight`）
@@ -206,8 +206,8 @@ export function WorkflowList() {
 
 ## 6. API 请求
 
-- 所有请求通过 `services/apiClient.ts` 封装。
-- 服务端错误统一处理，组件只消费最终状态。
+- 所有请求通过 `services/api.ts` 封装（axios 实例 + `ApiError` 拦截器）。
+- 服务端错误统一经 `api.ts` 的 `ApiError` 拦截器处理：401 跳转登录、其余抛出 `ApiError` 由调用方（`useRequest` 的 `onError` 或 `try/catch`）经 `notifications.show` 提示；全局未捕获异常由 `utils/globalErrorHandler.ts` 的 `setupGlobalErrorHandlers()` 兜底。组件只消费最终状态，不直接 `catch` 网络层。
 - 请求 URL 集中管理，禁止在组件中硬编码路径。
 
 ## 7. 类型

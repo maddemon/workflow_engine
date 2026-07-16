@@ -11,7 +11,7 @@ import type { WorkflowNodeData, WorkflowNode } from '../stores/workflowStore.ts'
 export function serializeWorkflow(
   nodes: WorkflowNode[],
   edges: Edge[],
-  _name: string,
+  _name: string, // eslint-disable-line @typescript-eslint/no-unused-vars
 ): { nodeDefinitions: NodeDefinition[]; connections: Connection[] } {
   const nodeDefinitions: NodeDefinition[] = nodes.map((node) => {
     const data = node.data as WorkflowNodeData;

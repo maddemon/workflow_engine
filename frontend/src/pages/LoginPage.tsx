@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
-import { TextInput, PasswordInput, Button, Paper, Text, Stack, Title, Center, Box, Anchor } from '@mantine/core';
+import { useNavigate } from 'react-router-dom';
+import { TextInput, PasswordInput, Button, Paper, Text, Stack, Title, Center, Box } from '@mantine/core';
 import { useRequest } from 'ahooks';
 import { useAuth } from '../hooks/AuthContext.tsx';
 
@@ -59,10 +59,6 @@ export function LoginPage() {
             <Button type="submit" loading={loading} fullWidth>
               Sign In
             </Button>
-            <Text size="xs" ta="center">
-              Don't have an account?{' '}
-              <Anchor component={Link} to="/register">Sign up</Anchor>
-            </Text>
           </Stack>
         </form>
       </Paper>

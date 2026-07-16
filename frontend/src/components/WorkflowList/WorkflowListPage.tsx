@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useMemo } from 'react';
 import {
   Stack,
   Text,
@@ -41,6 +41,7 @@ import { useRequest } from 'ahooks';
 import { useNavigate } from 'react-router-dom';
 import {
   getWorkflows,
+  getProjects,
   exportWorkflow,
   exportWorkflowsBatch,
   importWorkflow,
@@ -48,6 +49,7 @@ import {
 } from '../../services/api.ts';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
 import { useAuth } from '../../hooks/AuthContext.tsx';
+import { ProjectFilter } from './ProjectFilter.tsx';
 import type {
   WorkflowSummary,
   ImportResult,
@@ -100,9 +102,24 @@ export function WorkflowListPage() {
   const newWorkflow = useWorkflowStore((s) => s.newWorkflow);
   const deleteWorkflow = useWorkflowStore((s) => s.deleteWorkflow);
   const { user } = useAuth();
-  const fileInputResetRef = useRef<number>(0);
+  const [fileInputKey, setFileInputKey] = useState(0);
 
   const { data: workflows = [], loading, error, refresh: refreshWorkflows } = useRequest(getWorkflows);
+  const { data: projects = [] } = useRequest(getProjects, {
+    pollingInterval: 60000,
+  });
+  const projectMap = useMemo(() => {
+    const map = new Map<string, string>();
+    for (const p of projects) map.set(p.id, p.name);
+    return map;
+  }, [projects]);
+  const [projectFilter, setProjectFilter] = useState<string | null>(null);
+
+  const filteredWorkflows = projectFilter === '__none__'
+    ? workflows.filter((w) => !w.projectId)
+    : projectFilter
+      ? workflows.filter((w) => w.projectId === projectFilter)
+      : workflows;
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -117,15 +134,20 @@ export function WorkflowListPage() {
   };
 
   const toggleSelectAll = () => {
-    if (selectedIds.size === workflows.length && workflows.length > 0) {
+    const allFilteredIds = filteredWorkflows.map((w) => w.id);
+    if (selectedIds.size === allFilteredIds.length && allFilteredIds.length > 0) {
       setSelectedIds(new Set());
     } else {
-      setSelectedIds(new Set(workflows.map((w) => w.id)));
+      setSelectedIds(new Set(allFilteredIds));
     }
   };
 
   const handleNew = () => {
     newWorkflow();
+    // If a project is selected in the filter, propagate it to the new workflow
+    if (projectFilter && projectFilter !== '__none__') {
+      useWorkflowStore.getState().setProjectId?.(projectFilter);
+    }
     navigate('/workflow/new');
   };
 
@@ -198,7 +220,7 @@ export function WorkflowListPage() {
     setImportResult(null);
     setImportFile(null);
     setImportOpen(true);
-    fileInputResetRef.current += 1;
+    setFileInputKey((k) => k + 1);
   };
 
   const handleImport = async () => {
@@ -272,6 +294,7 @@ export function WorkflowListPage() {
         <Group gap="xs">
           <WorkflowIcon size={20} />
           <Text fw={700} size="lg">Workflows</Text>
+          <ProjectFilter value={projectFilter} onChange={setProjectFilter} />
           {selectedIds.size > 0 && (
             <Badge variant="light" color="blue">{selectedIds.size} selected</Badge>
           )}
@@ -306,7 +329,7 @@ export function WorkflowListPage() {
         </Group>
       </Group>
 
-      {workflows.length === 0 ? (
+      {filteredWorkflows.length === 0 ? (
         <Center h="60%">
           <Stack align="center" gap="md">
             <ActionIcon size={64} radius="xl" variant="light" color="gray" disabled>
@@ -329,7 +352,7 @@ export function WorkflowListPage() {
             <Table.Tr>
               <Table.Th style={{ width: 40 }}>
                 <Checkbox
-                  checked={selectedIds.size === workflows.length && workflows.length > 0}
+                  checked={selectedIds.size === filteredWorkflows.length && filteredWorkflows.length > 0}
                   onChange={toggleSelectAll}
                 />
               </Table.Th>
@@ -343,7 +366,7 @@ export function WorkflowListPage() {
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {workflows.map((wf) => (
+            {filteredWorkflows.map((wf) => (
               <Table.Tr key={wf.id}>
                 <Table.Td>
                   <Checkbox
@@ -377,9 +400,9 @@ export function WorkflowListPage() {
                 </Table.Td>
                 <Table.Td>
                   {wf.projectId ? (
-                    <Tooltip label={wf.projectId}>
+                    <Tooltip label={projectMap.get(wf.projectId) ? `Project: ${projectMap.get(wf.projectId)}` : 'Unknown project'}>
                       <Badge size="sm" variant="light" color="blue" leftSection={<Folder size={10} />}>
-                        Project
+                        {projectMap.get(wf.projectId) || 'Project'}
                       </Badge>
                     </Tooltip>
                   ) : (
@@ -486,7 +509,7 @@ export function WorkflowListPage() {
             accept="application/json,.json"
             leftSection={<FileJson size={16} />}
             clearable
-            key={fileInputResetRef.current}
+            key={fileInputKey}
           />
           <Text size="xs" c="dimmed">
             Single object → one workflow; array → batch import. Imported workflows will use your

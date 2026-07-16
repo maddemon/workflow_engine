@@ -53,6 +53,7 @@ export function ParameterPanel() {
   const setWorkflowName = useWorkflowStore((s) => s.setWorkflowName);
   const isDirty = useWorkflowStore((s) => s.isDirty);
   const workflowId = useWorkflowStore((s) => s.workflowId ?? '');
+  const projectId = useWorkflowStore((s) => s.projectId);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
   const { isVisible } = useDisplayRule(selectedNode?.data.parameters ?? {});
@@ -188,6 +189,7 @@ export function ParameterPanel() {
                 value={parameters[def.name]}
                 onChange={(v) => handleParameterChange(def.name, v)}
                 error={nodeFieldErrors[def.name]}
+                projectId={projectId}
               />
             );
           })}
@@ -201,6 +203,7 @@ export function ParameterPanel() {
                 value={parameters[def.name]}
                 onChange={(v) => handleParameterChange(def.name, v)}
                 error={nodeFieldErrors[def.name]}
+                projectId={projectId}
               />
             );
           })}
@@ -270,7 +273,7 @@ export function ParameterPanel() {
                     <Select
                       label="Max Retries"
                       value={String(policy.maxRetries)}
-                      onChange={(v) => updateNodeSettings(selectedNode.id, { retryPolicy: JSON.stringify({ ...policy, maxRetries: Number(v) ?? 2 }) })}
+                      onChange={(v) => updateNodeSettings(selectedNode.id, { retryPolicy: JSON.stringify({ ...policy, maxRetries: v != null ? Number(v) : 2 }) })}
                       data={[
                         { label: '2', value: '2' },
                         { label: '3', value: '3' },
@@ -281,7 +284,7 @@ export function ParameterPanel() {
                     <Select
                       label="Delay Between Retries (ms)"
                       value={String(policy.baseDelayMs)}
-                      onChange={(v) => updateNodeSettings(selectedNode.id, { retryPolicy: JSON.stringify({ ...policy, baseDelayMs: Number(v) ?? 1000 }) })}
+                      onChange={(v) => updateNodeSettings(selectedNode.id, { retryPolicy: JSON.stringify({ ...policy, baseDelayMs: v != null ? Number(v) : 1000 }) })}
                       data={[
                         { label: '500', value: '500' },
                         { label: '1000', value: '1000' },
