@@ -7,7 +7,7 @@
   "createdAt": "创建时间",
   "roles": "角色",
   "noRoles": "未分配角色",
-  "validationTitle": "验证",
+  "notification.validationTitle": "验证",
   "apiKeys": {
     "title": "API 密钥",
     "create": "创建 API 密钥",

@@ -7,7 +7,7 @@
   "createdAt": "Created At",
   "roles": "Roles",
   "noRoles": "No roles assigned",
-  "validationTitle": "Validation",
+  "notification.validationTitle": "Validation",
   "apiKeys": {
     "title": "API Keys",
     "create": "Create API Key",

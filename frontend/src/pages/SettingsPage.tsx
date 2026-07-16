@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState } from "react"
 import {
   Alert,
   Badge,
@@ -14,150 +14,130 @@ import {
   TextInput,
   Title,
   Tooltip,
-} from '@mantine/core';
-import { notifications } from '@mantine/notifications';
-import { useRequest } from 'ahooks';
-import { Check, Copy, Trash2 } from 'lucide-react';
-import { Trans, useTranslation } from 'react-i18next';
-import { useAuth } from '../hooks/AuthContext.tsx';
-import type { CreateApiKeyResult } from '../types/workflow.ts';
-import * as api from '../services/api.ts';
+} from "@mantine/core"
+import { notifications } from "@mantine/notifications"
+import { useRequest } from "ahooks"
+import { Check, Copy, Trash2 } from "lucide-react"
+import { Trans, useTranslation } from "react-i18next"
+import { useAuth } from "../hooks/AuthContext.tsx"
+import type { CreateApiKeyResult } from "../types/workflow.ts"
+import * as api from "../services/api.ts"
 
 export function SettingsPage() {
-  const { t } = useTranslation(['settings', 'common']);
-  const { user } = useAuth();
+  const { user } = useAuth()
+  const { t } = useTranslation(['settings', 'common'])
 
   // --- API Key state ---
-  const {
-    data: keys = [],
-    loading: keysLoading,
-    refresh: refreshKeys,
-  } = useRequest(api.listApiKeys);
+  const { data: keys = [], loading: keysLoading, refresh: refreshKeys } = useRequest(api.listApiKeys)
 
-  const { runAsync: createKey } = useRequest(api.createApiKey, { manual: true });
-  const { runAsync: revokeKey } = useRequest(api.revokeApiKey, { manual: true });
+  const { runAsync: createKey } = useRequest(api.createApiKey, { manual: true })
+  const { runAsync: revokeKey } = useRequest(api.revokeApiKey, { manual: true })
 
   // --- Create modal state ---
-  const [createModalOpen, setCreateModalOpen] = useState(false);
-  const [newKeyName, setNewKeyName] = useState('');
-  const [newKeyExpiresAt, setNewKeyExpiresAt] = useState('');
-  const [creating, setCreating] = useState(false);
-  const [createdKey, setCreatedKey] = useState<CreateApiKeyResult | null>(null);
+  const [createModalOpen, setCreateModalOpen] = useState(false)
+  const [newKeyName, setNewKeyName] = useState("")
+  const [newKeyExpiresAt, setNewKeyExpiresAt] = useState("")
+  const [creating, setCreating] = useState(false)
+  const [createdKey, setCreatedKey] = useState<CreateApiKeyResult | null>(null)
 
   const openCreateModal = () => {
-    setNewKeyName('');
-    setNewKeyExpiresAt('');
-    setCreatedKey(null);
-    setCreateModalOpen(true);
-  };
+    setNewKeyName("")
+    setNewKeyExpiresAt("")
+    setCreatedKey(null)
+    setCreateModalOpen(true)
+  }
 
   const handleCreate = async () => {
     if (!newKeyName.trim()) {
-      notifications.show({ title: t('validationTitle'), message: t('apiKeys.nameRequired'), color: 'yellow' });
-      return;
+      notifications.show({ title: t('notification.validationTitle'), message: t('apiKeys.nameRequired'), color: "yellow" })
+      return
     }
-    setCreating(true);
+    setCreating(true)
     try {
-      const expiresAt = newKeyExpiresAt.trim() ? newKeyExpiresAt.trim() : null;
-      const result = await createKey(newKeyName.trim(), expiresAt);
-      setCreatedKey(result);
-      await refreshKeys();
+      const expiresAt = newKeyExpiresAt.trim() ? newKeyExpiresAt.trim() : null
+      const result = await createKey(newKeyName.trim(), expiresAt)
+      setCreatedKey(result)
+      await refreshKeys()
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : t('apiKeys.createFailed');
-      notifications.show({ title: t('common:error'), message: msg, color: 'red' });
+      const msg = err instanceof Error ? err.message : t('apiKeys.createFailed')
+      notifications.show({ title: t('error'), message: msg, color: "red" })
     } finally {
-      setCreating(false);
+      setCreating(false)
     }
-  };
+  }
 
   const closeCreateModal = () => {
     if (!createdKey) {
-      setCreateModalOpen(false);
+      setCreateModalOpen(false)
     }
-  };
+  }
 
   const handleCloseAfterCreate = () => {
-    setCreatedKey(null);
-    setCreateModalOpen(false);
-  };
+    setCreatedKey(null)
+    setCreateModalOpen(false)
+  }
 
   // --- Revoke state ---
-  const [revokeTarget, setRevokeTarget] = useState<string | null>(null);
-  const [revokeTargetName, setRevokeTargetName] = useState('');
-  const [revoking, setRevoking] = useState(false);
+  const [revokeTarget, setRevokeTarget] = useState<string | null>(null)
+  const [revokeTargetName, setRevokeTargetName] = useState("")
+  const [revoking, setRevoking] = useState(false)
 
   const confirmRevoke = (id: string, name: string) => {
-    setRevokeTarget(id);
-    setRevokeTargetName(name);
-  };
+    setRevokeTarget(id)
+    setRevokeTargetName(name)
+  }
 
   const handleRevoke = async () => {
-    if (!revokeTarget) return;
-    setRevoking(true);
+    if (!revokeTarget) return
+    setRevoking(true)
     try {
-      await revokeKey(revokeTarget);
+      await revokeKey(revokeTarget)
       notifications.show({
         title: t('apiKeys.revokeSuccessTitle'),
         message: t('apiKeys.revokeSuccess', { name: revokeTargetName }),
-        color: 'green',
-      });
-      setRevokeTarget(null);
-      await refreshKeys();
+        color: "green",
+      })
+      setRevokeTarget(null)
+      await refreshKeys()
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : t('apiKeys.revokeFailed');
-      notifications.show({ title: t('common:error'), message: msg, color: 'red' });
+      const msg = err instanceof Error ? err.message : t('apiKeys.revokeFailed')
+      notifications.show({ title: t('error'), message: msg, color: "red" })
     } finally {
-      setRevoking(false);
+      setRevoking(false)
     }
-  };
+  }
 
   const formatDate = (dateStr: string | null | undefined) => {
-    if (!dateStr) return '—';
+    if (!dateStr) return "—"
     try {
-      return new Date(dateStr).toLocaleDateString();
+      return new Date(dateStr).toLocaleDateString()
     } catch {
-      return dateStr;
+      return dateStr
     }
-  };
+  }
 
   return (
-    <div style={{ height: '100%', overflowY: 'auto' }}>
-      <Stack p="md" gap="lg" style={{ maxWidth: 860, margin: '0 auto' }}>
+    <div style={{ height: "100%", overflowY: "auto" }}>
+      <Stack p="md" gap="lg" style={{ maxWidth: 860, margin: "0 auto" }}>
         <Title order={2}>{t('title')}</Title>
 
         {/* --- User Info Section --- */}
         <Paper p="md" withBorder>
-          <Title order={4} mb="sm">{t('userInfo')}</Title>
+          <Title order={4} mb="sm">
+            {t('userInfo')}
+          </Title>
           <Stack gap="sm">
-            <TextInput
-              label={t('email')}
-              value={user?.email ?? ''}
-              disabled
-              readOnly
-            />
-            <TextInput
-              label={t('userName')}
-              value={user?.userName ?? ''}
-              disabled
-              readOnly
-            />
-            <TextInput
-              label={t('displayName')}
-              value={user?.displayName ?? ''}
-              disabled
-              readOnly
-            />
-            <TextInput
-              label={t('createdAt')}
-              value={formatDate(user?.createdAt)}
-              disabled
-              readOnly
-            />
+            <TextInput label={t('email')} value={user?.email ?? ""} disabled readOnly />
+            <TextInput label={t('userName')} value={user?.userName ?? ""} disabled readOnly />
+            <TextInput label={t('displayName')} value={user?.displayName ?? ""} disabled readOnly />
+            <TextInput label={t('createdAt')} value={formatDate(user?.createdAt)} disabled readOnly />
             <div>
               <InputLabel>{t('roles')}</InputLabel>
               <Group gap="xs" mt={4}>
                 {(user?.roles ?? []).length === 0 ? (
-                  <Text size="sm" c="dimmed">{t('noRoles')}</Text>
+                  <Text size="sm" c="dimmed">
+                    {t('noRoles')}
+                  </Text>
                 ) : (
                   (user?.roles ?? []).map((role) => (
                     <Badge key={role} variant="light" color="blue" size="sm">
@@ -180,9 +160,13 @@ export function SettingsPage() {
           </Group>
 
           {keysLoading ? (
-            <Text size="sm" c="dimmed">{t('apiKeys.loading')}</Text>
+            <Text size="sm" c="dimmed">
+              {t('apiKeys.loading')}
+            </Text>
           ) : keys.length === 0 ? (
-            <Text size="sm" c="dimmed">{t('apiKeys.noKeys')}</Text>
+            <Text size="sm" c="dimmed">
+              {t('apiKeys.noKeys')}
+            </Text>
           ) : (
             <Table striped highlightOnHover>
               <Table.Thead>
@@ -197,12 +181,12 @@ export function SettingsPage() {
               </Table.Thead>
               <Table.Tbody>
                 {keys.map((key) => {
-                  const isRevoked = !!key.revokedAt;
-                  const isExpired = !isRevoked && key.expiresAt && new Date(key.expiresAt) < new Date();
+                  const isRevoked = !!key.revokedAt
+                  const isExpired = !isRevoked && key.expiresAt && new Date(key.expiresAt) < new Date()
                   return (
                     <Table.Tr key={key.id} opacity={isRevoked ? 0.5 : undefined}>
                       <Table.Td>
-                        <Text size="sm" td={isRevoked ? 'line-through' : undefined}>
+                        <Text size="sm" td={isRevoked ? "line-through" : undefined}>
                           {key.name}
                         </Text>
                       </Table.Td>
@@ -219,11 +203,17 @@ export function SettingsPage() {
                       </Table.Td>
                       <Table.Td>
                         {isRevoked ? (
-                          <Badge variant="light" color="gray" size="sm">{t('apiKeys.revoked')}</Badge>
+                          <Badge variant="light" color="gray" size="sm">
+                            {t('apiKeys.revoked')}
+                          </Badge>
                         ) : isExpired ? (
-                          <Badge variant="light" color="orange" size="sm">{t('apiKeys.expired')}</Badge>
+                          <Badge variant="light" color="orange" size="sm">
+                            {t('apiKeys.expired')}
+                          </Badge>
                         ) : (
-                          <Badge variant="light" color="green" size="sm">{t('apiKeys.active')}</Badge>
+                          <Badge variant="light" color="green" size="sm">
+                            {t('apiKeys.active')}
+                          </Badge>
                         )}
                       </Table.Td>
                       <Table.Td>
@@ -241,7 +231,7 @@ export function SettingsPage() {
                         )}
                       </Table.Td>
                     </Table.Tr>
-                  );
+                  )
                 })}
               </Table.Tbody>
             </Table>
@@ -250,12 +240,7 @@ export function SettingsPage() {
       </Stack>
 
       {/* --- Create API Key Modal --- */}
-      <Modal
-        opened={createModalOpen}
-        onClose={closeCreateModal}
-        title={t('apiKeys.create')}
-        size="md"
-      >
+      <Modal opened={createModalOpen} onClose={closeCreateModal} title={t('apiKeys.create')} size="md">
         <Stack gap="md">
           {createdKey ? (
             <>
@@ -263,7 +248,14 @@ export function SettingsPage() {
                 <Text size="sm" mb="sm">
                   <Trans i18nKey="settings:apiKeys.keyCreated" components={{ strong: <strong /> }} />
                 </Text>
-                <Text size="sm" ff="monospace" mb="sm" p="xs" bg="gray.0" style={{ borderRadius: 4, wordBreak: 'break-all' }}>
+                <Text
+                  size="sm"
+                  ff="monospace"
+                  mb="sm"
+                  p="xs"
+                  bg="gray.0"
+                  style={{ borderRadius: 4, wordBreak: "break-all" }}
+                >
                   {createdKey.key}
                 </Text>
                 <CopyButton value={createdKey.key}>
@@ -271,7 +263,7 @@ export function SettingsPage() {
                     <Button
                       size="compact-sm"
                       variant="light"
-                      color={copied ? 'green' : 'blue'}
+                      color={copied ? "green" : "blue"}
                       leftSection={copied ? <Check size={14} /> : <Copy size={14} />}
                       onClick={copy}
                     >
@@ -313,12 +305,7 @@ export function SettingsPage() {
       </Modal>
 
       {/* --- Revoke Confirm Modal --- */}
-      <Modal
-        opened={!!revokeTarget}
-        onClose={() => setRevokeTarget(null)}
-        title={t('apiKeys.revokeTitle')}
-        size="sm"
-      >
+      <Modal opened={!!revokeTarget} onClose={() => setRevokeTarget(null)} title={t('apiKeys.revokeTitle')} size="sm">
         <Stack gap="md">
           <Text size="sm">
             <Trans
@@ -332,7 +319,7 @@ export function SettingsPage() {
           </Text>
           <Group justify="flex-end" gap="sm">
             <Button variant="default" onClick={() => setRevokeTarget(null)}>
-              {t('common:cancel')}
+              {t('cancel')}
             </Button>
             <Button color="red" onClick={handleRevoke} loading={revoking}>
               {t('apiKeys.revoke')}
@@ -341,5 +328,5 @@ export function SettingsPage() {
         </Stack>
       </Modal>
     </div>
-  );
+  )
 }
