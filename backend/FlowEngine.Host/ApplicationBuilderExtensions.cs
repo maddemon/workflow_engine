@@ -11,6 +11,7 @@ using FlowEngine.Migrations;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.EntityFrameworkCore;
 using ModelContextProtocol.AspNetCore;
+using System.Globalization;
 
 namespace FlowEngine.Host;
 
@@ -109,6 +110,20 @@ public static class ApplicationBuilderExtensions
         app.UseAuthentication();
         app.UseMiddleware<CurrentUserMiddleware>();
         app.UseAuthorization();
+
+        var supportedCultures = new[]
+        {
+            new CultureInfo("en"),
+            new CultureInfo("zh-CN"),
+        };
+
+        app.UseRequestLocalization(new RequestLocalizationOptions
+        {
+            DefaultRequestCulture = new("en"),
+            SupportedCultures = supportedCultures,
+            SupportedUICultures = supportedCultures,
+        });
+
         app.UseMiddleware<RbacAuthorizationMiddleware>();
     }
 

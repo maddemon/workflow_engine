@@ -35,6 +35,7 @@ using FlowEngine.Infrastructure.Ai;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using ModelContextProtocol.AspNetCore;
+using System.Globalization;
 using System.Net;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
@@ -57,8 +58,12 @@ public static class ServiceCollectionExtensions
         IConfiguration configuration,
         IWebHostEnvironment environment)
     {
+        // ── Localization ────────────────────────────────────────────
+        services.AddLocalization();
+
         // ── Controllers & JSON ──────────────────────────────────────
         services.AddControllers()
+            .AddDataAnnotationsLocalization()
             .AddJsonOptions(options =>
             {
                 options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
