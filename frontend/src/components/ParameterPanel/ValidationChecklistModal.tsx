@@ -1,5 +1,6 @@
 import { Modal, Stack, Text, Group, Badge, Button, Loader } from '@mantine/core';
 import { Check, X, AlertCircle } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useRequest } from 'ahooks';
 import { validateWorkflow } from '../../services/api.ts';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
@@ -11,6 +12,7 @@ interface IValidationChecklistModalProps {
 }
 
 export function ValidationChecklistModal({ opened, onClose, onProceed }: IValidationChecklistModalProps) {
+  const { t } = useTranslation('parameterPanel');
   const workflowId = useWorkflowStore((s) => s.workflowId);
 
   const { data: result, loading, error } = useRequest(
@@ -29,16 +31,16 @@ export function ValidationChecklistModal({ opened, onClose, onProceed }: IValida
   const errorMessage = error instanceof Error ? error.message : error ? String(error) : null;
 
   return (
-    <Modal opened={opened} onClose={handleClose} title="Pre-flight Checklist" size="lg" centered>
+    <Modal opened={opened} onClose={handleClose} title={t('validationChecklistModal.title')} size="lg" centered>
       <Stack gap="md">
         <Text size="sm" c="dimmed">
-          Validating workflow before activation. Check each item below.
+          {t('validationChecklistModal.description')}
         </Text>
 
         {loading && (
           <Group justify="center" py="md">
             <Loader size="sm" />
-            <Text size="sm">Validating...</Text>
+            <Text size="sm">{t('validationChecklistModal.validating')}</Text>
           </Group>
         )}
 
@@ -58,7 +60,7 @@ export function ValidationChecklistModal({ opened, onClose, onProceed }: IValida
                 <X size={16} color="var(--mantine-color-red-text)" />
               )}
               <Text fw={600} size="sm" c={result.valid ? 'green' : 'red'}>
-                {result.valid ? 'All checks passed' : `${result.errors.length} issue(s) found`}
+                {result.valid ? t('validationChecklistModal.allChecksPassed') : t('validationChecklistModal.issuesFound', { count: result.errors.length })}
               </Text>
             </Group>
 
@@ -67,7 +69,7 @@ export function ValidationChecklistModal({ opened, onClose, onProceed }: IValida
                 <Badge size="xs" color="red" variant="light">{err.errorType}</Badge>
                 <Stack gap={0}>
                   <Text size="xs">{err.message}</Text>
-                  {err.nodeId && <Text size="xs" c="dimmed">Node: {err.nodeId}</Text>}
+                  {err.nodeId && <Text size="xs" c="dimmed">{t('validationChecklistModal.node')}: {err.nodeId}</Text>}
                   {err.suggestedFix && <Text size="xs" c="blue">{err.suggestedFix}</Text>}
                 </Stack>
               </Group>
@@ -76,9 +78,9 @@ export function ValidationChecklistModal({ opened, onClose, onProceed }: IValida
         )}
 
         <Group justify="flex-end">
-          <Button variant="subtle" color="gray" onClick={handleClose}>Cancel</Button>
+          <Button variant="subtle" color="gray" onClick={handleClose}>{t('validationChecklistModal.cancel')}</Button>
           <Button onClick={onProceed} disabled={!result?.valid}>
-            Confirm & Activate
+            {t('validationChecklistModal.confirmActivate')}
           </Button>
         </Group>
       </Stack>

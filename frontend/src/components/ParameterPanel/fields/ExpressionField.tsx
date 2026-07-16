@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Textarea, Text, Group, Stack, Code as MantineCode, ActionIcon, Tooltip, Paper, Divider, Box, Popover } from '@mantine/core';
 import { HelpCircle, Code as CodeIcon, Braces } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { InfoTooltip } from './InfoTooltip.tsx';
 import type { ParameterDefinition } from '../../../types/workflow.ts';
 import { extractScriptSource } from '../../../utils/scriptValue.ts';
@@ -61,6 +62,7 @@ const DEFAULT_HELP_CONTENT = {
 };
 
 export function ExpressionField({ definition, value, onChange, error }: ExpressionFieldProps) {
+  const { t } = useTranslation('parameterPanel');
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [helpOpened, setHelpOpened] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -103,7 +105,7 @@ export function ExpressionField({ definition, value, onChange, error }: Expressi
     <Stack gap="xs" p="xs">
       <Group gap={4}>
         <>{languageIcon}</>
-        <Text size="xs" fw={600}>{helpContent.title} ({scriptLanguage})</Text>
+        <Text size="xs" fw={600}>{t('expressionField.usage')} ({scriptLanguage})</Text>
       </Group>
       {helpContent.sections.map((section, i) => (
         <Stack key={i} gap={2}>
@@ -114,7 +116,7 @@ export function ExpressionField({ definition, value, onChange, error }: Expressi
         </Stack>
       ))}
       <Divider />
-      <Text size="xs" fw={600}>Available Variables</Text>
+      <Text size="xs" fw={600}>{t('expressionField.availableVariables')}</Text>
       {helpContent.variables.map((v, i) => (
         <Group key={i} gap={4}>
           <MantineCode style={{ fontSize: 11 }}>
@@ -143,7 +145,7 @@ export function ExpressionField({ definition, value, onChange, error }: Expressi
             shadow="sm"
           >
             <Popover.Target>
-              <Tooltip label="Help">
+              <Tooltip label={t('expressionField.help')}>
                 <ActionIcon size="xs" variant="subtle" onClick={() => setHelpOpened(!helpOpened)}>
                   <HelpCircle size={14} />
                 </ActionIcon>
@@ -168,7 +170,7 @@ export function ExpressionField({ definition, value, onChange, error }: Expressi
         spellCheck={false}
         placeholder="$json.name"
         rightSection={
-          <Tooltip label={isFullscreen ? 'Exit Fullscreen' : `Fullscreen (${scriptLanguage})`}>
+          <Tooltip label={isFullscreen ? t('expressionField.exitFullscreen') : t('expressionField.fullscreen', { language: scriptLanguage })}>
             <ActionIcon
               size="xs"
               variant="subtle"

@@ -5,6 +5,7 @@ import {
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { ChevronDown, ChevronRight, Plus, Trash, Edit, Clock, Webhook } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useRequest } from 'ahooks';
 import { InfoTooltip } from './fields/InfoTooltip.tsx';
 import { CronBuilder } from './fields/CronBuilder.tsx';
@@ -19,6 +20,7 @@ interface TriggerConfigProps {
 }
 
 export function TriggerConfig({ workflowId, isExecuting, reviewMode }: TriggerConfigProps) {
+  const { t } = useTranslation('parameterPanel');
   const workflowVersion = useWorkflowStore((s) => s.workflowVersion);
   const [showForm, setShowForm] = useState(false);
   const [editTrigger, setEditTrigger] = useState<TriggerDto | null>(null);
@@ -63,8 +65,8 @@ export function TriggerConfig({ workflowId, isExecuting, reviewMode }: TriggerCo
   const openEditForm = (trigger: TriggerDto) => {
     if (trigger.type !== 'Schedule' && trigger.type !== 'Webhook') {
       notifications.show({
-        title: 'Not supported',
-        message: `Editing "${trigger.type}" triggers is not supported in this editor. Only Schedule and Webhook can be edited here.`,
+        title: t('triggerConfig.notSupported'),
+        message: t('triggerConfig.notSupportedMessage', { type: trigger.type }),
         color: 'orange',
       });
       return;
@@ -98,7 +100,7 @@ export function TriggerConfig({ workflowId, isExecuting, reviewMode }: TriggerCo
     try {
       if (editTrigger) {
         await api.updateTrigger(workflowId, editTrigger.id, { name, isActive, settings });
-        notifications.show({ title: 'Updated', message: 'Trigger updated', color: 'blue' });
+        notifications.show({ title: t('triggerConfig.updated'), message: t('triggerConfig.updatedMessage'), color: 'blue' });
       } else {
         await api.createTrigger(workflowId, {
           workflowDefinitionId: workflowId,
@@ -108,24 +110,24 @@ export function TriggerConfig({ workflowId, isExecuting, reviewMode }: TriggerCo
           isActive,
           settings,
         });
-        notifications.show({ title: 'Created', message: 'Trigger created', color: 'green' });
+        notifications.show({ title: t('triggerConfig.created'), message: t('triggerConfig.createdMessage'), color: 'green' });
       }
       setShowForm(false);
       resetForm();
       refreshTriggers();
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Operation failed';
-      notifications.show({ title: 'Error', message: msg, color: 'red' });
+      const msg = err instanceof Error ? err.message : t('triggerConfig.operationFailed');
+      notifications.show({ title: t('triggerConfig.error'), message: msg, color: 'red' });
     }
   };
 
   const handleDelete = async (triggerId: string) => {
     try {
       await api.deleteTrigger(workflowId, triggerId);
-      notifications.show({ title: 'Deleted', message: 'Trigger deleted', color: 'orange' });
+      notifications.show({ title: t('triggerConfig.deleted'), message: t('triggerConfig.deletedMessage'), color: 'orange' });
       refreshTriggers();
     } catch {
-      notifications.show({ title: 'Error', message: 'Failed to delete trigger', color: 'red' });
+      notifications.show({ title: t('triggerConfig.error'), message: t('triggerConfig.deleteFailed'), color: 'red' });
     }
   };
 
@@ -134,8 +136,8 @@ export function TriggerConfig({ workflowId, isExecuting, reviewMode }: TriggerCo
       <UnstyledButton w="100%" onClick={() => setExpanded(!expanded)} py={4}>
         <Group justify="space-between" wrap="nowrap">
           <Group gap={4}>
-            <Text size="xs" fw={600}>Triggers</Text>
-            <InfoTooltip label="Configure schedule or webhook triggers" />
+            <Text size="xs" fw={600}>{t('triggerConfig.title')}</Text>
+            <InfoTooltip label={t('triggerConfig.tooltip')} />
           </Group>
           <Group gap={4}>
             <BadgeCount count={triggers.length} />
@@ -146,34 +148,34 @@ export function TriggerConfig({ workflowId, isExecuting, reviewMode }: TriggerCo
       <Collapse expanded={expanded}>
         <Stack gap="xs" pb="sm">
           {triggers.length === 0 && !loading && (
-            <Text size="xs" c="dimmed" ta="center" py="sm">No triggers configured</Text>
+            <Text size="xs" c="dimmed" ta="center" py="sm">{t('triggerConfig.noTriggers')}</Text>
           )}
-          {triggers.map((t) => (
-            <Paper key={t.id} p="xs" withBorder style={{ position: 'relative' }}>
+          {triggers.map((trigger) => (
+            <Paper key={trigger.id} p="xs" withBorder style={{ position: 'relative' }}>
               <Group justify="space-between" wrap="nowrap">
                 <Group gap={4} wrap="nowrap" style={{ flex: 1, minWidth: 0 }}>
-                  {t.type === 'Schedule' ? <Clock size={14} /> : <Webhook size={14} />}
-                  <Text size="xs" truncate style={{ flex: 1 }}>{t.name}</Text>
-                  <Text size="xs" c="dimmed">{t.type}</Text>
+                  {trigger.type === 'Schedule' ? <Clock size={14} /> : <Webhook size={14} />}
+                  <Text size="xs" truncate style={{ flex: 1 }}>{trigger.name}</Text>
+                  <Text size="xs" c="dimmed">{trigger.type}</Text>
                 </Group>
                 <Group gap={2} wrap="nowrap">
-                <ActionIcon variant="subtle" size="sm" onClick={() => openEditForm(t)} disabled={isExecuting || reviewMode}>
+                <ActionIcon variant="subtle" size="sm" onClick={() => openEditForm(trigger)} disabled={isExecuting || reviewMode}>
                   <Edit size={12} />
                 </ActionIcon>
-                <ActionIcon variant="subtle" color="red" size="sm" onClick={() => handleDelete(t.id)} disabled={isExecuting || reviewMode}>
+                <ActionIcon variant="subtle" color="red" size="sm" onClick={() => handleDelete(trigger.id)} disabled={isExecuting || reviewMode}>
                     <Trash size={12} />
                   </ActionIcon>
                 </Group>
               </Group>
-              {t.type === 'Schedule' && t.settings?.cronExpression && (
+              {trigger.type === 'Schedule' && trigger.settings?.cronExpression && (
                 <Text size="xs" ff="monospace" c="dimmed" mt={2}>
-                  Cron: {t.settings.cronExpression}
-                  {t.nextTriggerAt && <> · Next: {new Date(t.nextTriggerAt).toLocaleString()}</>}
+                  Cron: {trigger.settings.cronExpression}
+                  {trigger.nextTriggerAt && <> · Next: {new Date(trigger.nextTriggerAt).toLocaleString()}</>}
                 </Text>
               )}
-              {t.type === 'Webhook' && (
+              {trigger.type === 'Webhook' && (
                 <Text size="xs" ff="monospace" c="dimmed" mt={2}>
-                  {t.settings?.webhookPath ?? '-'}
+                  {trigger.settings?.webhookPath ?? '-'}
                 </Text>
               )}
             </Paper>
@@ -185,7 +187,7 @@ export function TriggerConfig({ workflowId, isExecuting, reviewMode }: TriggerCo
             onClick={openCreateForm}
             disabled={isExecuting || reviewMode}
           >
-            Add Trigger
+            {t('triggerConfig.addTrigger')}
           </Button>
         </Stack>
       </Collapse>
@@ -193,27 +195,27 @@ export function TriggerConfig({ workflowId, isExecuting, reviewMode }: TriggerCo
       <Modal
         opened={showForm}
         onClose={() => { setShowForm(false); resetForm(); }}
-        title={editTrigger ? 'Edit Trigger' : 'New Trigger'}
+        title={editTrigger ? t('triggerConfig.editTrigger') : t('triggerConfig.newTrigger')}
         size="sm"
       >
         <Stack gap="sm">
           <Select
-            label="Type"
+            label={t('triggerConfig.type')}
             value={type}
             onChange={(v) => setType((v as 'Schedule' | 'Webhook') ?? 'Schedule')}
             data={[
-              { label: 'Schedule (Cron)', value: 'Schedule' },
-              { label: 'Webhook', value: 'Webhook' },
+              { label: t('triggerConfig.scheduleCron'), value: 'Schedule' },
+              { label: t('triggerConfig.webhook'), value: 'Webhook' },
             ]}
             disabled={!!editTrigger}
           />
           <TextInput
-            label="Name"
+            label={t('triggerConfig.name')}
             value={name}
             onChange={(e) => setName(e.target.value)}
             required
           />
-          <Switch checked={isActive} onChange={(e) => setIsActive(e.currentTarget.checked)} label="Active" size="sm" />
+          <Switch checked={isActive} onChange={(e) => setIsActive(e.currentTarget.checked)} label={t('triggerConfig.active')} size="sm" />
 
           {type === 'Schedule' && (
             <>
@@ -223,7 +225,7 @@ export function TriggerConfig({ workflowId, isExecuting, reviewMode }: TriggerCo
                 disabled={isExecuting}
               />
               <Select
-                label="Time Zone"
+                label={t('triggerConfig.timeZone')}
                 value={timeZone}
                 onChange={(v) => setTimeZone(v ?? 'UTC')}
                 data={[
@@ -240,41 +242,41 @@ export function TriggerConfig({ workflowId, isExecuting, reviewMode }: TriggerCo
           {type === 'Webhook' && (
             <>
               <TextInput
-                label="Webhook Path"
+                label={t('triggerConfig.webhookPath')}
                 value={webhookPath}
                 onChange={(e) => setWebhookPath(e.target.value)}
-                placeholder="my-webhook"
-                description="Public URL path: /webhooks/{path}"
+                placeholder={t('triggerConfig.webhookPathPlaceholder')}
+                description={t('triggerConfig.webhookPathDescription')}
               />
               <TextInput
-                label="Secret (optional)"
+                label={t('triggerConfig.secret')}
                 type="password"
                 value={secret}
                 onChange={(e) => setSecret(e.target.value)}
-                placeholder="HMAC-SHA256 secret"
+                placeholder={t('triggerConfig.secretPlaceholder')}
               />
               <TextInput
-                label="Allowed IPs (comma separated)"
+                label={t('triggerConfig.allowedIps')}
                 value={allowedIps}
                 onChange={(e) => setAllowedIps(e.target.value)}
-                placeholder="192.168.1.0/24, 10.0.0.1"
+                placeholder={t('triggerConfig.allowedIpsPlaceholder')}
               />
               <TextInput
-                label="Allowed Origins (comma separated)"
+                label={t('triggerConfig.allowedOrigins')}
                 value={allowedOrigins}
                 onChange={(e) => setAllowedOrigins(e.target.value)}
-                placeholder="example.com"
+                placeholder={t('triggerConfig.allowedOriginsPlaceholder')}
               />
-              <Switch checked={isSync} onChange={(e) => setIsSync(e.currentTarget.checked)} label="Synchronous response" size="sm" />
+              <Switch checked={isSync} onChange={(e) => setIsSync(e.currentTarget.checked)} label={t('triggerConfig.synchronousResponse')} size="sm" />
             </>
           )}
 
           <Group justify="flex-end" mt="sm">
             <Button variant="default" size="compact-sm" onClick={() => { setShowForm(false); resetForm(); }}>
-              Cancel
+              {t('triggerConfig.cancel')}
             </Button>
             <Button size="compact-sm" onClick={handleSubmit}>
-              {editTrigger ? 'Update' : 'Create'}
+              {editTrigger ? t('triggerConfig.update') : t('triggerConfig.create')}
             </Button>
           </Group>
         </Stack>

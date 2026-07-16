@@ -1,4 +1,5 @@
 import { Textarea, Group, Text } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 import { InfoTooltip } from './InfoTooltip.tsx';
 import type { ParameterDefinition } from '../../../types/workflow.ts';
 
@@ -10,6 +11,7 @@ interface TextAreaFieldProps {
 }
 
 export function TextAreaField({ definition, value, onChange, error }: TextAreaFieldProps) {
+  const { t } = useTranslation('parameterPanel');
   return (
     <div>
       <Group gap={4} mb={4}>
@@ -26,7 +28,7 @@ export function TextAreaField({ definition, value, onChange, error }: TextAreaFi
         autosize
         minRows={3}
         maxRows={10}
-        placeholder={`Enter ${definition.displayName.toLowerCase()}`}
+        placeholder={t('fields.placeholder', { name: definition.displayName.toLowerCase() })}
       />
     </div>
   );

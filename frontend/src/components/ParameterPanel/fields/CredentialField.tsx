@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { notifications } from '@mantine/notifications';
 import { Select, Group, Text, Button, Modal, Stack, TextInput, PasswordInput } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
 import { useRequest } from 'ahooks';
 import { InfoTooltip } from './InfoTooltip.tsx';
@@ -16,6 +17,7 @@ interface CredentialFieldProps {
 }
 
 export function CredentialField({ definition, value, onChange, error }: CredentialFieldProps) {
+  const { t } = useTranslation('parameterPanel');
   const credentialRevision = useWorkflowStore((s) => s.credentialRevision);
   const bumpCredentialRevision = useWorkflowStore((s) => s.bumpCredentialRevision);
 
@@ -71,8 +73,8 @@ export function CredentialField({ definition, value, onChange, error }: Credenti
   const handleCreate = async () => {
     if (!formName.trim()) {
       notifications.show({
-        title: 'Error',
-        message: 'Credential name is required.',
+        title: t('fields.file.uploadError'),
+        message: t('fields.credential.nameRequired'),
         color: 'red',
       });
       return;
@@ -85,8 +87,8 @@ export function CredentialField({ definition, value, onChange, error }: Credenti
       bumpCredentialRevision();
     } catch (err) {
       notifications.show({
-        title: 'Error',
-        message: err instanceof Error ? err.message : 'Failed to create credential',
+        title: t('fields.file.uploadError'),
+        message: err instanceof Error ? err.message : t('fields.credential.createFailed'),
         color: 'red',
       });
     }
@@ -109,23 +111,23 @@ export function CredentialField({ definition, value, onChange, error }: Credenti
           onClick={handleOpenCreate}
           disabled={loading}
         >
-          New
+          {t('fields.credential.new')}
         </Button>
       </Group>
       <Select
         error={error}
         value={String(value ?? '')}
         onChange={(v) => onChange(v ?? '')}
-        placeholder="-- Select Credential --"
+        placeholder={t('fields.credential.selectPlaceholder')}
         data={credentials.map((c) => ({ label: `${c.name} (${c.type})`, value: c.name }))}
         searchable
         disabled={loading}
       />
-      <Modal opened={createOpen} onClose={() => setCreateOpen(false)} title="New Credential" size="lg">
+      <Modal opened={createOpen} onClose={() => setCreateOpen(false)} title={t('fields.credential.newCredential')} size="lg">
         <Stack gap="sm">
-          <TextInput label="Name" value={formName} onChange={(e) => setFormName(e.target.value)} size="sm" />
+          <TextInput label={t('fields.credential.name')} value={formName} onChange={(e) => setFormName(e.target.value)} size="sm" />
           <Select
-            label="Type"
+            label={t('fields.credential.type')}
             value={formType}
             onChange={handleTypeChange}
             data={typeOptions}
@@ -159,12 +161,12 @@ export function CredentialField({ definition, value, onChange, error }: Credenti
               </Stack>
             ))}
             {selectedType && selectedType.fields.length === 0 && (
-              <Text size="xs" c="dimmed">该凭据类型无字段定义。</Text>
+              <Text size="xs" c="dimmed">{t('fields.credential.noFields')}</Text>
             )}
           </Stack>
           <Group justify="flex-end">
-            <Button variant="default" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button onClick={handleCreate}>Create</Button>
+            <Button variant="default" onClick={() => setCreateOpen(false)}>{t('fields.credential.cancel')}</Button>
+            <Button onClick={handleCreate}>{t('fields.credential.create')}</Button>
           </Group>
         </Stack>
       </Modal>

@@ -1,5 +1,10 @@
 {
-  "title": "节点",
-  "search": "搜索节点…",
-  "noResults": "未找到节点"
+  "list": {
+    "title": "节点",
+    "search": "搜索节点…",
+    "noResults": "未找到节点"
+  },
+  "nodeCard": {
+    "dragOrClickToAdd": "拖拽到画布或点击添加 {{name}}"
+  }
 }

@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Textarea, ActionIcon, Group, Text } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 import { Braces } from 'lucide-react';
 import type { ParameterDefinition } from '../../../types/workflow.ts';
 
@@ -11,6 +12,7 @@ interface JsonFieldProps {
 }
 
 export function JsonField({ definition, value, onChange, error }: JsonFieldProps) {
+  const { t } = useTranslation('parameterPanel');
   const displayValue = typeof value === 'string' ? value : value === null || value === undefined ? '' : JSON.stringify(value, null, 2);
   const [parseError, setParseError] = useState<string | null>(null);
 
@@ -25,9 +27,9 @@ export function JsonField({ definition, value, onChange, error }: JsonFieldProps
       JSON.parse(displayValue);
       setParseError(null);
     } catch {
-      setParseError('Invalid JSON');
+      setParseError(t('fields.json.invalid'));
     }
-  }, [displayValue]);
+  }, [displayValue, t]);
 
   const handleFormat = () => {
     if (displayValue.trim() === '') return;
@@ -36,7 +38,7 @@ export function JsonField({ definition, value, onChange, error }: JsonFieldProps
       onChange(JSON.stringify(parsed, null, 2));
       setParseError(null);
     } catch {
-      setParseError('Invalid JSON');
+      setParseError(t('fields.json.invalid'));
     }
   };
 
@@ -49,7 +51,7 @@ export function JsonField({ definition, value, onChange, error }: JsonFieldProps
           {definition.displayName}
           {definition.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
         </Text>
-        <ActionIcon variant="subtle" onClick={handleFormat} title="Format JSON" size="sm">
+        <ActionIcon variant="subtle" onClick={handleFormat} title={t('fields.json.format')} size="sm">
           <Braces size={16} />
         </ActionIcon>
       </Group>

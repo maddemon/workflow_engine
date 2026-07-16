@@ -1,5 +1,6 @@
 import { memo } from 'react';
 import { Text } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 import type { NodeTypeDescriptor } from '../../types/workflow.ts';
 import { NodeIcon } from '../common/NodeIcon.tsx';
 import { getNodeCategoryColor } from '../../theme.ts';
@@ -10,6 +11,7 @@ interface NodeCardProps {
 }
 
 function NodeCardComponent({ descriptor, onClick }: NodeCardProps) {
+  const { t } = useTranslation('nodePanel');
   const onDragStart = (event: React.DragEvent) => {
     event.dataTransfer.setData('application/reactflow', descriptor.typeName);
     event.dataTransfer.effectAllowed = 'move';
@@ -23,7 +25,7 @@ function NodeCardComponent({ descriptor, onClick }: NodeCardProps) {
       draggable
       onDragStart={onDragStart}
       onClick={() => onClick(descriptor.typeName)}
-      title={`Drag to canvas or click to add ${descriptor.displayName}`}
+      title={t('nodeCard.dragOrClickToAdd', { name: descriptor.displayName })}
       style={{ '--node-category-color': categoryColor } as React.CSSProperties}
     >
       <div className="node-card-icon">

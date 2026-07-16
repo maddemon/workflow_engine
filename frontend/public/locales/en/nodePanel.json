@@ -1,5 +1,10 @@
 {
-  "title": "Nodes",
-  "search": "Search nodes…",
-  "noResults": "No nodes found"
+  "list": {
+    "title": "Nodes",
+    "search": "Search nodes…",
+    "noResults": "No nodes found"
+  },
+  "nodeCard": {
+    "dragOrClickToAdd": "Drag to canvas or click to add {{name}}"
+  }
 }

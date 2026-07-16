@@ -1,5 +1,6 @@
 import { useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { TextInput, ActionIcon, Group, Text, Stack } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 import { Plus, Trash, AlertTriangle } from 'lucide-react';
 import { InfoTooltip } from './InfoTooltip.tsx';
 import type { ParameterDefinition } from '../../../types/workflow.ts';
@@ -39,6 +40,7 @@ function entriesToJson(entries: KeyValueEntry[]): string {
 }
 
 export function KeyValueField({ definition, value, onChange, error }: KeyValueFieldProps) {
+  const { t } = useTranslation('parameterPanel');
   const valueStr = String(value ?? '');
   const lastEmittedRef = useRef(valueStr);
   const [entries, setEntries] = useState<KeyValueEntry[]>(() => parseJsonToEntries(valueStr));
@@ -104,7 +106,7 @@ export function KeyValueField({ definition, value, onChange, error }: KeyValueFi
           </Text>
           {definition.description && <InfoTooltip label={definition.description} />}
         </Group>
-        <ActionIcon variant="subtle" color="blue" onClick={handleAddEntry} title="Add entry" size="sm">
+        <ActionIcon variant="subtle" color="blue" onClick={handleAddEntry} title={t('fields.keyValue.addEntry')} size="sm">
           <Plus size={14} />
         </ActionIcon>
       </Group>
@@ -113,13 +115,13 @@ export function KeyValueField({ definition, value, onChange, error }: KeyValueFi
         {duplicateKeys.size > 0 && (
           <Group gap="xs" p="xs" style={{ backgroundColor: 'var(--mantine-color-yellow-0)', borderRadius: 4 }}>
             <AlertTriangle size={12} color="var(--mantine-color-yellow-7)" />
-            <Text size="xs" c="yellow.9">Duplicate keys detected.</Text>
+            <Text size="xs" c="yellow.9">{t('fields.keyValue.duplicateKeys')}</Text>
           </Group>
         )}
         {entries.map((entry, index) => (
           <Group key={index} gap="xs" align="center">
             <TextInput
-              placeholder="Key"
+              placeholder={t('fields.keyValue.keyPlaceholder')}
               value={entry.key}
               onChange={(e) => handleEntryChange(index, 'key', e.target.value)}
               size="xs"
@@ -127,7 +129,7 @@ export function KeyValueField({ definition, value, onChange, error }: KeyValueFi
               error={duplicateKeys.has(index)}
             />
             <TextInput
-              placeholder="Value"
+              placeholder={t('fields.keyValue.valuePlaceholder')}
               value={entry.value}
               onChange={(e) => handleEntryChange(index, 'value', e.target.value)}
               size="xs"
@@ -137,7 +139,7 @@ export function KeyValueField({ definition, value, onChange, error }: KeyValueFi
               variant="subtle"
               color="red"
               onClick={() => handleRemoveEntry(index)}
-              title="Remove entry"
+              title={t('fields.keyValue.removeEntry')}
               size="sm"
             >
               <Trash size={12} />
@@ -147,7 +149,7 @@ export function KeyValueField({ definition, value, onChange, error }: KeyValueFi
 
         {entries.length === 0 && (
           <Text size="xs" c="dimmed" ta="center" py="sm">
-            No entries. Click + to add.
+            {t('fields.keyValue.noEntries')}
           </Text>
         )}
       </Stack>

@@ -1,5 +1,6 @@
 import { Stack, Text, Badge, Group, Code, Paper, ScrollArea } from '@mantine/core';
 import { Diff, Plus, Minus, ArrowRight, Unlink, ArrowLeftRight } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { StructuredDiff } from '../../types/workflow.ts';
 
 interface IDiffPanelProps {
@@ -31,11 +32,12 @@ function DiffColor({ op }: { op: string }) {
 }
 
 function DiffDescription({ entry }: { entry: StructuredDiff }) {
+  const { t } = useTranslation('parameterPanel');
   switch (entry.op) {
     case 'modify':
       return (
         <Stack gap={4}>
-          <Text size="xs">Field: <Code>{entry.field}</Code></Text>
+          <Text size="xs">{t('diffPanel.field')}: <Code>{entry.field}</Code></Text>
           <Group gap={4} wrap="nowrap" align="flex-start">
             <Text size="xs" c="red" style={{ textDecoration: 'line-through' }}>{JSON.stringify(entry.before)}</Text>
             <ArrowRight size={12} style={{ flexShrink: 0 }} />
@@ -44,19 +46,20 @@ function DiffDescription({ entry }: { entry: StructuredDiff }) {
         </Stack>
       );
     case 'add':
-      return <Text size="xs">Added node <Code>{entry.nodeId}</Code></Text>;
+      return <Text size="xs">{t('diffPanel.addedNode')} <Code>{entry.nodeId}</Code></Text>;
     case 'remove':
-      return <Text size="xs">Removed node <Code>{entry.nodeId}</Code></Text>;
+      return <Text size="xs">{t('diffPanel.removedNode')} <Code>{entry.nodeId}</Code></Text>;
     case 'connect':
-      return <Text size="xs">New connection: {String(entry.after ?? '')}</Text>;
+      return <Text size="xs">{t('diffPanel.newConnection')}: {String(entry.after ?? '')}</Text>;
     case 'disconnect':
-      return <Text size="xs">Removed connection: {String(entry.before ?? '')}</Text>;
+      return <Text size="xs">{t('diffPanel.removedConnection')}: {String(entry.before ?? '')}</Text>;
     default:
       return <Text size="xs">{entry.op}: {entry.nodeId ?? ''} {entry.field ?? ''}</Text>;
   }
 }
 
 export function DiffPanel({ diff, highlightedNodeIds, onNodeHighlight }: IDiffPanelProps) {
+  const { t } = useTranslation('parameterPanel');
   const handleMouseEnter = (nodeId?: string) => {
     if (nodeId) onNodeHighlight([nodeId]);
   };
@@ -67,7 +70,7 @@ export function DiffPanel({ diff, highlightedNodeIds, onNodeHighlight }: IDiffPa
       <Stack gap="xs">
         <Group gap={4}>
           <Diff size={14} />
-          <Text fw={600} size="xs" tt="uppercase">Changes ({diff.length})</Text>
+          <Text fw={600} size="xs" tt="uppercase">{t('diffPanel.changes')} ({diff.length})</Text>
         </Group>
         <ScrollArea h={300}>
           <Stack gap={4}>

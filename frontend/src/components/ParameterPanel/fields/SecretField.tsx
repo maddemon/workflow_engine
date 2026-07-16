@@ -1,4 +1,5 @@
 import { PasswordInput, Group, Text } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 import { InfoTooltip } from './InfoTooltip.tsx';
 import type { ParameterDefinition } from '../../../types/workflow.ts';
 
@@ -10,6 +11,7 @@ interface SecretFieldProps {
 }
 
 export function SecretField({ definition, value, onChange, error }: SecretFieldProps) {
+  const { t } = useTranslation('parameterPanel');
   return (
     <div>
       <Group gap={4} mb={4}>
@@ -23,7 +25,7 @@ export function SecretField({ definition, value, onChange, error }: SecretFieldP
         error={error}
         value={String(value ?? '')}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={`Enter ${definition.displayName.toLowerCase()}`}
+        placeholder={t('fields.placeholder', { name: definition.displayName.toLowerCase() })}
       />
     </div>
   );
