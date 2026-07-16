@@ -13,5 +13,6 @@
   "loggedOut": "Logged out",
   "sessionExpired": "Your session has expired. Please sign in again.",
   "refresh": "Refresh",
-  "copied": "Copied"
+  "copied": "Copied",
+  "noPermission": "You do not have permission to access this page."
 }

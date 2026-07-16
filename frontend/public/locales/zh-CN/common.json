@@ -13,5 +13,6 @@
   "loggedOut": "已退出登录",
   "sessionExpired": "会话已过期，请重新登录。",
   "refresh": "刷新",
-  "copied": "已复制"
+  "copied": "已复制",
+  "noPermission": "您没有权限访问此页面。"
 }
