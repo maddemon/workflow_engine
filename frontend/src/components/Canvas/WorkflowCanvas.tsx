@@ -59,8 +59,8 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
 
       if (source === target) {
         notifications.show({
-          title: t('canvasConnectionRejected'),
-          message: t('canvasNodeSelfConnect'),
+          title: t('canvas.connectionRejected'),
+          message: t('canvas.nodeSelfConnect'),
           color: "red",
         })
         return
@@ -80,8 +80,8 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
         const port = sourceNode.data.descriptor.ports.find((p) => `port-${p.name}` === sourceHandle)
         if (port && port.direction !== "Output") {
           notifications.show({
-            title: t('canvasConnectionRejected'),
-            message: t('canvasSourcePortOutput'),
+            title: t('canvas.connectionRejected'),
+            message: t('canvas.sourcePortOutput'),
             color: "red",
           })
           return
@@ -91,8 +91,8 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
         const port = targetNode.data.descriptor.ports.find((p) => `port-${p.name}` === targetHandle)
         if (port && port.direction !== "Input") {
           notifications.show({
-            title: t('canvasConnectionRejected'),
-            message: t('canvasTargetPortInput'),
+            title: t('canvas.connectionRejected'),
+            message: t('canvas.targetPortInput'),
             color: "red",
           })
           return
@@ -107,8 +107,8 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
           sourcePort.type === targetPort.type || (sourcePort.type === "AgentTool" && targetPort.type === "Main")
         if (!compatible) {
           notifications.show({
-            title: t('canvasConnectionRejected'),
-            message: t('canvasPortTypeMismatch', { sourceType: sourcePort.type, targetType: targetPort.type }),
+            title: t('canvas.connectionRejected'),
+            message: t('canvas.portTypeMismatch', { sourceType: sourcePort.type, targetType: targetPort.type }),
             color: "red",
           })
           return
@@ -124,8 +124,8 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
           ).length
           if (existingCount >= max) {
             notifications.show({
-              title: t('canvasConnectionRejected'),
-              message: t('canvasPortMaxConnections', { displayName: targetPort.displayName, max }),
+              title: t('canvas.connectionRejected'),
+              message: t('canvas.portMaxConnections', { displayName: targetPort.displayName, max }),
               color: "red",
             })
             return
@@ -142,8 +142,8 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
       )
       if (isDuplicate) {
         notifications.show({
-          title: t('canvasConnectionRejected'),
-          message: t('canvasConnectionExists'),
+          title: t('canvas.connectionRejected'),
+          message: t('canvas.connectionExists'),
           color: "yellow",
         })
         return
@@ -199,7 +199,7 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
       if (e.key.toLowerCase() === "c" && selectedId) {
         e.preventDefault()
         copyNode(selectedId)
-        notifications.show({ title: t('copied', { ns: 'common' }), message: t('nodeCopied'), color: "teal" })
+        notifications.show({ title: t('copied', { ns: 'common' }), message: t('list.nodeCopied'), color: "teal" })
       } else if (e.key.toLowerCase() === "v") {
         const wrapper = reactFlowWrapper.current
         if (!wrapper) return

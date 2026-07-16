@@ -154,7 +154,7 @@ export function WorkflowListPage() {
   };
 
   const handleDelete = async (id: string, name: string) => {
-    if (!confirm(t('confirmDelete', { name }))) return;
+    if (!confirm(t('list.confirmDelete', { name }))) return;
     try {
       await deleteWorkflow(id);
       setSelectedIds((prev) => {
@@ -163,11 +163,11 @@ export function WorkflowListPage() {
         return next;
       });
       await refreshWorkflows();
-      notifications.show({ title: t('deleted'), message: t('deletedMessage', { name }), color: 'green' });
+      notifications.show({ title: t('list.deleted'), message: t('list.deletedMessage', { name }), color: 'green' });
     } catch (err) {
       notifications.show({
-        title: t('deleteFailed'),
-        message: err instanceof Error ? err.message : t('deleteFailedMessage'),
+        title: t('list.deleteFailed'),
+        message: err instanceof Error ? err.message : t('list.deleteFailedMessage'),
         color: 'red',
       });
     }
@@ -189,14 +189,14 @@ export function WorkflowListPage() {
         );
       }
       notifications.show({
-        title: t('exportComplete'),
-        message: t('exportCompleteMessage', { count: ids.length }),
+        title: t('list.exportComplete'),
+        message: t('list.exportCompleteMessage', { count: ids.length }),
         color: 'green',
       });
     } catch (err) {
       notifications.show({
-        title: t('exportFailed'),
-        message: err instanceof Error ? err.message : t('exportFailedMessage'),
+        title: t('list.exportFailed'),
+        message: err instanceof Error ? err.message : t('list.exportFailedMessage'),
         color: 'red',
       });
     } finally {
@@ -208,11 +208,11 @@ export function WorkflowListPage() {
     try {
       const result = await exportWorkflow(wf.id);
       downloadJson(JSON.stringify(result, null, 2), `${result.name}-v${result.version}.json`);
-      notifications.show({ title: t('exported'), message: t('exportedMessage', { name: wf.name }), color: 'green' });
+      notifications.show({ title: t('list.exported'), message: t('list.exportedMessage', { name: wf.name }), color: 'green' });
     } catch (err) {
       notifications.show({
-        title: t('exportFailed'),
-        message: err instanceof Error ? err.message : t('exportFailedMessage'),
+        title: t('list.exportFailed'),
+        message: err instanceof Error ? err.message : t('list.exportFailedMessage'),
         color: 'red',
       });
     }
@@ -236,8 +236,8 @@ export function WorkflowListPage() {
         JSON.parse(trimmed);
       } catch {
         notifications.show({
-          title: t('invalidFile'),
-          message: t('invalidFileMessage'),
+          title: t('list.invalidFile'),
+          message: t('list.invalidFileMessage'),
           color: 'red',
         });
         return;
@@ -263,8 +263,8 @@ export function WorkflowListPage() {
         return;
       }
       notifications.show({
-        title: t('importFailed'),
-        message: err instanceof Error ? err.message : t('importFailedMessage'),
+        title: t('list.importFailed'),
+        message: err instanceof Error ? err.message : t('list.importFailedMessage'),
         color: 'red',
       });
     } finally {
@@ -284,7 +284,7 @@ export function WorkflowListPage() {
     return (
       <Center h="100%" p="md" style={{ background: 'var(--bg-page)' }}>
         <Alert icon={<AlertCircle size={16} />} title={t('error', { ns: 'common' })} color="red" w={400}>
-          {error.message ?? t('loadErrorMessage')}
+          {error.message ?? t('list.loadErrorMessage')}
         </Alert>
       </Center>
     );
@@ -295,10 +295,10 @@ export function WorkflowListPage() {
       <Group justify="space-between" align="center">
         <Group gap="xs">
           <WorkflowIcon size={20} />
-          <Text fw={700} size="lg">{t('title')}</Text>
+          <Text fw={700} size="lg">{t('list.title')}</Text>
           <ProjectFilter value={projectFilter} onChange={setProjectFilter} />
           {selectedIds.size > 0 && (
-            <Badge variant="light" color="blue">{t('selectedCount', { count: selectedIds.size })}</Badge>
+            <Badge variant="light" color="blue">{t('list.selectedCount', { count: selectedIds.size })}</Badge>
           )}
         </Group>
         <Group gap="xs">
@@ -313,7 +313,7 @@ export function WorkflowListPage() {
             leftSection={<Upload size={14} />}
             onClick={openImport}
           >
-            {t('import')}
+            {t('list.import')}
           </Button>
           <Button
             variant="subtle"
@@ -323,10 +323,10 @@ export function WorkflowListPage() {
             loading={exporting}
             disabled={selectedIds.size === 0}
           >
-            {selectedIds.size > 0 ? t('export') + ` (${selectedIds.size})` : t('export')}
+            {selectedIds.size > 0 ? t('list.export') + ` (${selectedIds.size})` : t('list.export')}
           </Button>
           <Button size="sm" leftSection={<Plus size={14} />} onClick={handleNew}>
-            {t('new')}
+            {t('list.new')}
           </Button>
         </Group>
       </Group>
@@ -337,13 +337,13 @@ export function WorkflowListPage() {
             <ActionIcon size={64} radius="xl" variant="light" color="gray" disabled>
               <WorkflowIcon size={32} />
             </ActionIcon>
-            <Text c="dimmed" size="sm">{t('noWorkflows')}</Text>
+            <Text c="dimmed" size="sm">{t('list.noWorkflows')}</Text>
             <Group gap="xs">
               <Button variant="subtle" leftSection={<Upload size={14} />} onClick={openImport}>
-                {t('import')}
+                {t('list.import')}
               </Button>
               <Button leftSection={<Plus size={14} />} onClick={handleNew}>
-                {t('new')}
+                {t('list.new')}
               </Button>
             </Group>
           </Stack>
@@ -358,13 +358,13 @@ export function WorkflowListPage() {
                   onChange={toggleSelectAll}
                 />
               </Table.Th>
-              <Table.Th style={{ width: 90 }}>{t('status')}</Table.Th>
-              <Table.Th>{t('name')}</Table.Th>
-              <Table.Th style={{ width: 110 }}>{t('project')}</Table.Th>
-              <Table.Th style={{ width: 160 }}>{t('lastRun')}</Table.Th>
-              <Table.Th style={{ width: 170 }}>{t('triggers')}</Table.Th>
-              <Table.Th style={{ width: 150 }}>{t('updated')}</Table.Th>
-              <Table.Th style={{ width: 120, textAlign: 'right' }}>{t('actions')}</Table.Th>
+              <Table.Th style={{ width: 90 }}>{t('list.status')}</Table.Th>
+              <Table.Th>{t('list.name')}</Table.Th>
+              <Table.Th style={{ width: 110 }}>{t('list.project')}</Table.Th>
+              <Table.Th style={{ width: 160 }}>{t('list.lastRun')}</Table.Th>
+              <Table.Th style={{ width: 170 }}>{t('list.triggers')}</Table.Th>
+              <Table.Th style={{ width: 150 }}>{t('list.updated')}</Table.Th>
+              <Table.Th style={{ width: 120, textAlign: 'right' }}>{t('list.actions')}</Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
@@ -382,10 +382,10 @@ export function WorkflowListPage() {
                     variant="light"
                     color={wf.isActive ? 'green' : 'gray'}
                   >
-                    {wf.isActive ? t('active') : t('inactive')}
+                    {wf.isActive ? t('list.active') : t('list.inactive')}
                   </Badge>
                   {wf.source === 'ai' && !wf.isActive && wf.draftStatus === 'pending' && (
-                    <Badge size="sm" variant="light" color="blue" ml={4}>{t('aiDraftPending')}</Badge>
+                    <Badge size="sm" variant="light" color="blue" ml={4}>{t('list.aiDraftPending')}</Badge>
                   )}
                 </Table.Td>
                 <Table.Td>
@@ -402,15 +402,15 @@ export function WorkflowListPage() {
                 </Table.Td>
                 <Table.Td>
                   {wf.projectId ? (
-                    <Tooltip label={projectMap.get(wf.projectId) ? t('projectTooltip', { name: projectMap.get(wf.projectId) }) : t('unknownProject')}>
+                    <Tooltip label={projectMap.get(wf.projectId) ? t('list.projectTooltip', { name: projectMap.get(wf.projectId) }) : t('list.unknownProject')}>
                       <Badge size="sm" variant="light" color="blue" leftSection={<Folder size={10} />}>
-                        {projectMap.get(wf.projectId) || t('project')}
+                        {projectMap.get(wf.projectId) || t('list.project')}
                       </Badge>
                     </Tooltip>
                   ) : (
-                    <Tooltip label={t('globalWorkflowTooltip')}>
+                    <Tooltip label={t('list.globalWorkflowTooltip')}>
                       <Badge size="sm" variant="light" color="teal" leftSection={<Globe size={10} />}>
-                        {t('global')}
+                        {t('list.global')}
                       </Badge>
                     </Tooltip>
                   )}
@@ -428,7 +428,7 @@ export function WorkflowListPage() {
                     <Group gap="xs" wrap="nowrap">
                       <Badge size="sm" variant="outline" color="indigo">{wf.triggerCount}</Badge>
                       {wf.nextTriggerAt && (
-                        <Tooltip label={t('nextTrigger', { time: formatDateTime(wf.nextTriggerAt) })}>
+                        <Tooltip label={t('list.nextTrigger', { time: formatDateTime(wf.nextTriggerAt) })}>
                           <Group gap={4} wrap="nowrap">
                             <CalendarClock size={12} color="var(--mantine-color-indigo-text)" />
                             <Text size="xs" c="indigo">{formatDateTime(wf.nextTriggerAt)}</Text>
@@ -445,7 +445,7 @@ export function WorkflowListPage() {
                 </Table.Td>
                 <Table.Td style={{ textAlign: 'right' }}>
                   <Group gap={4} justify="flex-end" wrap="nowrap">
-                    <Tooltip label={t('openEditor')}>
+                    <Tooltip label={t('list.openEditor')}>
                       <ActionIcon
                         variant="subtle"
                         size="sm"
@@ -454,7 +454,7 @@ export function WorkflowListPage() {
                         <Edit size={14} />
                       </ActionIcon>
                     </Tooltip>
-                    <Tooltip label={t('executionHistory')}>
+                    <Tooltip label={t('list.executionHistory')}>
                       <ActionIcon
                         variant="subtle"
                         size="sm"
@@ -474,7 +474,7 @@ export function WorkflowListPage() {
                           leftSection={<Download size={12} />}
                           onClick={() => handleExportSingle(wf)}
                         >
-                          {t('export')}
+                          {t('list.export')}
                         </Menu.Item>
                         <Menu.Divider />
                         <Menu.Item
@@ -498,14 +498,14 @@ export function WorkflowListPage() {
       <Modal
         opened={importOpen}
         onClose={() => setImportOpen(false)}
-        title={t('importWorkflowsTitle')}
+        title={t('import.title')}
         centered
         size="lg"
       >
         <Stack gap="md">
           <FileInput
-            label={t('jsonFile')}
-            placeholder={t('selectWorkflowJson')}
+            label={t('import.jsonFile')}
+            placeholder={t('import.selectWorkflowJson')}
             value={importFile}
             onChange={setImportFile}
             accept="application/json,.json"
@@ -514,7 +514,7 @@ export function WorkflowListPage() {
             key={fileInputKey}
           />
           <Text size="xs" c="dimmed">
-            {t('importHint')}
+            {t('import.hint')}
           </Text>
           <Group justify="flex-end">
             <Button
@@ -531,13 +531,13 @@ export function WorkflowListPage() {
               loading={importing}
               disabled={!importFile}
             >
-              {t('import')}
+              {t('list.import')}
             </Button>
           </Group>
 
           {importResult && (
             <Box>
-              <Text fw={600} size="sm" mb="xs">{t('result')}</Text>
+              <Text fw={600} size="sm" mb="xs">{t('import.result')}</Text>
               {importMode === 'single' ? (
                 <SingleImportResultView result={importResult as ImportResult} />
               ) : (
@@ -557,13 +557,13 @@ function SingleImportResultView({ result }: { result: ImportResult }) {
     <Stack gap="xs">
       <Group gap="xs">
         <Text size="sm" c={result.success ? 'green' : 'red'} fw={600}>
-          {result.success ? t('success') : t('failed')}
+          {result.success ? t('import.success') : t('import.failed')}
         </Text>
         {result.workflowId && (
-          <Text size="xs" c="dimmed">{t('id')}: <Code>{result.workflowId}</Code></Text>
+          <Text size="xs" c="dimmed">{t('import.id')}: <Code>{result.workflowId}</Code></Text>
         )}
         {result.workflowName && (
-          <Text size="xs" c="dimmed">{t('name')}: {result.workflowName}</Text>
+          <Text size="xs" c="dimmed">{t('list.name')}: {result.workflowName}</Text>
         )}
       </Group>
       {result.errors.length > 0 && (
@@ -571,7 +571,7 @@ function SingleImportResultView({ result }: { result: ImportResult }) {
           {result.errors.map((err, idx) => (
             <Text key={`${err.errorType}-${err.nodeId}-${idx}`} size="xs" c="red">
               [{err.errorType}] {err.message}
-              {err.nodeId && ` (${t('errorNode', { nodeId: err.nodeId })})`}
+              {err.nodeId && ` (${t('import.errorNode', { nodeId: err.nodeId })})`}
             </Text>
           ))}
         </Stack>
@@ -585,18 +585,18 @@ function BatchImportResultView({ result }: { result: BatchImportResult }) {
   return (
     <Stack gap="xs">
       <Group gap="md">
-        <Text size="sm" c="green" fw={600}>{t('successCount', { count: result.successCount })}</Text>
-        <Text size="sm" c="red" fw={600}>{t('failureCount', { count: result.failureCount })}</Text>
+        <Text size="sm" c="green" fw={600}>{t('import.successCount', { count: result.successCount })}</Text>
+        <Text size="sm" c="red" fw={600}>{t('import.failureCount', { count: result.failureCount })}</Text>
       </Group>
       {result.results.length > 0 && (
         <List size="xs" withPadding>
           {result.results.map((r, idx) => {
-            const name = r.workflowName ?? t('workflowNumber', { number: idx + 1 });
+            const name = r.workflowName ?? t('import.workflowNumber', { number: idx + 1 });
             return (
               <List.Item key={idx} c={r.success ? 'green' : 'red'}>
                 {r.success
-                  ? t('importedItem', { name })
-                  : t('importFailedItem', { name, message: r.errors.map((e) => e.message).join('; ') })}
+                  ? t('import.importedItem', { name })
+                  : t('import.importFailedItem', { name, message: r.errors.map((e) => e.message).join('; ') })}
               </List.Item>
             );
           })}

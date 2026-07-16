@@ -59,7 +59,7 @@ export const CanvasToolbar = memo(function CanvasToolbar({ onExecute, onCancel, 
         }
       }
       notifications.show({
-        title: t('toolbarConfigurationError'),
+        title: t('toolbar.configurationError'),
         message: lines.join('\n'),
         color: 'red',
         autoClose: 8000,
@@ -73,38 +73,38 @@ export const CanvasToolbar = memo(function CanvasToolbar({ onExecute, onCancel, 
     <div className="canvas-toolbar">
       {/* 左侧：撤销/重做 + 缩放 */}
       <Group gap={2} wrap="nowrap">
-        <Tooltip label={t('toolbarUndo')} position="bottom" disabled={!canUndo || isExecuting}>
-          <ActionIcon variant="subtle" color="gray" size="sm" onClick={undo} disabled={!canUndo || isExecuting} aria-label={t('toolbarUndo')}>
+        <Tooltip label={t('toolbar.undo')} position="bottom" disabled={!canUndo || isExecuting}>
+          <ActionIcon variant="subtle" color="gray" size="sm" onClick={undo} disabled={!canUndo || isExecuting} aria-label={t('toolbar.undo')}>
             <Undo2 size={14} />
           </ActionIcon>
         </Tooltip>
-        <Tooltip label={t('toolbarRedo')} position="bottom" disabled={!canRedo || isExecuting}>
-          <ActionIcon variant="subtle" color="gray" size="sm" onClick={redo} disabled={!canRedo || isExecuting} aria-label={t('toolbarRedo')}>
+        <Tooltip label={t('toolbar.redo')} position="bottom" disabled={!canRedo || isExecuting}>
+          <ActionIcon variant="subtle" color="gray" size="sm" onClick={redo} disabled={!canRedo || isExecuting} aria-label={t('toolbar.redo')}>
             <Redo2 size={14} />
           </ActionIcon>
         </Tooltip>
         <Divider orientation="vertical" mx={2} />
-        <Tooltip label={t('toolbarZoomIn')} position="bottom">
-          <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => zoomIn()} aria-label={t('toolbarZoomIn')}>
+        <Tooltip label={t('toolbar.zoomIn')} position="bottom">
+          <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => zoomIn()} aria-label={t('toolbar.zoomIn')}>
             <ZoomIn size={14} />
           </ActionIcon>
         </Tooltip>
-        <Tooltip label={t('toolbarZoomOut')} position="bottom">
-          <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => zoomOut()} aria-label={t('toolbarZoomOut')}>
+        <Tooltip label={t('toolbar.zoomOut')} position="bottom">
+          <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => zoomOut()} aria-label={t('toolbar.zoomOut')}>
             <ZoomOut size={14} />
           </ActionIcon>
         </Tooltip>
-        <Tooltip label={t('toolbarFitView')} position="bottom">
-          <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => fitView({ padding: 0.2 })} aria-label={t('toolbarFitView')}>
+        <Tooltip label={t('toolbar.fitView')} position="bottom">
+          <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => fitView({ padding: 0.2 })} aria-label={t('toolbar.fitView')}>
             <Maximize size={14} />
           </ActionIcon>
         </Tooltip>
-        <Tooltip label={t('toolbarAutoLayout')} position="bottom">
+        <Tooltip label={t('toolbar.autoLayout')} position="bottom">
           <ActionIcon
             variant="subtle"
             color="gray"
             size="sm"
-            aria-label={t('toolbarAutoLayout')}
+            aria-label={t('toolbar.autoLayout')}
             disabled={nodeCount === 0 || isExecuting || reviewMode}
             onClick={() => {
               autoLayout();
@@ -130,7 +130,7 @@ export const CanvasToolbar = memo(function CanvasToolbar({ onExecute, onCancel, 
           disabled={!canDryRun || isExecuting || dryRunLoading}
           loading={dryRunLoading}
         >
-          {t('editorDryRun')}
+          {t('editor.dryRun')}
         </Button>
         {isExecuting ? (
           <Button
@@ -140,7 +140,7 @@ export const CanvasToolbar = memo(function CanvasToolbar({ onExecute, onCancel, 
             size="compact-xs"
             onClick={onCancel}
           >
-            {t('toolbarStop')}
+            {t('toolbar.stop')}
           </Button>
         ) : (
           <Button
@@ -151,7 +151,7 @@ export const CanvasToolbar = memo(function CanvasToolbar({ onExecute, onCancel, 
             onClick={handleExecute}
             disabled={!canExecute}
           >
-            {t('toolbarTestRun')}
+            {t('toolbar.testRun')}
           </Button>
         )}
       </Group>

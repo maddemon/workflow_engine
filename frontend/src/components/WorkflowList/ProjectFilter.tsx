@@ -13,15 +13,15 @@ export function ProjectFilter({ value, onChange }: ProjectFilterProps) {
   const { data: projects = [] } = useRequest(getProjects);
 
   const selectData = [
-    { value: '__all__', label: t('projectFilterAll') },
-    { value: '__none__', label: t('projectFilterUncategorized') },
+    { value: '__all__', label: t('projectFilter.all') },
+    { value: '__none__', label: t('projectFilter.uncategorized') },
     ...projects.map((p) => ({ value: p.id, label: p.name })),
   ];
 
   return (
     <Select
       size="xs"
-      placeholder={t('projectFilterPlaceholder')}
+      placeholder={t('projectFilter.placeholder')}
       data={selectData}
       value={value ?? '__all__'}
       onChange={(val) => {

@@ -63,10 +63,10 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
         <Stack gap="xs" p="sm" style={{ height: '100%', overflow: 'hidden' }}>
           <Group gap={4}>
             <Eye size={14} />
-            <Text fw={600} size="sm">{t('editorReviewMode')}</Text>
-            <Badge size="xs" color="blue" variant="light">{t('editorAiDraft')}</Badge>
+            <Text fw={600} size="sm">{t('editor.reviewMode')}</Text>
+            <Badge size="xs" color="blue" variant="light">{t('editor.aiDraft')}</Badge>
           </Group>
-          <Text size="xs" c="dimmed">{t('editorReviewHint')}</Text>
+          <Text size="xs" c="dimmed">{t('editor.reviewHint')}</Text>
 
           {structuredDiff && structuredDiff.length > 0 && (
             <DiffPanel diff={structuredDiff} highlightedNodeIds={highlightedNodeIds} onNodeHighlight={setHighlightedNodeIds} />
@@ -77,18 +77,18 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
           <Divider />
 
           <Stack gap="xs">
-            <Text fw={600} size="xs" tt="uppercase">{t('editorActions')}</Text>
+            <Text fw={600} size="xs" tt="uppercase">{t('editor.actions')}</Text>
             <Button leftSection={<Play size={14} />} variant="light" onClick={() => dryRun()} loading={dryRunLoading}>
-              {t('editorDryRun')}
+              {t('editor.dryRun')}
             </Button>
             <Button leftSection={<Check size={14} />} color="green" onClick={() => setValidationModalOpen(true)}>
-              {t('editorConfirmActivate')}
+              {t('editor.confirmActivate')}
             </Button>
             <Button leftSection={<X size={14} />} color="red" variant="light" onClick={() => setRejectModalOpen(true)}>
-              {t('editorReject')}
+              {t('editor.reject')}
             </Button>
             <Button variant="subtle" color="gray" onClick={() => setReviewMode(false)}>
-              {t('editorSwitchManual')}
+              {t('editor.switchManual')}
             </Button>
           </Stack>
         </Stack>
@@ -106,10 +106,10 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
     if (!workflowId) return;
     try {
       await confirmWorkflow(workflowId);
-      notifications.show({ title: t('editorActivated'), message: t('editorActivationMessage'), color: 'green' });
+      notifications.show({ title: t('editor.activated'), message: t('editor.activationMessage'), color: 'green' });
       setValidationModalOpen(false);
     } catch (err) {
-      notifications.show({ title: t('error', { ns: 'common' }), message: err instanceof Error ? err.message : t('editorConfirmationFailed'), color: 'red' });
+      notifications.show({ title: t('error', { ns: 'common' }), message: err instanceof Error ? err.message : t('editor.confirmationFailed'), color: 'red' });
     }
   }, [workflowId, t]);
 
@@ -117,11 +117,11 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
     if (!workflowId || !rejectReason.trim()) return;
     try {
       await rejectDraft(workflowId, rejectReason);
-      notifications.show({ title: t('editorRejected'), message: t('editorRejectionMessage'), color: 'orange' });
+      notifications.show({ title: t('editor.rejected'), message: t('editor.rejectionMessage'), color: 'orange' });
       setRejectModalOpen(false);
       setRejectReason('');
     } catch (err) {
-      notifications.show({ title: t('error', { ns: 'common' }), message: err instanceof Error ? err.message : t('editorRejectionFailed'), color: 'red' });
+      notifications.show({ title: t('error', { ns: 'common' }), message: err instanceof Error ? err.message : t('editor.rejectionFailed'), color: 'red' });
     }
   }, [workflowId, rejectReason, t]);
 
@@ -141,14 +141,14 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
           onClose={dismiss}
           style={{ margin: 8 }}
         >
-          {t('editorExternalChange', { oldVersion: workflowVersion ?? '?', newVersion: newVersion ?? '?' })}
+          {t('editor.externalChange', { oldVersion: workflowVersion ?? '?', newVersion: newVersion ?? '?' })}
           <Anchor
             component="button"
             ml="xs"
             onClick={() => {
               const store = useWorkflowStore.getState();
               if (store.isDirty) {
-                if (!window.confirm(t('editorUnsavedChangesConfirm'))) return;
+                if (!window.confirm(t('editor.unsavedChangesConfirm'))) return;
               }
               if (workflowId) {
                 loadWorkflow(workflowId);
@@ -156,7 +156,7 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
               }
             }}
           >
-            {t('editorLoadNewVersion')}
+            {t('editor.loadNewVersion')}
           </Anchor>
         </Alert>
       )}
@@ -169,18 +169,18 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
         onProceed={handleConfirm}
       />
 
-      <Modal opened={rejectModalOpen} onClose={() => setRejectModalOpen(false)} title={t('editorRejectDraftTitle')} centered>
+      <Modal opened={rejectModalOpen} onClose={() => setRejectModalOpen(false)} title={t('editor.rejectDraftTitle')} centered>
         <Stack gap="md">
           <Textarea
-            label={t('editorRejectionReason')}
-            placeholder={t('editorRejectionReasonPlaceholder')}
+            label={t('editor.rejectionReason')}
+            placeholder={t('editor.rejectionReasonPlaceholder')}
             value={rejectReason}
             onChange={(e) => setRejectReason(e.target.value)}
             minRows={3}
           />
           <Group justify="flex-end">
             <Button variant="subtle" color="gray" onClick={() => setRejectModalOpen(false)}>{t('cancel', { ns: 'common' })}</Button>
-            <Button color="red" onClick={handleReject} disabled={!rejectReason.trim()}>{t('editorSubmitRejection')}</Button>
+            <Button color="red" onClick={handleReject} disabled={!rejectReason.trim()}>{t('editor.submitRejection')}</Button>
           </Group>
         </Stack>
       </Modal>
