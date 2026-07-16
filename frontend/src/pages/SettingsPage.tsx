@@ -319,7 +319,7 @@ export function SettingsPage() {
           </Text>
           <Group justify="flex-end" gap="sm">
             <Button variant="default" onClick={() => setRevokeTarget(null)}>
-              {t('cancel')}
+              {t('common:cancel')}
             </Button>
             <Button color="red" onClick={handleRevoke} loading={revoking}>
               {t('apiKeys.revoke')}
