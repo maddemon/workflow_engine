@@ -60,7 +60,7 @@ export function SettingsPage() {
       await refreshKeys()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : t('apiKeys.createFailed')
-      notifications.show({ title: t('error'), message: msg, color: "red" })
+      notifications.show({ title: t('common:error'), message: msg, color: "red" })
     } finally {
       setCreating(false)
     }
@@ -101,7 +101,7 @@ export function SettingsPage() {
       await refreshKeys()
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : t('apiKeys.revokeFailed')
-      notifications.show({ title: t('error'), message: msg, color: "red" })
+      notifications.show({ title: t('common:error'), message: msg, color: "red" })
     } finally {
       setRevoking(false)
     }
