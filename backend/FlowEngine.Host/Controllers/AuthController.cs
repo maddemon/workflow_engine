@@ -41,7 +41,8 @@ public class AuthController(
     {
         return StatusCode(StatusCodes.Status403Forbidden, new
         {
-            error = "Forbidden",
+            success = false,
+            errorCode = "Forbidden",
             message = localizer["RegistrationDisabled"],
         });
     }

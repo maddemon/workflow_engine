@@ -301,7 +301,7 @@ public sealed class WorkflowModificationServiceTests : IDisposable
 
         var ex = await Assert.ThrowsAsync<BusinessException>(() =>
             _service.ModifyAsync(workflowId, request));
-        Assert.Contains("路径", ex.Message);
+        Assert.Contains("path", ex.Message);
     }
 
     [Fact]
@@ -319,7 +319,7 @@ public sealed class WorkflowModificationServiceTests : IDisposable
 
         var ex = await Assert.ThrowsAsync<BusinessException>(() =>
             _service.ModifyAsync(workflowId, request));
-        Assert.Contains("不存在", ex.Message);
+        Assert.Contains("does not exist", ex.Message);
     }
 
     [Fact]
@@ -335,7 +335,7 @@ public sealed class WorkflowModificationServiceTests : IDisposable
 
         var ex = await Assert.ThrowsAsync<BusinessException>(() =>
             _service.ModifyAsync(Guid.NewGuid(), request));
-        Assert.Contains("不存在", ex.Message);
+        Assert.Contains("does not exist", ex.Message);
     }
 
     [Fact]
@@ -353,7 +353,7 @@ public sealed class WorkflowModificationServiceTests : IDisposable
 
         var ex = await Assert.ThrowsAsync<BusinessException>(() =>
             _service.ModifyAsync(workflowId, request));
-        Assert.Contains("不支持", ex.Message);
+        Assert.Contains("Unsupported", ex.Message);
     }
 
     [Fact]

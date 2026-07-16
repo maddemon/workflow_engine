@@ -50,7 +50,7 @@ public sealed class WorkflowModificationService(
         if (existing is null)
         {
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-            throw new BusinessException($"工作流 '{workflowId}' 不存在。");
+            throw new BusinessException($"Workflow '{workflowId}' does not exist.");
         }
 
         // ── 2. 深拷贝工作流结构 ────────────────────────────────
@@ -79,7 +79,7 @@ public sealed class WorkflowModificationService(
                     break;
                 default:
                     // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-                    throw new BusinessException($"不支持的操作类型: '{op.Op}'");
+                    throw new BusinessException($"Unsupported operation type: '{op.Op}'");
             }
         }
 
@@ -98,7 +98,7 @@ public sealed class WorkflowModificationService(
         {
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
             throw new BusinessException(
-                "修改后校验失败：" + string.Join("; ", validationErrors));
+                "Validation failed after modification: " + string.Join("; ", validationErrors));
         }
 
         // ── 5. 创建草稿记录（IsActive = false）─────────────────
@@ -162,14 +162,14 @@ public sealed class WorkflowModificationService(
         if (string.IsNullOrEmpty(op.Path))
         {
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-            throw new BusinessException("modify 操作需要指定 Path。");
+            throw new BusinessException("The modify operation requires a Path.");
         }
 
         var pathParts = op.Path.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (pathParts.Length < 2 || pathParts[0] != "nodes")
         {
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-            throw new BusinessException($"modify 路径格式无效: '{op.Path}'。期望格式: /nodes/{{nodeId}}/parameters/{{field}}");
+            throw new BusinessException($"Invalid modify path format: '{op.Path}'. Expected format: /nodes/{{nodeId}}/parameters/{{field}}");
         }
 
         var nodeId = pathParts[1];
@@ -178,7 +178,7 @@ public sealed class WorkflowModificationService(
         if (node is null)
         {
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-            throw new BusinessException($"节点 '{nodeId}' 不存在。");
+            throw new BusinessException($"Node '{nodeId}' does not exist.");
         }
 
         if (pathParts.Length == 3 && pathParts[2] is "name" or "isEntry")
@@ -223,7 +223,7 @@ public sealed class WorkflowModificationService(
         }
 
         // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-        throw new BusinessException($"modify 路径未识别: '{op.Path}'。");
+            throw new BusinessException($"Modify path not recognized: '{op.Path}'.");
     }
 
     /// <summary>
@@ -234,25 +234,25 @@ public sealed class WorkflowModificationService(
         if (op.Node is null)
         {
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-            throw new BusinessException("add 操作需要指定 Node。");
+            throw new BusinessException("The add operation requires a Node.");
         }
 
         if (string.IsNullOrWhiteSpace(op.Node.Id))
         {
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-            throw new BusinessException("新增节点的 ID 不能为空。");
+            throw new BusinessException("The new node ID cannot be empty.");
         }
 
         if (workflow.Nodes.Any(n => n.Id.Equals(op.Node.Id, StringComparison.Ordinal)))
         {
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-            throw new BusinessException($"节点 ID '{op.Node.Id}' 已存在。");
+            throw new BusinessException($"Node ID '{op.Node.Id}' already exists.");
         }
 
         if (string.IsNullOrWhiteSpace(op.Node.TypeName))
         {
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-            throw new BusinessException($"新增节点 '{op.Node.Id}' 的 TypeName 不能为空。");
+            throw new BusinessException($"TypeName for the new node '{op.Node.Id}' cannot be empty.");
         }
 
         // 查找节点类型
@@ -265,7 +265,7 @@ public sealed class WorkflowModificationService(
             {
                 // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
                 throw new BusinessException(
-                    $"新增节点 '{op.Node.Id}' 使用了未知的节点类型 '{op.Node.TypeName}'。");
+                    $"The new node '{op.Node.Id}' uses an unknown node type '{op.Node.TypeName}'.");
             }
 
         // 从端口定义创建端口实例
@@ -303,7 +303,7 @@ public sealed class WorkflowModificationService(
             if (afterNode is null)
             {
                 // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-                throw new BusinessException($"After 指定的节点 '{op.After}' 不存在。");
+            throw new BusinessException($"The node specified by After '{op.After}' does not exist.");
             }
 
             var afterDescriptor = nodeRegistry.GetDescriptor(afterNode.TypeName);
@@ -342,14 +342,14 @@ public sealed class WorkflowModificationService(
         if (string.IsNullOrEmpty(op.Path))
         {
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-            throw new BusinessException("remove 操作需要指定 Path。");
+            throw new BusinessException("The remove operation requires a Path.");
         }
 
         var pathParts = op.Path.Split('/', StringSplitOptions.RemoveEmptyEntries);
         if (pathParts.Length < 2 || pathParts[0] != "nodes")
         {
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-            throw new BusinessException($"remove 路径格式无效: '{op.Path}'。期望格式: /nodes/{{nodeId}}");
+            throw new BusinessException($"Invalid remove path format: '{op.Path}'. Expected format: /nodes/{{nodeId}}");
         }
 
         var nodeId = pathParts[1];
@@ -358,7 +358,7 @@ public sealed class WorkflowModificationService(
         if (node is null)
         {
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-            throw new BusinessException($"节点 '{nodeId}' 不存在。");
+            throw new BusinessException($"Node '{nodeId}' does not exist.");
         }
 
         // 移除关联的连接
@@ -386,13 +386,13 @@ public sealed class WorkflowModificationService(
         if (string.IsNullOrEmpty(op.From))
         {
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-            throw new BusinessException("connect 操作需要指定 From（源节点 ID）。");
+            throw new BusinessException("The connect operation requires From (source node ID).");
         }
 
         if (string.IsNullOrEmpty(op.To))
         {
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-            throw new BusinessException("connect 操作需要指定 To（目标节点 ID）。");
+            throw new BusinessException("The connect operation requires To (target node ID).");
         }
 
         var sourceNode = workflow.Nodes.FirstOrDefault(n =>
@@ -400,7 +400,7 @@ public sealed class WorkflowModificationService(
         if (sourceNode is null)
         {
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-            throw new BusinessException($"源节点 '{op.From}' 不存在。");
+            throw new BusinessException($"Source node '{op.From}' does not exist.");
         }
 
         var targetNode = workflow.Nodes.FirstOrDefault(n =>
@@ -408,7 +408,7 @@ public sealed class WorkflowModificationService(
         if (targetNode is null)
         {
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-            throw new BusinessException($"目标节点 '{op.To}' 不存在。");
+            throw new BusinessException($"Target node '{op.To}' does not exist.");
         }
 
         var sourceDescriptor = nodeRegistry.GetDescriptor(sourceNode.TypeName);
@@ -421,7 +421,7 @@ public sealed class WorkflowModificationService(
                 .FirstOrDefault(p => p.Direction == PortDirection.Output);
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
             sourcePortName = defaultOutput?.Name
-                ?? throw new BusinessException($"节点 '{op.From}' 没有可用的输出端口。");
+                ?? throw new BusinessException($"Node '{op.From}' has no available output port.");
         }
 
         var targetPortName = op.ToPort;
@@ -431,7 +431,7 @@ public sealed class WorkflowModificationService(
                 .FirstOrDefault(p => p.Direction == PortDirection.Input);
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
             targetPortName = defaultInput?.Name
-                ?? throw new BusinessException($"节点 '{op.To}' 没有可用的输入端口。");
+                ?? throw new BusinessException($"Node '{op.To}' has no available input port.");
         }
 
         // 检查重复连接
@@ -443,7 +443,7 @@ public sealed class WorkflowModificationService(
         if (duplicate)
         {
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-            throw new BusinessException($"连接 '{op.From}' -> '{op.To}' 已存在。");
+            throw new BusinessException($"Connection '{op.From}' -> '{op.To}' already exists.");
         }
 
         var connection = new Connection
@@ -470,7 +470,7 @@ public sealed class WorkflowModificationService(
         if (string.IsNullOrEmpty(op.From) || string.IsNullOrEmpty(op.To))
         {
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-            throw new BusinessException("disconnect 操作需要指定 From 和 To。");
+            throw new BusinessException("The disconnect operation requires From and To.");
         }
 
         Connection? connection;
@@ -491,7 +491,7 @@ public sealed class WorkflowModificationService(
         if (connection is null)
         {
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-            throw new BusinessException($"节点 '{op.From}' 到 '{op.To}' 之间不存在这样的连接。");
+            throw new BusinessException($"No such connection exists between nodes '{op.From}' and '{op.To}'.");
         }
 
         workflow.Connections.Remove(connection);

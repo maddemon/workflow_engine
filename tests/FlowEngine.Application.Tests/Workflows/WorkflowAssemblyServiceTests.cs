@@ -134,7 +134,7 @@ public sealed class WorkflowAssemblyServiceTests : IDisposable
         };
 
         var ex = await Assert.ThrowsAsync<BusinessException>(() => _service.AssembleAsync(request));
-        Assert.Contains("重复", ex.Message);
+        Assert.Contains("Duplicate", ex.Message);
     }
 
     [Fact]
@@ -166,7 +166,7 @@ public sealed class WorkflowAssemblyServiceTests : IDisposable
         };
 
         var ex = await Assert.ThrowsAsync<BusinessException>(() => _service.AssembleAsync(request));
-        Assert.Contains("未知", ex.Message);
+        Assert.Contains("unknown", ex.Message);
     }
 
     [Fact]
@@ -212,7 +212,7 @@ public sealed class WorkflowAssemblyServiceTests : IDisposable
         };
 
         var ex = await Assert.ThrowsAsync<BusinessException>(() => _service.AssembleAsync(request));
-        Assert.Contains("不存在", ex.Message);
+        Assert.Contains("non-existent", ex.Message);
     }
 
     [Fact]
@@ -409,7 +409,7 @@ public sealed class WorkflowAssemblyServiceTests : IDisposable
         };
 
         var ex = await Assert.ThrowsAsync<BusinessException>(() => _service.AssembleAsync(request));
-        Assert.Contains("源节点", ex.Message);
+        Assert.Contains("source", ex.Message);
     }
 
     [Fact]
@@ -430,7 +430,7 @@ public sealed class WorkflowAssemblyServiceTests : IDisposable
         };
 
         var ex = await Assert.ThrowsAsync<BusinessException>(() => _service.AssembleAsync(request));
-        Assert.Contains("输出端口", ex.Message);
+        Assert.Contains("output port", ex.Message);
     }
 
     private WorkflowService CreateWorkflowService()

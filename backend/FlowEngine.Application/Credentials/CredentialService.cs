@@ -253,7 +253,7 @@ public sealed class CredentialService(
         if (exists)
         {
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-            throw new BusinessException($"项目内已存在名称为 '{name}' 的凭据。");
+            throw new BusinessException($"A credential with the name '{name}' already exists in the project.");
         }
     }
 

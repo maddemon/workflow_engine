@@ -78,6 +78,9 @@
   <data name="FileRequired" xml:space="preserve">
     <value>File must not be empty.</value>
   </data>
+  <data name="FileUploadFailed" xml:space="preserve">
+    <value>File upload failed.</value>
+  </data>
   <data name="RegistrationDisabled" xml:space="preserve">
     <value>Self-registration is disabled. Please contact an administrator to create an account.</value>
   </data>

@@ -41,7 +41,7 @@ public sealed class WorkflowAssemblyService(
             if (!usedIds.Add(id))
             {
                 // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-                throw new BusinessException($"节点 ID 重复: {id}");
+                throw new BusinessException($"Duplicate node ID: {id}");
             }
 
             resolvedNodes.Add((draftNode, id));
@@ -54,7 +54,7 @@ public sealed class WorkflowAssemblyService(
             if (string.IsNullOrWhiteSpace(draftNode.TypeName))
             {
                 // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-                throw new BusinessException($"节点 '{resolvedId}' 的 TypeName 不能为空。");
+                throw new BusinessException($"TypeName for node '{resolvedId}' cannot be empty.");
             }
 
             // 查找节点类型
@@ -67,7 +67,7 @@ public sealed class WorkflowAssemblyService(
             {
                 // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
                 throw new BusinessException(
-                    $"节点 '{resolvedId}' 使用了未知的节点类型 '{draftNode.TypeName}'。");
+                    $"Node '{resolvedId}' uses an unknown node type '{draftNode.TypeName}'.");
             }
 
             // 从端口定义创建端口实例
@@ -102,27 +102,27 @@ public sealed class WorkflowAssemblyService(
             if (string.IsNullOrWhiteSpace(draftConn.From))
             {
                 // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-                throw new BusinessException("连接缺少源节点 ID (From)。");
+                throw new BusinessException("Connection is missing source node ID (From).");
             }
 
             if (string.IsNullOrWhiteSpace(draftConn.To))
             {
                 // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-                throw new BusinessException("连接缺少目标节点 ID (To)。");
+                throw new BusinessException("Connection is missing target node ID (To).");
             }
 
             if (!nodeIds.Contains(draftConn.From))
             {
                 // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
                 throw new BusinessException(
-                    $"连接引用不存在的源节点 '{draftConn.From}'。");
+                    $"Connection references non-existent source node '{draftConn.From}'.");
             }
 
             if (!nodeIds.Contains(draftConn.To))
             {
                 // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
                 throw new BusinessException(
-                    $"连接引用不存在的目标节点 '{draftConn.To}'。");
+                    $"Connection references non-existent target node '{draftConn.To}'.");
             }
 
             // 获取源节点和目标节点的端口定义
@@ -141,7 +141,7 @@ public sealed class WorkflowAssemblyService(
                 // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
                 sourcePortName = defaultOutput?.Name
                     ?? throw new BusinessException(
-                        $"节点 '{draftConn.From}' 没有可用的输出端口，请指定 FromPort。");
+                        $"Node '{draftConn.From}' has no available output port; please specify FromPort.");
             }
             else
             {
@@ -152,7 +152,7 @@ public sealed class WorkflowAssemblyService(
                 {
                     // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
                     throw new BusinessException(
-                        $"节点 '{draftConn.From}' 不存在输出端口 '{sourcePortName}'。");
+                        $"Node '{draftConn.From}' does not have output port '{sourcePortName}'.");
                 }
             }
 
@@ -165,7 +165,7 @@ public sealed class WorkflowAssemblyService(
                 // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
                 targetPortName = defaultInput?.Name
                     ?? throw new BusinessException(
-                        $"节点 '{draftConn.To}' 没有可用的输入端口，请指定 ToPort。");
+                        $"Node '{draftConn.To}' has no available input port; please specify ToPort.");
             }
             else
             {
@@ -176,7 +176,7 @@ public sealed class WorkflowAssemblyService(
                 {
                     // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
                     throw new BusinessException(
-                        $"节点 '{draftConn.To}' 不存在输入端口 '{targetPortName}'。");
+                        $"Node '{draftConn.To}' does not have input port '{targetPortName}'.");
                 }
             }
 
@@ -218,7 +218,7 @@ public sealed class WorkflowAssemblyService(
         {
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
             throw new BusinessException(
-                "工作流校验失败：" + string.Join("; ", validationErrors));
+                "Workflow validation failed: " + string.Join("; ", validationErrors));
         }
 
         // ── 7. 创建草稿 ──────────────────────────────────────

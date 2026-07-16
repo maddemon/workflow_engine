@@ -69,7 +69,12 @@ public class FilesController(
         }
         catch (InvalidOperationException ex)
         {
-            return BadRequest(ex.Message);
+            return BadRequest(new
+            {
+                success = false,
+                errorCode = "FileUploadFailed",
+                message = ex.Message,
+            });
         }
     }
 

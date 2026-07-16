@@ -403,7 +403,7 @@ public sealed class WorkflowService(
         if (!result.IsValid)
         {
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
-            throw new BusinessException("工作流校验失败：" + string.Join("; ", result.Errors));
+            throw new BusinessException("Workflow validation failed: " + string.Join("; ", result.Errors));
         }
     }
 
