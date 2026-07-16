@@ -12,8 +12,16 @@ export class McpClient {
   }
 
   async initialize(): Promise<McpToolSpec[]> {
-    const tools = await this.sendRequest('tools/list', {});
-    this.tools = (tools as McpToolSpec[]) ?? [];
+    // MCP Streamable HTTP requires an initialize handshake first
+    await this.sendRequest('initialize', {
+      protocolVersion: '2025-03-26',
+      capabilities: {},
+      clientInfo: { name: 'dogfooding', version: '1.0.0' },
+    });
+    // then list tools
+    const result = await this.sendRequest('tools/list', {});
+    const list = result as { tools?: McpToolSpec[] } | undefined;
+    this.tools = list?.tools ?? [];
     return this.tools;
   }
 
@@ -55,12 +63,42 @@ export class McpClient {
       this.sessionId = sessionHeader;
     }
 
-    const result = await response.json() as { jsonrpc: string; id: number; result?: unknown; error?: { code: number; message: string } };
+    // MCP Streamable HTTP may return SSE (text/event-stream) or direct JSON
+    const text = await response.text();
+    const contentType = response.headers.get('content-type') ?? '';
 
-    if (result.error) {
-      throw new Error(`MCP Error ${result.error.code}: ${result.error.message}`);
+    let parsed: { jsonrpc: string; id: number; result?: unknown; error?: { code: number; message: string } };
+    if (contentType.includes('text/event-stream') || text.startsWith('data:') || text.startsWith('event:')) {
+      // SSE format: extract JSON from data: lines
+      const jsonLine = text.split('\n')
+        .find(line => line.startsWith('data:'))
+        ?.slice(5)
+        ?.trim();
+      if (!jsonLine) {
+        throw new Error(`MCP SSE response with no data line: ${text.slice(0, 200)}`);
+      }
+      parsed = JSON.parse(jsonLine);
+    } else {
+      parsed = JSON.parse(text);
     }
 
-    return result.result;
+    if (parsed.error) {
+      throw new Error(`MCP Error ${parsed.error.code}: ${parsed.error.message}`);
+    }
+
+    // Unwrap MCP content format: { content: [{ type: 'text', text: '{...}' }] }
+    const result = parsed.result as Record<string, unknown> | undefined;
+    if (result?.content && Array.isArray(result.content) && result.content.length > 0) {
+      const first = result.content[0] as Record<string, unknown> | undefined;
+      if (first?.type === 'text' && typeof first.text === 'string') {
+        try {
+          return JSON.parse(first.text);
+        } catch {
+          return first.text;
+        }
+      }
+    }
+
+    return result;
   }
 }
