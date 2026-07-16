@@ -383,7 +383,11 @@ backend/FlowEngine.Host/flowengine.db
 backend/FlowEngine.Host/storage/
 .superpowers/
 .worktrees/
-.agents/skills/
+.agents/skills/*
+!.agents/skills/dogfooding/
+!.agents/skills/dogfooding/**
+.agents/skills/dogfooding/node_modules
+.agents/skills/dogfooding/docs/
 skills-lock.json
 backend/FlowEngine.Host/App_Data/crypto.key
 backend/FlowEngine.Host/App_Data/flowengine.db
