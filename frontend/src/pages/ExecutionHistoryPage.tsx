@@ -16,6 +16,7 @@ import {
 } from '@mantine/core';
 import { ArrowLeft, RefreshCw, Eye, ChevronDown, ChevronRight } from 'lucide-react';
 import { useRequest } from 'ahooks';
+import { useTranslation } from 'react-i18next';
 import { getWorkflowExecutions, getExecution } from '../services/api.ts';
 import type { ExecutionDto, ExecutionSummaryDto } from '../types/workflow.ts';
 import { statusConfig, formatDuration } from '../utils/execution.tsx';
@@ -26,6 +27,7 @@ function formatDate(dateStr: string | null): string {
 }
 
 export function ExecutionHistoryPage() {
+  const { t } = useTranslation('execution');
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -73,12 +75,12 @@ export function ExecutionHistoryPage() {
   };
 
   const statusOptions = [
-    { value: 'all', label: 'All Statuses' },
-    { value: 'Completed', label: 'Completed' },
-    { value: 'Failed', label: 'Failed' },
-    { value: 'Running', label: 'Running' },
-    { value: 'Pending', label: 'Pending' },
-    { value: 'Cancelled', label: 'Cancelled' },
+    { value: 'all', label: t('history.allStatuses') },
+    { value: 'Completed', label: t('status.completed') },
+    { value: 'Failed', label: t('status.failed') },
+    { value: 'Running', label: t('status.running') },
+    { value: 'Pending', label: t('status.pending') },
+    { value: 'Cancelled', label: t('status.cancelled') },
   ];
 
   return (
@@ -89,7 +91,7 @@ export function ExecutionHistoryPage() {
             <ActionIcon variant="subtle" onClick={() => navigate(-1)}>
               <ArrowLeft size={18} />
             </ActionIcon>
-            <Text fw={600} size="lg">Execution History</Text>
+            <Text fw={600} size="lg">{t('history.title')}</Text>
           </Group>
           <Group gap="xs">
             <Select
@@ -115,13 +117,13 @@ export function ExecutionHistoryPage() {
 
         {error && (
           <Text c="red" size="sm" ta="center" py="md">
-            {error.message ?? 'Failed to fetch executions'}
+            {error.message ?? t('history.failedToFetch')}
           </Text>
         )}
 
         {!loading && !error && filteredExecutions.length === 0 && (
           <Text c="dimmed" ta="center" py="xl">
-            No executions found
+            {t('history.noExecutionsFound')}
           </Text>
         )}
 
@@ -130,11 +132,11 @@ export function ExecutionHistoryPage() {
             <Table striped highlightOnHover>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th>Status</Table.Th>
-                  <Table.Th>Started</Table.Th>
-                  <Table.Th>Completed</Table.Th>
-                  <Table.Th>Duration</Table.Th>
-                  <Table.Th>Actions</Table.Th>
+                  <Table.Th>{t('history.status')}</Table.Th>
+                  <Table.Th>{t('history.started')}</Table.Th>
+                  <Table.Th>{t('history.completed')}</Table.Th>
+                  <Table.Th>{t('history.duration')}</Table.Th>
+                  <Table.Th>{t('history.actions')}</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -189,7 +191,7 @@ export function ExecutionHistoryPage() {
       <Modal
         opened={selectedExecution !== null}
         onClose={() => setSelectedExecution(null)}
-        title="Execution Details"
+        title={t('history.details')}
         size="lg"
       >
         {selectedExecution && (
@@ -213,14 +215,14 @@ export function ExecutionHistoryPage() {
             {(selectedExecution.nodeRecords?.length ?? 0) > 0 && (
               <>
                 <Divider />
-                <Text fw={500} size="sm">Node Records</Text>
+                <Text fw={500} size="sm">{t('history.nodeRecords')}</Text>
                 <Table>
                   <Table.Thead>
                     <Table.Tr>
-                      <Table.Th>Node</Table.Th>
-                      <Table.Th>Status</Table.Th>
-                      <Table.Th>Duration</Table.Th>
-                      <Table.Th>Output</Table.Th>
+                      <Table.Th>{t('history.node')}</Table.Th>
+                      <Table.Th>{t('history.status')}</Table.Th>
+                      <Table.Th>{t('history.duration')}</Table.Th>
+                      <Table.Th>{t('history.output')}</Table.Th>
                     </Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>

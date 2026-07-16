@@ -1,9 +1,11 @@
 import { Button, Tooltip } from '@mantine/core';
 import { Play } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
 import { useExecution } from '../../hooks/useExecution.ts';
 
 export function ExecutionButton() {
+  const { t } = useTranslation('execution');
   const workflowId = useWorkflowStore((s) => s.workflowId);
   const nodes = useWorkflowStore((s) => s.nodes);
   const isDirty = useWorkflowStore((s) => s.isDirty);
@@ -13,11 +15,11 @@ export function ExecutionButton() {
   const disabled = !workflowId || nodes.length === 0 || loading || isDirty;
 
   const tooltipLabel = isDirty
-    ? 'Save workflow before executing'
+    ? t('button.saveBeforeExecute')
     : !workflowId
-      ? 'No workflow selected'
+      ? t('button.noWorkflowSelected')
       : nodes.length === 0
-        ? 'Add at least one node'
+        ? t('button.addAtLeastOneNode')
         : '';
 
   const button = (
@@ -29,7 +31,7 @@ export function ExecutionButton() {
       loading={loading}
       size="compact-xs"
     >
-      {loading ? 'Running...' : 'Execute'}
+      {loading ? t('running') : t('execute')}
     </Button>
   );
 

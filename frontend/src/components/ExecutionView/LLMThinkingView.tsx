@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Stack, Text, Box, Collapse, UnstyledButton, Group } from '@mantine/core';
 import { Brain, ChevronRight, ChevronDown, Hash } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { CodeViewer } from '../ExecutionPanel/CodeViewer.tsx';
 import type { LLMChunk, TokenUsage } from '../../types/agent-execution.ts';
 
@@ -12,6 +13,7 @@ interface LLMThinkingViewProps {
 }
 
 export function LLMThinkingView({ chunks, systemPrompt, tokenUsage, isStreaming }: LLMThinkingViewProps) {
+  const { t } = useTranslation('execution');
   const [expanded, setExpanded] = useState(false);
   const [showSystemPrompt, setShowSystemPrompt] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
@@ -57,11 +59,11 @@ export function LLMThinkingView({ chunks, systemPrompt, tokenUsage, isStreaming 
             <Brain size={12} color="var(--mantine-color-violet-6)" />
           </Box>
           <Text size="sm" fw={500} flex={1} ta="left">
-            LLM Thinking
+            {t('llm.thinking')}
           </Text>
           {tokenUsage && (
             <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
-              {tokenUsage.totalTokens} tokens
+              {t('llm.tokens', { count: tokenUsage.totalTokens })}
             </Text>
           )}
           <Box style={{ color: 'var(--mantine-color-dimmed)', flexShrink: 0 }}>
@@ -90,7 +92,7 @@ export function LLMThinkingView({ chunks, systemPrompt, tokenUsage, isStreaming 
               >
                 <Group gap="xs" wrap="nowrap">
                   <Text size="xs" c="dimmed" fw={500}>
-                    System Prompt
+                    {t('llm.systemPrompt')}
                   </Text>
                   <Box style={{ color: 'var(--mantine-color-dimmed)' }}>
                     {showSystemPrompt ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -99,7 +101,7 @@ export function LLMThinkingView({ chunks, systemPrompt, tokenUsage, isStreaming 
               </UnstyledButton>
               <Collapse expanded={showSystemPrompt}>
                 <Box mt={4}>
-                  <CodeViewer label="System Prompt" code={systemPrompt} language="text" maxHeight={120} />
+                  <CodeViewer label={t('llm.systemPrompt')} code={systemPrompt} language="text" maxHeight={120} />
                 </Box>
               </Collapse>
             </Box>
@@ -135,7 +137,7 @@ export function LLMThinkingView({ chunks, systemPrompt, tokenUsage, isStreaming 
               </Text>
             ) : (
               <Text size="xs" c="dimmed" ta="center" py="sm">
-                {isStreaming ? 'Waiting for response...' : 'No thinking content'}
+                {isStreaming ? t('llm.waitingForResponse') : t('llm.noThinkingContent')}
               </Text>
             )}
           </Box>
@@ -145,19 +147,19 @@ export function LLMThinkingView({ chunks, systemPrompt, tokenUsage, isStreaming 
               <Group gap={4}>
                 <Hash size={10} color="var(--mantine-color-dimmed)" />
                 <Text size="xs" c="dimmed">
-                  Prompt: {tokenUsage.promptTokens}
+                  {t('llm.prompt', { count: tokenUsage.promptTokens })}
                 </Text>
               </Group>
               <Group gap={4}>
                 <Hash size={10} color="var(--mantine-color-dimmed)" />
                 <Text size="xs" c="dimmed">
-                  Completion: {tokenUsage.completionTokens}
+                  {t('llm.completion', { count: tokenUsage.completionTokens })}
                 </Text>
               </Group>
               <Group gap={4}>
                 <Hash size={10} color="var(--mantine-color-dimmed)" />
                 <Text size="xs" c="dimmed">
-                  Total: {tokenUsage.totalTokens}
+                  {t('llm.total', { count: tokenUsage.totalTokens })}
                 </Text>
               </Group>
             </Group>

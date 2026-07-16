@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Text } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 import type { NodeExecutionRecordDto } from '../../types/workflow.ts';
 import { StepItem } from './StepItem.tsx';
 import { isAgentOutput } from './nodeOutputUtils.ts';
@@ -11,6 +12,7 @@ interface NodeOutputListProps {
 }
 
 export function NodeOutputList({ records, nodeNames, nodeTypeNames }: NodeOutputListProps) {
+  const { t } = useTranslation('execution');
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
 
   const toggle = (id: string) => {
@@ -20,7 +22,7 @@ export function NodeOutputList({ records, nodeNames, nodeTypeNames }: NodeOutput
   if (records.length === 0) {
     return (
       <Text size="sm" c="dimmed" ta="center" py="md">
-        No node records
+        {t('noNodeRecords')}
       </Text>
     );
   }

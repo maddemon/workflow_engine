@@ -8,6 +8,7 @@ import {
   RefreshCw,
   Layers,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { ToolCallChain } from './ToolCallChain.tsx';
 import { LLMThinkingView } from './LLMThinkingView.tsx';
 import type {
@@ -34,6 +35,7 @@ function IterationGroup({
   onToggle: () => void;
   systemPrompt?: string | null;
 }) {
+  const { t } = useTranslation('execution');
   const duration = formatDuration(iteration.startedAt, iteration.completedAt);
 
   return (
@@ -88,11 +90,11 @@ function IterationGroup({
         >
           <Group gap="xs" wrap="nowrap">
             <Text size="xs" fw={500}>
-              Iteration {iteration.index + 1}
+              {t('agent.iteration')} #{iteration.index + 1}
             </Text>
             {iteration.toolCalls.length > 0 && (
               <Badge size="xs" variant="light" color="indigo">
-                {iteration.toolCalls.length} tool{iteration.toolCalls.length > 1 ? 's' : ''}
+                {t('agent.toolCalls', { count: iteration.toolCalls.length })}
               </Badge>
             )}
             {duration && (
@@ -134,6 +136,7 @@ function SubRecordItem({
   isExpanded: boolean;
   onToggle: () => void;
 }) {
+  const { t } = useTranslation('execution');
   const config = statusConfig[subRecord.status] ?? statusConfig.Pending;
 
   return (
@@ -178,7 +181,7 @@ function SubRecordItem({
             {subRecord.agentName}
           </Text>
           <Badge color={config.color} variant="light" size="xs">
-            {config.label}
+            {t(config.labelKey)}
           </Badge>
           <Box style={{ color: 'var(--mantine-color-dimmed)', flexShrink: 0 }}>
             {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
@@ -204,6 +207,7 @@ function SubRecordItem({
 }
 
 export function AgentExecutionView({ data, isStreaming }: AgentExecutionViewProps) {
+  const { t } = useTranslation('execution');
   const [expandedIterations, setExpandedIterations] = useState<Record<number, boolean>>({});
   const [expandedSubRecords, setExpandedSubRecords] = useState<Record<string, boolean>>({});
 
@@ -238,7 +242,7 @@ export function AgentExecutionView({ data, isStreaming }: AgentExecutionViewProp
         </Box>
         <Stack gap={0} flex={1}>
           <Text size="sm" fw={600}>
-            Agent Execution
+            {t('agent.execution')}
           </Text>
           <Group gap="xs" wrap="nowrap">
             <Text size="xs" c="dimmed" style={{ fontFamily: 'monospace' }}>
@@ -248,7 +252,7 @@ export function AgentExecutionView({ data, isStreaming }: AgentExecutionViewProp
             <Group gap={3} wrap="nowrap">
               <RefreshCw size={10} color="var(--mantine-color-dimmed)" />
               <Text size="xs" c="dimmed">
-                {agentInfo.iterationCount} iteration{agentInfo.iterationCount !== 1 ? 's' : ''}
+                {t('agent.iterations', { count: agentInfo.iterationCount })}
               </Text>
             </Group>
           </Group>
@@ -259,7 +263,7 @@ export function AgentExecutionView({ data, isStreaming }: AgentExecutionViewProp
           size="sm"
           leftSection={statusInfo.icon}
         >
-          {statusInfo.label}
+          {t(statusInfo.labelKey)}
         </Badge>
         {duration && (
           <Text size="xs" c="dimmed" style={{ flexShrink: 0 }}>
@@ -308,7 +312,7 @@ export function AgentExecutionView({ data, isStreaming }: AgentExecutionViewProp
               <Group gap="xs" mb={4}>
                 <Layers size={12} color="var(--mantine-color-dimmed)" />
                 <Text size="xs" fw={500} c="dimmed">
-                  Sub-agents ({subRecords.length})
+                  {t('agent.subAgents', { count: subRecords.length })}
                 </Text>
               </Group>
               <Stack gap="xs">
@@ -330,7 +334,7 @@ export function AgentExecutionView({ data, isStreaming }: AgentExecutionViewProp
         <Group gap="xs" justify="center">
           <Loader size={12} speed={2} />
           <Text size="xs" c="dimmed">
-            Streaming...
+            {t('agent.streaming')}
           </Text>
         </Group>
       )}

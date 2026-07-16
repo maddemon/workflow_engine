@@ -2,6 +2,7 @@ import { CodeHighlight } from "@mantine/code-highlight"
 import { ActionIcon, Box, CopyButton, Group, Modal, Space, Text, Tooltip } from "@mantine/core"
 import { Copy, Maximize2 } from "lucide-react"
 import { useState } from "react"
+import { useTranslation } from "react-i18next"
 
 interface CodeViewerProps {
   label: string
@@ -11,6 +12,7 @@ interface CodeViewerProps {
 }
 
 export function CodeViewer({ label, code, language = "json", maxHeight = 120 }: CodeViewerProps) {
+  const { t } = useTranslation('execution')
   const [modalOpen, setModalOpen] = useState(false)
 
   return (
@@ -22,14 +24,14 @@ export function CodeViewer({ label, code, language = "json", maxHeight = 120 }: 
         <Group gap={2} wrap="nowrap">
           <CopyButton value={code}>
             {({ copied, copy }) => (
-              <Tooltip label={copied ? "Copied" : "Copy"} position="left">
+              <Tooltip label={copied ? t('codeViewer.copied') : t('codeViewer.copy')} position="left">
                 <ActionIcon variant="subtle" color="gray" size="xs" onClick={copy}>
                   <Copy size={12} strokeWidth={1.5} />
                 </ActionIcon>
               </Tooltip>
             )}
           </CopyButton>
-          <Tooltip label="Full screen">
+          <Tooltip label={t('codeViewer.fullScreen')}>
             <ActionIcon variant="subtle" color="gray" size="xs" onClick={() => setModalOpen(true)}>
               <Maximize2 size={12} strokeWidth={2} />
             </ActionIcon>

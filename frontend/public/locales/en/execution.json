@@ -2,17 +2,77 @@
   "title": "Execution",
   "run": "Run",
   "stop": "Stop",
+  "execute": "Execute",
+  "running": "Running...",
+  "stopExecution": "Stop Execution",
+  "executionResult": "Execution Result",
+  "executionError": "Execution Error",
+  "waitingForStart": "Waiting for execution to start...",
+  "noNodeRecords": "No node records",
   "status": {
     "idle": "Idle",
-    "running": "Running…",
+    "pending": "Pending",
+    "running": "Running",
     "completed": "Completed",
     "failed": "Failed",
-    "cancelled": "Cancelled"
+    "cancelled": "Cancelled",
+    "success": "Success"
   },
   "noExecutions": "No executions yet",
   "output": "Output",
+  "parameters": "Parameters",
+  "input": "Input",
   "error": "Error",
   "duration": "Duration",
   "startedAt": "Started at",
-  "completedAt": "Completed at"
+  "completedAt": "Completed at",
+  "history": {
+    "title": "Execution History",
+    "allStatuses": "All Statuses",
+    "noExecutionsFound": "No executions found",
+    "status": "Status",
+    "started": "Started",
+    "completed": "Completed",
+    "duration": "Duration",
+    "actions": "Actions",
+    "details": "Execution Details",
+    "nodeRecords": "Node Records",
+    "node": "Node",
+    "output": "Output",
+    "failedToFetch": "Failed to fetch executions"
+  },
+  "agent": {
+    "execution": "Agent Execution",
+    "iterations": "{{count}} iteration",
+    "iterations_plural": "{{count}} iterations",
+    "subAgents": "Sub-agents ({{count}})",
+    "streaming": "Streaming...",
+    "iteration": "Iteration",
+    "toolCalls": "{{count}} tool call",
+    "toolCalls_plural": "{{count}} tool calls"
+  },
+  "llm": {
+    "thinking": "LLM Thinking",
+    "tokens": "{{count}} tokens",
+    "systemPrompt": "System Prompt",
+    "waitingForResponse": "Waiting for response...",
+    "noThinkingContent": "No thinking content",
+    "prompt": "Prompt: {{count}}",
+    "completion": "Completion: {{count}}",
+    "total": "Total: {{count}}"
+  },
+  "tool": {
+    "noToolCalls": "No tool calls",
+    "noInputOutput": "No input/output data"
+  },
+  "button": {
+    "saveBeforeExecute": "Save workflow before executing",
+    "noWorkflowSelected": "No workflow selected",
+    "addAtLeastOneNode": "Add at least one node"
+  },
+  "codeViewer": {
+    "copy": "Copy",
+    "copied": "Copied",
+    "fullScreen": "Full screen"
+  }
 }

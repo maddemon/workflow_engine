@@ -1,12 +1,12 @@
 import { Check, X, Clock, Loader } from 'lucide-react';
 import type { ExecutionStatus } from '../types/workflow';
 
-export const statusConfig: Record<ExecutionStatus, { color: string; icon: React.ReactNode; label: string }> = {
-  Pending: { color: 'gray', icon: <Clock size={14} />, label: 'Pending' },
-  Running: { color: 'blue', icon: <Loader size={14} speed={2} />, label: 'Running' },
-  Completed: { color: 'green', icon: <Check size={14} strokeWidth={3} />, label: 'Completed' },
-  Failed: { color: 'red', icon: <X size={14} strokeWidth={3} />, label: 'Failed' },
-  Cancelled: { color: 'gray', icon: <X size={14} />, label: 'Cancelled' },
+export const statusConfig: Record<ExecutionStatus, { color: string; icon: React.ReactNode; labelKey: string }> = {
+  Pending: { color: 'gray', icon: <Clock size={14} />, labelKey: 'status.pending' },
+  Running: { color: 'blue', icon: <Loader size={14} speed={2} />, labelKey: 'status.running' },
+  Completed: { color: 'green', icon: <Check size={14} strokeWidth={3} />, labelKey: 'status.completed' },
+  Failed: { color: 'red', icon: <X size={14} strokeWidth={3} />, labelKey: 'status.failed' },
+  Cancelled: { color: 'gray', icon: <X size={14} />, labelKey: 'status.cancelled' },
 };
 
 export function formatDuration(startedAt: string | null, completedAt: string | null): string | null {
