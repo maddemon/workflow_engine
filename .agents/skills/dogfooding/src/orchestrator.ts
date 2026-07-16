@@ -1,12 +1,11 @@
 import { McpClient } from './mcp-client.js';
-import { LlmClient } from './llm-client.js';
 import { ScenarioGenerator } from './scenario-generator.js';
 import { Builder } from './builder.js';
 import { Analyzer } from './analyzer.js';
 import { Improver } from './improver.js';
 import { KnowledgeBase } from './knowledge-base.js';
 import { defaultConfig, type DogfoodingConfig } from '../config.default.js';
-import type { RoundReport, RoundMetrics } from './types.js';
+import type { Scenario, RoundReport, RoundMetrics } from './types.js';
 
 export class Orchestrator {
   private config: DogfoodingConfig;
@@ -25,22 +24,16 @@ export class Orchestrator {
     this.config = { ...defaultConfig, ...config };
   }
 
-  async runRound(roundId: string): Promise<RoundReport> {
-    console.log(`[Dogfooding] 开始第 ${roundId} 轮`);
+  async runRound(roundId: string, scenarios: Scenario[]): Promise<RoundReport> {
+    if (scenarios.length === 0) {
+      return this.emptyReport(roundId);
+    }
 
     // 1. 初始化 MCP 连接
     await this.mcp.initialize();
     console.log('[Dogfooding] MCP 连接已建立');
 
-    // 2. 生成场景
-    const scenarios = await this.generator.generate(this.config.scenariosPerRound);
-    console.log(`[Dogfooding] 生成了 ${scenarios.length} 个场景`);
-
-    if (scenarios.length === 0) {
-      return this.emptyReport(roundId);
-    }
-
-    // 3. 构建（串行执行，便于观察日志；可以改为并行）
+    // 2. 构建（串行执行，便于观察日志）
     const traces = [];
     for (const scenario of scenarios) {
       console.log(`[Dogfooding] 构建场景: ${scenario.title}`);
@@ -54,16 +47,16 @@ export class Orchestrator {
       }
     }
 
-    // 4. 分析
+    // 3. 分析
     const analyses = this.analyzer.analyzeTraces(traces);
-    const metrics = this.analyzer.computeMetrics(traces, analyses);
+    const metrics = Analyzer.computeMetrics(traces, analyses);
     console.log('[Dogfooding] 分析完成');
 
-    // 5. 改进
+    // 4. 改进
     const fixResult = await this.improver.process(analyses, roundId);
     console.log(`[Dogfooding] 改进: ${fixResult.fixAttempted} 个已修复, ${fixResult.fixSkipped} 个跳过`);
 
-    // 6. 组装报告
+    // 5. 组装报告
     const totalIssues = analyses.reduce((s, a) => s + a.issues.length, 0);
     const report: RoundReport = {
       roundId,
@@ -87,10 +80,10 @@ export class Orchestrator {
       metrics,
     };
 
-    // 7. 保存报告
+    // 6. 保存报告
     this.kb.saveRunReport(report);
 
-    // 8. 关闭 MCP
+    // 7. 关闭 MCP
     await this.mcp.close();
 
     console.log(`[Dogfooding] 第 ${roundId} 轮完成，报告已保存`);
@@ -118,10 +111,14 @@ export class Orchestrator {
     const config = { ...defaultConfig };
 
     const mcp = new McpClient();
-    const llm = new LlmClient();
     const kb = new KnowledgeBase(config.knowledgeBaseDir);
-    const generator = new ScenarioGenerator(llm, mcp, kb);
-    const builder = new Builder(mcp, llm, { maxBuildRetries: config.maxBuildRetries, maxExecRetries: config.maxExecRetries });
+
+    // 先初始化 MCP 连接，ScenarioGenerator 需要调用 list_node_catalog
+    await mcp.initialize();
+    console.log('[Dogfooding] MCP 连接已建立');
+
+    const generator = new ScenarioGenerator(mcp, kb);
+    const builder = new Builder(mcp, { maxBuildRetries: config.maxBuildRetries, maxExecRetries: config.maxExecRetries });
     const analyzer = new Analyzer(kb);
     const improver = new Improver(kb);
 
@@ -131,7 +128,9 @@ export class Orchestrator {
     );
 
     const roundId = `round-${Date.now()}`;
-    const report = await orchestrator.runRound(roundId);
+    // 从 catalog 自动组合生成场景
+    const scenarios = await generator.generate(config.scenariosPerRound);
+    const report = await orchestrator.runRound(roundId, scenarios);
 
     console.log(`\n[Dogfooding] 报告: ${config.knowledgeBaseDir}/runs/${roundId}.json`);
     console.log('[Dogfooding] 审阅后如需继续，运行: npx tsx src/orchestrator.ts');

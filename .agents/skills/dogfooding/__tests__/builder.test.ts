@@ -4,7 +4,6 @@ import type { Scenario, BuilderTrace } from '../src/types.js';
 
 describe('Builder', () => {
   const mockMcp = { initialize: vi.fn(), callTool: vi.fn(), listTools: vi.fn(), close: vi.fn() };
-  const mockLlm = { generate: vi.fn(), generateJson: vi.fn() };
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -29,8 +28,7 @@ describe('Builder', () => {
 
   it('build - completes happy path successfully', async () => {
     mockMcpSuccessSequence();
-    mockLlm.generate.mockResolvedValue('httpRequest, code');
-    const builder = new Builder(mockMcp as any, mockLlm as any, { maxBuildRetries: 3, maxExecRetries: 2 });
+    const builder = new Builder(mockMcp as any, { maxBuildRetries: 3, maxExecRetries: 2 });
     const trace = await builder.build(sampleScenario);
     expect(trace.finalStatus).toBe('completed');
     expect(trace.scenarioId).toBe('s-test');
@@ -46,7 +44,6 @@ describe('Builder', () => {
       if (name === 'get_node_detail') return { typeName: 'httpRequest', inputSchema: {} };
       if (name === 'assemble_workflow') return { draftId: 'draft-1', workflow: {} };
       if (name === 'validate_workflow') {
-        // First call (index 6) fails; subsequent calls succeed
         return callCount <= 6
           ? { success: false, errors: [{ nodeId: 'fetch', field: 'url', errorType: 'InvalidExpression', canAutoFix: true, suggestedFix: 'Use JS concat' }] }
           : { success: true, errors: [] };
@@ -57,8 +54,7 @@ describe('Builder', () => {
       if (name === 'execute_workflow') return { executionId: 'exec-1', status: 'Completed' };
       return {};
     });
-    mockLlm.generate.mockResolvedValue('httpRequest, code');
-    const builder = new Builder(mockMcp as any, mockLlm as any, { maxBuildRetries: 3, maxExecRetries: 2 });
+    const builder = new Builder(mockMcp as any, { maxBuildRetries: 3, maxExecRetries: 2 });
     const trace = await builder.build(sampleScenario);
     expect(trace.finalStatus).toBe('completed');
     expect(trace.aiRetries).toBe(1);
@@ -75,8 +71,7 @@ describe('Builder', () => {
       if (name === 'modify_workflow') return { draftId: 'draft-2', workflow: {} };
       return {};
     });
-    mockLlm.generate.mockResolvedValue('httpRequest');
-    const builder = new Builder(mockMcp as any, mockLlm as any, { maxBuildRetries: 3, maxExecRetries: 2 });
+    const builder = new Builder(mockMcp as any, { maxBuildRetries: 3, maxExecRetries: 2 });
     const trace = await builder.build(sampleScenario);
     expect(trace.finalStatus).toBe('blocker');
     expect(trace.aiRetries).toBe(3);
@@ -84,8 +79,7 @@ describe('Builder', () => {
 
   it('build - logs all MCP calls in trace', async () => {
     mockMcpSuccessSequence();
-    mockLlm.generate.mockResolvedValue('httpRequest, code');
-    const builder = new Builder(mockMcp as any, mockLlm as any, { maxBuildRetries: 3, maxExecRetries: 2 });
+    const builder = new Builder(mockMcp as any, { maxBuildRetries: 3, maxExecRetries: 2 });
     const trace = await builder.build(sampleScenario);
     expect(trace.steps.length).toBeGreaterThan(0);
     expect(trace.steps[0].tool).toBe('get_conventions');

@@ -1,5 +1,4 @@
 import type { McpClient } from './mcp-client.js';
-import type { LlmClient } from './llm-client.js';
 import type { Scenario, BuilderTrace, McpStep, FinalStatus } from './types.js';
 
 interface BuilderConfig {
@@ -10,7 +9,6 @@ interface BuilderConfig {
 export class Builder {
   constructor(
     private mcp: McpClient,
-    private llm: LlmClient,
     private config: BuilderConfig,
   ) {}
 
@@ -33,9 +31,14 @@ export class Builder {
       const catalog = await this.mcp.callTool<Array<{ typeName: string; category: string }>>('list_node_catalog', {});
       log('discover', 'list_node_catalog', {}, catalog);
 
-      const nodeTypesPrompt = `需求: ${scenario.description}\n\n可用节点:\n${catalog.map((n: { typeName: string; category: string }) => `- ${n.typeName} (${n.category})`).join('\n')}\n\n选择 2-5 个节点类型，逗号分隔。`;
-      const chosen = (await this.llm.generate(nodeTypesPrompt)).split(',').map(s => s.trim());
-      const chosenTypes = chosen.filter(c => catalog.some((n: { typeName: string }) => n.typeName === c));
+      // 用场景的 categoryCoverage 选节点，不调 LLM
+      const chosenTypes = scenario.categoryCoverage
+        .map(cat => catalog.find((n: { typeName: string; category: string }) => n.category === cat))
+        .filter(Boolean)
+        .map((n: { typeName: string }) => n.typeName);
+      if (chosenTypes.length === 0) {
+        chosenTypes.push(catalog[0]?.typeName ?? '');
+      }
 
       const nodeDetails: Array<{ typeName: string; inputSchema: unknown }> = [];
       for (const typeName of chosenTypes) {

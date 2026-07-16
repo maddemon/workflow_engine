@@ -10,16 +10,15 @@ describe('Orchestrator', () => {
   const mockKb = { saveRunReport: vi.fn() };
   const mockMcp = { initialize: vi.fn(), close: vi.fn() };
 
+  const sampleScenarios: Scenario[] = [
+    { id: 's1', title: 'Test 1', description: 'D1', difficulty: 'easy', categoryCoverage: ['http'] },
+  ];
+
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
   it('runRound - completes full cycle', async () => {
-    const scenarios: Scenario[] = [
-      { id: 's1', title: 'Test 1', description: 'D1', difficulty: 'easy', categoryCoverage: ['http'] },
-    ];
-
-    mockGen.generate.mockResolvedValue(scenarios);
     mockBuilder.build.mockResolvedValue({ scenarioId: 's1', steps: [], finalStatus: 'completed', totalMcpCalls: 8, aiRetries: 0 });
     mockAnalyzer.analyzeTraces.mockReturnValue([{ scenarioId: 's1', finalStatus: 'completed', issues: [] }]);
     mockAnalyzer.computeMetrics.mockReturnValue({
@@ -33,11 +32,10 @@ describe('Orchestrator', () => {
     const orchestrator = new Orchestrator(
       mockMcp as any, mockGen as any, mockBuilder as any,
       mockAnalyzer as any, mockImprover as any, mockKb as any,
-      2, // maxRetries for build
-      1, // maxRetries for exec
+      2, 1,
     );
 
-    const report = await orchestrator.runRound('round-test');
+    const report = await orchestrator.runRound('round-test', sampleScenarios);
 
     expect(report.roundId).toBe('round-test');
     expect(report.scenarios).toHaveLength(1);
@@ -54,11 +52,10 @@ describe('Orchestrator', () => {
       2, 1,
     );
 
-    await expect(orchestrator.runRound('round-1')).rejects.toThrow('Connection refused');
+    await expect(orchestrator.runRound('round-1', sampleScenarios)).rejects.toThrow('Connection refused');
   });
 
   it('runRound - handles empty scenario list', async () => {
-    mockGen.generate.mockResolvedValue([]);
     mockMcp.initialize.mockResolvedValue([]);
 
     const orchestrator = new Orchestrator(
@@ -67,7 +64,7 @@ describe('Orchestrator', () => {
       2, 1,
     );
 
-    const report = await orchestrator.runRound('round-empty');
+    const report = await orchestrator.runRound('round-empty', []);
     expect(report.summary.totalScenarios).toBe(0);
   });
 });
