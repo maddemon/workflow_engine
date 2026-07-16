@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <data name="InternalServerError" xml:space="preserve">
+    <value>An internal error occurred. Please try again later.</value>
+  </data>
+  <data name="RequestNotProcessed" xml:space="preserve">
+    <value>The request could not be processed. Please check your input and try again.</value>
+  </data>
+  <data name="NotFound" xml:space="preserve">
+    <value>Not Found</value>
+  </data>
+  <data name="BadRequest" xml:space="preserve">
+    <value>Bad Request</value>
+  </data>
+  <data name="Forbidden" xml:space="preserve">
+    <value>Forbidden</value>
+  </data>
+  <data name="Unauthorized" xml:space="preserve">
+    <value>Unauthorized</value>
+  </data>
+  <data name="ValidationFailed" xml:space="preserve">
+    <value>Validation failed</value>
+  </data>
+  <data name="WorkflowNotFound" xml:space="preserve">
+    <value>Workflow not found</value>
+  </data>
+  <data name="NodeNotFound" xml:space="preserve">
+    <value>Node not found</value>
+  </data>
+  <data name="ExecutionNotFound" xml:space="preserve">
+    <value>Execution not found</value>
+  </data>
+  <data name="WorkflowNameRequired" xml:space="preserve">
+    <value>Workflow name is required</value>
+  </data>
+  <data name="NodesRequired" xml:space="preserve">
+    <value>Nodes must not be empty.</value>
+  </data>
+  <data name="ConnectionsRequired" xml:space="preserve">
+    <value>Connections must not be empty.</value>
+  </data>
+  <data name="WorkflowIdListRequired" xml:space="preserve">
+    <value>Workflow ID list must not be empty.</value>
+  </data>
+  <data name="InvalidExpression" xml:space="preserve">
+    <value>Invalid expression: {0}</value>
+  </data>
+  <data name="CredentialNotFound" xml:space="preserve">
+    <value>Credential not found</value>
+  </data>
+  <data name="ApiKeyNameRequired" xml:space="preserve">
+    <value>API key name is required</value>
+  </data>
+  <data name="ApiKeyRevoked" xml:space="preserve">
+    <value>API key "{0}" has been revoked</value>
+  </data>
+  <data name="ApiKeyCreateFailed" xml:space="preserve">
+    <value>Failed to create API key</value>
+  </data>
+  <data name="ApiKeyRevokeFailed" xml:space="preserve">
+    <value>Failed to revoke API key</value>
+  </data>
+  <data name="AssembleFailed" xml:space="preserve">
+    <value>Assembly failed: {0}</value>
+  </data>
+  <data name="ModifyFailed" xml:space="preserve">
+    <value>Modification failed: {0}</value>
+  </data>
+  <data name="ExportFailed" xml:space="preserve">
+    <value>Export failed. Please try again.</value>
+  </data>
+  <data name="ImportFailed" xml:space="preserve">
+    <value>Import failed. Please check the input.</value>
+  </data>
+  <data name="WebhookPathInUse" xml:space="preserve">
+    <value>Webhook path "{0}" is already in use.</value>
+  </data>
+</root>

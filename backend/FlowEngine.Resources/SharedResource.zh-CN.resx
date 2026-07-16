@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <data name="InternalServerError" xml:space="preserve">
+    <value>发生内部错误，请稍后重试。</value>
+  </data>
+  <data name="RequestNotProcessed" xml:space="preserve">
+    <value>请求无法处理，请检查输入后重试。</value>
+  </data>
+  <data name="NotFound" xml:space="preserve">
+    <value>未找到</value>
+  </data>
+  <data name="BadRequest" xml:space="preserve">
+    <value>请求无效</value>
+  </data>
+  <data name="Forbidden" xml:space="preserve">
+    <value>禁止访问</value>
+  </data>
+  <data name="Unauthorized" xml:space="preserve">
+    <value>未授权</value>
+  </data>
+  <data name="ValidationFailed" xml:space="preserve">
+    <value>验证失败</value>
+  </data>
+  <data name="WorkflowNotFound" xml:space="preserve">
+    <value>未找到工作流</value>
+  </data>
+  <data name="NodeNotFound" xml:space="preserve">
+    <value>未找到节点</value>
+  </data>
+  <data name="ExecutionNotFound" xml:space="preserve">
+    <value>未找到执行记录</value>
+  </data>
+  <data name="WorkflowNameRequired" xml:space="preserve">
+    <value>工作流名称为必填项</value>
+  </data>
+  <data name="NodesRequired" xml:space="preserve">
+    <value>节点不能为空。</value>
+  </data>
+  <data name="ConnectionsRequired" xml:space="preserve">
+    <value>连接不能为空。</value>
+  </data>
+  <data name="WorkflowIdListRequired" xml:space="preserve">
+    <value>工作流 ID 列表不能为空。</value>
+  </data>
+  <data name="InvalidExpression" xml:space="preserve">
+    <value>表达式无效：{0}</value>
+  </data>
+  <data name="CredentialNotFound" xml:space="preserve">
+    <value>未找到凭据</value>
+  </data>
+  <data name="ApiKeyNameRequired" xml:space="preserve">
+    <value>API 密钥名称为必填项</value>
+  </data>
+  <data name="ApiKeyRevoked" xml:space="preserve">
+    <value>API 密钥“{0}”已被吊销</value>
+  </data>
+  <data name="ApiKeyCreateFailed" xml:space="preserve">
+    <value>创建 API 密钥失败</value>
+  </data>
+  <data name="ApiKeyRevokeFailed" xml:space="preserve">
+    <value>吊销 API 密钥失败</value>
+  </data>
+  <data name="AssembleFailed" xml:space="preserve">
+    <value>组装失败：{0}</value>
+  </data>
+  <data name="ModifyFailed" xml:space="preserve">
+    <value>修改失败：{0}</value>
+  </data>
+  <data name="ExportFailed" xml:space="preserve">
+    <value>导出失败，请稍后重试。</value>
+  </data>
+  <data name="ImportFailed" xml:space="preserve">
+    <value>导入失败，请检查输入。</value>
+  </data>
+  <data name="WebhookPathInUse" xml:space="preserve">
+    <value>Webhook 路径“{0}”已被使用。</value>
+  </data>
+</root>
