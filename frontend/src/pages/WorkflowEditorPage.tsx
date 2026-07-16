@@ -1,6 +1,7 @@
 import { ReactFlowProvider } from "@xyflow/react"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useParams } from "react-router-dom"
+import { useTranslation } from "react-i18next"
 import { WorkflowCanvas } from "../components/Canvas/WorkflowCanvas.tsx"
 import { ExecutionPanel } from "../components/ExecutionPanel/ExecutionPanel.tsx"
 import { NodePanel } from "../components/NodePanel/NodePanel.tsx"
@@ -21,6 +22,7 @@ interface WorkflowEditorPageProps {
 }
 
 export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) {
+  const { t } = useTranslation(['workflow', 'common'])
   const { id } = useParams<{ id: string }>()
   const { ready } = useNodeTypes()
   const { execution, clearExecution, execute, dryRun, dryRunLoading, cancelExecution, error } = useExecution()
@@ -61,10 +63,10 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
         <Stack gap="xs" p="sm" style={{ height: '100%', overflow: 'hidden' }}>
           <Group gap={4}>
             <Eye size={14} />
-            <Text fw={600} size="sm">Review Mode</Text>
-            <Badge size="xs" color="blue" variant="light">AI Draft</Badge>
+            <Text fw={600} size="sm">{t('editorReviewMode')}</Text>
+            <Badge size="xs" color="blue" variant="light">{t('editorAiDraft')}</Badge>
           </Group>
-          <Text size="xs" c="dimmed">Review the AI-generated workflow below.</Text>
+          <Text size="xs" c="dimmed">{t('editorReviewHint')}</Text>
 
           {structuredDiff && structuredDiff.length > 0 && (
             <DiffPanel diff={structuredDiff} highlightedNodeIds={highlightedNodeIds} onNodeHighlight={setHighlightedNodeIds} />
@@ -75,18 +77,18 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
           <Divider />
 
           <Stack gap="xs">
-            <Text fw={600} size="xs" tt="uppercase">Actions</Text>
+            <Text fw={600} size="xs" tt="uppercase">{t('editorActions')}</Text>
             <Button leftSection={<Play size={14} />} variant="light" onClick={() => dryRun()} loading={dryRunLoading}>
-              Dry Run
+              {t('editorDryRun')}
             </Button>
             <Button leftSection={<Check size={14} />} color="green" onClick={() => setValidationModalOpen(true)}>
-              Confirm & Activate
+              {t('editorConfirmActivate')}
             </Button>
             <Button leftSection={<X size={14} />} color="red" variant="light" onClick={() => setRejectModalOpen(true)}>
-              Reject
+              {t('editorReject')}
             </Button>
             <Button variant="subtle" color="gray" onClick={() => setReviewMode(false)}>
-              Switch to Manual Mode
+              {t('editorSwitchManual')}
             </Button>
           </Stack>
         </Stack>
@@ -94,7 +96,7 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
     }
 
     return <ParameterPanel />
-  }, [execution, clearExecution, cancelExecution, error, reviewMode, setReviewMode, structuredDiff, highlightedNodeIds, dryRun, dryRunLoading])
+  }, [execution, clearExecution, cancelExecution, error, reviewMode, setReviewMode, structuredDiff, highlightedNodeIds, dryRun, dryRunLoading, t])
 
   const handleLayoutChange = useCallback(() => {
     onLayoutChange?.(navbar, aside)
@@ -104,24 +106,24 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
     if (!workflowId) return;
     try {
       await confirmWorkflow(workflowId);
-      notifications.show({ title: 'Activated', message: 'Workflow confirmed and activated.', color: 'green' });
+      notifications.show({ title: t('editorActivated'), message: t('editorActivationMessage'), color: 'green' });
       setValidationModalOpen(false);
     } catch (err) {
-      notifications.show({ title: 'Failed', message: err instanceof Error ? err.message : 'Confirmation failed', color: 'red' });
+      notifications.show({ title: t('error', { ns: 'common' }), message: err instanceof Error ? err.message : t('editorConfirmationFailed'), color: 'red' });
     }
-  }, [workflowId]);
+  }, [workflowId, t]);
 
   const handleReject = useCallback(async () => {
     if (!workflowId || !rejectReason.trim()) return;
     try {
       await rejectDraft(workflowId, rejectReason);
-      notifications.show({ title: 'Rejected', message: 'Draft rejected. Feedback sent to AI.', color: 'orange' });
+      notifications.show({ title: t('editorRejected'), message: t('editorRejectionMessage'), color: 'orange' });
       setRejectModalOpen(false);
       setRejectReason('');
     } catch (err) {
-      notifications.show({ title: 'Failed', message: err instanceof Error ? err.message : 'Rejection failed', color: 'red' });
+      notifications.show({ title: t('error', { ns: 'common' }), message: err instanceof Error ? err.message : t('editorRejectionFailed'), color: 'red' });
     }
-  }, [workflowId, rejectReason]);
+  }, [workflowId, rejectReason, t]);
 
   useEffect(() => {
     handleLayoutChange()
@@ -139,14 +141,14 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
           onClose={dismiss}
           style={{ margin: 8 }}
         >
-          This workflow has been modified externally (v{workflowVersion ?? '?'} → v{newVersion}).
+          {t('editorExternalChange', { oldVersion: workflowVersion ?? '?', newVersion: newVersion ?? '?' })}
           <Anchor
             component="button"
             ml="xs"
             onClick={() => {
               const store = useWorkflowStore.getState();
               if (store.isDirty) {
-                if (!window.confirm('You have unsaved changes. Load the new version anyway? Unsaved changes will be lost.')) return;
+                if (!window.confirm(t('editorUnsavedChangesConfirm'))) return;
               }
               if (workflowId) {
                 loadWorkflow(workflowId);
@@ -154,7 +156,7 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
               }
             }}
           >
-            Load new version
+            {t('editorLoadNewVersion')}
           </Anchor>
         </Alert>
       )}
@@ -167,18 +169,18 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
         onProceed={handleConfirm}
       />
 
-      <Modal opened={rejectModalOpen} onClose={() => setRejectModalOpen(false)} title="Reject Draft" centered>
+      <Modal opened={rejectModalOpen} onClose={() => setRejectModalOpen(false)} title={t('editorRejectDraftTitle')} centered>
         <Stack gap="md">
           <Textarea
-            label="Rejection Reason"
-            placeholder="Describe what needs to be improved..."
+            label={t('editorRejectionReason')}
+            placeholder={t('editorRejectionReasonPlaceholder')}
             value={rejectReason}
             onChange={(e) => setRejectReason(e.target.value)}
             minRows={3}
           />
           <Group justify="flex-end">
-            <Button variant="subtle" color="gray" onClick={() => setRejectModalOpen(false)}>Cancel</Button>
-            <Button color="red" onClick={handleReject} disabled={!rejectReason.trim()}>Submit Rejection</Button>
+            <Button variant="subtle" color="gray" onClick={() => setRejectModalOpen(false)}>{t('cancel', { ns: 'common' })}</Button>
+            <Button color="red" onClick={handleReject} disabled={!rejectReason.trim()}>{t('editorSubmitRejection')}</Button>
           </Group>
         </Stack>
       </Modal>

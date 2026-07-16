@@ -3,6 +3,7 @@ import { Group, ActionIcon, Tooltip, Divider, Button } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { Undo2, Redo2, ZoomIn, ZoomOut, Maximize, Save, Play, Square, Layout } from 'lucide-react';
 import { useReactFlow } from '@xyflow/react';
+import { useTranslation } from 'react-i18next';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
 import { validateParameters } from '../../utils/validateParameters.ts';
 
@@ -14,6 +15,7 @@ interface ICanvasToolbarProps {
 }
 
 export const CanvasToolbar = memo(function CanvasToolbar({ onExecute, onCancel, onDryRun, dryRunLoading }: ICanvasToolbarProps) {
+  const { t } = useTranslation(['workflow', 'common']);
   const { fitView, zoomIn, zoomOut } = useReactFlow();
   const canUndo = useWorkflowStore((s) => s.canUndo);
   const canRedo = useWorkflowStore((s) => s.canRedo);
@@ -57,7 +59,7 @@ export const CanvasToolbar = memo(function CanvasToolbar({ onExecute, onCancel, 
         }
       }
       notifications.show({
-        title: 'Configuration Error',
+        title: t('toolbarConfigurationError'),
         message: lines.join('\n'),
         color: 'red',
         autoClose: 8000,
@@ -65,44 +67,44 @@ export const CanvasToolbar = memo(function CanvasToolbar({ onExecute, onCancel, 
       return;
     }
     onExecute(workflowId);
-  }, [workflowId, onExecute]);
+  }, [workflowId, onExecute, t]);
 
   return (
     <div className="canvas-toolbar">
       {/* 左侧：撤销/重做 + 缩放 */}
       <Group gap={2} wrap="nowrap">
-        <Tooltip label="Undo" position="bottom" disabled={!canUndo || isExecuting}>
-          <ActionIcon variant="subtle" color="gray" size="sm" onClick={undo} disabled={!canUndo || isExecuting} aria-label="Undo">
+        <Tooltip label={t('toolbarUndo')} position="bottom" disabled={!canUndo || isExecuting}>
+          <ActionIcon variant="subtle" color="gray" size="sm" onClick={undo} disabled={!canUndo || isExecuting} aria-label={t('toolbarUndo')}>
             <Undo2 size={14} />
           </ActionIcon>
         </Tooltip>
-        <Tooltip label="Redo" position="bottom" disabled={!canRedo || isExecuting}>
-          <ActionIcon variant="subtle" color="gray" size="sm" onClick={redo} disabled={!canRedo || isExecuting} aria-label="Redo">
+        <Tooltip label={t('toolbarRedo')} position="bottom" disabled={!canRedo || isExecuting}>
+          <ActionIcon variant="subtle" color="gray" size="sm" onClick={redo} disabled={!canRedo || isExecuting} aria-label={t('toolbarRedo')}>
             <Redo2 size={14} />
           </ActionIcon>
         </Tooltip>
         <Divider orientation="vertical" mx={2} />
-        <Tooltip label="Zoom In" position="bottom">
-          <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => zoomIn()} aria-label="Zoom In">
+        <Tooltip label={t('toolbarZoomIn')} position="bottom">
+          <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => zoomIn()} aria-label={t('toolbarZoomIn')}>
             <ZoomIn size={14} />
           </ActionIcon>
         </Tooltip>
-        <Tooltip label="Zoom Out" position="bottom">
-          <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => zoomOut()} aria-label="Zoom Out">
+        <Tooltip label={t('toolbarZoomOut')} position="bottom">
+          <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => zoomOut()} aria-label={t('toolbarZoomOut')}>
             <ZoomOut size={14} />
           </ActionIcon>
         </Tooltip>
-        <Tooltip label="Fit View" position="bottom">
-          <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => fitView({ padding: 0.2 })} aria-label="Fit View">
+        <Tooltip label={t('toolbarFitView')} position="bottom">
+          <ActionIcon variant="subtle" color="gray" size="sm" onClick={() => fitView({ padding: 0.2 })} aria-label={t('toolbarFitView')}>
             <Maximize size={14} />
           </ActionIcon>
         </Tooltip>
-        <Tooltip label="Auto Layout" position="bottom">
+        <Tooltip label={t('toolbarAutoLayout')} position="bottom">
           <ActionIcon
             variant="subtle"
             color="gray"
             size="sm"
-            aria-label="Auto Layout"
+            aria-label={t('toolbarAutoLayout')}
             disabled={nodeCount === 0 || isExecuting || reviewMode}
             onClick={() => {
               autoLayout();
@@ -117,7 +119,7 @@ export const CanvasToolbar = memo(function CanvasToolbar({ onExecute, onCancel, 
       {/* 右侧：保存 + 执行 */}
       <Group gap="xs" wrap="nowrap">
         <Button leftSection={<Save size={12} />} onClick={saveWorkflow} loading={saving} disabled={isExecuting} size="compact-xs" variant="filled">
-          Save
+          {t('save', { ns: 'common' })}
         </Button>
         <Button
           leftSection={<Play size={12} />}
@@ -128,7 +130,7 @@ export const CanvasToolbar = memo(function CanvasToolbar({ onExecute, onCancel, 
           disabled={!canDryRun || isExecuting || dryRunLoading}
           loading={dryRunLoading}
         >
-          Dry Run
+          {t('editorDryRun')}
         </Button>
         {isExecuting ? (
           <Button
@@ -138,7 +140,7 @@ export const CanvasToolbar = memo(function CanvasToolbar({ onExecute, onCancel, 
             size="compact-xs"
             onClick={onCancel}
           >
-            Stop
+            {t('toolbarStop')}
           </Button>
         ) : (
           <Button
@@ -149,7 +151,7 @@ export const CanvasToolbar = memo(function CanvasToolbar({ onExecute, onCancel, 
             onClick={handleExecute}
             disabled={!canExecute}
           >
-            Test Run
+            {t('toolbarTestRun')}
           </Button>
         )}
       </Group>

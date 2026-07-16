@@ -1,5 +1,6 @@
 import { Select } from '@mantine/core';
 import { useRequest } from 'ahooks';
+import { useTranslation } from 'react-i18next';
 import { getProjects } from '../../services/api.ts';
 
 interface ProjectFilterProps {
@@ -8,18 +9,19 @@ interface ProjectFilterProps {
 }
 
 export function ProjectFilter({ value, onChange }: ProjectFilterProps) {
+  const { t } = useTranslation('workflow');
   const { data: projects = [] } = useRequest(getProjects);
 
   const selectData = [
-    { value: '__all__', label: 'All Projects' },
-    { value: '__none__', label: 'Uncategorized' },
+    { value: '__all__', label: t('projectFilterAll') },
+    { value: '__none__', label: t('projectFilterUncategorized') },
     ...projects.map((p) => ({ value: p.id, label: p.name })),
   ];
 
   return (
     <Select
       size="xs"
-      placeholder="Filter by project"
+      placeholder={t('projectFilterPlaceholder')}
       data={selectData}
       value={value ?? '__all__'}
       onChange={(val) => {
