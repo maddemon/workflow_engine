@@ -1,0 +1,33 @@
+{
+  "title": "Settings",
+  "userInfo": "User Info",
+  "email": "Email",
+  "userName": "User Name",
+  "displayName": "Display Name",
+  "createdAt": "Created At",
+  "roles": "Roles",
+  "noRoles": "No roles assigned",
+  "apiKeys": {
+    "title": "API Keys",
+    "create": "Create API Key",
+    "keyName": "Key Name",
+    "nameRequired": "Key name is required",
+    "created": "Created",
+    "expires": "Expires",
+    "status": "Status",
+    "actions": "Actions",
+    "active": "Active",
+    "revoked": "Revoked",
+    "expired": "Expired",
+    "revoke": "Revoke",
+    "revokeConfirm": "Are you sure you want to revoke the API key <strong>{{name}}</strong>?",
+    "revokeDesc": "This action cannot be undone. Any services using this key will lose access immediately.",
+    "keyCreated": "Copy this key now. It will <strong>not</strong> be shown again.",
+    "copied": "Copied",
+    "copyToClipboard": "Copy to clipboard",
+    "loading": "Loading API keys…",
+    "noKeys": "No API keys yet. Create one to get started.",
+    "createFailed": "Failed to create API key",
+    "revokeFailed": "Failed to revoke API key"
+  }
+}

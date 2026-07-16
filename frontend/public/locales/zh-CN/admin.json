@@ -1,0 +1,10 @@
+{
+  "users": "用户",
+  "projects": "工作空间",
+  "files": "文件",
+  "audit": "审计日志",
+  "addUser": "添加用户",
+  "inviteUser": "邀请用户",
+  "removeUser": "移除用户",
+  "confirmRemove": "确定要移除此用户吗？"
+}

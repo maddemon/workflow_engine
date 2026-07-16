@@ -1,0 +1,12 @@
+{
+  "save": "Save",
+  "cancel": "Cancel",
+  "delete": "Delete",
+  "create": "Create",
+  "edit": "Edit",
+  "loading": "Loading…",
+  "error": "Error",
+  "noData": "No data",
+  "confirmDelete": "Are you sure you want to delete this?",
+  "confirmDiscard": "You have unsaved changes. Discard them?"
+}

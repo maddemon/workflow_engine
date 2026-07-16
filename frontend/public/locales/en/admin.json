@@ -1,0 +1,10 @@
+{
+  "users": "Users",
+  "projects": "Workspaces",
+  "files": "Files",
+  "audit": "Audit Log",
+  "addUser": "Add User",
+  "inviteUser": "Invite User",
+  "removeUser": "Remove User",
+  "confirmRemove": "Are you sure you want to remove this user?"
+}

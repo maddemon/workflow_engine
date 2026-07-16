@@ -1,0 +1,9 @@
+{
+  "title": "Workflows",
+  "new": "New Workflow",
+  "search": "Search workflows…",
+  "noWorkflows": "No workflows yet",
+  "import": "Import Workflow",
+  "export": "Export Workflow",
+  "confirmDelete": "Delete workflow \"{{name}}\"? This cannot be undone."
+}

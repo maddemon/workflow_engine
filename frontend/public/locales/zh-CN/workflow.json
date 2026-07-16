@@ -1,0 +1,9 @@
+{
+  "title": "工作流",
+  "new": "新建工作流",
+  "search": "搜索工作流…",
+  "noWorkflows": "还没有工作流",
+  "import": "导入工作流",
+  "export": "导出工作流",
+  "confirmDelete": "确定要删除工作流 \"{{name}}\" 吗？此操作不可撤销。"
+}

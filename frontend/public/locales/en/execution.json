@@ -1,0 +1,18 @@
+{
+  "title": "Execution",
+  "run": "Run",
+  "stop": "Stop",
+  "status": {
+    "idle": "Idle",
+    "running": "Running…",
+    "completed": "Completed",
+    "failed": "Failed",
+    "cancelled": "Cancelled"
+  },
+  "noExecutions": "No executions yet",
+  "output": "Output",
+  "error": "Error",
+  "duration": "Duration",
+  "startedAt": "Started at",
+  "completedAt": "Completed at"
+}

@@ -1,3 +1,4 @@
+import './i18n' // i18n 初始化 — 必须放在最前面，确保所有 useTranslation 使用前已就绪
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MantineProvider, ColorSchemeScript } from '@mantine/core'
