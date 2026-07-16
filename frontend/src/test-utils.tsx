@@ -7,6 +7,7 @@ import { initReactI18next } from 'react-i18next';
 
 import commonEn from '../public/locales/en/common.json';
 import settingsEn from '../public/locales/en/settings.json';
+import workflowEn from '../public/locales/en/workflow.json';
 
 const testI18n = i18n.createInstance();
 
@@ -20,6 +21,7 @@ testI18n
       en: {
         common: commonEn,
         settings: settingsEn,
+        workflow: workflowEn,
       },
     },
     react: {

@@ -13,6 +13,6 @@ vi.mock('../../../services/api.ts', () => ({
 describe('ProjectFilter', () => {
   it('renders filter placeholder', () => {
     renderWithProvider(<ProjectFilter value={null} onChange={vi.fn()} />);
-    expect(screen.getByPlaceholderText('projectFilter.placeholder')).toBeDefined();
+    expect(screen.getByPlaceholderText('Filter by project')).toBeDefined();
   });
 });
