@@ -16,6 +16,6 @@ public static class ControllerExtensions
     /// <summary>
     /// 返回标准格式的 400 错误响应。
     /// </summary>
-    public static ActionResult BadRequestError(this ControllerBase controller, string? message) =>
-        new BadRequestObjectResult(new { error = "BadRequest", message });
+    public static ActionResult BadRequestError(this ControllerBase controller, string errorCode, string? message) =>
+        new BadRequestObjectResult(new { success = false, errorCode, message });
 }

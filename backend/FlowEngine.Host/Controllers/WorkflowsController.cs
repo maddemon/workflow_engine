@@ -101,12 +101,12 @@ public class WorkflowsController(
     {
         if (request.Nodes is null || request.Nodes.Count == 0)
         {
-            return this.BadRequestError(localizer["NodesRequired"]);
+            return this.BadRequestError("NodesRequired", localizer["NodesRequired"]);
         }
 
         if (request.Connections is null || request.Connections.Count == 0)
         {
-            return this.BadRequestError(localizer["ConnectionsRequired"]);
+            return this.BadRequestError("ConnectionsRequired", localizer["ConnectionsRequired"]);
         }
 
         var result = await dryRunService.DryRunAsync(request, cancellationToken).ConfigureAwait(false);
@@ -167,7 +167,7 @@ public class WorkflowsController(
     {
         if (request.Ids is null || request.Ids.Count == 0)
         {
-            return this.BadRequestError(localizer["WorkflowIdListRequired"]);
+            return this.BadRequestError("WorkflowIdListRequired", localizer["WorkflowIdListRequired"]);
         }
 
         var exportedBy = User.Identity?.Name ?? "unknown";
@@ -180,7 +180,7 @@ public class WorkflowsController(
         }
         catch (InvalidOperationException)
         {
-            return this.BadRequestError(localizer["ExportFailed"]);
+            return this.BadRequestError("ExportFailed", localizer["ExportFailed"]);
         }
     }
 

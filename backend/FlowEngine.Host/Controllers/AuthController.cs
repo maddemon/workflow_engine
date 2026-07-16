@@ -175,6 +175,7 @@ public class AuthController(
         {
             return BadRequest(new
             {
+                success = false,
                 errorCode = "ApiKeyNameRequired",
                 message = localizer["ApiKeyNameRequired"],
             });

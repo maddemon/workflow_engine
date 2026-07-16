@@ -36,7 +36,7 @@ public class FilesController(
     {
         if (file.Length == 0)
         {
-            return BadRequest(localizer["FileRequired"]);
+            return this.BadRequestError("FileRequired", localizer["FileRequired"]);
         }
 
         await using var stream = file.OpenReadStream();
