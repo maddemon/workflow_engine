@@ -16,6 +16,7 @@ import {
 import { Bell, BookOpen, Home, Key, LogOut, Moon, Settings, Shield, Sun, User, Workflow } from "lucide-react"
 import { useMemo, useState } from "react"
 import { useRequest } from "ahooks"
+import { useTranslation } from "react-i18next"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { CredentialListModal } from "../CredentialPanel/CredentialListModal.tsx"
 import { LanguageSwitcher } from "../common/LanguageSwitcher.tsx"
@@ -24,15 +25,15 @@ import { useRoles } from "../../hooks/useRoles.ts"
 import { getWorkflows } from "../../services/api.ts"
 
 const navItems = [
-  { label: "Workflows", icon: Home, path: "/" },
-  { label: "Documents", icon: BookOpen, path: "/help" },
+  { label: "workflows", icon: Home, path: "/" },
+  { label: "documents", icon: BookOpen, path: "/help" },
 ]
 
 const adminNavItems = [
-  { label: "User Management", icon: Shield, path: "/admin/users" },
-  { label: "Project Classification", icon: Shield, path: "/admin/projects" },
-  { label: "Audit Log", icon: Shield, path: "/admin/audit" },
-  { label: "File Management", icon: Shield, path: "/admin/files" },
+  { label: "userManagement", icon: Shield, path: "/admin/users" },
+  { label: "projectClassification", icon: Shield, path: "/admin/projects" },
+  { label: "auditLog", icon: Shield, path: "/admin/audit" },
+  { label: "fileManagement", icon: Shield, path: "/admin/files" },
 ]
 
 export function HeaderToolbar() {
@@ -43,6 +44,7 @@ export function HeaderToolbar() {
   const navigate = useNavigate()
   const { user, logout } = useAuth()
   const { hasRole } = useRoles()
+  const { t } = useTranslation("header")
   const { data: workflows = [] } = useRequest(getWorkflows, {
     pollingInterval: 60000,
   });
@@ -81,7 +83,7 @@ export function HeaderToolbar() {
                 >
                   <Group gap={4} wrap="nowrap">
                     <Shield size={13} />
-                    <Text size="xs">System</Text>
+                    <Text size="xs">{t("system")}</Text>
                     {pendingAiDrafts > 0 && (
                       <Badge size="xs" variant="filled" color="red">{pendingAiDrafts}</Badge>
                     )}
@@ -95,7 +97,7 @@ export function HeaderToolbar() {
                     leftSection={<item.icon size={14} />}
                     onClick={() => navigate(item.path)}
                   >
-                    {item.label}
+                    {t(item.label)}
                   </Menu.Item>
                 ))}
               </Menu.Dropdown>
@@ -116,7 +118,7 @@ export function HeaderToolbar() {
               >
                 <Group gap={4} wrap="nowrap">
                   <item.icon size={13} />
-                  <Text size="xs">{item.label}</Text>
+                  <Text size="xs">{t(item.label)}</Text>
                 </Group>
               </Anchor>
             )
@@ -124,35 +126,35 @@ export function HeaderToolbar() {
         </Group>
 
         <Group gap={4} wrap="nowrap">
-          <Tooltip label="Manage Credentials">
+          <Tooltip label={t("manageCredentials")}>
             <ActionIcon
               variant="subtle"
               color="gray"
               size="sm"
               onClick={() => setCredModalOpen(true)}
-              aria-label="Credentials"
+              aria-label={t("credentials")}
             >
               <Key size={16} />
             </ActionIcon>
           </Tooltip>
-          <Tooltip label={`Switch to ${colorScheme === "dark" ? "light" : "dark"} mode`}>
+          <Tooltip label={t(colorScheme === "dark" ? "switchToLightMode" : "switchToDarkMode")}>
             <ActionIcon
               variant="subtle"
               color="gray"
               size="sm"
               onClick={toggleColorScheme}
-              aria-label="Toggle color scheme"
+              aria-label={t("toggleColorScheme")}
             >
               {colorScheme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
             </ActionIcon>
           </Tooltip>
-          <ActionIcon variant="subtle" color="gray" size="sm" aria-label="Notifications">
+          <ActionIcon variant="subtle" color="gray" size="sm" aria-label={t("notifications")}>
             <Bell size={16} />
           </ActionIcon>
           <LanguageSwitcher />
           <Menu shadow="md" width={180}>
             <Menu.Target>
-              <ActionIcon variant="subtle" color="gray" size="lg" radius="sm" aria-label="Menu">
+              <ActionIcon variant="subtle" color="gray" size="lg" radius="sm" aria-label={t("menu")}>
                 <Avatar size={24} radius="sm" color="brand-blue" variant="filled">
                   {user?.displayName?.[0]?.toUpperCase() ?? <User size={14} />}
                 </Avatar>
@@ -160,14 +162,14 @@ export function HeaderToolbar() {
             </Menu.Target>
               <Menu.Dropdown>
               <Text size="xs" px="sm" py={4} c="dimmed" ta="center">
-                {user?.email ?? "Not signed in"}
+                {user?.email ?? t("notSignedIn")}
               </Text>
               <Menu.Divider />
               <Menu.Item leftSection={<Settings size={14} />} onClick={() => navigate('/settings')}>
-                Settings
+                {t("settings")}
               </Menu.Item>
               <Menu.Item leftSection={<LogOut size={14} />} color="red" onClick={handleLogout}>
-                Logout
+                {t("logout")}
               </Menu.Item>
             </Menu.Dropdown>
           </Menu>
