@@ -49,10 +49,11 @@ ${uncoveredCategories.length > 0 ? `优先覆盖未测试过的分类: ${uncover
       temperature: 0.8,
     });
 
-    for (const s of scenarios.slice(0, count)) {
+    const result = scenarios.slice(0, count);
+    for (const s of result) {
       this.kb.recordScenario(s);
     }
 
-    return scenarios.slice(0, count);
+    return result;
   }
 }

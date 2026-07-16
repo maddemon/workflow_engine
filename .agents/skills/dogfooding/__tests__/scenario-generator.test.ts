@@ -41,6 +41,12 @@ describe('ScenarioGenerator', () => {
     expect(promptArg).toContain('categoryCoverage');
   });
 
+  it('generate - throws on empty catalog', async () => {
+    mockMcp.callTool.mockResolvedValue([]);
+    const gen = new ScenarioGenerator(mockLlm as any, mockMcp as any, mockKb as any);
+    await expect(gen.generate(1)).rejects.toThrow('节点目录为空');
+  });
+
   it('generate - avoids already-covered categories', async () => {
     mockKb.loadCoverage.mockReturnValue({ scenarioCount: 5, coveredNodePairs: [['http', 'db']], coveredCategories: ['http', 'db', 'trigger'] });
     mockLlm.generateJson.mockResolvedValue([
