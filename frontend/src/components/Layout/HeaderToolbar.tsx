@@ -18,6 +18,7 @@ import { useMemo, useState } from "react"
 import { useRequest } from "ahooks"
 import { Link, useLocation, useNavigate } from "react-router-dom"
 import { CredentialListModal } from "../CredentialPanel/CredentialListModal.tsx"
+import { LanguageSwitcher } from "../common/LanguageSwitcher.tsx"
 import { useAuth } from "../../hooks/AuthContext.tsx"
 import { useRoles } from "../../hooks/useRoles.ts"
 import { getWorkflows } from "../../services/api.ts"
@@ -148,6 +149,7 @@ export function HeaderToolbar() {
           <ActionIcon variant="subtle" color="gray" size="sm" aria-label="Notifications">
             <Bell size={16} />
           </ActionIcon>
+          <LanguageSwitcher />
           <Menu shadow="md" width={180}>
             <Menu.Target>
               <ActionIcon variant="subtle" color="gray" size="lg" radius="sm" aria-label="Menu">

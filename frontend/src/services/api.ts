@@ -1,4 +1,5 @@
 import axios from 'axios';
+import i18n from '../i18n.ts';
 import type {
   NodeTypeDescriptor,
   Workflow,
@@ -35,6 +36,11 @@ const api = axios.create({
   baseURL: '/api/v1',
   headers: { 'Content-Type': 'application/json' },
   withCredentials: true,
+});
+
+api.interceptors.request.use((config) => {
+  config.headers.set('Accept-Language', i18n.resolvedLanguage ?? 'en');
+  return config;
 });
 
 /** 结构化 API 错误，统一前端错误处理（R10）。 */
