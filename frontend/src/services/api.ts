@@ -61,7 +61,7 @@ api.interceptors.response.use(
         (data && (data.message ?? data.title)) ??
         error.message ??
         'Request failed';
-      const code = data?.code ?? data?.type;
+      const code = data?.errorCode ?? data?.code ?? data?.type;
 
       if (status === 401) {
         localStorage.removeItem('auth_user');

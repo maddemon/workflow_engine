@@ -6,6 +6,9 @@ using Microsoft.Extensions.Localization;
 
 namespace FlowEngine.Host.Middlewares;
 
+/// <summary>
+/// 全局异常处理中间件，捕获未处理异常并返回统一 JSON 错误响应。
+/// </summary>
 public class GlobalExceptionHandlerMiddleware(
     RequestDelegate next,
     ILogger<GlobalExceptionHandlerMiddleware> logger,
