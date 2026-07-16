@@ -5,5 +5,13 @@
   "noWorkflows": "还没有工作流",
   "import": "导入工作流",
   "export": "导出工作流",
-  "confirmDelete": "确定要删除工作流 \"{{name}}\" 吗？此操作不可撤销。"
+  "confirmDelete": "确定要删除工作流 \"{{name}}\" 吗？此操作不可撤销。",
+  "deleted": "已删除",
+  "deletedMessage": "工作流「{{name}}」已删除。",
+  "exported": "已导出",
+  "exportedMessage": "工作流「{{name}}」已导出。",
+  "imported": "已导入",
+  "importedMessage": "工作流已导入。",
+  "confirmDeleteWarning": "此操作无法撤销。",
+  "nodeCopied": "节点已复制到剪贴板"
 }

@@ -8,5 +8,7 @@
   "error": "Error",
   "noData": "No data",
   "confirmDelete": "Are you sure you want to delete this?",
-  "confirmDiscard": "You have unsaved changes. Discard them?"
+  "confirmDiscard": "You have unsaved changes. Discard them?",
+  "loggedOut": "Logged out",
+  "sessionExpired": "Your session has expired. Please sign in again."
 }

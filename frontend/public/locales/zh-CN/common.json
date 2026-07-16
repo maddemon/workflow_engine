@@ -8,5 +8,7 @@
   "error": "错误",
   "noData": "暂无数据",
   "confirmDelete": "确定要删除此项吗？",
-  "confirmDiscard": "有未保存的更改，是否放弃？"
+  "confirmDiscard": "有未保存的更改，是否放弃？",
+  "loggedOut": "已退出登录",
+  "sessionExpired": "会话已过期，请重新登录。"
 }

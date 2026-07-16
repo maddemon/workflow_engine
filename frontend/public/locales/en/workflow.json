@@ -5,5 +5,13 @@
   "noWorkflows": "No workflows yet",
   "import": "Import Workflow",
   "export": "Export Workflow",
-  "confirmDelete": "Delete workflow \"{{name}}\"? This cannot be undone."
+  "confirmDelete": "Delete workflow \"{{name}}\"? This cannot be undone.",
+  "deleted": "Deleted",
+  "deletedMessage": "Workflow \"{{name}}\" deleted.",
+  "exported": "Exported",
+  "exportedMessage": "Workflow \"{{name}}\" exported.",
+  "imported": "Imported",
+  "importedMessage": "Workflow imported.",
+  "confirmDeleteWarning": "This cannot be undone.",
+  "nodeCopied": "Node copied to clipboard"
 }
