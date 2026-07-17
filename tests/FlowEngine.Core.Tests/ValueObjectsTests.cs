@@ -75,4 +75,51 @@ public class ValueObjectsTests
         Assert.Equal("secret", copy.FieldName);
         Assert.NotEqual(original, copy);
     }
+
+    [Fact]
+    public void ExecutionId_New_Generates_NonEmpty_Guid()
+    {
+        var id = ExecutionId.New();
+
+        Assert.NotEqual(Guid.Empty, id.Value);
+        Assert.Equal(id.Value.ToString(), id.ToString());
+    }
+
+    [Fact]
+    public void ExecutionId_From_Preserves_Guid()
+    {
+        var guid = Guid.NewGuid();
+        var id = ExecutionId.From(guid);
+
+        Assert.Equal(guid, id.Value);
+        Assert.Equal(guid.ToString(), id.ToString());
+    }
+
+    [Fact]
+    public void WorkflowDefinitionId_New_Generates_NonEmpty_Guid()
+    {
+        var id = WorkflowDefinitionId.New();
+
+        Assert.NotEqual(Guid.Empty, id.Value);
+        Assert.Equal(id.Value.ToString(), id.ToString());
+    }
+
+    [Fact]
+    public void WorkflowDefinitionId_From_Preserves_Guid()
+    {
+        var guid = Guid.NewGuid();
+        var id = WorkflowDefinitionId.From(guid);
+
+        Assert.Equal(guid, id.Value);
+        Assert.Equal(guid.ToString(), id.ToString());
+    }
+
+    [Fact]
+    public void CredentialKey_ToString_Formats_As_CredentialId_Colon_FieldName()
+    {
+        var credentialId = Guid.NewGuid();
+        var key = new CredentialKey(credentialId, "apiKey");
+
+        Assert.Equal($"{credentialId}:apiKey", key.ToString());
+    }
 }
