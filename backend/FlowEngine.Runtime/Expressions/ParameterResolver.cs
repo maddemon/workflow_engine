@@ -36,12 +36,16 @@ public sealed class ParameterResolver
         @"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
         RegexOptions.Compiled);
 
-    // 裸上下文标识符（无 $ 前缀）：与 $ 前缀内建变量一一对应，如 input / now / vars
-    private static readonly HashSet<string> s_bareContextIdentifiers = new(
-        s_knownIdentifiers.Select(x => x.TrimStart('$')), StringComparer.OrdinalIgnoreCase);
+    // 裸上下文标识符（无 $ 前缀）：仅保留最核心、最不可能与普通英文词冲突的上下文变量。
+    // 为避免 "page" / "tool" / "node" / "response" 等常见词被误判为表达式，
+    // 这些裸标识符只有在后面出现成员访问、索引访问或函数调用时才视为表达式。
+    private static readonly HashSet<string> s_bareContextIdentifiers = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "input", "items", "vars", "env", "execution", "workflow", "credentials", "now", "today",
+    };
 
-    // 函数调用形态：单词后接 "("，如 Math.Max( / Now( / eval(
-    private static readonly Regex s_functionCallRegex = new(@"\w+\s*\(", RegexOptions.Compiled);
+    // 函数调用形态：单词后接 "(" 并有配对的参数列表，如 Math.Max(1,2) / Now() / eval(x)
+    private static readonly Regex s_functionCallRegex = new(@"\b[a-zA-Z_]\w*\s*\([^)]*\)", RegexOptions.Compiled);
 
     private readonly ILogger<ParameterResolver> _logger;
     private readonly ScriptCache _scriptCache;
@@ -247,8 +251,13 @@ public sealed class ParameterResolver
         var firstWord = GetFirstWord(trimmed);
         if (s_knownIdentifiers.Contains(firstWord)) return true;
 
-        // 裸上下文标识符（无 $ 前缀），如 input / now / vars / execution / env，同样视为表达式
-        if (s_bareContextIdentifiers.Contains(firstWord)) return true;
+        // 裸上下文标识符（无 $ 前缀），如 input / now / vars / execution / env，
+        // 仅当作为成员访问、索引访问或函数调用的起点时才视为表达式，
+        // 避免单独的 "input" / "now" 等普通单词被误判。
+        if (s_bareContextIdentifiers.Contains(firstWord) && LooksLikeMemberAccessOrCall(trimmed))
+        {
+            return true;
+        }
 
         // 扫描整个字符串，定位任意位置的 $xxx 内建变量（如 "url" + $credentials.x）
         for (int i = 0; i < trimmed.Length - 1; i++)
@@ -313,5 +322,24 @@ public sealed class ParameterResolver
             i++;
         }
         return text[..i].ToString();
+    }
+
+    private static bool LooksLikeMemberAccessOrCall(ReadOnlySpan<char> text)
+    {
+        // 第一个词之后紧跟 . [ ( 之一，说明是成员访问、索引访问或函数调用，
+        // 如 input.statusCode、items[0]、now()、env['key']
+        var i = 0;
+        while (i < text.Length && (char.IsLetterOrDigit(text[i]) || text[i] == '_' || text[i] == '$'))
+        {
+            i++;
+        }
+
+        if (i >= text.Length)
+        {
+            return false;
+        }
+
+        var next = text[i];
+        return next is '.' or '[' or '(';
     }
 }

@@ -1,3 +1,6 @@
+using System.ComponentModel.DataAnnotations;
+using FlowEngine.Core.Authorization;
+
 namespace FlowEngine.Application.Dtos;
 
 /// <summary>
@@ -159,7 +162,25 @@ public sealed record AssignRoleRequest
     /// <summary>
     /// 角色名称（Admin/Editor/Viewer）。
     /// </summary>
+    [Required]
+    [ValidRole]
     public string Role { get; init; } = string.Empty;
+}
+
+/// <summary>
+/// 校验角色名是否为有效的 <see cref="Role"/> 枚举值。
+/// </summary>
+[AttributeUsage(AttributeTargets.Property)]
+public sealed class ValidRoleAttribute : ValidationAttribute
+{
+    /// <inheritdoc />
+    protected override ValidationResult? IsValid(object? value, ValidationContext validationContext)
+    {
+        if (value is string role && !string.IsNullOrWhiteSpace(role)
+            && Enum.TryParse<Role>(role, ignoreCase: true, out _))
+            return ValidationResult.Success;
+        return new ValidationResult("无效的角色。");
+    }
 }
 
 /// <summary>

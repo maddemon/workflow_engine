@@ -1,3 +1,5 @@
+using System.Text.Json;
+using FlowEngine.Core;
 using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
@@ -121,22 +123,9 @@ public sealed class WorkflowModificationService(
             new Dictionary<string, object> { ["name"] = draftWorkflow.Name });
         await eventBus.PublishAsync(auditEvent, cancellationToken).ConfigureAwait(false);
 
-        var dto = new WorkflowDto
+        var dto = draftWorkflow.Adapt<WorkflowDto>() with
         {
-            Id = draftWorkflow.Id,
-            ProjectId = draftWorkflow.ProjectId,
-            Name = draftWorkflow.Name,
-            Version = draftWorkflow.Version,
-            CreatedBy = draftWorkflow.CreatedBy,
-            CreatedAt = draftWorkflow.CreatedAt,
-            UpdatedAt = draftWorkflow.UpdatedAt,
-            IsActive = draftWorkflow.IsActive,
-            Source = draftWorkflow.Source,
-            DraftStatus = draftWorkflow.DraftStatus,
-            RejectionReason = draftWorkflow.RejectionReason,
-            Diff = draftWorkflow.Diff,
-            Nodes = draftWorkflow.Nodes.Select(n => n.Adapt<NodeDefinitionDto>()).ToList(),
-            Connections = draftWorkflow.Connections.Select(c => c.Adapt<ConnectionDto>()).ToList(),
+            Diff = diffs,
         };
 
         return new ModifyWorkflowResult
@@ -177,9 +166,9 @@ public sealed class WorkflowModificationService(
             throw new BusinessException($"Node '{nodeId}' does not exist.");
         }
 
-        if (pathParts.Length == 3 && pathParts[2] is "name" or "isEntry")
+        if (pathParts.Length == 3 && pathParts[2] is "name" or "isEntry" or "disabled")
         {
-            // 修改节点属性（name, isEntry）
+            // 修改节点属性（name, isEntry, disabled）
             var fieldName = pathParts[2];
             switch (fieldName)
             {
@@ -199,6 +188,15 @@ public sealed class WorkflowModificationService(
                     {
                         Op = "modify", NodeId = nodeId, Field = "isEntry",
                         Before = oldIsEntry.ToString(), After = node.IsEntry.ToString(),
+                    });
+                    return;
+                case "disabled":
+                    var oldDisabled = node.Disabled;
+                    node.Disabled = bool.TryParse(op.Value?.ToString(), out var disabled) && disabled;
+                    diffs.Add(new StructuredDiff
+                    {
+                        Op = "modify", NodeId = nodeId, Field = "disabled",
+                        Before = oldDisabled.ToString(), After = node.Disabled.ToString(),
                     });
                     return;
             }
@@ -282,6 +280,7 @@ public sealed class WorkflowModificationService(
             PositionX = null,
             PositionY = null,
             IsEntry = false,
+            Disabled = op.Node.Disabled,
         };
 
         workflow.Nodes.Add(node);
@@ -531,45 +530,10 @@ public sealed class WorkflowModificationService(
     /// </summary>
     private static Workflow DeepClone(Workflow source)
     {
-        var nodes = source.Nodes.Select(n => new NodeDefinition
-        {
-            Id = n.Id,
-            TypeName = n.TypeName,
-            Name = n.Name,
-            Parameters = new Dictionary<string, object>(n.Parameters),
-            Ports = n.Ports.Select(p => new PortInstance
-            {
-                Name = p.Name,
-                Direction = p.Direction,
-                Type = p.Type,
-            }).ToList(),
-            PositionX = n.PositionX,
-            PositionY = n.PositionY,
-            IsEntry = n.IsEntry,
-            Disabled = n.Disabled,
-            RetryPolicy = n.RetryPolicy,
-            ErrorStrategy = n.ErrorStrategy,
-            Timeout = n.Timeout,
-        }).ToList();
-
-        var connections = source.Connections.Select(c => new Connection
-        {
-            SourceNodeId = c.SourceNodeId,
-            SourcePortName = c.SourcePortName,
-            TargetNodeId = c.TargetNodeId,
-            TargetPortName = c.TargetPortName,
-            Condition = c.Condition,
-        }).ToList();
-
-        return new Workflow
-        {
-            Name = source.Name,
-            ProjectId = source.ProjectId,
-            CreatedBy = source.CreatedBy,
-            IsActive = false,
-            Nodes = nodes,
-            Connections = connections,
-            StyleSettings = source.StyleSettings,
-        };
+        // Adapt 执行浅拷贝；通过序列化-反序列化确保集合和嵌套对象完全独立。
+        var json = JsonSerializer.Serialize(source, JsonDefaults.Options);
+        var clone = JsonSerializer.Deserialize<Workflow>(json, JsonDefaults.Options)!;
+        clone.IsActive = false;
+        return clone;
     }
 }

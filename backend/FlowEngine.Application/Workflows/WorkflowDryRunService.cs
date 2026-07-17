@@ -1,11 +1,10 @@
-using System.Text.Json;
 using FlowEngine.Application.Authorization;
+using FlowEngine.Application.Executions;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Core;
 using Mapster;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
-using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Exceptions;
@@ -78,7 +77,7 @@ public sealed class WorkflowDryRunService(
             executionRecord.Status = ExecutionStatus.DryRunCompleted;
         }
 
-        return MapToDto(executionRecord);
+        return ExecutionMapper.MapToDto(executionRecord);
     }
 
     private static Workflow BuildWorkflow(DryRunWorkflowRequestDto request)
@@ -176,63 +175,7 @@ public sealed class WorkflowDryRunService(
         return values;
     }
 
-    private static ExecutionDto MapToDto(ExecutionRecord record)
-    {
-        // custom mapping：节点记录含自定义序列化，单独处理
-        var dto = record.Adapt<ExecutionDto>();
-        return dto with { NodeRecords = record.NodeRecords.Select(MapToNodeRecord).ToList() };
-    }
 
-    private static NodeExecutionRecordDto MapToNodeRecord(NodeExecutionRecord node)
-    {
-        return new NodeExecutionRecordDto
-        {
-            Id = node.Id,
-            NodeDefinitionId = node.NodeDefinitionId,
-            RunIndex = node.RunIndex,
-            Status = node.Output.Success ? "Completed" : "Failed",
-            StartedAt = node.StartedAt ?? default,
-            CompletedAt = node.CompletedAt,
-            Inputs = SerializeInputs(node.Inputs),
-            Output = JsonSerializer.SerializeToNode(node.Output, JsonDefaults.Options),
-            RawParameters = SerializeToDictionary(node.RawParameters),
-            ResolvedParameters = SerializeToDictionary(node.ResolvedParameters)
-        };
-    }
-
-    private static Dictionary<string, object>? SerializeInputs(IReadOnlyDictionary<string, DataBatch>? inputs)
-    {
-        if (inputs is null || inputs.Count == 0)
-        {
-            return null;
-        }
-
-        var result = new Dictionary<string, object>(inputs.Count);
-        foreach (var (key, value) in inputs)
-        {
-            result[key] = JsonSerializer.SerializeToNode(value, JsonDefaults.Options) ?? string.Empty;
-        }
-
-        return result;
-    }
-
-    private static Dictionary<string, object>? SerializeToDictionary(IReadOnlyDictionary<string, object>? dict)
-    {
-        if (dict is null || dict.Count == 0)
-        {
-            return null;
-        }
-
-        var result = new Dictionary<string, object>(dict.Count);
-        foreach (var (key, value) in dict)
-        {
-            result[key] = value is string or int or long or double or float or decimal or bool or DateTime
-                ? value
-                : JsonSerializer.SerializeToNode(value, JsonDefaults.Options) ?? string.Empty;
-        }
-
-        return result;
-    }
 
     /// <summary>
     /// Dry-Run 副作用实现：不落库、不发布事件（纯内存模拟）。

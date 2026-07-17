@@ -2,7 +2,6 @@ using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
-using FluentValidation;
 using Mapster;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
@@ -24,8 +23,7 @@ public sealed class ProjectService(
     IEventBus eventBus,
     AuditEventFactory auditFactory,
     AuthorizedOperationHandler handler,
-    ProjectCascadeDeleter cascadeDeleter,
-    IValidator<CreateProjectDto> _createProjectValidator)
+    ProjectCascadeDeleter cascadeDeleter)
 {
     private static readonly AuthorizationPolicy UpdatePolicy = new(
         Resource: null, Access: Operation.Write, Scope: null, AdminPhase: false, ProjectScoped: true);
@@ -37,7 +35,6 @@ public sealed class ProjectService(
     public async Task<ProjectDto> CreateAsync(CreateProjectDto dto, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dto);
-        _createProjectValidator.ValidateAndThrow(dto);
 
         var userId = userContext.UserId
             ?? throw new UnauthorizedException("用户未认证。");

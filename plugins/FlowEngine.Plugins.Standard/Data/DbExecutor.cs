@@ -1,5 +1,6 @@
 using System.Data.Common;
 using Dapper;
+using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Plugins.Standard.Data;
 
@@ -11,24 +12,26 @@ public sealed class DbExecutor : IAsyncDisposable
 {
     private readonly DbConnection _connection;
     private readonly DbTransaction _transaction;
+    private readonly ILogger? _logger;
     private bool _committed;
     private bool _disposed;
 
-    private DbExecutor(DbConnection connection, DbTransaction transaction)
+    private DbExecutor(DbConnection connection, DbTransaction transaction, ILogger? logger)
     {
         _connection = connection;
         _transaction = transaction;
+        _logger = logger;
     }
 
     /// <summary>
     /// 创建并打开数据库连接和事务。
     /// </summary>
-    public static async Task<DbExecutor> CreateAsync(DbDialect dialect, string connectionString, CancellationToken ct)
+    public static async Task<DbExecutor> CreateAsync(DbDialect dialect, string connectionString, CancellationToken ct, ILogger? logger = null)
     {
         var connection = DbConnectionFactory.CreateConnection(dialect, connectionString);
         await connection.OpenAsync(ct).ConfigureAwait(false);
         var transaction = await connection.BeginTransactionAsync(ct).ConfigureAwait(false);
-        return new DbExecutor(connection, transaction);
+        return new DbExecutor(connection, transaction, logger);
     }
 
     /// <summary>
@@ -96,8 +99,16 @@ public sealed class DbExecutor : IAsyncDisposable
 
         if (!_committed)
         {
-            try { await _transaction.RollbackAsync().ConfigureAwait(false); }
-            catch { /* best-effort rollback on dispose */ }
+            try
+            {
+                await _transaction.RollbackAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // Dispose 阶段的事务回滚失败通常意味着连接已关闭或事务已中止，
+                // 记录日志便于排查，但不抛出以避免在析构路径上掩盖原始异常。
+                _logger?.LogError(ex, "DbExecutor 回滚事务失败: {Message}", ex.Message);
+            }
         }
 
         await _transaction.DisposeAsync().ConfigureAwait(false);

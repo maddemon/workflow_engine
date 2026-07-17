@@ -1,4 +1,3 @@
-using System.Text.Json;
 using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
@@ -60,7 +59,7 @@ public sealed class ExecutionService(
                     .AsNoTracking()
                     .FirstOrDefaultAsync(e => e.Id == existingExecutionId.Value, cancellationToken)
                     .ConfigureAwait(false);
-                return existingRecord is not null ? MapToDto(existingRecord) : new ExecutionDto
+                return existingRecord is not null ? ExecutionMapper.MapToDto(existingRecord) : new ExecutionDto
                 {
                     Id = existingExecutionId.Value,
                     WorkflowDefinitionId = workflowId,
@@ -107,7 +106,7 @@ public sealed class ExecutionService(
             };
         }
 
-        return MapToDto(record);
+        return ExecutionMapper.MapToDto(record);
     }
 
     /// <summary>
@@ -127,7 +126,7 @@ public sealed class ExecutionService(
 
         if (record.Status is not (ExecutionStatus.Pending or ExecutionStatus.Running))
         {
-            return (MapToDto(record), true);
+            return (ExecutionMapper.MapToDto(record), true);
         }
 
         record.Status = ExecutionStatus.Cancelled;
@@ -137,7 +136,7 @@ public sealed class ExecutionService(
         var cancelledEvent = new WorkflowCancelledEvent(record.Id, record.WorkflowDefinitionId);
         await eventBus.PublishAsync(cancelledEvent, cancellationToken).ConfigureAwait(false);
 
-        return (MapToDto(record), false);
+        return (ExecutionMapper.MapToDto(record), false);
     }
 
     /// <summary>
@@ -156,7 +155,7 @@ public sealed class ExecutionService(
             return null;
         }
 
-        return MapToDto(record);
+        return ExecutionMapper.MapToDto(record);
     }
 
     /// <summary>
@@ -187,67 +186,8 @@ public sealed class ExecutionService(
         return records.Select(MapToSummary).ToList();
     }
 
-    private static ExecutionDto MapToDto(Core.Entities.ExecutionRecord record)
-    {
-        // custom mapping：节点记录含自定义序列化，单独处理
-        var dto = record.Adapt<ExecutionDto>();
-        return dto with { NodeRecords = record.NodeRecords.Select(MapToNodeRecord).ToList() };
-    }
-
-    private static NodeExecutionRecordDto MapToNodeRecord(Core.Entities.NodeExecutionRecord node)
-    {
-        return new NodeExecutionRecordDto
-        {
-            Id = node.Id,
-            NodeDefinitionId = node.NodeDefinitionId,
-            RunIndex = node.RunIndex,
-            Status = node.Output.Success ? "Completed" : "Failed",
-            StartedAt = node.StartedAt ?? default,
-            CompletedAt = node.CompletedAt,
-            Inputs = SerializeInputs(node.Inputs),
-            Output = node.Output is null ? null : JsonSerializer.SerializeToNode(node.Output, JsonDefaults.Options),
-            RawParameters = SerializeToDictionary(node.RawParameters),
-            ResolvedParameters = SerializeToDictionary(node.ResolvedParameters)
-        };
-    }
-
     private static ExecutionSummaryDto MapToSummary(Core.Entities.ExecutionRecord record)
     {
         return record.Adapt<ExecutionSummaryDto>();
-    }
-
-    private static Dictionary<string, object>? SerializeInputs(IReadOnlyDictionary<string, Core.Entities.DataBatch>? inputs)
-    {
-        if (inputs is null || inputs.Count == 0)
-        {
-            return null;
-        }
-
-        var result = new Dictionary<string, object>(inputs.Count);
-        foreach (var (key, value) in inputs)
-        {
-            result[key] = JsonSerializer.SerializeToNode(value, JsonDefaults.Options) ?? string.Empty;
-        }
-
-        return result;
-    }
-
-    private static Dictionary<string, object>? SerializeToDictionary<TKey>(IReadOnlyDictionary<TKey, object>? dict)
-        where TKey : notnull
-    {
-        if (dict is null || dict.Count == 0)
-        {
-            return null;
-        }
-
-        var result = new Dictionary<string, object>(dict.Count);
-        foreach (var (key, value) in dict)
-        {
-            result[key.ToString()!] = value is string or int or long or double or float or decimal or bool or DateTime
-                ? value
-                : JsonSerializer.SerializeToNode(value, JsonDefaults.Options) ?? string.Empty;
-        }
-
-        return result;
     }
 }

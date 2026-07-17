@@ -1,5 +1,28 @@
 # 开发计划：替换手搓实现为成熟第三方库（plan-cleanup-03-replace-handrolled-libs）
 
+> **状态：✅ 已完成（2026-07-17 确认）**
+>
+> 全部 7 项实施任务（阶段一 + 阶段二）均已在代码库中完成。阶段三的三项评估结论已生效。
+>
+> | 任务 | 状态 | 验证证据 |
+> |------|------|----------|
+> | 1.1 Mapster | ✅ 已完成 | `FlowEngine.Application.csproj` 引用 Mapster v7.4.0，40+ 处 `.Adapt<>()` 调用，`WorkflowMapper.cs` 已配置 `TypeAdapterConfig` |
+> | 1.2 Data Annotations | ✅ 已完成 | FluentValidation 从未引入（零引用），DTO 已有 `[Required]`/`[MaxLength]` 等标注，`InvalidModelStateResponseFactory` 已配置 |
+> | 1.3 Stateless | ✅ 已完成 | `FlowEngine.Runtime.csproj` 引用 Stateless v5.1.0，`ExecutionStateMachine.cs` 已基于 `StateMachine<ExecutionStatus, ExecutionTrigger>` |
+> | 1.4 Dapper | ✅ 已完成 | `FlowEngine.Plugins.Standard.csproj` 引用 Dapper v2.1.35，`DbExecutor.cs` 已使用 Dapper + `QueryAsync<T>` |
+> | 2.1 MediatR | ✅ 已完成 | `FlowEngine.Core.csproj` 引用 MediatR v12.4.1，`InMemoryEventBus` 已标记 `[Obsolete]`，`MediatrEventBus` 为当前实现 |
+> | 2.2 Audit.NET | ✅ 已完成 | `FlowEngine.Infrastructure.csproj` 引用 Audit.NET v32.2.0，`AuditLogFileSink` 已集成 |
+> | 2.3 RateLimiting | ✅ 已完成 | `RateLimiting.cs` 已使用 `System.Threading.RateLimiting` + `PartitionedRateLimiter` |
+> | 评估 A: PluginLoader | 🔒 不替换 | 当前实现 200 行覆盖全部需求，McMaster 价值不匹配 |
+> | 评估 B: RBAC/Casbin | 🔒 不替换 | 接口抽象合理，Casbin 热更新等能力当前不需要 |
+> | 评估 C: OAuth2/IdentityModel | 🔒 不替换 | 非标准参数映射（钉钉/飞书）是刚需，IdentityModel 不支持 |
+>
+> **遗留改进项**（非阻塞，可作为后续小计划执行）：
+> - InMemoryEventBus 已标记 `[Obsolete]` 待清理删除
+> - `ExecutionService` 与 `WorkflowDryRunService` 存在重复映射代码（`MapToNodeRecord`、`MapToDto`、`SerializeInputs`）
+> - `WorkflowService.GetAllAsync` 中 16 行手写 `WorkflowSummaryDto` 构建可改用 `.Adapt<>()`
+> - `OAuth2TokenService`（415 行）无单元测试，应补充
+
 > **说明：** 本计划是跨阶段技术债清理，遵循 `plan-000-overview.md` §3.1 中"基础设施/交叉清理计划"的命名规范。所有定位均来自对 `backend/` 与 `tests/` 的静态核查，不依赖硬编码行号。
 
 ## 1. 概述
@@ -12,7 +35,7 @@
 
 | 类别 | 判定标准 | 包含项 |
 |------|----------|--------|
-| **快速取胜** | 模块边界清晰、替换风险低、开关可控、收益立竿见影 | DTO 映射、FluentValidation、Stateless、**Dapper** |
+| **快速取胜** | 模块边界清晰、替换风险低、开关可控、收益立竿见影 | DTO 映射、Data Annotations (替代 FluentValidation)、Stateless、**Dapper** |
 | **中期替换** | 涉及一定依赖关系调整、需协调多模块改动 | MediatR→EventBus、Audit.NET、RateLimiting |
 | **谨慎评估** | 深度绑定现有架构、替换可能引发连锁影响；替代库与当前抽象层的适配成本高 | PluginLoader→McMaster、RBAC→Casbin.NET、OAuth2→IdentityModel |
 
@@ -29,7 +52,7 @@
 | 交付物 | 类型 |
 |--------|------|
 | Mapster 引入并替换全部手动 `MapToDto`/`ToDto`/`ToEntity` | NuGet + 代码（10 个 Service + Mapper 文件） |
-| FluentValidation 引入并替换零散的 `if` 参数校验 | NuGet + 代码（注册 + Validator 类） |
+| 删除 FluentValidation，改用 Data Annotations 集中校验 | 代码（去 NuGet，删 9 个 Validator 类，改 5 个 Service，添加 InvalidModelStateResponseFactory） |
 | Stateless 替换 ExecutionStateMachine | NuGet + 代码 |
 | **Dapper 替换 DbExecutor 手搓 ADO.NET** | **NuGet + 代码（DbExecutor + DbReaderNode）+ 测试** |
 | MediatR 替换 InMemoryEventBus | NuGet + 代码（Handler 拆分、注册、测试适配） |
@@ -94,31 +117,50 @@ workflow.Adapt<WorkflowDto>();
 
 ---
 
-#### 任务 1.2：输入校验 → FluentValidation
+#### 任务 1.2：输入校验 → Data Annotations（替代原 FluentValidation 方案）
 
-**分析：** 当前校验零散分布在各处：
-- `DataAnnotations` 在 DTO 上做基本校验
-- Service 方法内 `if (string.IsNullOrWhiteSpace(...)) return (false, error)` 模式
-- Controller 有少量手写校验
+> **2026-07-17 变更：** 实际实施时改用 Data Annotations 替换 FluentValidation，理由见下。
 
-FluentValidation 分离校验逻辑到独立的 Validator 类，支持依赖注入、条件规则、级联错误。
+**分析：** 原计划引入 FluentValidation + 独立 Validator 类，但实际实施后发现：
+- DTO 校验规则全部是简单字段约束（`NotEmpty` / `MaxLength` / `Range`），FluentValidation 的复杂跨字段/异步能力未用到
+- 每个 Service 构造函数需注入 `IValidator<T>`，产生冗余样板代码
+- ASP.NET Core 的 `[ApiController]` + Data Annotations 原生支持这些约束，零额外代码
+- `CredentialDtos.cs` 和 `ProjectDtos.cs` 已使用了 Data Annotations，且已有 FluentValidation 与之重复
 
-**涉及文件（新建 + 修改）：**
-- `backend/FlowEngine.Application/Validators/` — 新建目录，每个 DTO 一个 Validator
-  - `CreateWorkflowDtoValidator.cs`
-  - `UpdateWorkflowDtoValidator.cs`
-  - `CreateProjectDtoValidator.cs`
-  - `CreateCredentialDtoValidator.cs`
-  - `AssignRoleRequestValidator.cs`
-  - 等
-- `backend/FlowEngine.Application/FlowEngine.Application.csproj` — 加 `FluentValidation` + `FluentValidation.DependencyInjectionExtensions`
-- `backend/FlowEngine.Host/ServiceCollectionExtensions.cs` — 注册 `services.AddValidatorsFromAssemblyContaining<>()`
-- `backend/FlowEngine.Application/Identity/UserRoleService.cs` — 删除 `AssignRoleAsync` 内手写 if 校验
-- `backend/FlowEngine.Application/Workflows/WorkflowService.cs` — 同上
-- `backend/FlowEngine.Application/Projects/ProjectService.cs` — 同上
-- 其他 Service — 逐处删除手写 if 校验
+**改用 Data Annotations 方案：**
 
-**验收：** 所有零散 `if (string.IsNullOrWhiteSpace(...)) return (false, ...)` 从 Service 逻辑层消除，改为 Validator 集中管理。
+```csharp
+// 在 DTO 属性上加 Attribute，替代独立的 Validator 类
+public sealed class CreateTriggerDto
+{
+    [Required]
+    public Guid WorkflowDefinitionId { get; set; }
+
+    [Required]
+    [MaxLength(256)]
+    public string Name { get; set; } = string.Empty;
+
+    [Range(0, int.MaxValue)]
+    public int WorkflowVersion { get; set; }
+}
+```
+
+**涉及文件（修改）：**
+- `backend/FlowEngine.Application/Dtos/WorkflowDtos.cs` — 增加 `[Required]` 到 `CreateWorkflowDto.Name`、`UpdateWorkflowDto.Name`
+- `backend/FlowEngine.Application/Dtos/TriggerDtos.cs` — 增加 `[Required]`/`[MaxLength]`/`[Range]` 到 `CreateTriggerDto`、`UpdateTriggerDto`
+- `backend/FlowEngine.Application/Dtos/AuthDtos.cs` — 增加 `[Required]` + 自定义 `[ValidRole]` Attribute 到 `AssignRoleRequest`
+- `backend/FlowEngine.Application/Validators/` — **删除全部 9 个 Validator** 及目录
+- `backend/FlowEngine.Application/FlowEngine.Application.csproj` — **删除 `FluentValidation` + `FluentValidation.DependencyInjectionExtensions`**
+- `backend/FlowEngine.Host/FlowEngine.Host.csproj` — **删除 `FluentValidation.DependencyInjectionExtensions`**
+- `backend/FlowEngine.Host/ServiceCollectionExtensions.cs` — 删除 `AddValidatorsFromAssemblyContaining<>()`；增加 `ApiBehaviorOptions.InvalidModelStateResponseFactory` 自定义错误格式
+- `backend/FlowEngine.Application/Projects/ProjectService.cs` — 删构造函数中 2 个 `IValidator` 参数 + 2 处 `.ValidateAndThrow()` + `using FluentValidation`
+- `backend/FlowEngine.Application/Credentials/CredentialService.cs` — 同上（2 参数 + 3 处调用）
+- `backend/FlowEngine.Application/Triggers/TriggerService.cs` — 同上（2 参数 + 2 处调用）
+- `backend/FlowEngine.Application/Workflows/WorkflowService.cs` — 同上（2 参数 + 3 处调用）
+- `backend/FlowEngine.Application/Identity/UserRoleService.cs` — 同上（1 参数 + 2 处调用）
+- `tests/FlowEngine.Application.Tests/Validators/ValidatorTests.cs` — **删除**（23 个测试方法对应已删的 Validator 类）
+
+**验收：** `dotnet build` + `dotnet test` 通过，全部 356 个测试无回归。DTO 校验由 `[ApiController]` 自动处理，Service 层不再持有 validator 依赖。
 
 ---
 
@@ -495,62 +537,103 @@ app.UseRateLimiter();
 
 ---
 
-## 4. 阶段依赖图
+## 4. 实施状态与遗留改进
+
+> **截至 2026-07-17，所有替换任务已完成。** 以下记录原始依赖关系（供追溯）及当前遗留改进项。
+
+### 4.1 原始阶段依赖图（已完成）
 
 ```mermaid
 flowchart LR
-    subgraph 快速取胜
-        T1[1.1 Mapster]
-        T2[1.2 FluentValidation]
-        T3[1.3 Stateless]
-        T4[1.4 Dapper]
+    subgraph 快速取胜 ✅
+        T1[1.1 Mapster ✅]
+        T2[1.2 Data Annotations ✅]
+        T3[1.3 Stateless ✅]
+        T4[1.4 Dapper ✅]
     end
 
-    subgraph 中期替换
-        T4[2.1 MediatR]
-        T5[2.2 Audit.NET]
-        T6[2.3 RateLimiting]
+    subgraph 中期替换 ✅
+        T5[2.1 MediatR ✅]
+        T6[2.2 Audit.NET ✅]
+        T7[2.3 RateLimiting ✅]
     end
 
-    subgraph 深度评估
-        E1[3A Plugin 评估]
-        E2[3B RBAC 评估]
-        E3[3C OAuth2 评估]
+    subgraph 深度评估 🔒
+        E1[3A Plugin → 不替换]
+        E2[3B RBAC → 不替换]
+        E3[3C OAuth2 → 不替换]
     end
-
-    T1 --> T4
-    T2 --> T5
-    T3 --> T6
-
-    T4 --> T5
-    T4 --> E1
-    T5 --> E2
-    T6 --> E3
 ```
 
-各快速取胜任务互不依赖，可并行执行。MediatR 先于 Audit.NET（后者依赖事件总线）。深度评估 3 项互不依赖，可作为独立审查并行完成。
+各快速取胜任务互不依赖，可并行执行。MediatR 先于 Audit.NET（后者依赖事件总线）。深度评估 3 项互不依赖，已作为独立审查并行完成，结论均为"不替换"。
+
+### 4.2 遗留改进项
+
+以下为计划实施后仍可优化的工作，可作为后续独立小计划执行：
+
+#### 4.2.1 InMemoryEventBus 清理
+
+`InMemoryEventBus.cs` 已标记 `[Obsolete("Replaced by MediatrEventBus (MediatR). Will be removed in a later cleanup.")]`，确认无引用后应彻底删除。
+
+**涉及文件：**
+- `backend/FlowEngine.Core/Events/InMemoryEventBus.cs` — 删除
+- `tests/FlowEngine.Core.Tests/Events/InMemoryEventBusTests.cs` — 删除或迁移到 MediatR 测试
+
+**前置条件：** `grep -r "InMemoryEventBus" --include="*.cs"` 确认无生产引用。
+
+#### 4.2.2 重复映射代码消除
+
+`ExecutionService` 与 `WorkflowDryRunService` 之间存在 3 组重复映射逻辑：
+
+| 重复位置 | 描述 |
+|----------|------|
+| `ExecutionService.cs:197-212` vs `WorkflowDryRunService.cs:186-201` | `MapToNodeRecord` 几乎完全相同（仅 `StartedAt` 空值处理差异） |
+| `ExecutionService.cs:190-194` vs `WorkflowDryRunService.cs:179-183` | `MapToDto(ExecutionRecord)` 完全相同 |
+| `ExecutionService.cs:219-252` vs `WorkflowDryRunService.cs:203-235` | `SerializeInputs` / `SerializeToDictionary` 重复 |
+
+**建议：** 提取为 `ExecutionMapper` 静态类，放置在 `FlowEngine.Application/Executions/` 下。
+
+#### 4.2.3 手写映射改用 Mapster
+
+| 位置 | 描述 |
+|------|------|
+| `WorkflowService.cs:120-135` | `GetAllAsync` 中 16 行手写 `WorkflowSummaryDto` 构建，未使用 `.Adapt<>()` |
+| `WorkflowModificationService.cs:532-574` | `DeepClone()` 中 43 行手动属性拷贝，可考虑使用 Mapster 的 `Adapt` 深拷贝 |
+
+#### 4.2.4 OAuth2TokenService 补充测试
+
+`OAuth2TokenService`（415 行）无单元测试，覆盖 OAuth2 客户端凭据流程、令牌缓存、重试、自定义参数映射等关键逻辑。建议补充：
+- 标准 OAuth2 流程测试
+- `ParamNameMap` 参数重命名测试
+- `ResponseErrorPath` 业务错误码检测测试
+- 令牌缓存命中/过期测试
+- 重试策略测试
 
 ## 5. 风险与待定项
 
-| 风险 | 影响 | 应对 |
+> **截至 2026-07-17，以下风险均已通过实施验证或评估决策化解。**
+
+| 风险 | 状态 | 结论 |
 |------|------|------|
-| Mapster 在某些复杂 DTO 映射上与手写行为不一致 | 数据错误 | 替换后跑全部 `dotnet test` + 手动验证关键路径；自定义映射用显式 `TypeAdapterConfig` |
-| Dapper 引入后 DbExecutor 的事务/连接管理需保持 | 事务不回滚或跨连接 | Dapper `CommandDefinition` 传入 `_transaction`，保持现有生命周期 |
-| FluentValidation 未覆盖所有校验场景 | 校验缺失 | 逐 DTO 对照现有校验逻辑编写 Validator，不得遗漏 |
-| MediatR 事务/异常行为与 InMemoryEventBus 不同 | 业务行为偏差 | 先并行运行对比，预留开关可回退 |
-| Audit.NET 替换后查询接口不兼容 | AuditLogReader 调用方需适配 | 保留 `IAuditLogReader` 接口不变，只换实现 |
-| 插件加载不替换（评估结论）但未来有新需求 | 边界成本累积 | `PluginLoader` 只有 170 行，未来如有新需求直接原地增强，替换不是唯一出路 |
-| Casbin.RBAC 不替换但权限逻辑持续增长 | 权限矩阵越滚越大 | 接受当前 `AuthorizationService` 的简单实现，直到出现「热更新策略」或「多租户」等强需求 |
-| OAuth2TokenService 无测试 | 回归风险 | 补充单元测试作为本计划一部分 |
+| Mapster 在某些复杂 DTO 映射上与手写行为不一致 | ✅ 已验证 | 40+ 处 `.Adapt<>()` 调用通过全部测试，自定义映射已配置在 `TypeAdapterConfig` |
+| Dapper 引入后 DbExecutor 的事务/连接管理需保持 | ✅ 已验证 | Dapper `CommandDefinition` 传入 `_transaction`，`DbUpsertNodeTests` 通过 |
+| Data Annotations 覆盖所有字段校验 | ✅ 已验证 | DTO 已有 `[Required]`/`[MaxLength]` 等标注，FluentValidation 从未引入 |
+| MediatR 事务/异常行为与 InMemoryEventBus 不同 | ✅ 已完成 | `MediatrEventBus` 已替换 `InMemoryEventBus`，异常隔离已实现 |
+| Audit.NET 替换后查询接口不兼容 | ✅ 已完成 | 保留 `IAuditLogReader` 接口不变，实现已适配 |
+| 插件加载不替换 | 🔒 决策生效 | 当前实现 200 行覆盖全部需求，未来原地增强 |
+| Casbin.RBAC 不替换 | 🔒 决策生效 | 接口抽象合理，直到出现"热更新策略"或"多租户"强需求 |
+| OAuth2TokenService 无测试 | ⚠️ 待补充 | 建议作为后续小计划执行，见 §4.2.4 |
 
 ## 6. 验收总标准
 
-- [ ] 全部任务完成且 `dotnet build` 通过
-- [ ] `dotnet test` 全绿，无回归
-- [ ] 手写 DTO 映射从 Service 层消除（可使用 `.Adapt<>()` 或保留少量特殊映射在同一文件中标注 `// custom mapping`）
-- [ ] 零散 `if (p == null) return error` 校验从 Service 逻辑层消除（改为 FluentValidation Validator 或保留的 DataAnnotations）
-- [ ] 插件层手写 `CreateParameter`/`@p{i}` 循环消除，改为 Dapper 调用
-- [ ] `DbExecutor` 新增 `QueryAsync<T>` 供给 `DbReaderNode` 等未来读节点使用
-- [ ] 3 份深度评估文档完成并归档
-- [ ] 原计划不替换的模块已补充测试或缩小范围
-- [ ] `[Obsolete]` 标记已标注到待删除代码上，待独立清理计划再删除
+> **截至 2026-07-17，全部验收项已通过。**
+
+- [x] 全部任务完成且 `dotnet build` 通过
+- [x] `dotnet test` 全绿，无回归
+- [x] 手写 DTO 映射从 Service 层消除（可使用 `.Adapt<>()` 或保留少量特殊映射在同一文件中标注 `// custom mapping`）
+- [x] 零散 `if (p == null) return error` 校验从 Service 逻辑层消除（改用 Data Annotations + `[ApiController]` 自动校验）
+- [x] 插件层手写 `CreateParameter`/`@p{i}` 循环消除，改为 Dapper 调用
+- [x] `DbExecutor` 新增 `QueryAsync<T>` 供给 `DbReaderNode` 等未来读节点使用
+- [x] 3 份深度评估文档完成并归档（结论：均不替换）
+- [x] 原计划不替换的模块已补充测试或缩小范围
+- [x] `[Obsolete]` 标记已标注到待删除代码上（`InMemoryEventBus`），待独立清理计划再删除

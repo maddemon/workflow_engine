@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 namespace FlowEngine.Core.Events;
 
 /// <summary>
-/// 基于 MediatR 的事件总线实现，替代手搓的 <see cref="InMemoryEventBus"/>。
+/// 基于 MediatR 的事件总线实现。
 /// <list type="bullet">
 ///   <item><description><see cref="PublishAsync"/> 委托给 <see cref="IMediator.Publish"/>，由注册的
 ///     <see cref="INotificationHandler{TNotification}"/> 处理（审计落盘、WebSocket 推送等静态消费者）。</description></item>
@@ -22,17 +22,35 @@ public sealed class MediatrEventBus(IMediator mediator, ILogger<MediatrEventBus>
     public Task PublishAsync<TEvent>(TEvent eventInstance, CancellationToken cancellationToken = default)
         where TEvent : IDomainEvent
     {
-        // 静态消费者走 MediatR 通知处理器。
-        Task mediatorTask = Task.CompletedTask;
-        if (eventInstance is INotification notification)
-        {
-            mediatorTask = mediator.Publish(notification, cancellationToken);
-        }
+        // 静态消费者走 MediatR 通知处理器；异常被隔离，避免抛回发布方。
+        Task mediatorTask = PublishToMediatorAsync(eventInstance, cancellationToken);
 
         // 动态订阅者（SSE）兼容分派——保留原事件总线的 Subscribe 语义。
         Task subscriberTask = DispatchToSubscribersAsync(eventInstance, cancellationToken);
 
         return Task.WhenAll(mediatorTask, subscriberTask);
+    }
+
+    private async Task PublishToMediatorAsync<TEvent>(TEvent eventInstance, CancellationToken cancellationToken)
+        where TEvent : IDomainEvent
+    {
+        if (eventInstance is not INotification notification)
+        {
+            return;
+        }
+
+        try
+        {
+            await mediator.Publish(notification, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            logger?.LogError(ex, "MediatR 通知处理器处理 {EventType} 时出错", eventInstance.GetType().Name);
+        }
     }
 
     /// <inheritdoc />

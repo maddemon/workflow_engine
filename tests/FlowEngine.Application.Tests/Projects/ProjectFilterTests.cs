@@ -2,7 +2,6 @@ using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Credentials;
 using FlowEngine.Application.Dtos;
-using FlowEngine.Application.Validators;
 using FlowEngine.Application.Identity;
 using FlowEngine.Application.Triggers;
 using FlowEngine.Application.Workflows;
@@ -173,9 +172,7 @@ public sealed class ProjectFilterTests : IDisposable
             handler,
             statisticsLoader,
             triggerSync,
-            NullLogger<WorkflowService>.Instance,
-            new CreateWorkflowDtoValidator(),
-            new UpdateWorkflowDtoValidator());
+            NullLogger<WorkflowService>.Instance);
     }
 
     private CredentialService CreateCredentialService()
@@ -196,8 +193,7 @@ public sealed class ProjectFilterTests : IDisposable
             new WorkflowRepository(_dbContext),
             authGuard,
             new CredentialTypeRegistry(),
-            handler,
-            new CreateCredentialDtoValidator());
+            handler);
     }
 
     private TriggerService CreateTriggerService()

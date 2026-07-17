@@ -2,7 +2,6 @@ using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
-using FluentValidation;
 using Mapster;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
@@ -33,8 +32,7 @@ public sealed class CredentialService(
     WorkflowRepository workflowRepository,
     IAuthorizationGuard authGuard,
     CredentialTypeRegistry credentialTypeRegistry,
-    AuthorizedOperationHandler handler,
-    IValidator<CreateCredentialDto> _createCredentialValidator)
+    AuthorizedOperationHandler handler)
 {
     private const string KeyVersion = "v1";
 
@@ -52,7 +50,6 @@ public sealed class CredentialService(
 
         await authGuard.RequireScopeAsync(Scope.Credential, Operation.Write, cancellationToken);
 
-        _createCredentialValidator.ValidateAndThrow(dto);
         ValidateCredentialType(dto.Type, dto.Fields);
         await ValidateNameNotInUseAsync(dto.Name, dto.ProjectId, null, cancellationToken).ConfigureAwait(false);
 
@@ -68,7 +65,6 @@ public sealed class CredentialService(
 
         await authGuard.RequireScopeAsync(Scope.Credential, Operation.Write, cancellationToken);
 
-        _createCredentialValidator.ValidateAndThrow(dto);
         ValidateCredentialType(dto.Type, dto.Fields);
 
         var existing = await dbContext.Credentials

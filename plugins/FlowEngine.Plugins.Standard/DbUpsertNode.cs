@@ -133,7 +133,7 @@ public DbDialect? Dialect { get; set; }
                 return CreateResult(context, true, 0, 0, 0);
             }
 
-            await using var executor = await DbExecutor.CreateAsync(dialect, connectionString, cancellationToken).ConfigureAwait(false);
+            await using var executor = await DbExecutor.CreateAsync(dialect, connectionString, cancellationToken, context.EngineLogger).ConfigureAwait(false);
 
             var affectedRows = 0;
             var inserted = 0;

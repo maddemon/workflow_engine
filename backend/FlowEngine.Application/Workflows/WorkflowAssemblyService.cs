@@ -89,6 +89,7 @@ public sealed class WorkflowAssemblyService(
                 PositionX = null,
                 PositionY = null,
                 IsEntry = false,
+                Disabled = draftNode.Disabled,
             };
 
             nodes.Add(node);

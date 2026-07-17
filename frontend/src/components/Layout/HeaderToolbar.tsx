@@ -13,7 +13,7 @@ import {
   useComputedColorScheme,
   useMantineColorScheme,
 } from "@mantine/core"
-import { Bell, BookOpen, Home, LogOut, Moon, Settings, Shield, Sun, User, Workflow } from "lucide-react"
+import { Bell, BookOpen, Home, LogOut, Moon, Settings, Shield, Sun, User } from "lucide-react"
 import { useMemo } from "react"
 import { useRequest } from "ahooks"
 import { useTranslation } from "react-i18next"
@@ -64,7 +64,7 @@ export function HeaderToolbar() {
         <Group>
           <Anchor component={Link} to="/" underline="never">
             <Flex gap={4} align="center" wrap="nowrap">
-              <Workflow size={18} />
+              <img src="/favicon.svg" alt="FlowEngine" width={20} height={20} />
               <Text fw={700} size="sm">
                 WorkFlow Engine
               </Text>

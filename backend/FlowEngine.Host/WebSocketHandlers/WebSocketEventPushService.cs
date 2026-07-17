@@ -267,6 +267,8 @@ public sealed class WebSocketEventPushService(
 
     private async Task OnLlmTokenStreamAsync(LlmTokenStreamEvent evt, CancellationToken cancellationToken)
     {
+        // LLM token 流事件高频、数据量大，且重连后只需恢复最终节点输出，
+        // 因此使用 BroadcastAsync 直接推送而不写入 replay 缓存，以降低内存压力。
         var message = new WebSocketPushMessage
         {
             Type = "llm_token",

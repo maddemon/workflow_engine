@@ -44,7 +44,7 @@ public sealed class TriggerService(
             throw new NotFoundException("关联的工作流不存在。");
         }
 
-        var triggerSettings = dto.Settings is not null ? ConvertToTriggerSettings(dto.Settings) : new TriggerSettings();
+        var triggerSettings = dto.Settings?.Adapt<TriggerSettings>() ?? new TriggerSettings();
         var trigger = new Trigger
         {
             WorkflowDefinitionId = dto.WorkflowDefinitionId,
@@ -81,7 +81,7 @@ public sealed class TriggerService(
             }),
             cancellationToken).ConfigureAwait(false);
 
-        return MapToDto(trigger);
+        return trigger.Adapt<TriggerDto>();
     }
 
     /// <summary>
@@ -100,7 +100,7 @@ public sealed class TriggerService(
             return null;
         }
 
-        return MapToDto(trigger);
+        return trigger.Adapt<TriggerDto>();
     }
 
     /// <summary>
@@ -118,7 +118,7 @@ public sealed class TriggerService(
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        return triggers.Select(MapToDto).ToList();
+        return triggers.Select(t => t.Adapt<TriggerDto>()).ToList();
     }
 
     /// <summary>
@@ -135,7 +135,7 @@ public sealed class TriggerService(
         }
 
         var triggers = await query.ToListAsync(cancellationToken).ConfigureAwait(false);
-        return triggers.Select(MapToDto).ToList();
+        return triggers.Select(t => t.Adapt<TriggerDto>()).ToList();
     }
 
     /// <summary>
@@ -159,7 +159,7 @@ public sealed class TriggerService(
 
         trigger.Name = dto.Name;
         trigger.IsActive = dto.IsActive;
-        trigger.Settings = dto.Settings is not null ? ConvertToTriggerSettings(dto.Settings) : new TriggerSettings();
+        trigger.Settings = dto.Settings?.Adapt<TriggerSettings>() ?? new TriggerSettings();
         trigger.UpdatedAt = DateTime.UtcNow;
 
         if (trigger.Type == TriggerType.Webhook)
@@ -229,7 +229,7 @@ public sealed class TriggerService(
             }),
             cancellationToken).ConfigureAwait(false);
 
-        return MapToDto(trigger);
+        return trigger.Adapt<TriggerDto>();
     }
 
     /// <summary>
@@ -385,7 +385,7 @@ public sealed class TriggerService(
             .Where(t => t.IsActive)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
-        return triggers.Select(MapToDto).ToList();
+        return triggers.Select(t => t.Adapt<TriggerDto>()).ToList();
     }
 
     /// <summary>
@@ -404,24 +404,6 @@ public sealed class TriggerService(
         trigger.UpdatedAt = DateTime.UtcNow;
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private static TriggerDto MapToDto(Trigger trigger)
-    {
-        return trigger.Adapt<TriggerDto>();
-    }
-
-    /// <summary>
-    /// 判断当前用户是否有触发器写权限（系统全局角色 Admin/Editor）。
-    /// </summary>
-    private static TriggerSettings ConvertToTriggerSettings(TriggerSettingsDto dto)
-    {
-        return dto.Adapt<TriggerSettings>();
-    }
-
-    private static TriggerSettingsDto ConvertToTriggerSettingsDto(TriggerSettings settings)
-    {
-        return settings.Adapt<TriggerSettingsDto>();
     }
 
     private async Task RegisterPollTriggerAsync(

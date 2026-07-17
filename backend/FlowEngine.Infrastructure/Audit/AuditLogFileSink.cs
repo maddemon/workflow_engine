@@ -1,3 +1,4 @@
+using System.Threading;
 using System.Threading.Channels;
 using FlowEngine.Core.Events;
 using Microsoft.Extensions.Hosting;
@@ -22,7 +23,7 @@ public sealed class AuditLogFileSink : IHostedService, IDisposable
     private StreamWriter? _writer;
     private string _currentDate = string.Empty;
     private Timer? _flushTimer;
-    private bool _disposed;
+    private int _disposed;
 
     /// <summary>
     /// 初始化审计日志文件 Sink。
@@ -64,35 +65,7 @@ public sealed class AuditLogFileSink : IHostedService, IDisposable
     /// </summary>
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        if (_disposed)
-        {
-            return Task.CompletedTask;
-        }
-
-        _disposed = true;
-        _channel.Writer.Complete();
-        _cts.Cancel();
-        _flushTimer?.Dispose();
-        _flushTimer = null;
-
-        try
-        {
-            _processor.Wait(TimeSpan.FromSeconds(5));
-        }
-        catch (Exception ex)
-        {
-            _logger?.LogError(ex, "审计日志后台任务停止时发生异常");
-        }
-
-        _cts.Dispose();
-
-        lock (_writerLock)
-        {
-            _writer?.Flush();
-            _writer?.Dispose();
-            _writer = null;
-        }
-
+        Shutdown("审计日志后台任务停止时发生异常");
         return Task.CompletedTask;
     }
 
@@ -103,7 +76,7 @@ public sealed class AuditLogFileSink : IHostedService, IDisposable
     /// <param name="cancellationToken">取消令牌。</param>
     public Task OnEventAsync(AuditEvent auditEvent, CancellationToken cancellationToken)
     {
-        if (_disposed)
+        if (Interlocked.CompareExchange(ref _disposed, 0, 0) != 0)
         {
             return Task.CompletedTask;
         }
@@ -119,12 +92,17 @@ public sealed class AuditLogFileSink : IHostedService, IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
-        if (_disposed)
+        Shutdown("审计日志后台任务等待时发生异常");
+    }
+
+    private void Shutdown(string errorMessage)
+    {
+        // 确保 StopAsync 与 Dispose 的清理序列只执行一次，避免 double-complete / double-dispose。
+        if (Interlocked.CompareExchange(ref _disposed, 1, 0) != 0)
         {
             return;
         }
 
-        _disposed = true;
         _channel.Writer.Complete();
         _cts.Cancel();
         _flushTimer?.Dispose();
@@ -136,7 +114,7 @@ public sealed class AuditLogFileSink : IHostedService, IDisposable
         }
         catch (Exception ex)
         {
-            _logger?.LogError(ex, "审计日志后台任务等待时发生异常");
+            _logger?.LogError(ex, errorMessage);
         }
 
         _cts.Dispose();
@@ -200,7 +178,7 @@ public sealed class AuditLogFileSink : IHostedService, IDisposable
 
     private void Flush()
     {
-        if (_disposed)
+        if (Interlocked.CompareExchange(ref _disposed, 0, 0) != 0)
         {
             return;
         }

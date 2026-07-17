@@ -30,6 +30,12 @@ public static class WorkflowMapper
         // 工作流：节点/连接集合按上述元素级配置映射。
         config.ForType<Workflow, WorkflowDto>();
 
+        // 凭据：Data（Dictionary<string, EncryptedField>）与 DTO Fields（Dictionary<string, string>）
+        // 类型不兼容，且需解密/脱敏，由 CredentialService 手动构造 Fields，此处显式忽略。
+        var credentialToDto = config.ForType<Credential, CredentialDto>()!;
+        credentialToDto.Ignore(c => c.Fields);
+        config.ForType<Workflow, WorkflowSummaryDto>();
+
         // 触发器配置：双向按名称映射（实体较 DTO 多的字段本就不参与映射）。
         config.ForType<TriggerSettings, TriggerSettingsDto>();
         config.ForType<TriggerSettingsDto, TriggerSettings>();
@@ -46,9 +52,7 @@ public static class WorkflowMapper
         var connectionToEntity = config.ForType<ConnectionDto, Connection>()!;
         connectionToEntity.Ignore(c => c.Id);
 
-        // 触发器：DTO 含 UpdatedAt 字段，但原手工映射未赋值，按既有行为忽略以保持一致。
-        var triggerToDto = config.ForType<Trigger, TriggerDto>()!;
-        triggerToDto.Ignore(t => t.UpdatedAt);
+        // 触发器：DTO 与实体字段按名称自动映射。
 #pragma warning restore CS8603
     }
 }

@@ -203,4 +203,37 @@ public class ParameterResolverTests
 
         return js;
     }
+
+    [Theory]
+    [InlineData("page", false)]
+    [InlineData("tool", false)]
+    [InlineData("node", false)]
+    [InlineData("step 1 (see docs)", false)]
+    [InlineData("input", false)]
+    [InlineData("now", false)]
+    [InlineData("42", false)]
+    [InlineData("https://example.com", false)]
+    [InlineData("input.statusCode", true)]
+    [InlineData("$input.item().userid", true)]
+    [InlineData("$credentials.testCred.accessToken", true)]
+    [InlineData("1 + 2", true)]
+    [InlineData("parseInt(\"10\")", true)]
+    public async Task Resolve_ExpressionHeuristic_ReturnsExpected(string value, bool shouldEvaluate)
+    {
+        using var js = CreateJsEngine(new JsonObject { ["statusCode"] = 200 });
+        var raw = new Dictionary<string, object> { ["value"] = value };
+
+        var result = await _resolver.ResolveAsync(raw, js);
+
+        if (shouldEvaluate)
+        {
+            // 表达式应被求值，结果不应等于原字符串。
+            Assert.NotEqual(value, result["value"]);
+        }
+        else
+        {
+            // 字面量应保持不变。
+            Assert.Equal(value, result["value"]);
+        }
+    }
 }

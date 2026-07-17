@@ -115,21 +115,7 @@ public sealed class WorkflowExportService(
         {
             // 导出前对参数做凭据脱敏，移除 CredentialValue 中的明文字段（GAP-01）。
             var sanitized = SanitizeParameters(n.Parameters);
-            var dto = n.Adapt<NodeDefinitionDto>();
-            return new NodeDefinitionDto
-            {
-                Id = dto.Id,
-                TypeName = dto.TypeName,
-                Name = dto.Name,
-                Parameters = sanitized,
-                Ports = dto.Ports,
-                PositionX = dto.PositionX,
-                PositionY = dto.PositionY,
-                IsEntry = dto.IsEntry,
-                RetryPolicy = dto.RetryPolicy,
-                ErrorStrategy = dto.ErrorStrategy,
-                Timeout = dto.Timeout,
-            };
+            return n.Adapt<NodeDefinitionDto>() with { Parameters = sanitized };
         }).ToList();
 
         var connectionDtos = workflow.Connections.Select(c => c.Adapt<ConnectionDto>()).ToList();

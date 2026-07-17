@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 
@@ -48,6 +49,11 @@ public sealed record NodeDefinitionDto
     /// 是否为入口节点。
     /// </summary>
     public bool IsEntry { get; init; }
+
+    /// <summary>
+    /// 是否禁用该节点。
+    /// </summary>
+    public bool Disabled { get; init; }
 
     /// <summary>
     /// 重试策略。
@@ -115,6 +121,7 @@ public sealed record CreateWorkflowDto
     /// <summary>
     /// 工作流名称。
     /// </summary>
+    [Required]
     public string Name { get; init; } = string.Empty;
 
     /// <summary>
@@ -146,6 +153,7 @@ public sealed record UpdateWorkflowDto
     /// <summary>
     /// 工作流名称。
     /// </summary>
+    [Required]
     public string Name { get; init; } = string.Empty;
 
     /// <summary>

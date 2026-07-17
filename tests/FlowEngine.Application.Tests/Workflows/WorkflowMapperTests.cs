@@ -101,4 +101,58 @@ public sealed class WorkflowMapperTests
 
         Assert.Equal("CfgCheck", mapped.Name);
     }
+
+    [Fact]
+    public void ConnectionDto_To_Connection_IgnoresId()
+    {
+        var dto = new ConnectionDto
+        {
+            Id = "some-string-id",
+            SourceNodeId = "n1",
+            SourcePortName = "output",
+            TargetNodeId = "n2",
+            TargetPortName = "input",
+        };
+
+        var entity = dto.Adapt<Connection>();
+
+        // 反向映射忽略 DTO 传入的字符串 Id，由实体基类生成新 Guid 主键。
+        Assert.NotEqual(Guid.Empty, entity.Id);
+        Assert.NotEqual("some-string-id", entity.Id.ToString());
+        Assert.Equal("n1", entity.SourceNodeId);
+        Assert.Equal("n2", entity.TargetNodeId);
+    }
+
+    [Fact]
+    public void NodeDefinitionDto_To_NodeDefinition_MapsDisabled()
+    {
+        var dto = new NodeDefinitionDto
+        {
+            Id = "n1",
+            TypeName = "httpRequest",
+            Name = "Fetch",
+            Disabled = true,
+        };
+
+        var entity = dto.Adapt<NodeDefinition>();
+
+        Assert.Equal("n1", entity.Id);
+        Assert.True(entity.Disabled);
+    }
+
+    [Fact]
+    public void NodeDefinition_To_NodeDefinitionDto_MapsDisabled()
+    {
+        var entity = new NodeDefinition
+        {
+            Id = "n1",
+            TypeName = "httpRequest",
+            Name = "Fetch",
+            Disabled = true,
+        };
+
+        var dto = entity.Adapt<NodeDefinitionDto>();
+
+        Assert.True(dto.Disabled);
+    }
 }

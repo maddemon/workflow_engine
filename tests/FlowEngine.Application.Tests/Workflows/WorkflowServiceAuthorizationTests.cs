@@ -2,7 +2,6 @@ using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
-using FlowEngine.Application.Validators;
 using FlowEngine.Application.Triggers;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
@@ -43,7 +42,7 @@ public sealed class WorkflowServiceAuthorizationTests : IDisposable
         var handler = new AuthorizedOperationHandler(authGuard, _eventBus, auditFactory);
         var statisticsLoader = new WorkflowStatisticsLoader(_dbContext);
         var triggerSync = new WorkflowTriggerSync(triggerService, handler);
-        _service = new WorkflowService(_dbContext, validator, _eventBus, auditFactory, triggerService, authGuard, handler, statisticsLoader, triggerSync, NullLogger<WorkflowService>.Instance, new CreateWorkflowDtoValidator(), new UpdateWorkflowDtoValidator());
+        _service = new WorkflowService(_dbContext, validator, _eventBus, auditFactory, triggerService, authGuard, handler, statisticsLoader, triggerSync, NullLogger<WorkflowService>.Instance);
     }
 
     public void Dispose()

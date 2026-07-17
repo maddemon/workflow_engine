@@ -193,6 +193,83 @@ public sealed class WorkflowValidatorTests
         Assert.Contains(result.Errors, e => e.Contains("循环依赖"));
     }
 
+    [Fact]
+    public void Validate_EmptyConnections_NoOrphanError()
+    {
+        var registry = new StubNodeRegistry([
+            CreateDescriptor("node", ports:
+            [
+                new PortDefinition { Name = "input", Direction = PortDirection.Input, Type = PortType.Main },
+            ]),
+        ]);
+        var validator = new WorkflowValidator(registry);
+        var workflow = CreateWorkflow([
+            new NodeDefinition { Id = "n1", TypeName = "node", Name = "N1" },
+            new NodeDefinition { Id = "n2", TypeName = "node", Name = "N2" },
+        ], []);
+
+        var result = validator.Validate(workflow);
+
+        Assert.True(result.IsValid);
+        Assert.DoesNotContain(result.Errors, e => e.Contains("孤立节点"));
+    }
+
+    [Fact]
+    public void Validate_TriggerNodeWithoutIncoming_NoOrphanError()
+    {
+        var registry = new StubNodeRegistry([
+            CreateDescriptor("trigger", category: "Trigger", ports:
+            [
+                new PortDefinition { Name = "output", Direction = PortDirection.Output, Type = PortType.Main },
+            ]),
+            CreateDescriptor("action", ports:
+            [
+                new PortDefinition { Name = "input", Direction = PortDirection.Input, Type = PortType.Main },
+            ]),
+        ]);
+        var validator = new WorkflowValidator(registry);
+        var workflow = CreateWorkflow([
+            new NodeDefinition { Id = "trigger", TypeName = "trigger", Name = "Trigger" },
+            new NodeDefinition { Id = "action", TypeName = "action", Name = "Action" },
+        ], [
+            (n) => new Connection { Id = Guid.NewGuid(), SourceNodeId = "trigger", TargetNodeId = "action", SourcePortName = "output", TargetPortName = "input" },
+        ]);
+
+        var result = validator.Validate(workflow);
+
+        Assert.True(result.IsValid);
+        Assert.DoesNotContain(result.Errors, e => e.Contains("孤立节点"));
+    }
+
+    [Fact]
+    public void Validate_NodeWithOnlyOutgoing_NoOrphanError()
+    {
+        var registry = new StubNodeRegistry([
+            CreateDescriptor("source", ports:
+            [
+                new PortDefinition { Name = "output", Direction = PortDirection.Output, Type = PortType.Main },
+            ]),
+            CreateDescriptor("sink", ports:
+            [
+                new PortDefinition { Name = "input", Direction = PortDirection.Input, Type = PortType.Main },
+            ]),
+        ]);
+        var validator = new WorkflowValidator(registry);
+        var workflow = CreateWorkflow([
+            new NodeDefinition { Id = "source", TypeName = "source", Name = "Source" },
+            new NodeDefinition { Id = "sink", TypeName = "sink", Name = "Sink" },
+            new NodeDefinition { Id = "orphan", TypeName = "sink", Name = "Orphan" },
+        ], [
+            (n) => new Connection { Id = Guid.NewGuid(), SourceNodeId = "source", TargetNodeId = "sink", SourcePortName = "output", TargetPortName = "input" },
+        ]);
+
+        var result = validator.Validate(workflow);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.Contains("孤立节点") && e.Contains("Orphan"));
+        Assert.DoesNotContain(result.Errors, e => e.Contains("孤立节点") && e.Contains("Source"));
+    }
+
     private static Workflow CreateWorkflow(
         NodeDefinition[] nodes,
         Func<NodeDefinition[], Connection>[] connectionFactories)
@@ -206,6 +283,7 @@ public sealed class WorkflowValidatorTests
 
     private static NodeTypeDescriptor CreateDescriptor(
         string typeName,
+        string category = "Test",
         List<PortDefinition>? ports = null,
         List<ParameterDefinition>? parameters = null)
     {
@@ -213,7 +291,7 @@ public sealed class WorkflowValidatorTests
         {
             TypeName = typeName,
             DisplayName = typeName,
-            Category = "Test",
+            Category = category,
             Ports = ports ?? [],
             Parameters = parameters ?? [],
         };

@@ -2,7 +2,6 @@ using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
-using FlowEngine.Application.Validators;
 using FlowEngine.Application.Projects;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
@@ -33,7 +32,7 @@ public sealed class ProjectServiceTests : IDisposable
         var authGuard = AuthorizationGuardFactory.Create(_userContext, new FakeResourceAuthorizationService(_dbContext, _userContext));
         var handler = new AuthorizedOperationHandler(authGuard, _eventBus, auditFactory);
         var cascadeDeleter = new ProjectCascadeDeleter(_dbContext);
-        _service = new ProjectService(_dbContext, _userContext, authGuard, _eventBus, auditFactory, handler, cascadeDeleter, new CreateProjectDtoValidator());
+        _service = new ProjectService(_dbContext, _userContext, authGuard, _eventBus, auditFactory, handler, cascadeDeleter);
     }
 
     public void Dispose()

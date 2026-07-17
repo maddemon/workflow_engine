@@ -8,8 +8,6 @@ using FlowEngine.Application.Projects;
 using FlowEngine.Application.RateLimiting;
 using FlowEngine.Application.Triggers;
 using FlowEngine.Application.Workflows;
-using FlowEngine.Application.Dtos;
-using FlowEngine.Application.Validators;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Configuration;
 using FlowEngine.Core.Credentials;
@@ -39,6 +37,7 @@ using FlowEngine.Infrastructure.Ai;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.HttpOverrides;
 using ModelContextProtocol.AspNetCore;
+using System.Diagnostics;
 using System.Globalization;
 using System.Net;
 using Microsoft.EntityFrameworkCore;
@@ -48,8 +47,8 @@ using System.Text;
 using System.Text.Json.Serialization;
 using FlowEngine.Resources;
 using FlowEngine.Resources.Localization;
-using FluentValidation;
 using MediatR;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Localization;
 
 namespace FlowEngine.Host;
@@ -151,7 +150,6 @@ public static class ServiceCollectionExtensions
         AddDbContext(services, configuration);
 
         // ── Infrastructure ──────────────────────────────────────────
-        services.AddSingleton<InternalErrorSink>();
         // 2.1：事件总线 → MediatR。MediatrEventBus 委托 IMediator 分派通知处理器。
         // 仅扫描 Core 程序集以满足 MediatR 的扫描要求（Core 内无处理器）；
         // 实际事件处理器在 RegisterEventNotificationHandlers 中显式注册以精确控制生命周期。
@@ -188,14 +186,24 @@ public static class ServiceCollectionExtensions
             FlowEngine.Application.Authorization.AuthorizationGuard>();
         services.AddScoped<FlowEngine.Application.Authorization.AuthorizedOperationHandler>();
         // ── Identity ────────────────────────────────────────────────
-        // FluentValidation：注册全部 DTO 校验器（任务 1.2）。
-        // 主 FluentValidation 包与 DI 扩展包存在同名类型/命名空间歧义，故显式注册各 IValidator<T>，
-        // 等价地满足 AddValidatorsFromAssemblyContaining 的注册意图，且避免该歧义导致的编译失败。
-        services.AddScoped<IValidator<AssignRoleRequest>, AssignRoleRequestValidator>();
-        services.AddScoped<IValidator<CreateProjectDto>, CreateProjectDtoValidator>();
-        services.AddScoped<IValidator<CreateCredentialDto>, CreateCredentialDtoValidator>();
-        services.AddScoped<IValidator<CreateWorkflowDto>, CreateWorkflowDtoValidator>();
-        services.AddScoped<IValidator<UpdateWorkflowDto>, UpdateWorkflowDtoValidator>();
+        // 模型校验：DataAnnotations 自动校验 + 自定义错误格式
+        services.Configure<ApiBehaviorOptions>(o =>
+        {
+            o.InvalidModelStateResponseFactory = ctx =>
+            {
+                var errors = ctx.ModelState
+                    .Where(e => e.Value?.Errors.Count > 0)
+                    .SelectMany(e => e.Value!.Errors.Select(x => x.ErrorMessage))
+                    .ToList();
+                return new BadRequestObjectResult(new
+                {
+                    success = false,
+                    errorCode = "ValidationFailed",
+                    message = string.Join("; ", errors),
+                    details = (object?)null
+                });
+            };
+        });
         services.AddScoped<IPasswordHasher, PasswordHasher>();
         services.AddScoped<PasswordValidator>();
         services.AddScoped<ITokenService, JwtTokenService>();

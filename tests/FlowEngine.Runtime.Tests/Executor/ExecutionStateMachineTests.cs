@@ -119,4 +119,62 @@ public sealed class ExecutionStateMachineTests
         machine.Complete();
         Assert.Equal(ExecutionStatus.Cancelled, machine.Status);
     }
+
+    [Fact]
+    public void DryRunComplete_FromRunning_TransitionsToDryRunCompleted()
+    {
+        var machine = new ExecutionStateMachine();
+        machine.Start();
+        machine.DryRunComplete();
+        Assert.Equal(ExecutionStatus.DryRunCompleted, machine.Status);
+    }
+
+    [Fact]
+    public void DryRunComplete_WhenNotRunning_IsIgnored()
+    {
+        var machine = new ExecutionStateMachine();
+        machine.DryRunComplete();
+        Assert.Equal(ExecutionStatus.Pending, machine.Status);
+    }
+
+    [Fact]
+    public void Compensate_FromCompleted_TransitionsToCompensating()
+    {
+        var machine = new ExecutionStateMachine();
+        machine.Start();
+        machine.Complete();
+        machine.Compensate();
+        Assert.Equal(ExecutionStatus.Compensating, machine.Status);
+    }
+
+    [Fact]
+    public void CompensationSucceed_FromCompensating_TransitionsToCompensated()
+    {
+        var machine = new ExecutionStateMachine();
+        machine.Start();
+        machine.Complete();
+        machine.Compensate();
+        machine.CompensationSucceed();
+        Assert.Equal(ExecutionStatus.Compensated, machine.Status);
+    }
+
+    [Fact]
+    public void CompensationFail_FromCompensating_TransitionsToCompensationFailed()
+    {
+        var machine = new ExecutionStateMachine();
+        machine.Start();
+        machine.Complete();
+        machine.Compensate();
+        machine.CompensationFail();
+        Assert.Equal(ExecutionStatus.CompensationFailed, machine.Status);
+    }
+
+    [Fact]
+    public void Compensate_WhenNotCompleted_IsIgnored()
+    {
+        var machine = new ExecutionStateMachine();
+        machine.Start();
+        machine.Compensate();
+        Assert.Equal(ExecutionStatus.Running, machine.Status);
+    }
 }

@@ -89,7 +89,7 @@ public static class RateLimiterSetup
     {
         options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(
             BuildPartition,
-            StringComparer.Ordinal);
+            StringComparer.OrdinalIgnoreCase);
 
         options.OnRejected = OnRejected;
     }
@@ -112,6 +112,7 @@ public static class RateLimiterSetup
             return RateLimitPartition.GetNoLimiter<string>("__disabled");
 
         context.Items[RateLimitKeyResolver.PolicyItemKey] = policyName;
+        context.Items["__RateLimitWindowSeconds"] = rule.WindowSeconds;
         var key = RateLimitKeyResolver.GetClientKey(context, policyName);
 
         return RateLimitPartition.GetFixedWindowLimiter<string>(
@@ -134,7 +135,7 @@ public static class RateLimiterSetup
         http.Response.StatusCode = StatusCodes.Status429TooManyRequests;
         http.Response.ContentType = "application/json; charset=utf-8";
 
-        var retryAfterSeconds = ComputeRetryAfter(ctx.Lease);
+        var retryAfterSeconds = ComputeRetryAfter(ctx);
 
         var policyName = http.Items.TryGetValue(RateLimitKeyResolver.PolicyItemKey, out var p) ? (string)p! : "Api";
         var identifier = RateLimitKeyResolver.GetClientKey(http, policyName);
@@ -170,12 +171,17 @@ public static class RateLimiterSetup
     }
 
     /// <summary>
-    /// 从租约元数据中读取建议的等待秒数；缺失时回退到默认窗口（秒）。
+    /// 计算 Retry-After 秒数。当前使用 FixedWindowLimiter 且 QueueLimit=0，
+    /// 租约不会提供 RetryAfter 元数据，因此直接从上下文中读取对应规则的窗口秒数。
     /// </summary>
-    private static int ComputeRetryAfter(RateLimitLease lease)
+    private static int ComputeRetryAfter(OnRejectedContext ctx)
     {
-        if (lease.TryGetMetadata(MetadataName.RetryAfter, out var retryAfter))
-            return Math.Max((int)Math.Ceiling(retryAfter.TotalSeconds), 1);
+        if (ctx.HttpContext.Items.TryGetValue("__RateLimitWindowSeconds", out var value)
+            && value is int windowSeconds
+            && windowSeconds > 0)
+        {
+            return windowSeconds;
+        }
 
         return 60;
     }

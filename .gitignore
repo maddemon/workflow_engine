@@ -411,3 +411,4 @@ tests/data/simple-test.json
 dingtalk_sync_copy.db
 flowengine_copy.db
 backend/FlowEngine.Host/data/crypto.key
+frontend/coverage/

@@ -2,7 +2,6 @@ using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Triggers;
-using FluentValidation;
 using Mapster;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
@@ -29,9 +28,7 @@ public sealed class WorkflowService(
     AuthorizedOperationHandler handler,
     WorkflowStatisticsLoader statisticsLoader,
     WorkflowTriggerSync triggerSync,
-    ILogger<WorkflowService> logger,
-    IValidator<CreateWorkflowDto> _createWorkflowValidator,
-    IValidator<UpdateWorkflowDto> _updateWorkflowValidator) : IWorkflowService
+    ILogger<WorkflowService> logger) : IWorkflowService
 {
     private static readonly AuthorizationPolicy UpdatePolicy = new(
         ResourceKind.Workflow, Operation.Write, Scope.Workflow, AdminPhase: false, ProjectScoped: false);
@@ -44,7 +41,6 @@ public sealed class WorkflowService(
     public async Task<WorkflowDto> CreateAsync(CreateWorkflowDto dto, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dto);
-        _createWorkflowValidator.ValidateAndThrow(dto);
 
         var (nodes, connections) = ConvertFromDtos(dto.Nodes, dto.Connections);
 
@@ -124,14 +120,8 @@ public sealed class WorkflowService(
         var items = workflows.ConvertAll(w =>
         {
             var stat = stats.GetValueOrDefault(w.Id);
-            return new WorkflowSummaryDto
+            return w.Adapt<WorkflowSummaryDto>() with
             {
-                Id = w.Id, Name = w.Name, Version = w.Version, IsActive = w.IsActive,
-                ProjectId = w.ProjectId, CreatedAt = w.CreatedAt, UpdatedAt = w.UpdatedAt,
-                Source = w.Source,
-                DraftStatus = w.DraftStatus,
-                RejectionReason = w.RejectionReason,
-                Diff = w.Diff,
                 LastExecutionAt = stat?.LastExecutionAt,
                 TriggerCount = stat?.TriggerCount ?? 0,
                 NextTriggerAt = stat?.NextTriggerAt,
@@ -151,7 +141,6 @@ public sealed class WorkflowService(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dto);
-        _updateWorkflowValidator.ValidateAndThrow(dto);
 
         await handler.AuthorizePreAsync(UpdatePolicy, id, cancellationToken);
 
@@ -226,7 +215,6 @@ public sealed class WorkflowService(
     public async Task<WorkflowDto> CreateDraftAsync(CreateWorkflowDto dto, CancellationToken cancellationToken = default, WorkflowSource source = WorkflowSource.Human)
     {
         ArgumentNullException.ThrowIfNull(dto);
-        _createWorkflowValidator.ValidateAndThrow(dto);
 
         var (nodes, connections) = ConvertFromDtos(dto.Nodes, dto.Connections);
 

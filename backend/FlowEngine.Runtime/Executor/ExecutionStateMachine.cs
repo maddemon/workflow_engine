@@ -32,7 +32,15 @@ public sealed class ExecutionStateMachine
         _machine.Configure(ExecutionStatus.Running)
             .Permit(ExecutionTrigger.Complete, ExecutionStatus.Completed)
             .Permit(ExecutionTrigger.Fail, ExecutionStatus.Failed)
-            .Permit(ExecutionTrigger.Cancel, ExecutionStatus.Cancelled);
+            .Permit(ExecutionTrigger.Cancel, ExecutionStatus.Cancelled)
+            .Permit(ExecutionTrigger.DryRunComplete, ExecutionStatus.DryRunCompleted);
+
+        _machine.Configure(ExecutionStatus.Completed)
+            .Permit(ExecutionTrigger.Compensate, ExecutionStatus.Compensating);
+
+        _machine.Configure(ExecutionStatus.Compensating)
+            .Permit(ExecutionTrigger.CompensationSucceed, ExecutionStatus.Compensated)
+            .Permit(ExecutionTrigger.CompensationFail, ExecutionStatus.CompensationFailed);
     }
 
     /// <summary>
@@ -54,6 +62,26 @@ public sealed class ExecutionStateMachine
     /// 标记为已取消（Pending/Running→Cancelled）。
     /// </summary>
     public void Cancel() => FireIfPermitted(ExecutionTrigger.Cancel);
+
+    /// <summary>
+    /// 开始补偿（Completed→Compensating）。
+    /// </summary>
+    public void Compensate() => FireIfPermitted(ExecutionTrigger.Compensate);
+
+    /// <summary>
+    /// 标记补偿完成（Compensating→Compensated）。
+    /// </summary>
+    public void CompensationSucceed() => FireIfPermitted(ExecutionTrigger.CompensationSucceed);
+
+    /// <summary>
+    /// 标记补偿失败（Compensating→CompensationFailed）。
+    /// </summary>
+    public void CompensationFail() => FireIfPermitted(ExecutionTrigger.CompensationFail);
+
+    /// <summary>
+    /// 标记模拟运行完成（Running→DryRunCompleted）。
+    /// </summary>
+    public void DryRunComplete() => FireIfPermitted(ExecutionTrigger.DryRunComplete);
 
     /// <summary>
     /// 仅当当前状态允许该触发器时才触发，否则静默忽略（等价于重构前的 if 守卫语义）。

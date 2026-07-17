@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using FlowEngine.Core.Enums;
 
 namespace FlowEngine.Application.Dtos;
@@ -62,11 +63,13 @@ public sealed class CreateTriggerDto
     /// <summary>
     /// 关联工作流定义 ID。
     /// </summary>
+    [Required]
     public Guid WorkflowDefinitionId { get; set; }
 
     /// <summary>
     /// 工作流版本号。
     /// </summary>
+    [Range(0, int.MaxValue)]
     public int WorkflowVersion { get; set; }
 
     /// <summary>
@@ -77,6 +80,8 @@ public sealed class CreateTriggerDto
     /// <summary>
     /// 触发器名称。
     /// </summary>
+    [Required]
+    [MaxLength(256)]
     public string Name { get; set; } = string.Empty;
 
     /// <summary>
@@ -98,6 +103,8 @@ public sealed class UpdateTriggerDto
     /// <summary>
     /// 触发器名称。
     /// </summary>
+    [Required]
+    [MaxLength(256)]
     public string Name { get; set; } = string.Empty;
 
     /// <summary>

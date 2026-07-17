@@ -1,13 +1,11 @@
 using FlowEngine.Application.Audit;
 using FlowEngine.Application.Dtos;
-using FlowEngine.Application.Validators;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.Identity;
 using FlowEngine.Core.Exceptions;
-using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Identity;
@@ -18,8 +16,7 @@ namespace FlowEngine.Application.Identity;
 public sealed class UserRoleService(
     FlowEngineDbContext dbContext,
     IEventBus eventBus,
-    AuditEventFactory auditFactory,
-    IValidator<AssignRoleRequest> roleValidator)
+    AuditEventFactory auditFactory)
 {
     /// <inheritdoc />
     public async Task<IReadOnlyList<string>> GetRolesAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -37,12 +34,6 @@ public sealed class UserRoleService(
         AssignRoleRequest request,
         CancellationToken cancellationToken = default)
     {
-        var validation = await roleValidator.ValidateAsync(request, cancellationToken).ConfigureAwait(false);
-        if (!validation.IsValid)
-        {
-            return (false, "无效的角色。");
-        }
-
         // 校验用户存在。
         var userExists = await dbContext.Users.AnyAsync(u => u.Id == userId, cancellationToken).ConfigureAwait(false);
         if (!userExists)
@@ -84,8 +75,7 @@ public sealed class UserRoleService(
         string role,
         CancellationToken cancellationToken = default)
     {
-        var validation = await roleValidator.ValidateAsync(new AssignRoleRequest { Role = role }, cancellationToken).ConfigureAwait(false);
-        if (!validation.IsValid)
+        if (!Enum.TryParse<Role>(role, ignoreCase: true, out _))
         {
             return (false, "无效的角色。");
         }

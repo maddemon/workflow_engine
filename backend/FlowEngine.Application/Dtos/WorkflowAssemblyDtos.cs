@@ -48,6 +48,11 @@ public sealed record AiDraftNodeDto
     /// 参数字典。
     /// </summary>
     public Dictionary<string, object> Parameters { get; init; } = [];
+
+    /// <summary>
+    /// 是否禁用该节点。
+    /// </summary>
+    public bool Disabled { get; init; }
 }
 
 /// <summary>

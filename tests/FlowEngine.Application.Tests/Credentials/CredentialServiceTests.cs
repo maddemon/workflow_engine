@@ -3,7 +3,6 @@ using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Credentials;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
-using FlowEngine.Application.Validators;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
@@ -52,8 +51,7 @@ public sealed class CredentialServiceTests : IDisposable
             new WorkflowRepository(_dbContext),
             authGuard,
             new CredentialTypeRegistry(),
-            handler,
-            new CreateCredentialDtoValidator());
+            handler);
     }
 
     public void Dispose()
@@ -186,7 +184,7 @@ public sealed class CredentialServiceTests : IDisposable
     public async Task UpdateAsync_NonExistingCredential_ReturnsNull()
     {
         var ct = TestContext.Current.CancellationToken;
-        var dto = new UpdateCredentialDto { Name = "Test" };
+        var dto = new UpdateCredentialDto { Name = "Test", Fields = new Dictionary<string, string> { ["key"] = "value" } };
         var result = await _service.UpdateAsync(Guid.NewGuid(), dto, ct);
         Assert.Null(result);
     }

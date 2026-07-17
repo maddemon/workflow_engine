@@ -38,7 +38,7 @@
     <Copy SourceFiles="@(PluginAssemblies)" DestinationFolder="$(PublishDir)plugins\" SkipUnchangedFiles="true" />
   </Target>
 
-  <ItemGroup>
+<ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.9">
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       <PrivateAssets>all</PrivateAssets>
