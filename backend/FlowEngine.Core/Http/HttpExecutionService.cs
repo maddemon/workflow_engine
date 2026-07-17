@@ -48,10 +48,30 @@ public class HttpExecutionService
             {
                 var credential = await context.ResolveCredentialAsync(request.CredentialId, cancellationToken)
                     .ConfigureAwait(false);
-                if (credential is not null)
+                if (credential is null)
                 {
-                    ApplyAuth(httpRequest, request.AuthMode, credential, request.QueryParameterName);
+                    return new NodeExecutionResult
+                    {
+                        Success = false,
+                        Output = new DataBatch
+                        {
+                            Items =
+                            [
+                                new DataItem
+                                {
+                                    Success = false,
+                                    SourceIndex = 0,
+                                    Error = new NodeError
+                                    {
+                                        Code = "CredentialNotFound",
+                                        Message = $"凭据 '{request.CredentialId}' 不存在。请先通过凭证管理创建该凭据。",
+                                    },
+                                },
+                            ],
+                        },
+                    };
                 }
+                ApplyAuth(httpRequest, request.AuthMode, credential, request.QueryParameterName);
             }
 
             // 6. Apply custom headers

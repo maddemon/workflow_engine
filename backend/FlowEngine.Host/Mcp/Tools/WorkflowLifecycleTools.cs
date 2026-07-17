@@ -15,7 +15,8 @@ public sealed class WorkflowLifecycleTools(
     IWorkflowValidationService validationService,
     IWorkflowService workflowService,
     IExecutionService executionService,
-    IWorkflowExecutionFeedbackService feedbackService)
+    IWorkflowExecutionFeedbackService feedbackService,
+    WorkflowDryRunService dryRunService)
 {
     /// <summary>
     /// 校验工作流定义的结构完整性。返回详细的错误列表，包含节点 ID、字段、错误类型和建议修复方案，供 AI 自纠。不抛协议异常。
@@ -220,5 +221,60 @@ public sealed class WorkflowLifecycleTools(
         }
 
         return result;
+    }
+
+    /// <summary>
+    /// 模拟执行工作流（Dry-Run），验证参数解析、凭证存在性和节点兼容性，不产生副作用。
+    /// 用于在真正执行前检查工作流是否能正确运行。
+    /// </summary>
+    [McpServerTool(Name = "dry_run_workflow")]
+    [Description("模拟执行工作流（Dry-Run），验证参数解析、凭证存在性和节点兼容性，不产生副作用。在正式执行前调用此工具检查工作流是否能正确运行。")]
+    public async Task<object> DryRunWorkflow(
+        [Description("工作流 ID（已确认的）")] string workflowId,
+        [Description("模拟输入数据（可选，按端口名映射）")] Dictionary<string, object>? inputs = null,
+        [Description("临时凭证列表（可选，用于覆盖系统凭证进行测试）")] List<DryRunCredentialDto>? credentials = null,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(workflowId) || !Guid.TryParse(workflowId, out var id))
+        {
+            return new McpToolError(
+                "InvalidInput",
+                "工作流 ID 格式无效",
+                CanAutoFix: true,
+                SuggestedFix: "请传入合法的工作流 GUID");
+        }
+
+        // 获取工作流定义，转换为 DryRun 请求格式
+        var workflow = await workflowService.GetAsync(id, cancellationToken).ConfigureAwait(false);
+        if (workflow is null)
+        {
+            return new McpToolError(
+                "NotFound",
+                $"工作流 '{workflowId}' 不存在",
+                CanAutoFix: false,
+                SuggestedFix: "请确认 ID 正确或先创建/确认工作流");
+        }
+
+        var dryRunRequest = new DryRunWorkflowRequestDto
+        {
+            Nodes = workflow.Nodes,
+            Connections = workflow.Connections,
+            Inputs = inputs,
+            Credentials = credentials,
+        };
+
+        try
+        {
+            var result = await dryRunService.DryRunAsync(dryRunRequest, cancellationToken).ConfigureAwait(false);
+            return result;
+        }
+        catch (BusinessException ex)
+        {
+            return new McpToolError(
+                "DryRunFailed",
+                ex.Message,
+                CanAutoFix: true,
+                SuggestedFix: "请根据错误信息调整工作流参数或凭证配置");
+        }
     }
 }

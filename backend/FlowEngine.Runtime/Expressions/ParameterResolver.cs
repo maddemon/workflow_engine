@@ -254,15 +254,6 @@ public sealed class ParameterResolver
         if (trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
             || trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) return false;
 
-        // 遗留兼容：含运算符的裸字符串仍按表达式处理（如 input.xxx、now()）
-        foreach (var ch in trimmed)
-        {
-            if (ch is '=' or '+' or '-' or '*' or '/' or '%' or '>' or '<' or '!' or '?' or ':' or '(' or ')' or '[' or ']' or '&' or '|')
-            {
-                return true;
-            }
-        }
-
         return false;
     }
 

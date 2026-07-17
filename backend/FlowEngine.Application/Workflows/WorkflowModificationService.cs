@@ -101,26 +101,20 @@ public sealed class WorkflowModificationService(
                 "Validation failed after modification: " + string.Join("; ", validationErrors));
         }
 
-        // ── 5. 创建草稿记录（IsActive = false）─────────────────
-        var draftWorkflow = new Workflow
-        {
-            ProjectId = workflow.ProjectId,
-            Name = workflow.Name,
-            CreatedBy = "ai-modifier",
-            IsActive = false,
-            Source = WorkflowSource.Ai,
-            DraftStatus = Core.Enums.DraftStatus.Pending,
-            Diff = diffs,
-            Nodes = workflow.Nodes,
-            Connections = workflow.Connections,
-        };
+        // ── 5. 就地更新工作流 ──────────────────────────────────
+        var draftWorkflow = await dbContext.Workflows
+            .FirstAsync(w => w.Id == workflowId, cancellationToken)
+            .ConfigureAwait(false);
+        draftWorkflow.Name = workflow.Name;
+        draftWorkflow.Diff = diffs;
+        draftWorkflow.Nodes = workflow.Nodes;
+        draftWorkflow.Connections = workflow.Connections;
 
-        dbContext.Workflows.Add(draftWorkflow);
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         // 发布审计事件（GAP-26）
         var auditEvent = auditFactory.Create<AuditLogEvent>(
-            AuditEventTypes.WorkflowCreated,
+            AuditEventTypes.WorkflowUpdated,
             "Workflow",
             draftWorkflow.Id,
             new Dictionary<string, object> { ["name"] = draftWorkflow.Name });
@@ -423,6 +417,20 @@ public sealed class WorkflowModificationService(
             sourcePortName = defaultOutput?.Name
                 ?? throw new BusinessException($"Node '{op.From}' has no available output port.");
         }
+        else
+        {
+            var matchedPort = sourceDescriptor.Ports
+                .FirstOrDefault(p => p.Name.Equals(sourcePortName, StringComparison.OrdinalIgnoreCase)
+                                  && p.Direction == PortDirection.Output);
+            if (matchedPort is null)
+            {
+                // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
+                throw new BusinessException(
+                    $"Node '{op.From}' does not have output port '{sourcePortName}'.");
+            }
+            // 归一化：使用规范的端口名
+            sourcePortName = matchedPort.Name;
+        }
 
         var targetPortName = op.ToPort;
         if (string.IsNullOrEmpty(targetPortName))
@@ -432,6 +440,20 @@ public sealed class WorkflowModificationService(
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
             targetPortName = defaultInput?.Name
                 ?? throw new BusinessException($"Node '{op.To}' has no available input port.");
+        }
+        else
+        {
+            var matchedPort = targetDescriptor.Ports
+                .FirstOrDefault(p => p.Name.Equals(targetPortName, StringComparison.OrdinalIgnoreCase)
+                                  && p.Direction == PortDirection.Input);
+            if (matchedPort is null)
+            {
+                // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
+                throw new BusinessException(
+                    $"Node '{op.To}' does not have input port '{targetPortName}'.");
+            }
+            // 归一化：使用规范的端口名
+            targetPortName = matchedPort.Name;
         }
 
         // 检查重复连接

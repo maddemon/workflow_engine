@@ -35,11 +35,11 @@ export class Analyzer {
     const msg = err.message || '';
     const type = err.errorType || '';
 
-    // D 类：环境问题
-    if (/credential|cred|api.?key|not.?found|timeout|refused|ENOTFOUND/i.test(msg)) {
+    // D 类：环境问题（凭据、外部服务不可达）
+    if (/credential|cred|MissingConnection|api.?key|not.?found|timeout|refused|ENOTFOUND|ECONNREFUSED/i.test(msg)) {
       return {
         category: 'D',
-        subCategory: msg.includes('Credential') || msg.includes('cred') || /api[._ ]?key/i.test(msg) ? 'D1' : 'D2',
+        subCategory: /MissingConnection|credential|cred\b|api[._ ]?key/i.test(msg) ? 'D1' : 'D2',
         description: msg,
         rootCause: step.phase === 'execute' ? '执行时缺少凭据或外部服务不可达' : '环境配置问题',
         fixType: 'environment',
@@ -76,7 +76,7 @@ export class Analyzer {
       };
     }
 
-    // B 类：schema 信息不足（validate 返回 InvalidExpression 但不是 A 类）
+    // B 类：schema 信息不足（validate 返回 InvalidExpression 但不是 A 类）+ 节点要求特定输入格式
     if (type === 'InvalidExpression' && !/\{\{/.test(msg)) {
       return {
         category: 'B',
@@ -86,6 +86,20 @@ export class Analyzer {
         fixType: 'schema_enhancement',
         targetFiles: ['backend/FlowEngine.Core/Ai/NodeDefinitionAdapter.cs'],
         confidence: 'medium',
+        estimatedEffort: 'small',
+      };
+    }
+
+    // B 类：MissingThought 等输入格式要求（schema 应描述输入格式）
+    if (/MissingThought|MissingInput|required.*input|input.*required/i.test(type)) {
+      return {
+        category: 'B',
+        subCategory: 'B2',
+        description: msg,
+        rootCause: 'schema 未描述该节点需要的输入字段格式',
+        fixType: 'schema_enhancement',
+        targetFiles: ['backend/FlowEngine.Core/Ai/NodeDefinitionAdapter.cs'],
+        confidence: 'high',
         estimatedEffort: 'small',
       };
     }

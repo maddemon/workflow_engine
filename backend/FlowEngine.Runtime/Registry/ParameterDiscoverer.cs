@@ -108,7 +108,9 @@ public sealed class ParameterDiscoverer(ILogger? logger = null)
                 Hint = hintAttr?.Component ?? inferredHint,
                 HintProperties = hintProperties,
                 Description = property.GetCustomAttribute<DescriptionAttribute>()?.Description,
-                CredentialType = credentialAttr?.CredentialType
+                CredentialType = credentialAttr?.CredentialTypes is { Length: > 1 }
+                    ? string.Join(",", credentialAttr.CredentialTypes)
+                    : credentialAttr?.CredentialType
             };
 
             if (property.PropertyType.IsEnum)
@@ -245,7 +247,9 @@ public sealed class ParameterDiscoverer(ILogger? logger = null)
                 Hint = hintAttr?.Component ?? inferredHint,
                 HintProperties = hintProperties,
                 Description = property.GetCustomAttribute<DescriptionAttribute>()?.Description,
-                CredentialType = credentialAttr?.CredentialType
+                CredentialType = credentialAttr?.CredentialTypes is { Length: > 1 }
+                    ? string.Join(",", credentialAttr.CredentialTypes)
+                    : credentialAttr?.CredentialType
             };
 
             if (property.PropertyType.IsEnum)

@@ -8,17 +8,27 @@ namespace FlowEngine.Core.Attributes;
 /// <code>
 /// [Credential("apiKey")]
 /// public CredentialValue? ApiCredential { get; set; }
+///
+/// [Credential("apiKey", "oauth2")]
+/// public CredentialValue? AuthCredential { get; set; }
 /// </code>
 /// </example>
 /// <remarks>
-/// 标记凭据属性。
+/// 标记凭据属性。支持单个或多个凭据类型。
 /// </remarks>
-/// <param name="credentialType">凭据类型标识。</param>
+/// <param name="credentialType">至少一个凭据类型标识（如 "apiKey"、"oauth2"、"basicAuth"）。</param>
 [AttributeUsage(AttributeTargets.Property)]
-public sealed class CredentialAttribute(string credentialType) : Attribute
+public sealed class CredentialAttribute(params string[] credentialType) : Attribute
 {
     /// <summary>
-    /// 凭据类型标识（如 "apiKey"、"oauth"、"basicAuth"）。
+    /// 允许的凭据类型列表。
     /// </summary>
-    public string CredentialType { get; } = credentialType ?? throw new ArgumentNullException(nameof(credentialType));
+    public string[] CredentialTypes { get; } = credentialType.Length > 0
+        ? credentialType
+        : throw new ArgumentException("至少需要指定一个凭据类型", nameof(credentialType));
+
+    /// <summary>
+    /// 主凭据类型（向后兼容）。
+    /// </summary>
+    public string CredentialType => CredentialTypes[0];
 }

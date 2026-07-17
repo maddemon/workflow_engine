@@ -247,10 +247,18 @@ public static class NodeDefinitionAdapter
             // 凭据类型：让 AI 知道要传对应类型的凭据 ID，不要填占位符。
             if (p.Type == ParameterType.Credential && !string.IsNullOrEmpty(p.CredentialType))
             {
-                propSchema["credentialType"] = JsonValue.Create(p.CredentialType);
+                var typeList = p.CredentialType.Contains(',')
+                    ? p.CredentialType.Split(',').Select(t => t.Trim()).ToList()
+                    : [p.CredentialType];
+                var typeDisplay = typeList.Count == 1
+                    ? $"'{typeList[0]}'"
+                    : $"[{string.Join(", ", typeList.Select(t => $"'{t}'"))}]";
+                propSchema["credentialType"] = typeList.Count == 1
+                    ? JsonValue.Create(typeList[0])
+                    : new JsonArray(typeList.Select(t => JsonValue.Create(t)).ToArray());
                 var desc = string.IsNullOrEmpty(p.Description)
-                    ? $"必须是类型为 '{p.CredentialType}' 的凭据 ID，不要填占位符。"
-                    : p.Description + $" 必须是类型为 '{p.CredentialType}' 的凭据 ID，不要填占位符。";
+                    ? $"必须是类型为 {typeDisplay} 的凭据 ID，不要填占位符。"
+                    : p.Description + $" 必须是类型为 {typeDisplay} 的凭据 ID，不要填占位符。";
                 propSchema["description"] = JsonValue.Create(desc);
             }
 
@@ -285,6 +293,7 @@ public static class NodeDefinitionAdapter
             Name = p.Name,
             Direction = p.Direction.ToString(),
             Description = p.DisplayName,
+            Type = p.Type.ToString(),
         }).ToList();
     }
 

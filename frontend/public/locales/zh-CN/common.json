@@ -1,5 +1,7 @@
 {
   "save": "保存",
+  "saveSuccess": "保存成功",
+  "saveFailed": "保存失败",
   "cancel": "取消",
   "close": "关闭",
   "delete": "删除",

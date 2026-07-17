@@ -28,6 +28,7 @@ public sealed class WorkflowValidator(INodeRegistry registry)
         DeriveEntryNodes(workflow);
         ValidateDanglingConnections(workflow, errors);
         ValidatePortDirections(workflow, errors);
+        ValidateOrphanNodes(workflow, errors);
         ValidateRequiredParameters(workflow, errors);
         ValidateCycles(workflow, errors);
 
@@ -85,6 +86,33 @@ public sealed class WorkflowValidator(INodeRegistry registry)
             if (targetPort is not null && targetPort.Direction != PortDirection.Input)
             {
                 errors.Add($"连接 {connection.Id} 的目标端口 '{connection.TargetPortName}' 不是输入端口。");
+            }
+
+            // 端口类型兼容性：AgentTool / LLM / Memory 端口只能连同类型端口
+            if (sourcePort is not null && targetPort is not null
+                && sourcePort.Type != PortType.Main && targetPort.Type != PortType.Main
+                && sourcePort.Type != targetPort.Type)
+            {
+                errors.Add($"连接 {connection.Id} 的端口类型不兼容：源端口 '{connection.SourcePortName}' 为 {sourcePort.Type}，目标端口 '{connection.TargetPortName}' 为 {targetPort.Type}。");
+            }
+        }
+    }
+
+    /// <summary>
+    /// 校验非入口节点必须至少有一条入边，防止孤立节点。
+    /// </summary>
+    private static void ValidateOrphanNodes(Workflow workflow, List<string> errors)
+    {
+        var hasIncoming = workflow.Connections
+            .Select(c => c.TargetNodeId)
+            .ToHashSet();
+
+        foreach (var node in workflow.Nodes)
+        {
+            if (node.IsEntry) continue;
+            if (!hasIncoming.Contains(node.Id))
+            {
+                errors.Add($"节点 '{node.Name}' ({node.TypeName}) 没有入边连接，工作流中不允许存在孤立节点。");
             }
         }
     }

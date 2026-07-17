@@ -10,8 +10,10 @@ export class KnowledgeBase {
   // ── Coverage ──
   loadCoverage(): Coverage {
     const path = join(this.baseDir, 'coverage.json');
-    if (!existsSync(path)) return { scenarioCount: 0, coveredNodePairs: [], coveredCategories: [] };
-    return JSON.parse(readFileSync(path, 'utf-8'));
+    if (!existsSync(path)) return { scenarioCount: 0, roundCount: 0, coveredNodePairs: [], coveredCategories: [] };
+    const cov = JSON.parse(readFileSync(path, 'utf-8'));
+    cov.roundCount ??= 0;
+    return cov;
   }
 
   saveCoverage(coverage: Coverage): void {

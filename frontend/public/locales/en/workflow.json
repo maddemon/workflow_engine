@@ -106,7 +106,7 @@
     "fitView": "Fit View",
     "autoLayout": "Auto Layout",
     "stop": "Stop",
-    "testRun": "Test Run",
+    "testRun": "Execute",
     "configurationError": "Configuration Error"
   }
 }

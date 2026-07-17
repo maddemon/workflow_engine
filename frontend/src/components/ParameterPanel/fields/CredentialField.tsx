@@ -20,6 +20,7 @@ interface CredentialFieldProps {
 export function CredentialField({ definition, value, onChange, error }: CredentialFieldProps) {
   const { t } = useTranslation('parameterPanel');
   const paramName = useParameterName();
+  const nodeId = useWorkflowStore((s) => s.selectedNodeId);
   const label = paramName(definition.name, definition.displayName);
   const credentialRevision = useWorkflowStore((s) => s.credentialRevision);
   const bumpCredentialRevision = useWorkflowStore((s) => s.bumpCredentialRevision);
@@ -33,12 +34,11 @@ export function CredentialField({ definition, value, onChange, error }: Credenti
     refreshDeps: [credentialRevision, definition.credentialType],
   });
 
-  const credentials = useMemo(
-    () => definition.credentialType
-      ? allCredentials.filter((c) => c.type === definition.credentialType)
-      : allCredentials,
-    [allCredentials, definition.credentialType],
-  );
+  const credentials = useMemo(() => {
+    if (!definition.credentialType) return allCredentials;
+    const allowedTypes = definition.credentialType.split(',').map((t) => t.trim());
+    return allCredentials.filter((c) => allowedTypes.includes(c.type));
+  }, [allCredentials, definition.credentialType]);
 
   const { data: types = [] } = useRequest(getCredentialTypes);
 
@@ -118,6 +118,7 @@ export function CredentialField({ definition, value, onChange, error }: Credenti
         </Button>
       </Group>
       <Select
+        key={`${nodeId}-${definition.name}`}
         error={error}
         value={String(value ?? '')}
         onChange={(v) => onChange(v ?? '')}

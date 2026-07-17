@@ -23,7 +23,8 @@ public sealed class WorkflowDryRunService(
     NodeExecutionContextFactory contextFactory,
     ILogger<WorkflowSchedulerKernel> kernelLogger,
     SecretMasker secretMasker,
-    IAuthorizationGuard authGuard)
+    IAuthorizationGuard authGuard,
+    ICredentialAccessor realCredentialAccessor)
 {
     /// <summary>
     /// 对传入的 DSL 工作流执行 Dry-Run。
@@ -40,7 +41,7 @@ public sealed class WorkflowDryRunService(
         await authGuard.RequireScopeAsync(Scope.Workflow, Operation.Execute, cancellationToken);
 
         var workflow = BuildWorkflow(request);
-        var credentialAccessor = BuildCredentialAccessor(request.Credentials);
+        var credentialAccessor = BuildCredentialAccessor(request.Credentials, realCredentialAccessor);
         var sensitiveValues = ExtractSensitiveValues(request.Credentials);
         await PreResolveCredentialParameters(workflow, credentialAccessor, cancellationToken).ConfigureAwait(false);
 
@@ -84,6 +85,12 @@ public sealed class WorkflowDryRunService(
         var nodes = request.Nodes.Select(WorkflowMapper.ToEntity).ToList();
         var connections = request.Connections.Select(WorkflowMapper.ToEntity).ToList();
 
+        // Dry-Run 强制所有节点用 Continue 策略，确保一个节点失败不影响其他节点的验证
+        foreach (var node in nodes)
+        {
+            node.ErrorStrategy = Core.Enums.ErrorStrategy.Continue;
+        }
+
         return new Workflow
         {
             Id = Guid.NewGuid(),
@@ -96,7 +103,7 @@ public sealed class WorkflowDryRunService(
         };
     }
 
-    private static TemporaryCredentialAccessor BuildCredentialAccessor(IReadOnlyCollection<DryRunCredentialDto>? credentials)
+    private static ICredentialAccessor BuildCredentialAccessor(IReadOnlyCollection<DryRunCredentialDto>? credentials, ICredentialAccessor realAccessor)
     {
         var values = new Dictionary<string, CredentialValue>(StringComparer.OrdinalIgnoreCase);
         if (credentials is not null)
@@ -113,10 +120,10 @@ public sealed class WorkflowDryRunService(
             }
         }
 
-        return new TemporaryCredentialAccessor(values);
+        return new FallbackCredentialAccessor(new TemporaryCredentialAccessor(values), realAccessor);
     }
 
-    private async Task PreResolveCredentialParameters(Workflow workflow, TemporaryCredentialAccessor credentialAccessor, CancellationToken cancellationToken)
+    private async Task PreResolveCredentialParameters(Workflow workflow, ICredentialAccessor credentialAccessor, CancellationToken cancellationToken)
     {
         foreach (var node in workflow.Nodes)
         {
@@ -268,6 +275,31 @@ public sealed class WorkflowDryRunService(
         {
             _credentials.TryGetValue(name, out var value);
             return Task.FromResult(value);
+        }
+    }
+
+    /// <summary>
+    /// 凭据访问器：先查临时凭据，找不到时回退到真实凭据库。
+    /// </summary>
+    private sealed class FallbackCredentialAccessor(ICredentialAccessor primary, ICredentialAccessor fallback) : ICredentialAccessor
+    {
+        public async Task<CredentialValue> GetCredentialAsync(Guid credentialId, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                return await primary.GetCredentialAsync(credentialId, cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                return await fallback.GetCredentialAsync(credentialId, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        public async Task<CredentialValue?> GetCredentialByNameAsync(string name, CancellationToken cancellationToken = default)
+        {
+            var result = await primary.GetCredentialByNameAsync(name, cancellationToken).ConfigureAwait(false);
+            if (result is not null) return result;
+            return await fallback.GetCredentialByNameAsync(name, cancellationToken).ConfigureAwait(false);
         }
     }
 }

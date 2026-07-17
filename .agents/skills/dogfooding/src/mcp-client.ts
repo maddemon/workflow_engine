@@ -34,11 +34,14 @@ export class McpClient {
     return this.tools;
   }
 
+  get url(): string { return this.config.url; }
+  get apiKey(): string { return this.config.apiKey; }
+
   async close(): Promise<void> {
     this.sessionId = null;
   }
 
-  private async sendRequest(method: string, params: unknown): Promise<unknown> {
+  private async sendRequest(method: string, params: unknown, retryCount = 0): Promise<unknown> {
     const id = ++this.requestId;
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
@@ -53,6 +56,15 @@ export class McpClient {
       headers,
       body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
     });
+
+    if (response.status === 429 && retryCount < 3) {
+      // 速率限制：读取 retryAfter，默认 6 秒
+      const retryAfter = parseInt(response.headers.get('Retry-After') ?? '6', 10);
+      const waitMs = Math.min(retryAfter * 1000, 15000);
+      console.log(`[MCP] 429 速率限制，等待 ${waitMs}ms 后重试 (retry #${retryCount + 1})`);
+      await new Promise(r => setTimeout(r, waitMs));
+      return this.sendRequest(method, params, retryCount + 1);
+    }
 
     if (!response.ok) {
       throw new Error(`MCP HTTP ${response.status}: ${await response.text()}`);

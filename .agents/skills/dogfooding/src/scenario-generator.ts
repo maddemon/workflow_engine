@@ -1,36 +1,55 @@
-import type { McpClient } from './mcp-client.js';
 import type { KnowledgeBase } from './knowledge-base.js';
-import type { Scenario } from './types.js';
 
-interface CatalogNode {
-  typeName: string;
-  displayName: string;
-  category: string;
+export interface Scenario {
+  id: string;
+  title: string;
   description: string;
+  nodes: string[];
+  categories: string[];
 }
 
-export class ScenarioGenerator {
-  constructor(
-    private mcp: McpClient,
-    private kb: KnowledgeBase,
-  ) {}
+// 需要外部凭据的节点（跳过）
+const externalOnlyTypes = new Set([
+  'dbUpsert', 'dbQuery', 'dbCommand', 'httpRequest', 'webhook',
+  'email', 's3Get', 's3Put', 'redis', 'rabbitmq', 'kafka',
+]);
 
-  async generate(count: number): Promise<Scenario[]> {
-    const catalog = await this.mcp.callTool<CatalogNode[]>('list_node_catalog', {});
-    if (!catalog || catalog.length === 0) {
-      throw new Error('节点目录为空，无法生成场景');
+/**
+ * 场景生成器。
+ *
+ * 两种模式：
+ * 1. 自动组合：从 catalog 按分类轮换选取节点
+ * 2. 手动指定：直接传入节点列表
+ */
+export class ScenarioGenerator {
+  constructor(private kb: KnowledgeBase) {}
+
+  /**
+   * 从 catalog 自动生成场景。
+   * catalog 通过 MCP list_node_catalog 获取（由调用方传入）。
+   */
+  generateFromCatalog(
+    catalog: Array<{ name: string; category: string; displayName?: string }>,
+    count: number,
+  ): Scenario[] {
+    const available = catalog.filter(n => !externalOnlyTypes.has(n.name));
+    const categories = [...new Set(available.map(n => n.category))];
+
+    // 按分类分组
+    const byCategory = new Map<string, typeof available>();
+    for (const node of available) {
+      const list = byCategory.get(node.category) ?? [];
+      list.push(node);
+      byCategory.set(node.category, list);
     }
 
     const coverage = this.kb.loadCoverage();
-    const categories = [...new Set(catalog.map(n => n.category))];
+    const roundIndex = coverage.roundCount ?? 0;
     const uncovered = categories.filter(c => !coverage.coveredCategories.includes(c));
-
-    const scenarios: Scenario[] = [];
-    let idCounter = 0;
-
-    // 优先覆盖未测试过的分类
     const priorityCats = uncovered.length > 0 ? uncovered : categories;
     const otherCats = categories.filter(c => !priorityCats.includes(c));
+
+    const scenarios: Scenario[] = [];
 
     for (let i = 0; i < count; i++) {
       const cat1 = priorityCats[i % priorityCats.length];
@@ -40,21 +59,54 @@ export class ScenarioGenerator {
         cats.push(categories[(i + 2) % categories.length]);
       }
 
-      const nodes = cats.map(cat => catalog.find(n => n.category === cat)).filter(Boolean) as CatalogNode[];
-      const usedCats = [...new Set(nodes.map(n => n.category))];
+      // 轮换选取节点
+      const nodes = cats.map((cat, idx) => {
+        const pool = byCategory.get(cat) ?? [];
+        if (pool.length === 0) return null;
+        const pickIdx = (roundIndex + i + idx) % pool.length;
+        return pool[pickIdx];
+      }).filter(Boolean) as typeof available;
 
-      const scenario: Scenario = {
-        id: `s-${++idCounter}`,
-        title: nodes.map(n => n.displayName).join(' + '),
-        description: nodes.map(n => `${n.displayName}: ${n.description}`).join('; '),
-        difficulty: i < count / 3 ? 'easy' : i < count * 2 / 3 ? 'medium' : 'hard',
-        categoryCoverage: usedCats,
-      };
+      if (nodes.length === 0) continue;
 
-      scenarios.push(scenario);
-      this.kb.recordScenario(scenario);
+      const usedCategories = [...new Set(nodes.map(n => n.category))];
+      const nodeNames = nodes.map(n => n.displayName ?? n.name);
+
+      scenarios.push({
+        id: `s-${scenarios.length + 1}`,
+        title: nodeNames.join(' + '),
+        description: this.buildDescription(nodes),
+        nodes: nodes.map(n => n.name),
+        categories: usedCategories,
+      });
     }
 
     return scenarios;
+  }
+
+  /**
+   * 从手动指定的节点列表创建场景。
+   */
+  createManual(nodes: string[], title?: string): Scenario {
+    return {
+      id: `s-manual-${Date.now()}`,
+      title: title ?? nodes.join(' + '),
+      description: `手动场景: 使用节点 ${nodes.join(', ')}`,
+      nodes,
+      categories: [],
+    };
+  }
+
+  private buildDescription(nodes: Array<{ name: string; displayName?: string }>): string {
+    const names = nodes.map(n => n.displayName ?? n.name);
+    if (nodes.length === 1) {
+      return `创建一个仅包含 ${names[0]} 节点的工作流。添加适当的 trigger 作为入口，将 ${names[0]} 连接到 trigger。`;
+    }
+    if (nodes.length === 2) {
+      return `创建一个包含 ${names[0]} 和 ${names[1]} 的工作流。添加 trigger 作为入口，按顺序连接: trigger → ${names[0]} → ${names[1]}。`;
+    }
+    const last = names[names.length - 1];
+    const middle = names.slice(0, -1).join(' → ');
+    return `创建一个包含 ${names.join(', ')} 的工作流。添加 trigger 作为入口，按顺序连接: trigger → ${middle} → ${last}。`;
   }
 }

@@ -19,4 +19,9 @@ public sealed class AiPortSchema
     /// 端口描述。
     /// </summary>
     public string? Description { get; set; }
+
+    /// <summary>
+    /// 端口类型（Main / AgentTool / LLM / Memory）。
+    /// </summary>
+    public string? Type { get; set; }
 }

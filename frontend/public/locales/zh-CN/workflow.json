@@ -106,7 +106,7 @@
     "fitView": "适配视图",
     "autoLayout": "自动布局",
     "stop": "停止",
-    "testRun": "测试运行",
+    "testRun": "执行",
     "configurationError": "配置错误"
   }
 }

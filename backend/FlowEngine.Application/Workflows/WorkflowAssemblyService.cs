@@ -145,15 +145,17 @@ public sealed class WorkflowAssemblyService(
             }
             else
             {
-                var portExists = sourceDescriptor.Ports
-                    .Any(p => p.Name.Equals(sourcePortName, StringComparison.OrdinalIgnoreCase)
-                              && p.Direction == PortDirection.Output);
-                if (!portExists)
+                var matchedPort = sourceDescriptor.Ports
+                    .FirstOrDefault(p => p.Name.Equals(sourcePortName, StringComparison.OrdinalIgnoreCase)
+                                         && p.Direction == PortDirection.Output);
+                if (matchedPort is null)
                 {
                     // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
                     throw new BusinessException(
                         $"Node '{draftConn.From}' does not have output port '{sourcePortName}'.");
                 }
+                // 归一化：使用规范的端口名
+                sourcePortName = matchedPort.Name;
             }
 
             // 解析目标端口：如果未指定，使用第一个 Input 端口
@@ -169,15 +171,17 @@ public sealed class WorkflowAssemblyService(
             }
             else
             {
-                var portExists = targetDescriptor.Ports
-                    .Any(p => p.Name.Equals(targetPortName, StringComparison.OrdinalIgnoreCase)
-                              && p.Direction == PortDirection.Input);
-                if (!portExists)
+                var matchedPort = targetDescriptor.Ports
+                    .FirstOrDefault(p => p.Name.Equals(targetPortName, StringComparison.OrdinalIgnoreCase)
+                                         && p.Direction == PortDirection.Input);
+                if (matchedPort is null)
                 {
                     // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
                     throw new BusinessException(
                         $"Node '{draftConn.To}' does not have input port '{targetPortName}'.");
                 }
+                // 归一化：使用规范的端口名
+                targetPortName = matchedPort.Name;
             }
 
             connections.Add(new Connection

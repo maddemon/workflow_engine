@@ -239,6 +239,44 @@ public sealed class WorkflowDraftValidator(
                         errors.Add($"{connPrefix} 目标端口 \"{targetPort}\" 必须是 Input 端口（当前为 {port.Direction}）");
                     }
                 }
+
+                // 端口类型兼容性：AgentTool / LLM / Memory 端口只能连同类型端口
+                if (descriptors.TryGetValue(sourceType, out var sdPort)
+                    && descriptors.TryGetValue(targetType, out var tdPort))
+                {
+                    var sp = sdPort.Ports.FirstOrDefault(p => p.Name == sourcePort);
+                    var tp = tdPort.Ports.FirstOrDefault(p => p.Name == targetPort);
+                    if (sp is not null && tp is not null
+                        && sp.Type != PortType.Main && tp.Type != PortType.Main
+                        && sp.Type != tp.Type)
+                    {
+                        errors.Add($"{connPrefix} 端口类型不兼容：源端口 \"{sourcePort}\" 为 {sp.Type}，目标端口 \"{targetPort}\" 为 {tp.Type}。");
+                    }
+                }
+            }
+        }
+
+        // ── 孤立节点检查：非入口节点必须至少有一条入边 ────────────
+        if (root["connections"] is JsonArray connArr)
+        {
+            var hasIncoming = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var connItem in connArr)
+            {
+                if (connItem is JsonObject c)
+                {
+                    var targetId = GetString(c["targetNodeId"]);
+                    if (!string.IsNullOrEmpty(targetId)) hasIncoming.Add(targetId);
+                }
+            }
+
+            foreach (var (id, node) in nodeMap)
+            {
+                if (node["isEntry"]?.GetValueKind() == JsonValueKind.True) continue;
+                if (!hasIncoming.Contains(id))
+                {
+                    var typeName = GetString(node["typeName"]) ?? "unknown";
+                    errors.Add($"节点 \"{id}\" ({typeName}) 没有入边连接，工作流中不允许存在孤立节点。");
+                }
             }
         }
 

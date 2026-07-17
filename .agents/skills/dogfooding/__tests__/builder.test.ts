@@ -17,13 +17,17 @@ describe('Builder', () => {
 
   const mockMcpSuccessSequence = () => {
     mockMcp.callTool.mockResolvedValueOnce({ expressionLanguage: 'javascript', rules: [] });
-    mockMcp.callTool.mockResolvedValueOnce([{ typeName: 'httpRequest', category: 'http' }, { typeName: 'code', category: 'core' }]);
-    mockMcp.callTool.mockResolvedValueOnce({ typeName: 'httpRequest', inputSchema: { properties: { url: { type: 'string' } } } });
-    mockMcp.callTool.mockResolvedValueOnce({ typeName: 'code', inputSchema: { properties: { code: { type: 'string' } } } });
+    mockMcp.callTool.mockResolvedValueOnce([{ name: 'httpRequest', category: 'http' }, { name: 'code', category: 'core' }]);
+    mockMcp.callTool.mockResolvedValueOnce({ name: 'httpRequest', inputSchema: { properties: { url: { type: 'string' } } } });
+    mockMcp.callTool.mockResolvedValueOnce({ name: 'code', inputSchema: { properties: { code: { type: 'string' } } } });
     mockMcp.callTool.mockResolvedValueOnce({ draftId: 'draft-1', workflow: { name: 'test' } });
     mockMcp.callTool.mockResolvedValueOnce({ success: true, errors: [] });
     mockMcp.callTool.mockResolvedValueOnce({ id: 'wf-1', isActive: true });
-    mockMcp.callTool.mockResolvedValueOnce({ executionId: 'exec-1', status: 'Completed' });
+    // happy path modify + re-confirm
+    mockMcp.callTool.mockResolvedValueOnce({ draftId: 'draft-2', workflow: {} });
+    mockMcp.callTool.mockResolvedValueOnce({ id: 'wf-1', isActive: true });
+    // execute
+    mockMcp.callTool.mockResolvedValueOnce({ execution: { id: 'exec-1', status: 'Completed' } });
   };
 
   it('build - completes happy path successfully', async () => {
@@ -32,7 +36,7 @@ describe('Builder', () => {
     const trace = await builder.build(sampleScenario);
     expect(trace.finalStatus).toBe('completed');
     expect(trace.scenarioId).toBe('s-test');
-    expect(trace.totalMcpCalls).toBe(8);
+    expect(trace.totalMcpCalls).toBe(10);
   });
 
   it('build - handles validate errors with retry', async () => {
@@ -40,8 +44,8 @@ describe('Builder', () => {
     mockMcp.callTool.mockImplementation(async (name: string) => {
       callCount++;
       if (name === 'get_conventions') return { expressionLanguage: 'javascript', rules: [] };
-      if (name === 'list_node_catalog') return [{ typeName: 'httpRequest', category: 'http' }, { typeName: 'code', category: 'core' }];
-      if (name === 'get_node_detail') return { typeName: 'httpRequest', inputSchema: {} };
+      if (name === 'list_node_catalog') return [{ name: 'httpRequest', category: 'http' }, { name: 'code', category: 'core' }];
+      if (name === 'get_node_detail') return { name: 'httpRequest', inputSchema: {} };
       if (name === 'assemble_workflow') return { draftId: 'draft-1', workflow: {} };
       if (name === 'validate_workflow') {
         return callCount <= 6
@@ -51,7 +55,7 @@ describe('Builder', () => {
       if (name === 'get_draft_feedback') return { draftStatus: 'Pending', rejectionReason: 'Expression syntax error' };
       if (name === 'modify_workflow') return { draftId: 'draft-2', workflow: {}, diff: [] };
       if (name === 'confirm_workflow') return { id: 'wf-1', isActive: true };
-      if (name === 'execute_workflow') return { executionId: 'exec-1', status: 'Completed' };
+      if (name === 'execute_workflow') return { execution: { id: 'exec-1', status: 'Completed' } };
       return {};
     });
     const builder = new Builder(mockMcp as any, { maxBuildRetries: 3, maxExecRetries: 2 });
@@ -63,8 +67,8 @@ describe('Builder', () => {
   it('build - marks BLOCKER after max retries exceeded', async () => {
     mockMcp.callTool.mockImplementation(async (name: string) => {
       if (name === 'get_conventions') return { expressionLanguage: 'javascript', rules: [] };
-      if (name === 'list_node_catalog') return [{ typeName: 'httpRequest', category: 'http' }];
-      if (name === 'get_node_detail') return { typeName: 'httpRequest', inputSchema: {} };
+      if (name === 'list_node_catalog') return [{ name: 'httpRequest', category: 'http' }];
+      if (name === 'get_node_detail') return { name: 'httpRequest', inputSchema: {} };
       if (name === 'assemble_workflow') return { draftId: 'draft-1', workflow: {} };
       if (name === 'validate_workflow') return { success: false, errors: [{ nodeId: 'fetch', field: 'url', errorType: 'InvalidExpression', canAutoFix: true, suggestedFix: 'fix' }] };
       if (name === 'get_draft_feedback') return { draftStatus: 'Pending', rejectionReason: 'Error' };

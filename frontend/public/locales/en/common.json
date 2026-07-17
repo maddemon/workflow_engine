@@ -1,5 +1,7 @@
 {
   "save": "Save",
+  "saveSuccess": "Saved successfully",
+  "saveFailed": "Save failed",
   "cancel": "Cancel",
   "close": "Close",
   "delete": "Delete",

@@ -1,8 +1,6 @@
 using System.Diagnostics;
 using System.Text.Json;
 using FlowEngine.Core.Exceptions;
-using FlowEngine.Resources;
-using Microsoft.Extensions.Localization;
 
 namespace FlowEngine.Host.Middlewares;
 
@@ -11,8 +9,7 @@ namespace FlowEngine.Host.Middlewares;
 /// </summary>
 public class GlobalExceptionHandlerMiddleware(
     RequestDelegate next,
-    ILogger<GlobalExceptionHandlerMiddleware> logger,
-    IStringLocalizer<SharedResource> localizer)
+    ILogger<GlobalExceptionHandlerMiddleware> logger)
 {
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -45,13 +42,10 @@ public class GlobalExceptionHandlerMiddleware(
             logger.LogWarning(exception, "业务异常 {Status}: {Message}", status, exception.Message);
         }
 
-        // 5xx：对外隐藏内部细节，返回通用提示
-        // 4xx：BusinessException/ArgumentException 透传原始消息，其余返回通用提示
-        var message = status >= StatusCodes.Status500InternalServerError
-            ? localizer["InternalServerError"]
-            : exception is BusinessException or ArgumentException
-                ? exception.Message
-                : localizer["RequestNotProcessed"];
+        // 透传异常原始消息，帮助开发者定位问题
+        var message = exception is BusinessException or ArgumentException
+            ? exception.Message
+            : exception.Message;
 
         context.Response.StatusCode = status;
         context.Response.ContentType = "application/json; charset=utf-8";

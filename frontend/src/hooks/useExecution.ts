@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { notifications } from '@mantine/notifications';
 import { executeWorkflow, getWorkflowExecutions, getExecution, cancelExecution as apiCancelExecution, dryRun as apiDryRun } from '../services/api.ts';
 import { serializeWorkflow } from '../utils/workflowSerializer.ts';
 import { useWorkflowStore } from '../stores/workflowStore.ts';
@@ -228,12 +229,16 @@ export function useExecution() {
     setDryRunLoading(true);
     try {
       if (!store.validateAllNodes()) {
-        setError('请先修正节点配置错误后再试运行。');
+        const msg = '请先修正节点配置错误后再试运行。';
+        setError(msg);
+        notifications.show({ title: 'Dry Run', message: msg, color: 'red', autoClose: 3000 });
         return;
       }
       const { nodeDefinitions, connections } = serializeWorkflow(store.nodes, store.edges, store.workflowName);
       if (nodeDefinitions.length === 0) {
-        setError('请先添加节点后再试运行。');
+        const msg = '请先添加节点后再试运行。';
+        setError(msg);
+        notifications.show({ title: 'Dry Run', message: msg, color: 'red', autoClose: 3000 });
         return;
       }
       const result = await apiDryRun({ nodes: nodeDefinitions, connections });
@@ -242,9 +247,38 @@ export function useExecution() {
         store.upsertNodeExecutionRecords(result.nodeRecords);
         applyNodeStatuses(result.nodeRecords);
       }
-      setStatus(result.status === 'Completed' ? 'completed' : 'failed');
+      const success = result.status === 'Completed' || result.status === 'DryRunCompleted';
+      setStatus(success ? 'completed' : 'failed');
+      if (success) {
+        notifications.show({
+          title: 'Dry Run',
+          message: '模拟执行完成，所有节点验证通过',
+          color: 'green',
+          autoClose: 3000,
+        });
+      } else {
+        const failedNodes = (result.nodeRecords ?? [])
+          .filter((r) => r.status === 'Failed')
+          .map((r) => {
+            const err = (r.output as Record<string, unknown>)?.error as { code?: string; message?: string } | undefined;
+            return `${r.nodeDefinitionId}: ${err?.message ?? '未知错误'}`;
+          });
+        notifications.show({
+          title: 'Dry Run 失败',
+          message: failedNodes.length > 0 ? failedNodes.join('\n') : '请检查节点配置',
+          color: 'red',
+          autoClose: 8000,
+        });
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Dry-run 失败');
+      const msg = err instanceof Error ? err.message : 'Dry-run 失败';
+      setError(msg);
+      notifications.show({
+        title: 'Dry Run',
+        message: msg,
+        color: 'red',
+        autoClose: 5000,
+      });
     } finally {
       setDryRunLoading(false);
     }

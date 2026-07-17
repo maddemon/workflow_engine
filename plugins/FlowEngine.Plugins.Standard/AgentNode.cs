@@ -66,8 +66,8 @@ public sealed class AgentNode : INodeType
     [
         new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
         new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Tools, DisplayName = "Tool", Direction = PortDirection.Input, Type = PortType.AgentTool },
-        new PortDefinition { Name = FlowConstants.PortNames.Llm, DisplayName = "LLM", Direction = PortDirection.Input, Type = PortType.LLM }
+        new PortDefinition { Name = FlowConstants.PortNames.Tools, DisplayName = "Tool (optional - connect tool nodes here)", Direction = PortDirection.Input, Type = PortType.AgentTool },
+        new PortDefinition { Name = FlowConstants.PortNames.Llm, DisplayName = "LLM (required - connect an LLM provider node)", Direction = PortDirection.Input, Type = PortType.LLM }
     ];
 
     /// <inheritdoc />

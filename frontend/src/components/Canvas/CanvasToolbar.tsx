@@ -43,6 +43,25 @@ export const CanvasToolbar = memo(function CanvasToolbar({ onExecute, onCancel, 
     return true;
   }, [nodeCount]);
 
+  const handleSave = useCallback(async () => {
+    try {
+      await saveWorkflow();
+      notifications.show({
+        title: t('save', { ns: 'common' }),
+        message: t('saveSuccess', { ns: 'common', defaultValue: '保存成功' }),
+        color: 'green',
+        autoClose: 2000,
+      });
+    } catch (err) {
+      notifications.show({
+        title: t('save', { ns: 'common' }),
+        message: err instanceof Error ? err.message : t('saveFailed', { ns: 'common', defaultValue: '保存失败' }),
+        color: 'red',
+        autoClose: 4000,
+      });
+    }
+  }, [saveWorkflow, t]);
+
   const handleExecute = useCallback(() => {
     if (!workflowId) return;
     const store = useWorkflowStore.getState();
@@ -118,7 +137,7 @@ export const CanvasToolbar = memo(function CanvasToolbar({ onExecute, onCancel, 
 
       {/* 右侧：保存 + 执行 */}
       <Group gap="xs" wrap="nowrap">
-        <Button leftSection={<Save size={12} />} onClick={saveWorkflow} loading={saving} disabled={isExecuting} size="compact-xs" variant="filled">
+        <Button leftSection={<Save size={12} />} onClick={handleSave} loading={saving} disabled={isExecuting} size="compact-xs" variant="filled">
           {t('save', { ns: 'common' })}
         </Button>
         <Button

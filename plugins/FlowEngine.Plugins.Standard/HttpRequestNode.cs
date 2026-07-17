@@ -64,7 +64,7 @@ public sealed class HttpRequestNode : INodeType
     /// <summary>
     /// 凭据 ID（用于 Bearer Token、API Key 或 QueryParameter）。
     /// </summary>
-    [Credential(FlowConstants.CredentialFields.ApiKey)]
+    [Credential(FlowConstants.CredentialFields.ApiKey, "oauth2")]
     [Description("Credential ID for authentication.")]
     public string? CredentialId { get; set; }
 
