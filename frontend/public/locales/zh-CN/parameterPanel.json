@@ -109,7 +109,8 @@
       "removeEntry": "移除条目",
       "keyPlaceholder": "键",
       "valuePlaceholder": "值",
-      "duplicateKeys": "检测到重复的键。"
+      "duplicateKeys": "检测到重复的键。",
+      "noEntries": "暂无条目。点击\"添加条目\"创建一个。"
     },
     "cronBuilder": {
       "schedule": "计划",

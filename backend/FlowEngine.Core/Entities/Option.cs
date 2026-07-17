@@ -13,5 +13,5 @@ public class Option
     /// <summary>
     /// 选项值。
     /// </summary>
-    public object Value { get; set; } = null!;
+    public object? Value { get; set; }
 }

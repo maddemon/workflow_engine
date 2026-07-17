@@ -106,7 +106,7 @@ public static partial class SchemaDerivation
             var enumArray = new JsonArray();
             foreach (var option in param.Options)
             {
-                enumArray.Add(JsonValue.Create(option.Value.ToString()));
+                enumArray.Add(JsonValue.Create(option.Value?.ToString()));
             }
             prop["enum"] = enumArray;
         }

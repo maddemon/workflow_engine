@@ -42,6 +42,9 @@ using Microsoft.IdentityModel.Tokens;
 using Quartz;
 using System.Text;
 using System.Text.Json.Serialization;
+using FlowEngine.Resources;
+using FlowEngine.Resources.Localization;
+using Microsoft.Extensions.Localization;
 
 namespace FlowEngine.Host;
 
@@ -58,8 +61,15 @@ public static class ServiceCollectionExtensions
         IConfiguration configuration,
         IWebHostEnvironment environment)
     {
-        // ── Localization ────────────────────────────────────────────
-        services.AddLocalization();
+        // ── Localization (JSON-based, embedded resources) ─────────────
+        services.AddSingleton<IStringLocalizerFactory>(sp =>
+            new JsonStringLocalizerFactory(typeof(SharedResource).Assembly));
+        services.AddSingleton<IStringLocalizer>(sp =>
+        {
+            var factory = sp.GetRequiredService<IStringLocalizerFactory>();
+            return factory.Create(typeof(SharedResource));
+        });
+        services.AddSingleton(typeof(IStringLocalizer<>), typeof(StringLocalizer<>));
 
         // ── Controllers & JSON ──────────────────────────────────────
         services.AddControllers()

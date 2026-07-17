@@ -18,6 +18,7 @@ function NodeCardComponent({ descriptor, onClick }: NodeCardProps) {
   };
 
   const categoryColor = getNodeCategoryColor(descriptor.category);
+  const displayName = descriptor.displayName;
 
   return (
     <div
@@ -25,13 +26,13 @@ function NodeCardComponent({ descriptor, onClick }: NodeCardProps) {
       draggable
       onDragStart={onDragStart}
       onClick={() => onClick(descriptor.typeName)}
-      title={t('nodeCard.dragOrClickToAdd', { name: descriptor.displayName })}
+      title={t('nodeCard.dragOrClickToAdd', { name: displayName })}
       style={{ '--node-category-color': categoryColor } as React.CSSProperties}
     >
       <div className="node-card-icon">
         <NodeIcon icon={descriptor.icon} size={13} color={categoryColor} />
       </div>
-      <Text size="xs" flex={1} truncate ml="xs" fw={500}>{descriptor.displayName}</Text>
+      <Text size="xs" flex={1} truncate ml="xs" fw={500}>{displayName}</Text>
     </div>
   );
 }

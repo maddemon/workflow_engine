@@ -109,7 +109,8 @@
       "removeEntry": "Remove entry",
       "keyPlaceholder": "Key",
       "valuePlaceholder": "Value",
-      "duplicateKeys": "Duplicate keys detected."
+      "duplicateKeys": "Duplicate keys detected.",
+      "noEntries": "No entries. Click \"Add entry\" to create one."
     },
     "cronBuilder": {
       "schedule": "Schedule",

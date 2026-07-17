@@ -1,43 +1,70 @@
-import i18n from 'i18next';
-import { initReactI18next } from 'react-i18next';
-import LanguageDetector from 'i18next-browser-languagedetector';
-import Backend from 'i18next-http-backend';
+import i18n from "i18next"
+import Backend from "i18next-http-backend"
+import { initReactI18next } from "react-i18next"
 
-i18n
+// 时区 → 语言映射
+function getLanguageFromTimezone(): string {
+  try {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    if (tz.startsWith("Asia/Shanghai") || tz.startsWith("Asia/Chongqing") || tz.startsWith("Asia/Harbin") || tz.startsWith("Asia/Urumqi")) {
+      return "zh-CN";
+    }
+  } catch {
+    // Intl API 不可用时忽略
+  }
+  return "en";
+}
+
+// 语言检测：localStorage → 时区推测
+function detectLanguage(): string {
+  try {
+    const stored = localStorage.getItem("i18nextLng");
+    if (stored && ["en", "zh-CN"].includes(stored)) {
+      return stored;
+    }
+  } catch {
+    // 测试环境或 SSR 无 localStorage
+  }
+  return getLanguageFromTimezone();
+}
+
+// 初始化返回的 Promise：init() 会等所有 ns 命名空间的 JSON 加载完成后才 resolve。
+// 导出后由 main.tsx 在首屏渲染前 await，避免首屏访问尚未加载的命名空间（见警告
+// "namespace xxx was not yet loaded"）。catch 返回已 resolve 的 Promise，
+// 即使初始化失败也保证应用照常渲染（回退到 fallbackLng）。
+export const initPromise = i18n
   .use(Backend)
-  .use(LanguageDetector)
-  .use(initReactI18next) // 自动注入 React Context，无需手动包 I18nextProvider
+  .use(initReactI18next)
   .init({
-    fallbackLng: 'en',
-    supportedLngs: ['en', 'zh-CN'],
-    nonExplicitSupportedLngs: true, // 浏览器 'zh' 自动映射到 'zh-CN'
+    lng: detectLanguage(),
+    fallbackLng: "en",
+    supportedLngs: ["en", "zh-CN"],
+    load: "currentOnly",
     ns: [
-      'common',
-      'login',
-      'header',
-      'settings',
-      'workflow',
-      'nodePanel',
-      'parameterPanel',
-      'execution',
-      'admin',
+      "common",
+      "login",
+      "header",
+      "settings",
+      "workflow",
+      "nodePanel",
+      "parameterPanel",
+      "execution",
+      "admin",
+      "help",
+      "credentialPanel",
     ],
-    defaultNS: 'common',
+    defaultNS: "common",
     interpolation: { escapeValue: false },
     backend: {
-      loadPath: '/locales/{{lng}}/{{ns}}.json',
+      loadPath: "/locales/{{lng}}/{{ns}}.json",
     },
-    detection: {
-      order: ['localStorage', 'navigator'],
-      caches: ['localStorage'],
-      lookupLocalStorage: 'i18nextLng',
-    },
+    debug: import.meta.env.DEV,
     react: {
-      useSuspense: false, // 首次加载不触发 Suspense，避免白屏
+      useSuspense: false,
     },
   })
   .catch((err) => {
-    console.error('i18n 初始化失败:', err);
+    console.error("i18n 初始化失败:", err);
   });
 
 export default i18n;

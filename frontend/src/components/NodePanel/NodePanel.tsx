@@ -16,19 +16,19 @@ export function NodePanel() {
     if (!search.trim()) return nodeTypes;
     const lower = search.toLowerCase();
     return nodeTypes.filter(
-      (t) =>
-        t.displayName.toLowerCase().includes(lower) ||
-        t.typeName.toLowerCase().includes(lower) ||
-        t.category.toLowerCase().includes(lower),
+      (nt) =>
+        nt.displayName.toLowerCase().includes(lower) ||
+        nt.typeName.toLowerCase().includes(lower) ||
+        nt.category.toLowerCase().includes(lower),
     );
   }, [nodeTypes, search]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, typeof filtered>();
-    for (const t of filtered) {
-      const list = map.get(t.category) ?? [];
-      list.push(t);
-      map.set(t.category, list);
+    for (const nt of filtered) {
+      const list = map.get(nt.category) ?? [];
+      list.push(nt);
+      map.set(nt.category, list);
     }
     return map;
   }, [filtered]);
