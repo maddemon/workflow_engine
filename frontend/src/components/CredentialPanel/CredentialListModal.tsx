@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { notifications } from '@mantine/notifications';
 import { Modal, Stack, Text, Table, ActionIcon, Button, Group, TextInput, Select, Badge, Divider, Loader, Center, Alert } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, Edit, AlertCircle } from 'lucide-react';
 import { useRequest } from 'ahooks';
 import { getCredentials, createCredential, deleteCredential, updateCredential, getCredentialTypes } from '../../services/api.ts';
@@ -20,6 +21,7 @@ interface CredentialListModalProps {
 }
 
 export function CredentialListModal({ opened, onClose }: CredentialListModalProps) {
+  const { t } = useTranslation('credentialPanel');
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formName, setFormName] = useState('');
@@ -59,23 +61,23 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
       useWorkflowStore.getState().bumpCredentialRevision();
     } catch (err) {
       notifications.show({
-        title: 'Error',
-        message: err instanceof Error ? err.message : 'Failed to create credential',
+        title: t('error'),
+        message: err instanceof Error ? err.message : t('createFailed'),
         color: 'red',
       });
     }
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this credential?')) return;
+    if (!confirm(t('deleteConfirm'))) return;
     try {
       await deleteCredential(id);
       await refreshCredentials();
       useWorkflowStore.getState().bumpCredentialRevision();
     } catch (err) {
       notifications.show({
-        title: 'Error',
-        message: err instanceof Error ? err.message : 'Failed to delete credential',
+        title: t('error'),
+        message: err instanceof Error ? err.message : t('deleteFailed'),
         color: 'red',
       });
     }
@@ -109,35 +111,35 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
       useWorkflowStore.getState().bumpCredentialRevision();
     } catch (err) {
       notifications.show({
-        title: 'Error',
-        message: err instanceof Error ? err.message : 'Failed to update credential',
+        title: t('error'),
+        message: err instanceof Error ? err.message : t('updateFailed'),
         color: 'red',
       });
     }
   };
 
   return (
-    <Modal opened={opened} onClose={onClose} title="Credentials" size="lg">
+    <Modal opened={opened} onClose={onClose} title={t('title')} size="lg">
       {showForm ? (
         <Stack gap="sm">
           <TextInput
-            label="Name"
+            label={t('form.name')}
             value={formName}
             onChange={(e) => setFormName(e.target.value)}
             size="sm"
           />
           <Select
-            label="Type"
+            label={t('form.type')}
             value={formType}
             onChange={(v) => setFormType(v ?? 'apiKey')}
-            data={typeOptions.map((t) => ({ label: t.displayName, value: t.name }))}
+            data={typeOptions.map((opt) => ({ label: opt.displayName, value: opt.name }))}
             size="sm"
           />
-          <Divider label="Fields" labelPosition="center" />
+          <Divider label={t('form.fields')} labelPosition="center" />
           {formFields.map((field, index) => (
             <Group key={field.id} gap="xs">
               <TextInput
-                placeholder="Key"
+                placeholder={t('form.keyPlaceholder')}
                 value={field.key}
                 onChange={(e) => {
                   const next = [...formFields];
@@ -148,7 +150,7 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
                 style={{ flex: 1 }}
               />
               <TextInput
-                placeholder="Value"
+                placeholder={t('form.valuePlaceholder')}
                 value={field.value}
                 onChange={(e) => {
                   const next = [...formFields];
@@ -173,22 +175,22 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
             leftSection={<Plus size={14} />}
             onClick={() => setFormFields([...formFields, { id: crypto.randomUUID(), key: '', value: '' }])}
           >
-            Add Field
+            {t('form.addField')}
           </Button>
           <Group justify="flex-end">
             <Button variant="default" onClick={() => { setShowForm(false); setEditingId(null); }}>
-              Cancel
+              {t('form.cancel')}
             </Button>
             <Button onClick={editingId ? handleUpdate : handleCreate}>
-              {editingId ? 'Update' : 'Create'}
+              {editingId ? t('form.update') : t('form.create')}
             </Button>
           </Group>
         </Stack>
       ) : loading ? (
         <Center py="md"><Loader size="sm" /></Center>
       ) : error ? (
-        <Alert icon={<AlertCircle size={16} />} title="Error" color="red">
-          {error.message ?? 'Failed to load credentials'}
+        <Alert icon={<AlertCircle size={16} />} title={t('error')} color="red">
+          {error.message ?? t('loadFailed')}
         </Alert>
       ) : (
         <Stack gap="sm">
@@ -197,17 +199,17 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
             leftSection={<Plus size={14} />}
             onClick={() => { setShowForm(true); setEditingId(null); setFormName(''); setFormType('apiKey'); setFormFields([{ id: crypto.randomUUID(), key: '', value: '' }]); }}
           >
-            Add Credential
+            {t('addButton')}
           </Button>
           {credentials.length === 0 ? (
-            <Text c="dimmed" size="sm" ta="center" py="md">No credentials yet.</Text>
+            <Text c="dimmed" size="sm" ta="center" py="md">{t('empty')}</Text>
           ) : (
             <Table>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th>Name</Table.Th>
-                  <Table.Th>Type</Table.Th>
-                  <Table.Th>Created</Table.Th>
+                  <Table.Th>{t('table.name')}</Table.Th>
+                  <Table.Th>{t('table.type')}</Table.Th>
+                  <Table.Th>{t('table.created')}</Table.Th>
                   <Table.Th />
                 </Table.Tr>
               </Table.Thead>

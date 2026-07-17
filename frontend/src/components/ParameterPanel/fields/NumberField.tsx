@@ -1,5 +1,7 @@
 import { NumberInput, Group, Text } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 import { InfoTooltip } from './InfoTooltip.tsx';
+import { useParameterName } from '../useParameterName.ts';
 import type { ParameterDefinition } from '../../../types/workflow.ts';
 
 interface NumberFieldProps {
@@ -10,12 +12,15 @@ interface NumberFieldProps {
 }
 
 export function NumberField({ definition, value, onChange, error }: NumberFieldProps) {
+  const { t } = useTranslation('parameterPanel');
+  const paramName = useParameterName();
+  const label = paramName(definition.name, definition.displayName);
   const numValue = typeof value === 'number' ? value : typeof value === 'string' && value !== '' ? Number(value) : '';
   return (
     <div>
       <Group gap={4} mb={4}>
         <Text size="xs" fw={400}>
-          {definition.displayName}
+          {label}
           {definition.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
         </Text>
         {definition.description && <InfoTooltip label={definition.description} />}
@@ -24,7 +29,7 @@ export function NumberField({ definition, value, onChange, error }: NumberFieldP
         error={error}
         value={numValue}
         onChange={(v) => onChange(typeof v === 'number' ? v : '')}
-        placeholder={`Enter ${definition.displayName.toLowerCase()}`}
+        placeholder={t('fields.placeholder', { name: label.toLowerCase() })}
       />
     </div>
   );

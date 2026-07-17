@@ -2,8 +2,10 @@ import { useState, useRef, useMemo } from 'react';
 import { Group, Text, ActionIcon, Tooltip } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { Upload, X } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useRequest } from 'ahooks';
 import { InfoTooltip } from './InfoTooltip.tsx';
+import { useParameterName } from '../useParameterName.ts';
 import { uploadFile, listFiles } from '../../../services/api.ts';
 import type { ParameterDefinition } from '../../../types/workflow.ts';
 
@@ -17,6 +19,9 @@ interface FileFieldProps {
 }
 
 export function FileField({ definition, value, onChange, error, projectId }: FileFieldProps) {
+  const { t } = useTranslation('parameterPanel');
+  const paramName = useParameterName();
+  const label = paramName(definition.name, definition.displayName);
   const [uploading, setUploading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -24,18 +29,18 @@ export function FileField({ definition, value, onChange, error, projectId }: Fil
     const file = e.target.files?.[0];
     if (!file) return;
     if (!projectId) {
-      notifications.show({ title: 'Error', message: 'Assign a project to enable file upload', color: 'yellow' });
+      notifications.show({ title: t('fields.file.uploadError'), message: t('fields.file.uploadError'), color: 'yellow' });
       return;
     }
     setUploading(true);
     try {
       const result = await uploadFile(file, projectId);
       onChange(result.id); // save the file ID
-      notifications.show({ title: 'Uploaded', message: `"${file.name}" uploaded.`, color: 'green' });
+      notifications.show({ title: t('fields.file.uploaded'), message: t('fields.file.uploadedMessage', { name: file.name }), color: 'green' });
     } catch (err) {
       notifications.show({
-        title: 'Upload failed',
-        message: err instanceof Error ? err.message : 'Upload failed',
+        title: t('fields.file.uploadFailed'),
+        message: err instanceof Error ? err.message : t('fields.file.uploadFailed'),
         color: 'red',
       });
     } finally {
@@ -65,7 +70,7 @@ export function FileField({ definition, value, onChange, error, projectId }: Fil
     <div>
       <Group gap={4} mb={4}>
         <Text size="xs" fw={400}>
-          {definition.displayName}
+          {label}
           {definition.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
         </Text>
         {definition.description && <InfoTooltip label={definition.description} />}
@@ -78,11 +83,11 @@ export function FileField({ definition, value, onChange, error, projectId }: Fil
           onChange={handleFileSelect}
           disabled={!projectId || uploading}
         />
-        <Tooltip label={!projectId ? 'Assign a project to enable file upload' : 'Upload file'}>
+        <Tooltip label={!projectId ? t('fields.file.assignProjectTooltip') : t('fields.file.uploadFile')}>
           <ActionIcon
             variant="outline"
             size="sm"
-            aria-label={!projectId ? 'Assign a project to enable file upload' : 'Upload file'}
+            aria-label={!projectId ? t('fields.file.assignProjectTooltip') : t('fields.file.uploadFile')}
             onClick={() => inputRef.current?.click()}
             disabled={!projectId || uploading}
             loading={uploading}
@@ -93,8 +98,8 @@ export function FileField({ definition, value, onChange, error, projectId }: Fil
         {strVal && (
           <>
             <Text size="sm">{fileName}</Text>
-            <Tooltip label="Clear">
-              <ActionIcon variant="subtle" color="red" size="xs" aria-label="Clear" onClick={() => onChange('')}>
+            <Tooltip label={t('fields.file.clear')}>
+              <ActionIcon variant="subtle" color="red" size="xs" aria-label={t('fields.file.clear')} onClick={() => onChange('')}>
                 <X size={12} />
               </ActionIcon>
             </Tooltip>

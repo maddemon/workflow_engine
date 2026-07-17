@@ -2,6 +2,7 @@ import { notifications } from "@mantine/notifications"
 import { Background, BackgroundVariant, MiniMap, ReactFlow, useReactFlow, type Connection } from "@xyflow/react"
 import "@xyflow/react/dist/style.css"
 import { useCallback, useEffect, useMemo, useRef } from "react"
+import { useTranslation } from "react-i18next"
 import { useWorkflowStore } from "../../stores/workflowStore.ts"
 import { CanvasToolbar } from "./CanvasToolbar.tsx"
 import { CustomEdge } from "./CustomEdge.tsx"
@@ -23,6 +24,7 @@ interface IWorkflowCanvasProps {
 }
 
 export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }: IWorkflowCanvasProps) {
+  const { t } = useTranslation(['workflow', 'common'])
   const reactFlowWrapper = useRef<HTMLDivElement>(null)
   const { screenToFlowPosition } = useReactFlow()
   const nodesData = useWorkflowStore((s) => s.nodes)
@@ -57,8 +59,8 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
 
       if (source === target) {
         notifications.show({
-          title: "Connection rejected",
-          message: "A node cannot connect to itself.",
+          title: t('canvas.connectionRejected'),
+          message: t('canvas.nodeSelfConnect'),
           color: "red",
         })
         return
@@ -78,8 +80,8 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
         const port = sourceNode.data.descriptor.ports.find((p) => `port-${p.name}` === sourceHandle)
         if (port && port.direction !== "Output") {
           notifications.show({
-            title: "Connection rejected",
-            message: "Source port must be an output port.",
+            title: t('canvas.connectionRejected'),
+            message: t('canvas.sourcePortOutput'),
             color: "red",
           })
           return
@@ -89,8 +91,8 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
         const port = targetNode.data.descriptor.ports.find((p) => `port-${p.name}` === targetHandle)
         if (port && port.direction !== "Input") {
           notifications.show({
-            title: "Connection rejected",
-            message: "Target port must be an input port.",
+            title: t('canvas.connectionRejected'),
+            message: t('canvas.targetPortInput'),
             color: "red",
           })
           return
@@ -105,8 +107,8 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
           sourcePort.type === targetPort.type || (sourcePort.type === "AgentTool" && targetPort.type === "Main")
         if (!compatible) {
           notifications.show({
-            title: "Connection rejected",
-            message: `Port type '${sourcePort.type}' cannot connect to '${targetPort.type}'.`,
+            title: t('canvas.connectionRejected'),
+            message: t('canvas.portTypeMismatch', { sourceType: sourcePort.type, targetType: targetPort.type }),
             color: "red",
           })
           return
@@ -122,8 +124,8 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
           ).length
           if (existingCount >= max) {
             notifications.show({
-              title: "Connection rejected",
-              message: `Port '${targetPort.displayName}' accepts at most ${max} connection${max > 1 ? "s" : ""}.`,
+              title: t('canvas.connectionRejected'),
+              message: t('canvas.portMaxConnections', { displayName: targetPort.displayName, max }),
               color: "red",
             })
             return
@@ -140,8 +142,8 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
       )
       if (isDuplicate) {
         notifications.show({
-          title: "Connection rejected",
-          message: "This connection already exists.",
+          title: t('canvas.connectionRejected'),
+          message: t('canvas.connectionExists'),
           color: "yellow",
         })
         return
@@ -149,7 +151,7 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
 
       addEdge(source, sourceHandle, target, targetHandle)
     },
-    [addEdge, nodes],
+    [addEdge, nodes, t],
   )
 
   const onNodeClick = useCallback(
@@ -197,7 +199,7 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
       if (e.key.toLowerCase() === "c" && selectedId) {
         e.preventDefault()
         copyNode(selectedId)
-        notifications.show({ title: "Copied", message: "节点已复制到剪贴板", color: "teal" })
+        notifications.show({ title: t('copied', { ns: 'common' }), message: t('list.nodeCopied'), color: "teal" })
       } else if (e.key.toLowerCase() === "v") {
         const wrapper = reactFlowWrapper.current
         if (!wrapper) return
@@ -208,7 +210,7 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
     }
     window.addEventListener("keydown", handler)
     return () => window.removeEventListener("keydown", handler)
-  }, [copyNode, pasteNode, screenToFlowPosition])
+  }, [copyNode, pasteNode, screenToFlowPosition, t])
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>

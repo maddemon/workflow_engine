@@ -38,7 +38,7 @@ describe('RoleAssignModal', () => {
 
   it('renders Save and Cancel buttons', () => {
     renderWithProvider(<RoleAssignModal {...defaultProps} />);
-    expect(screen.getByText('Save')).toBeDefined();
-    expect(screen.getByText('Cancel')).toBeDefined();
+    expect(screen.getByRole('button', { name: /save/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /cancel/i })).toBeDefined();
   });
 });

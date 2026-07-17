@@ -10,6 +10,7 @@ import {
   Wrench,
   AlertCircle,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { CodeViewer } from '../ExecutionPanel/CodeViewer.tsx';
 import type { ToolCallRecord, ExecutionStatus } from '../../types/agent-execution.ts';
 
@@ -17,12 +18,12 @@ interface ToolCallChainProps {
   toolCalls: ToolCallRecord[];
 }
 
-const statusConfig: Record<ExecutionStatus, { color: string; icon: React.ReactNode; label: string }> = {
-  Pending: { color: 'gray', icon: <Clock size={12} />, label: 'Pending' },
-  Running: { color: 'blue', icon: <Loader size={12} speed={2} />, label: 'Running' },
-  Completed: { color: 'green', icon: <Check size={12} strokeWidth={3} />, label: 'Success' },
-  Failed: { color: 'red', icon: <X size={12} strokeWidth={3} />, label: 'Failed' },
-  Cancelled: { color: 'gray', icon: <X size={12} />, label: 'Cancelled' },
+const statusConfig: Record<ExecutionStatus, { color: string; icon: React.ReactNode; labelKey: string }> = {
+  Pending: { color: 'gray', icon: <Clock size={12} />, labelKey: 'status.pending' },
+  Running: { color: 'blue', icon: <Loader size={12} speed={2} />, labelKey: 'status.running' },
+  Completed: { color: 'green', icon: <Check size={12} strokeWidth={3} />, labelKey: 'status.success' },
+  Failed: { color: 'red', icon: <X size={12} strokeWidth={3} />, labelKey: 'status.failed' },
+  Cancelled: { color: 'gray', icon: <X size={12} />, labelKey: 'status.cancelled' },
 };
 
 function ToolCallItem({
@@ -32,6 +33,7 @@ function ToolCallItem({
   record: ToolCallRecord;
   isLast: boolean;
 }) {
+  const { t } = useTranslation('execution');
   const [expanded, setExpanded] = useState(false);
   const config = statusConfig[record.status] ?? statusConfig.Pending;
 
@@ -99,13 +101,14 @@ function ToolCallItem({
               {record.toolName}
             </Text>
             <Badge
+              data-testid="tool-status"
               color={config.color}
               variant="light"
               size="xs"
               leftSection={config.icon}
               style={{ flexShrink: 0 }}
             >
-              {config.label}
+              {t(config.labelKey)}
             </Badge>
             {record.duration !== null && (
               <Text size="xs" c="dimmed" style={{ flexShrink: 0, fontVariantNumeric: 'tabular-nums' }}>
@@ -151,14 +154,14 @@ function ToolCallItem({
         <Collapse expanded={expanded}>
           <Stack gap={6} mt={4}>
             {inputStr && (
-              <CodeViewer label="Input" code={inputStr} language="json" maxHeight={100} />
+              <CodeViewer label={t('input')} code={inputStr} language="json" maxHeight={100} />
             )}
             {outputStr && (
-              <CodeViewer label="Output" code={outputStr} language="json" maxHeight={120} />
+              <CodeViewer label={t('output')} code={outputStr} language="json" maxHeight={120} />
             )}
             {!inputStr && !outputStr && (
               <Text size="xs" c="dimmed" ta="center" py="xs">
-                No input/output data
+                {t('tool.noInputOutput')}
               </Text>
             )}
           </Stack>
@@ -169,10 +172,12 @@ function ToolCallItem({
 }
 
 export function ToolCallChain({ toolCalls }: ToolCallChainProps) {
+  const { t } = useTranslation('execution');
+
   if (toolCalls.length === 0) {
     return (
       <Text size="xs" c="dimmed" ta="center" py="xs">
-        No tool calls
+        {t('tool.noToolCalls')}
       </Text>
     );
   }

@@ -1,17 +1,18 @@
 import { Stack, Text, Box, Collapse, UnstyledButton, Group } from '@mantine/core';
 import { Check, X, Clock, Loader, AlertCircle, ChevronRight, ChevronDown, FileText } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { CodeViewer } from './CodeViewer.tsx';
 import { AgentExecutionView } from '../ExecutionView/AgentExecutionView.tsx';
 import type { NodeExecutionRecordDto, ExecutionStatus } from '../../types/workflow.ts';
 import type { AgentExecutionData } from '../../types/agent-execution.ts';
 import { extractError, formatDuration, formatOutputSummary, isAgentOutput } from './nodeOutputUtils.ts';
 
-const statusConfig: Record<ExecutionStatus, { icon: React.ReactNode; shade: string; label: string }> = {
-  Pending: { icon: <Clock size={13} />, shade: 'gray', label: 'Pending' },
-  Running: { icon: <Loader size={13} speed={2} />, shade: 'blue', label: 'Running' },
-  Completed: { icon: <Check size={13} strokeWidth={3} />, shade: 'green', label: 'Completed' },
-  Failed: { icon: <X size={13} strokeWidth={3} />, shade: 'red', label: 'Failed' },
-  Cancelled: { icon: <X size={13} />, shade: 'gray', label: 'Cancelled' },
+const statusConfig: Record<ExecutionStatus, { icon: React.ReactNode; shade: string; labelKey: string }> = {
+  Pending: { icon: <Clock size={13} />, shade: 'gray', labelKey: 'status.pending' },
+  Running: { icon: <Loader size={13} speed={2} />, shade: 'blue', labelKey: 'status.running' },
+  Completed: { icon: <Check size={13} strokeWidth={3} />, shade: 'green', labelKey: 'status.completed' },
+  Failed: { icon: <X size={13} strokeWidth={3} />, shade: 'red', labelKey: 'status.failed' },
+  Cancelled: { icon: <X size={13} />, shade: 'gray', labelKey: 'status.cancelled' },
 };
 
 export function StepItem({
@@ -29,6 +30,7 @@ export function StepItem({
   nodeName?: string;
   isAgent?: boolean;
 }) {
+  const { t } = useTranslation('execution');
   const config = statusConfig[record.status] ?? statusConfig.Pending;
   const nodeError = record.status === 'Failed' ? extractError(record.output) : null;
   const duration = formatDuration(record.startedAt, record.completedAt);
@@ -177,14 +179,14 @@ export function StepItem({
               <>
                 {record.output !== undefined && record.output !== null && (
                   <CodeViewer
-                    label="Output"
+                    label={t('output')}
                     code={typeof record.output === 'string' ? record.output : JSON.stringify(record.output, null, 2)}
                     maxHeight={150}
                   />
                 )}
                 {record.resolvedParameters && (
                   <CodeViewer
-                    label="Parameters"
+                    label={t('parameters')}
                     code={JSON.stringify(record.resolvedParameters, null, 2)}
                     maxHeight={100}
                   />

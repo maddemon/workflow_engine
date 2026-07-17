@@ -1,0 +1,23 @@
+{
+  "workflows": "Workflows",
+  "documents": "Documents",
+  "executions": "Executions",
+  "settings": "Settings",
+  "admin": "Admin",
+  "help": "Help",
+  "system": "System",
+  "userManagement": "User Management",
+  "projectClassification": "Project Classification",
+  "auditLog": "Audit Log",
+  "fileManagement": "File Management",
+  "manageCredentials": "Manage Credentials",
+  "credentials": "Credentials",
+  "switchToLightMode": "Switch to light mode",
+  "switchToDarkMode": "Switch to dark mode",
+  "toggleColorScheme": "Toggle color scheme",
+  "notifications": "Notifications",
+  "menu": "Menu",
+  "notSignedIn": "Not signed in",
+  "logout": "Logout",
+  "signOut": "Sign Out"
+}

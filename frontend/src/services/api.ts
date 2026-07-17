@@ -1,4 +1,5 @@
 import axios from 'axios';
+import i18n from '../i18n.ts';
 import type {
   NodeTypeDescriptor,
   Workflow,
@@ -37,6 +38,11 @@ const api = axios.create({
   withCredentials: true,
 });
 
+api.interceptors.request.use((config) => {
+  config.headers.set('Accept-Language', i18n.resolvedLanguage ?? 'en');
+  return config;
+});
+
 /** 结构化 API 错误，统一前端错误处理（R10）。 */
 export class ApiError extends Error {
   status: number;
@@ -61,7 +67,7 @@ api.interceptors.response.use(
         (data && (data.message ?? data.title)) ??
         error.message ??
         'Request failed';
-      const code = data?.code ?? data?.type;
+      const code = data?.errorCode ?? data?.code ?? data?.type;
 
       if (status === 401) {
         localStorage.removeItem('auth_user');

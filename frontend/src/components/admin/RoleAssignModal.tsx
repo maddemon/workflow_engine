@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Modal, Stack, Checkbox, Button, Group, Text } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
+import { useTranslation } from 'react-i18next';
 import { useRequest } from 'ahooks';
 import * as api from '../../services/api.ts';
 
@@ -16,6 +17,7 @@ interface RoleAssignModalProps {
 }
 
 export function RoleAssignModal({ opened, onClose, userId, userName, currentRoles, onSaved }: RoleAssignModalProps) {
+  const { t } = useTranslation('admin');
   const [selected, setSelected] = useState<string[]>(currentRoles);
 
   const handleToggle = (role: string) => {
@@ -38,14 +40,14 @@ export function RoleAssignModal({ opened, onClose, userId, userName, currentRole
     {
       manual: true,
       onSuccess: () => {
-        notifications.show({ title: 'Saved', message: `Roles updated for ${userName}`, color: 'green' });
+        notifications.show({ title: t('roleModal.saved'), message: t('roleModal.savedMessage', { userName }), color: 'green' });
         onSaved();
         onClose();
       },
       onError: (err) => {
         notifications.show({
-          title: 'Error',
-          message: err instanceof Error ? err.message : 'Failed to update roles',
+          title: t('roleModal.error'),
+          message: err instanceof Error ? err.message : t('roleModal.updateFailed'),
           color: 'red',
         });
       },
@@ -53,9 +55,9 @@ export function RoleAssignModal({ opened, onClose, userId, userName, currentRole
   );
 
   return (
-    <Modal opened={opened} onClose={onClose} title={`Manage Roles: ${userName}`} size="sm">
+    <Modal opened={opened} onClose={onClose} title={t('roleModal.title', { userName })} size="sm">
       <Stack gap="sm">
-        <Text size="sm" c="dimmed">Select roles for this user:</Text>
+        <Text size="sm" c="dimmed">{t('roleModal.selectRoles')}</Text>
         {ALL_ROLES.map((role) => (
           <Checkbox
             key={role}
@@ -65,8 +67,8 @@ export function RoleAssignModal({ opened, onClose, userId, userName, currentRole
           />
         ))}
         <Group justify="flex-end" mt="md">
-          <Button variant="subtle" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave} loading={saving}>Save</Button>
+          <Button variant="subtle" onClick={onClose}>{t('roleModal.cancel')}</Button>
+          <Button onClick={handleSave} loading={saving}>{t('roleModal.save')}</Button>
         </Group>
       </Stack>
     </Modal>

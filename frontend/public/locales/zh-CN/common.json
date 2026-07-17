@@ -1,0 +1,18 @@
+{
+  "save": "保存",
+  "cancel": "取消",
+  "close": "关闭",
+  "delete": "删除",
+  "create": "创建",
+  "edit": "编辑",
+  "loading": "加载中…",
+  "error": "错误",
+  "noData": "暂无数据",
+  "confirmDelete": "确定要删除此项吗？",
+  "confirmDiscard": "有未保存的更改，是否放弃？",
+  "loggedOut": "已退出登录",
+  "sessionExpired": "会话已过期，请重新登录。",
+  "refresh": "刷新",
+  "copied": "已复制",
+  "noPermission": "您没有权限访问此页面。"
+}

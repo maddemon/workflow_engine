@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Paper, Stack, Group, TextInput, Button, Table, Pagination, Text, Title, Badge } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 import { useRequest } from 'ahooks';
 import { Search, X } from 'lucide-react';
 import { queryAuditEvents, type AuditQueryParams } from '../services/api.ts';
@@ -24,6 +25,7 @@ function formatTime(iso: string | null | undefined): string {
 }
 
 export function AdminAuditPage() {
+  const { t } = useTranslation('admin');
   const [eventType, setEventType] = useState('');
   const [resourceType, setResourceType] = useState('');
   const [resourceId, setResourceId] = useState('');
@@ -67,45 +69,45 @@ export function AdminAuditPage() {
 
   return (
     <Stack p="md" gap="md">
-      <Title order={3}>Audit Log</Title>
+      <Title order={3}>{t('auditPage.title')}</Title>
 
       <Paper withBorder p="sm" radius="sm">
         <Group gap="sm" wrap="wrap">
           <TextInput
             size="xs"
-            placeholder="Event Type"
+            placeholder={t('auditPage.eventType')}
             value={eventType}
             onChange={(e) => setEventType(e.currentTarget.value)}
           />
           <TextInput
             size="xs"
-            placeholder="Resource Type"
+            placeholder={t('auditPage.resourceType')}
             value={resourceType}
             onChange={(e) => setResourceType(e.currentTarget.value)}
           />
           <TextInput
             size="xs"
-            placeholder="Resource ID"
+            placeholder={t('auditPage.resourceId')}
             value={resourceId}
             onChange={(e) => setResourceId(e.currentTarget.value)}
           />
           <TextInput
             size="xs"
-            placeholder="From (ISO date)"
+            placeholder={t('auditPage.from')}
             value={from}
             onChange={(e) => setFrom(e.currentTarget.value)}
           />
           <TextInput
             size="xs"
-            placeholder="To (ISO date)"
+            placeholder={t('auditPage.to')}
             value={to}
             onChange={(e) => setTo(e.currentTarget.value)}
           />
           <Button size="xs" leftSection={<Search size={14} />} onClick={handleSearch} loading={loading}>
-            Search
+            {t('auditPage.search')}
           </Button>
           <Button size="xs" variant="subtle" leftSection={<X size={14} />} onClick={handleReset}>
-            Reset
+            {t('auditPage.reset')}
           </Button>
         </Group>
       </Paper>
@@ -114,10 +116,10 @@ export function AdminAuditPage() {
         <Table striped highlightOnHover>
           <Table.Thead>
             <Table.Tr>
-              <Table.Th>Event Type</Table.Th>
-              <Table.Th>Resource Type</Table.Th>
-              <Table.Th>Resource ID</Table.Th>
-              <Table.Th>Timestamp</Table.Th>
+              <Table.Th>{t('auditPage.eventType')}</Table.Th>
+              <Table.Th>{t('auditPage.resourceType')}</Table.Th>
+              <Table.Th>{t('auditPage.resourceId')}</Table.Th>
+              <Table.Th>{t('auditPage.timestamp')}</Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
@@ -155,7 +157,7 @@ export function AdminAuditPage() {
             ))}
             {(!data || data.events.length === 0) && !loading && (
               <Table.Tr>
-                <Table.Td colSpan={4}><Text ta="center" c="dimmed" py="md">No audit events found.</Text></Table.Td>
+                <Table.Td colSpan={4}><Text ta="center" c="dimmed" py="md">{t('auditPage.noEvents')}</Text></Table.Td>
               </Table.Tr>
             )}
           </Table.Tbody>

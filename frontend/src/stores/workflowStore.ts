@@ -109,7 +109,8 @@ function buildNodeFromDescriptor(
 ): WorkflowNode {
   const id = `${descriptor.typeName}_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   const sameTypeCount = existingNodes.filter((n) => n.data.typeName === descriptor.typeName).length;
-  const name = sameTypeCount > 0 ? `${descriptor.displayName} ${sameTypeCount + 1}` : descriptor.displayName;
+  const displayName = descriptor.displayName;
+  const name = sameTypeCount > 0 ? `${displayName} ${sameTypeCount + 1}` : displayName;
 
   const defaultParams: Record<string, unknown> = {};
   for (const p of descriptor.parameters) {

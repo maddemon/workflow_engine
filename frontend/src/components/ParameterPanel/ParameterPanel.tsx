@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react';
 import { Stack, TextInput, Text, Badge, Group, ScrollArea, Switch, Select, Collapse, UnstyledButton, Divider, NumberInput } from '@mantine/core';
 import { ChevronRight, ChevronDown } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/shallow';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
 import { useDisplayRule } from '../../hooks/useDisplayRule.ts';
@@ -28,6 +29,7 @@ function groupParameters(
 }
 
 export function ParameterPanel() {
+  const { t } = useTranslation(['parameterPanel', 'common']);
   const selectedNodeId = useWorkflowStore((s) => s.selectedNodeId);
   const selectedNode = useWorkflowStore(
     useShallow((s) => {
@@ -77,23 +79,23 @@ export function ParameterPanel() {
       <Stack gap="sm" p="sm" style={{ height: '100%', overflow: 'hidden' }}>
         {isExecuting && (
           <Text size="xs" c="blue" fw={500} p={4} style={{ background: 'var(--mantine-color-blue-light)', borderRadius: 4, textAlign: 'center' }}>
-            Execution in progress — canvas is read-only
+            {t('executionBanner.inProgress')}
           </Text>
         )}
         {reviewMode && (
           <Text size="xs" c="blue" fw={500} p={4} style={{ background: 'var(--mantine-color-blue-light)', borderRadius: 4, textAlign: 'center' }}>
-            Review Mode — canvas is read-only. Node parameters can still be edited.
+            {t('executionBanner.reviewMode')}
           </Text>
         )}
         <Text fw={600} size="xs" tt="uppercase" c="dimmed" style={{ letterSpacing: '0.05em' }}>
-          Workflow Settings
+          {t('workflowSettings.title')}
         </Text>
         <Stack gap="xs">
           <TextInput
-            label="Workflow Name"
+            label={t('workflowSettings.name')}
             value={workflowName}
             onChange={(e) => setWorkflowName(e.target.value)}
-            placeholder="Enter workflow name..."
+            placeholder={t('workflowSettings.namePlaceholder')}
             disabled={isExecuting || reviewMode}
             rightSection={isDirty ? <Text c="orange" fw={700} size="xs">*</Text> : undefined}
           />
@@ -106,33 +108,33 @@ export function ParameterPanel() {
           >
             <Switch checked={isActive} onChange={(e) => setIsActive(e.currentTarget.checked)} size="sm" disabled={isExecuting || reviewMode} onClick={(e) => e.stopPropagation()} />
             <Group gap={4} style={{ flex: 1 }}>
-              <Text size="xs" fw={400}>Active</Text>
-              <InfoTooltip label="Enable this workflow to be triggered" />
+              <Text size="xs" fw={400}>{t('workflowSettings.active')}</Text>
+              <InfoTooltip label={t('workflowSettings.activeTooltip')} />
             </Group>
           </Group>
           <Select
-            label="Layout Direction"
+            label={t('workflowSettings.layoutDirection')}
             value={layoutDirection}
             onChange={handleLayoutChange}
             disabled={isExecuting || reviewMode}
             data={[
-              { label: 'Vertical (top to bottom)', value: 'vertical' },
-              { label: 'Horizontal (left to right)', value: 'horizontal' },
+              { label: t('workflowSettings.vertical'), value: 'vertical' },
+              { label: t('workflowSettings.horizontal'), value: 'horizontal' },
             ]}
           />
           <Divider />
           <TriggerConfig workflowId={workflowId} isExecuting={isExecuting} reviewMode={reviewMode} />
         </Stack>
         <Group justify="space-between">
-          <Text size="xs" c="dimmed">Nodes</Text>
+          <Text size="xs" c="dimmed">{t('workflowSettings.nodes')}</Text>
           <Badge variant="light" size="xs">{nodeCount}</Badge>
         </Group>
         <Group justify="space-between">
-          <Text size="xs" c="dimmed">Connections</Text>
+          <Text size="xs" c="dimmed">{t('workflowSettings.connections')}</Text>
           <Badge variant="light" size="xs">{edgeCount}</Badge>
         </Group>
         <Text c="dimmed" size="xs" ta="center" mt="auto" pb="sm">
-          {reviewMode ? 'Select a node to review its parameters.' : 'Select a node on the canvas to edit its parameters.'}
+          {reviewMode ? t('workflowSettings.selectNodeReviewHint') : t('workflowSettings.selectNodeHint')}
         </Text>
       </Stack>
     );
@@ -155,7 +157,7 @@ export function ParameterPanel() {
       </Group>
       <Text size="xs" c="dimmed" ff="monospace">{descriptor.typeName}</Text>
       <TextInput
-        label="Node Name"
+        label={t('nodeSettings.name')}
         value={name}
         onChange={(e) => updateNodeName(selectedNode.id, e.target.value)}
         disabled={isExecuting || reviewMode}
@@ -163,7 +165,7 @@ export function ParameterPanel() {
 
       {hasErrors && (
         <Text size="xs" c="red" fw={500} p="xs" style={{ background: 'var(--mantine-color-red-light)', borderRadius: 4 }}>
-          Fix {Object.keys(nodeFieldErrors).length} error(s) before saving.
+          {t('nodeSettings.fixErrors', { count: Object.keys(nodeFieldErrors).length })}
         </Text>
       )}
 
@@ -210,26 +212,26 @@ export function ParameterPanel() {
 
           {!hasVisibleParams && (
             <Text size="xs" c="dimmed" ta="center" py="md">
-              No configurable parameters.
+              {t('nodeSettings.noParameters')}
             </Text>
           )}
 
           {/* Settings — 折叠在底部 */}
           <UnstyledButton w="100%" onClick={() => setSettingsOpen(!settingsOpen)} py={4}>
             <Group justify="space-between" wrap="nowrap">
-              <Text size="xs" fw={600}>Settings</Text>
+              <Text size="xs" fw={600}>{t('nodeSettings.settingsTitle')}</Text>
               {settingsOpen ? <ChevronDown size={12} color="var(--mantine-color-dimmed)" /> : <ChevronRight size={12} color="var(--mantine-color-dimmed)" />}
             </Group>
           </UnstyledButton>
           <Collapse expanded={settingsOpen}>
             <Stack gap="sm" pb="sm">
               <Select
-                label="On Error"
+                label={t('nodeSettings.onError')}
                 value={selectedNode.data.errorStrategy}
                 onChange={(v) => updateNodeSettings(selectedNode.id, { errorStrategy: v ?? 'Terminate' })}
                 data={[
-                  { label: 'Stop Workflow', value: 'Terminate' },
-                  { label: 'Continue (regular output)', value: 'Continue' },
+                  { label: t('nodeSettings.stopWorkflow'), value: 'Terminate' },
+                  { label: t('nodeSettings.continue'), value: 'Continue' },
                 ]}
               />
               <Group
@@ -258,8 +260,8 @@ export function ParameterPanel() {
                   onClick={(e) => e.stopPropagation()}
                 />
                 <Group gap={4} style={{ flex: 1 }}>
-                  <Text size="xs" fw={400}>Retry on Fail</Text>
-                  <InfoTooltip label="Retry this node when it fails" />
+                  <Text size="xs" fw={400}>{t('nodeSettings.retryOnFail')}</Text>
+                  <InfoTooltip label={t('nodeSettings.retryTooltip')} />
                 </Group>
               </Group>
 
@@ -271,7 +273,7 @@ export function ParameterPanel() {
                 return (
                   <Stack gap="sm" ml="md">
                     <Select
-                      label="Max Retries"
+                      label={t('nodeSettings.maxRetries')}
                       value={String(policy.maxRetries)}
                       onChange={(v) => updateNodeSettings(selectedNode.id, { retryPolicy: JSON.stringify({ ...policy, maxRetries: v != null ? Number(v) : 2 }) })}
                       data={[
@@ -282,7 +284,7 @@ export function ParameterPanel() {
                       ]}
                     />
                     <Select
-                      label="Delay Between Retries (ms)"
+                      label={t('nodeSettings.delayBetweenRetries')}
                       value={String(policy.baseDelayMs)}
                       onChange={(v) => updateNodeSettings(selectedNode.id, { retryPolicy: JSON.stringify({ ...policy, baseDelayMs: v != null ? Number(v) : 1000 }) })}
                       data={[
@@ -297,8 +299,8 @@ export function ParameterPanel() {
               }              )()}
 
               <NumberInput
-                label="Timeout (seconds)"
-                description="单节点执行超时，0 或不填表示不限制"
+                label={t('nodeSettings.timeout')}
+                description={t('nodeSettings.timeoutDescription')}
                 value={selectedNode.data.timeout ?? 0}
                 min={0}
                 allowNegative={false}

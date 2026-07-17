@@ -4,11 +4,13 @@ using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Events;
+using FlowEngine.Resources;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Localization;
 using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Host.Controllers;
@@ -27,7 +29,8 @@ public class AuthController(
     AuditEventFactory auditFactory,
     ITokenBlacklist tokenBlacklist,
     IWebHostEnvironment environment,
-    ILogger<AuthController> logger) : ControllerBase
+    ILogger<AuthController> logger,
+    IStringLocalizer<SharedResource> localizer) : ControllerBase
 {
     /// <summary>
     /// 用户注册（已关闭）。本系统为内部私有化部署，账号由管理员或 SSO 统一创建，不提供自助注册。
@@ -38,8 +41,9 @@ public class AuthController(
     {
         return StatusCode(StatusCodes.Status403Forbidden, new
         {
-            error = "Forbidden",
-            message = "自助注册已关闭，请联系管理员创建账号。"
+            success = false,
+            errorCode = "Forbidden",
+            message = localizer["RegistrationDisabled"],
         });
     }
 
@@ -170,7 +174,12 @@ public class AuthController(
 
         if (string.IsNullOrWhiteSpace(request.Name))
         {
-            return BadRequest(new { error = "Name is required." });
+            return BadRequest(new
+            {
+                success = false,
+                errorCode = "ApiKeyNameRequired",
+                message = localizer["ApiKeyNameRequired"],
+            });
         }
 
         var result = await apiKeyService.CreateAsync(

@@ -1,5 +1,6 @@
 import { Switch, Group, Text } from '@mantine/core';
 import { InfoTooltip } from './InfoTooltip.tsx';
+import { useParameterName } from '../useParameterName.ts';
 import type { ParameterDefinition } from '../../../types/workflow.ts';
 
 interface BooleanFieldProps {
@@ -10,6 +11,8 @@ interface BooleanFieldProps {
 }
 
 export function BooleanField({ definition, value, onChange, error }: BooleanFieldProps) {
+  const paramName = useParameterName();
+  const label = paramName(definition.name, definition.displayName);
   return (
     <Group
       justify="space-between"
@@ -26,7 +29,7 @@ export function BooleanField({ definition, value, onChange, error }: BooleanFiel
         onClick={(e) => e.stopPropagation()}
       />
       <Group gap={4} style={{ flex: 1 }}>
-        <Text size="xs" fw={400}>{definition.displayName}</Text>
+        <Text size="xs" fw={400}>{label}</Text>
         {definition.description && <InfoTooltip label={definition.description} />}
       </Group>
     </Group>

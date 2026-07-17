@@ -3,7 +3,9 @@ import {
   TextInput, NumberInput, Select, Switch, Stack, Group,
   ActionIcon, Text, Button, UnstyledButton,
 } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, ChevronDown } from 'lucide-react';
+import { useParameterName } from '../useParameterName.ts';
 import type { ParameterDefinition } from '../../../types/workflow.ts';
 
 interface ArrayFieldProps {
@@ -14,6 +16,9 @@ interface ArrayFieldProps {
 }
 
 export function ArrayField({ definition, value, onChange, error }: ArrayFieldProps) {
+  const { t } = useTranslation('parameterPanel');
+  const paramName = useParameterName();
+  const label = paramName(definition.name, definition.displayName);
   const items = Array.isArray(value) ? value : [];
   const itemDef = definition.itemDefinition;
   const fields = itemDef?.fields;
@@ -55,18 +60,18 @@ export function ArrayField({ definition, value, onChange, error }: ArrayFieldPro
     <div>
       <Group justify="space-between" mb={4}>
         <Text size="sm" fw={400}>
-          {definition.displayName}
+          {label}
           {definition.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
         </Text>
         <Button variant="subtle" size="xs" leftSection={<Plus size={14} />} onClick={handleAdd}>
-          Add
+          {t('fields.array.add')}
         </Button>
       </Group>
 
       <Stack gap={4}>
         {items.length === 0 && (
           <Text size="xs" c="dimmed" ta="center" py="xs">
-            No items. Click &quot;Add&quot; to create one.
+            {t('fields.array.noItems')}
           </Text>
         )}
 
@@ -75,7 +80,7 @@ export function ArrayField({ definition, value, onChange, error }: ArrayFieldPro
               const obj = item as Record<string, unknown>;
               const titleField = findTitleField(fields!);
               const titleValue = titleField ? String(obj[titleField.name] ?? '') : '';
-              const headerLabel = titleValue || `${definition.displayName} ${index + 1}`;
+              const headerLabel = titleValue || t('fields.array.itemLabel', { name: label, index: index + 1 });
 
               return (
                 <StructuredItem
@@ -94,7 +99,7 @@ export function ArrayField({ definition, value, onChange, error }: ArrayFieldPro
                 <div style={{ flex: 1, minWidth: 0 }}>
                   {renderItem(itemDef, item, (v) => handleChange(index, v))}
                 </div>
-                <ActionIcon variant="subtle" color="red" onClick={() => handleRemove(index)} title="Remove">
+                <ActionIcon variant="subtle" color="red" onClick={() => handleRemove(index)} title={t('fields.array.remove')}>
                   <Trash2 size={14} />
                 </ActionIcon>
               </Group>
@@ -121,6 +126,8 @@ interface StructuredItemProps {
 }
 
 function StructuredItem({ label, defaultExpanded, fields, item, onFieldChange, onRemove }: StructuredItemProps) {
+  const { t } = useTranslation('parameterPanel');
+  const paramName = useParameterName();
   const [expanded, setExpanded] = useState(defaultExpanded ?? false);
 
   return (
@@ -160,7 +167,7 @@ function StructuredItem({ label, defaultExpanded, fields, item, onFieldChange, o
           color="red"
           size="sm"
           onClick={(e: React.MouseEvent) => { e.stopPropagation(); onRemove(); }}
-          title="Remove"
+          title={t('fields.array.remove')}
           style={{ marginRight: 4, flexShrink: 0 }}
         >
           <Trash2 size={13} />
@@ -173,7 +180,7 @@ function StructuredItem({ label, defaultExpanded, fields, item, onFieldChange, o
             const fieldValue = item[field.name] ?? '';
             return (
               <div key={field.name}>
-                <Text size="xs" c="dimmed" mb={2}>{field.displayName}</Text>
+                <Text size="xs" c="dimmed" mb={2}>{paramName(field.name, field.displayName)}</Text>
                 {renderItem(field, fieldValue, (v) => onFieldChange(field.name, v))}
               </div>
             );

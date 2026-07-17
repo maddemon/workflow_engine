@@ -11,6 +11,7 @@ import {
   Button,
   ThemeIcon,
 } from '@mantine/core';
+import { useTranslation, Trans } from 'react-i18next';
 import { useRequest } from 'ahooks';
 import { Check, Copy } from 'lucide-react';
 import * as api from '../services/api.ts';
@@ -43,6 +44,7 @@ editing JSON by hand.
 5. If the user rejects a draft, capture the reason and call reject_draft.`;
 
 function ConfigBlock({ code, label }: { code: string; label: string }) {
+  const { t } = useTranslation('help');
   return (
     <Paper p="sm" withBorder>
       <Group justify="space-between" mb={4}>
@@ -50,7 +52,7 @@ function ConfigBlock({ code, label }: { code: string; label: string }) {
         <CopyButton value={code}>
           {({ copied, copy }) => (
             <Button size="compact-xs" variant="subtle" leftSection={copied ? <Check size={12} /> : <Copy size={12} />} onClick={copy}>
-              {copied ? 'Copied' : 'Copy'}
+              {copied ? t('copied') : t('copy')}
             </Button>
           )}
         </CopyButton>
@@ -86,6 +88,7 @@ let sessionKey: CreateApiKeyResult | null = null;
  * （仅本次会话展示，可复制），同时把真实 Key 嵌入上方 MCP 配置，用户无需任何手动操作。
  */
 function ApiKeyManager() {
+  const { t } = useTranslation('help');
   const [key, setKey] = useState<CreateApiKeyResult | null>(sessionKey);
   const { runAsync: createKey, loading } = useRequest(api.createApiKey, { manual: true });
 
@@ -99,7 +102,7 @@ function ApiKeyManager() {
   }, [createKey]);
 
   if (loading && !key) {
-    return <Text size="sm" c="dimmed">Generating API key…</Text>;
+    return <Text size="sm" c="dimmed">{t('generatingApiKey')}</Text>;
   }
   if (!key) return null;
 
@@ -107,18 +110,18 @@ function ApiKeyManager() {
     <Stack gap="md">
       <Paper p="sm" withBorder bg="green.0">
         <Group justify="space-between" mb={4}>
-          <Text size="xs" fw={600} tt="uppercase" c="green.8">Your API key</Text>
+          <Text size="xs" fw={600} tt="uppercase" c="green.8">{t('yourApiKey')}</Text>
           <CopyButton value={key.key}>
             {({ copied, copy }) => (
               <Button size="compact-xs" variant="subtle" color="green" leftSection={copied ? <Check size={12} /> : <Copy size={12} />} onClick={copy}>
-                {copied ? 'Copied' : 'Copy'}
+                {copied ? t('copied') : t('copy')}
               </Button>
             )}
           </CopyButton>
         </Group>
         <Code block>{key.key}</Code>
         <Text size="xs" c="green.9" mt={4}>
-          Copy and store it securely — it is shown only for this browser session.
+          {t('apiKeyHint')}
         </Text>
       </Paper>
       <McpConfigBlock apiKey={key.key} />
@@ -127,62 +130,71 @@ function ApiKeyManager() {
 }
 
 export function HelpPage() {
+  const { t } = useTranslation('help');
   return (
     <div style={{ height: '100%', overflowY: 'auto' }}>
       <Stack p="md" gap="lg" style={{ maxWidth: 860, margin: '0 auto' }}>
-        <Title order={2}>Help &amp; MCP Configuration</Title>
+        <Title order={2}>{t('title')}</Title>
 
         <Paper p="md" withBorder>
-          <Title order={4} mb="sm">What is MCP?</Title>
+          <Title order={4} mb="sm">{t('whatIsMcp')}</Title>
           <Text size="sm">
-            MCP (Model Context Protocol) lets AI clients such as Claude Desktop, Cursor,
-            and CodeBuddy connect to Flow Engine and build, modify, validate, and run
-            workflows through natural language instead of editing JSON directly.
+            {t('whatIsMcpDesc')}
           </Text>
         </Paper>
 
         <Paper p="md" withBorder>
-          <Title order={4} mb="sm">Connecting your AI client</Title>
+          <Title order={4} mb="sm">{t('connectingClient')}</Title>
           <Text size="sm" mb="sm">
-            Flow Engine exposes an MCP server over Streamable HTTP at the <Code>/mcp</Code> endpoint.
-            A personal API key is generated for you automatically below and embedded into the
-            client config — copy the config and drop it into your AI client:
+            <Trans i18nKey="connectingClientDesc" ns="help">
+              Flow Engine exposes an MCP server over Streamable HTTP at the <Code>/mcp</Code> endpoint.
+              A personal API key is generated for you automatically below and embedded into the
+              client config — copy the config and drop it into your AI client:
+            </Trans>
           </Text>
           <ApiKeyManager />
         </Paper>
 
         <Paper p="md" withBorder>
-          <Title order={4} mb="sm">Agent skill</Title>
+          <Title order={4} mb="sm">{t('agentSkill')}</Title>
           <Text size="sm" mb="sm">
-            Drop the Skill definition below into your agent so it knows how to drive Flow Engine
-            through MCP. The file path convention is <Code>/.&lt;ide name&gt;/skills/flow-engine/SKILL.md</Code> —
-            for example:
+            <Trans i18nKey="agentSkillDesc" ns="help">
+              Drop the Skill definition below into your agent so it knows how to drive Flow Engine
+              through MCP. The file path convention is <Code>/.&lt;ide name&gt;/skills/flow-engine/SKILL.md</Code> —
+              for example:
+            </Trans>
           </Text>
           <ConfigBlock code={`~/.cursor/skills/flow-engine/SKILL.md
 ~/.codebuddy/skills/flow-engine/SKILL.md
 ~/.claude/skills/flow-engine/SKILL.md`} label="skill-path" />
-          <Text size="sm" mt="sm" mb="sm">Use this exact content for <Code>SKILL.md</Code>:</Text>
+          <Text size="sm" mt="sm" mb="sm">
+            <Trans i18nKey="skillContent" ns="help">
+              Use this exact content for <Code>SKILL.md</Code>:
+            </Trans>
+          </Text>
           <ConfigBlock code={CLAUDE_SKILL} label="SKILL.md" />
         </Paper>
 
         <Paper p="md" withBorder>
-          <Title order={4} mb="sm">Using natural language</Title>
-          <Text size="sm" mb="sm">Once connected, you can ask your AI client to:</Text>
+          <Title order={4} mb="sm">{t('usingNaturalLanguage')}</Title>
+          <Text size="sm" mb="sm">{t('usingNaturalLanguageDesc')}</Text>
           <List size="sm" spacing="xs">
-            <List.Item>Create workflows: &quot;Build a workflow that fetches weather data every hour&quot;</List.Item>
-            <List.Item>Modify workflows: &quot;Add an email notification step after the HTTP request&quot;</List.Item>
-            <List.Item>Validate: &quot;Check if my workflow is correctly configured&quot;</List.Item>
-            <List.Item>Execute: &quot;Run the workflow and show me the results&quot;</List.Item>
+            <List.Item>{t('createWorkflows')}</List.Item>
+            <List.Item>{t('modifyWorkflows')}</List.Item>
+            <List.Item>{t('validateWorkflows')}</List.Item>
+            <List.Item>{t('executeWorkflows')}</List.Item>
           </List>
         </Paper>
 
         <Paper p="md" withBorder>
-          <Title order={4} mb="sm">Reviewing AI drafts</Title>
+          <Title order={4} mb="sm">{t('reviewingDrafts')}</Title>
           <Text size="sm">
-            When an AI client submits a draft, it appears in your workflow list with an
-            <ThemeIcon variant="light" color="blue" size="xs" radius="sm" style={{ verticalAlign: 'middle' }}>AI</ThemeIcon> badge.
-            Open it to enter Review Mode: inspect the proposed changes, run a dry run,
-            then Confirm &amp; Activate or Reject with feedback.
+            <Trans i18nKey="reviewingDraftsDesc" ns="help">
+              When an AI client submits a draft, it appears in your workflow list with an
+              <ThemeIcon variant="light" color="blue" size="xs" radius="sm" style={{ verticalAlign: 'middle' }}>AI</ThemeIcon> badge.
+              Open it to enter Review Mode: inspect the proposed changes, run a dry run,
+              then Confirm & Activate or Reject with feedback.
+            </Trans>
           </Text>
         </Paper>
       </Stack>

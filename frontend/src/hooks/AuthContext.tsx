@@ -2,6 +2,7 @@
 import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from 'react';
 import { notifications } from '@mantine/notifications';
 import { useRequest } from 'ahooks';
+import { useTranslation } from 'react-i18next';
 import type { UserDto, LoginRequest } from '../types/workflow.ts';
 import * as api from '../services/api.ts';
 
@@ -24,6 +25,7 @@ export function useAuth() {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const { t } = useTranslation(['common', 'login']);
   const [user, setUser] = useState<UserDto | null>(() => {
     try {
       const stored = localStorage.getItem('auth_user');
@@ -53,11 +55,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         localStorage.setItem('auth_user', JSON.stringify(result.user));
         return { success: true };
       }
-      return { success: false, error: result.errorMessage ?? 'Login failed' };
+      return { success: false, error: result.errorMessage ?? t('login:failed') };
     } catch {
-      return { success: false, error: 'Invalid credentials' };
+      return { success: false, error: t('login:invalidCredentials') };
     }
-  }, []);
+  }, [t]);
 
   const logout = useCallback(async () => {
     try {
@@ -65,8 +67,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch { /* ignore */ }
     setUser(null);
     localStorage.removeItem('auth_user');
-    notifications.show({ title: 'Logged out', message: 'You have been logged out', color: 'blue' });
-  }, []);
+    notifications.show({ title: t('loggedOut'), message: t('sessionExpired'), color: 'blue' });
+  }, [t]);
 
   const roles = useMemo(() => user?.roles ?? [], [user?.roles]);
   const hasRole = useCallback((role: string) => roles.includes(role), [roles]);

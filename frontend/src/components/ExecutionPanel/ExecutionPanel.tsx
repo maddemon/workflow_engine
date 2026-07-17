@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo } from 'react';
 import { Stack, Text, Group, ActionIcon, Divider, Box, Loader, Badge, Button } from '@mantine/core';
 import { X, AlertCircle, Check, Clock, Loader as LoaderIcon, Square } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { ExecutionDto } from '../../types/workflow.ts';
 import { NodeOutputList } from './NodeOutputList.tsx';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
@@ -12,12 +13,12 @@ interface ExecutionPanelProps {
   error?: string | null;
 }
 
-const statusConfig: Record<string, { color: string; icon: React.ReactNode; label: string }> = {
-  Pending: { color: 'gray', icon: <Clock size={14} />, label: 'Pending' },
-  Running: { color: 'blue', icon: <LoaderIcon size={14} speed={2} />, label: 'Running' },
-  Completed: { color: 'green', icon: <Check size={14} strokeWidth={3} />, label: 'Completed' },
-  Failed: { color: 'red', icon: <X size={14} strokeWidth={3} />, label: 'Failed' },
-  Cancelled: { color: 'gray', icon: <X size={14} />, label: 'Cancelled' },
+const statusConfig: Record<string, { color: string; icon: React.ReactNode; labelKey: string }> = {
+  Pending: { color: 'gray', icon: <Clock size={14} />, labelKey: 'status.pending' },
+  Running: { color: 'blue', icon: <LoaderIcon size={14} speed={2} />, labelKey: 'status.running' },
+  Completed: { color: 'green', icon: <Check size={14} strokeWidth={3} />, labelKey: 'status.completed' },
+  Failed: { color: 'red', icon: <X size={14} strokeWidth={3} />, labelKey: 'status.failed' },
+  Cancelled: { color: 'gray', icon: <X size={14} />, labelKey: 'status.cancelled' },
 };
 
 function formatDuration(startedAt: string | null, completedAt: string | null): string | null {
@@ -47,6 +48,7 @@ function useLiveDuration(startedAt: string | null, completedAt: string | null): 
 }
 
 export function ExecutionPanel({ execution, onClose, onCancel, error }: ExecutionPanelProps) {
+  const { t } = useTranslation('execution');
   const nodeExecutionRecords = useWorkflowStore((s) => s.nodeExecutionRecords);
   const nodes = useWorkflowStore((s) => s.nodes);
   const records = Object.values(nodeExecutionRecords);
@@ -87,8 +89,8 @@ export function ExecutionPanel({ execution, onClose, onCancel, error }: Executio
     return error ? (
       <Stack gap="sm" p="sm">
         <Group justify="space-between" align="center">
-          <Text fw={600} size="md">Execution Error</Text>
-          <ActionIcon variant="subtle" onClick={onClose} aria-label="Close">
+          <Text fw={600} size="md">{t('executionError')}</Text>
+          <ActionIcon variant="subtle" onClick={onClose} aria-label={t('common:close')}>
             <X size={16} />
           </ActionIcon>
         </Group>
@@ -113,7 +115,7 @@ export function ExecutionPanel({ execution, onClose, onCancel, error }: Executio
   return (
     <Stack gap="sm" p="sm">
       <Group justify="space-between" align="center">
-        <Text fw={600} size="md">Execution Result</Text>
+        <Text fw={600} size="md">{t('executionResult')}</Text>
         <Group gap="xs" align="center" wrap="nowrap">
           {isRunning && <Loader size={14} />}
           {isRunning ? (
@@ -125,10 +127,10 @@ export function ExecutionPanel({ execution, onClose, onCancel, error }: Executio
               onClick={handleCancel}
               loading={cancelling}
             >
-              Stop
+              {t('stop')}
             </Button>
           ) : (
-            <ActionIcon variant="subtle" onClick={onClose} aria-label="Close">
+            <ActionIcon variant="subtle" onClick={onClose} aria-label={t('common:close')}>
               <X size={16} />
             </ActionIcon>
           )}
@@ -142,7 +144,7 @@ export function ExecutionPanel({ execution, onClose, onCancel, error }: Executio
           size="sm"
           leftSection={statusInfo.icon}
         >
-          {statusInfo.label}
+          {t(statusInfo.labelKey)}
         </Badge>
         {duration && (
           <Text size="xs" c="dimmed">
@@ -171,7 +173,7 @@ export function ExecutionPanel({ execution, onClose, onCancel, error }: Executio
 
       {isRunning && records.length === 0 && (
         <Text size="sm" c="dimmed" ta="center" py="md">
-          Waiting for execution to start...
+          {t('waitingForStart')}
         </Text>
       )}
 
@@ -187,7 +189,7 @@ export function ExecutionPanel({ execution, onClose, onCancel, error }: Executio
           loading={cancelling}
           fullWidth
         >
-          Stop Execution
+          {t('stopExecution')}
         </Button>
       )}
     </Stack>

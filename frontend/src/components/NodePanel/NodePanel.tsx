@@ -1,10 +1,12 @@
 import { useState, useMemo, useCallback } from 'react';
 import { Stack, TextInput, Text, Badge, UnstyledButton, Group, Box, Divider } from '@mantine/core';
 import { Search, ChevronRight, ChevronDown } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
 import { NodeCard } from './NodeCard.tsx';
 
 export function NodePanel() {
+  const { t } = useTranslation('nodePanel');
   const nodeTypes = useWorkflowStore((s) => s.nodeTypes);
   const addNode = useWorkflowStore((s) => s.addNode);
   const [search, setSearch] = useState('');
@@ -14,19 +16,19 @@ export function NodePanel() {
     if (!search.trim()) return nodeTypes;
     const lower = search.toLowerCase();
     return nodeTypes.filter(
-      (t) =>
-        t.displayName.toLowerCase().includes(lower) ||
-        t.typeName.toLowerCase().includes(lower) ||
-        t.category.toLowerCase().includes(lower),
+      (nt) =>
+        nt.displayName.toLowerCase().includes(lower) ||
+        nt.typeName.toLowerCase().includes(lower) ||
+        nt.category.toLowerCase().includes(lower),
     );
   }, [nodeTypes, search]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, typeof filtered>();
-    for (const t of filtered) {
-      const list = map.get(t.category) ?? [];
-      list.push(t);
-      map.set(t.category, list);
+    for (const nt of filtered) {
+      const list = map.get(nt.category) ?? [];
+      list.push(nt);
+      map.set(nt.category, list);
     }
     return map;
   }, [filtered]);
@@ -45,10 +47,10 @@ export function NodePanel() {
   return (
     <Stack gap="xs" p="xs">
       <Text fw={600} size="xs" tt="uppercase" c="dimmed" style={{ letterSpacing: '0.05em' }}>
-        Nodes
+        {t('title')}
       </Text>
       <TextInput
-        placeholder="Search..."
+        placeholder={t('search')}
         value={search}
         onChange={(e) => setSearch(e.target.value)}
         leftSection={<Search size={12} />}
@@ -84,7 +86,7 @@ export function NodePanel() {
           </Box>
         ))}
         {grouped.size === 0 && (
-          <Text size="sm" c="dimmed" ta="center" py="md">No nodes found</Text>
+          <Text size="sm" c="dimmed" ta="center" py="md">{t('list.noResults')}</Text>
         )}
       </Stack>
     </Stack>

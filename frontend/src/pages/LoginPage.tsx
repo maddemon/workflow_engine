@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { TextInput, PasswordInput, Button, Paper, Text, Stack, Title, Center, Box } from '@mantine/core';
 import { useRequest } from 'ahooks';
+import { useTranslation } from 'react-i18next';
 import { useAuth } from '../hooks/AuthContext.tsx';
 
 export function LoginPage() {
@@ -10,6 +11,7 @@ export function LoginPage() {
   const [error, setError] = useState('');
   const { login } = useAuth();
   const navigate = useNavigate();
+  const { t } = useTranslation('login');
 
   const { loading, run: handleSubmit } = useRequest(
     async (e: React.FormEvent) => {
@@ -19,12 +21,12 @@ export function LoginPage() {
       if (result.success) {
         navigate('/');
       } else {
-        setError(result.error ?? 'Login failed');
+        setError(result.error ?? t('failed'));
       }
     },
     {
       manual: true,
-      onError: () => setError('An unexpected error occurred'),
+      onError: () => setError(t('unexpectedError')),
     },
   );
 
@@ -34,30 +36,30 @@ export function LoginPage() {
         <form onSubmit={handleSubmit}>
           <Stack gap="md">
             <Box>
-              <Title order={3}>Sign In</Title>
-              <Text size="sm" c="dimmed">Enter your credentials to continue</Text>
+              <Title order={3}>{t('title')}</Title>
+              <Text size="sm" c="dimmed">{t('subtitle')}</Text>
             </Box>
             {error && (
               <Text size="sm" c="red">{error}</Text>
             )}
             <TextInput
-              label="Email"
+              label={t('email')}
               type="email"
-              placeholder="your@email.com"
+              placeholder={t('email')}
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
               autoFocus
             />
             <PasswordInput
-              label="Password"
-              placeholder="Your password"
+              label={t('password')}
+              placeholder={t('password')}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
             />
             <Button type="submit" loading={loading} fullWidth>
-              Sign In
+              {t('signIn')}
             </Button>
           </Stack>
         </form>

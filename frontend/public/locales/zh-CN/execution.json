@@ -1,0 +1,78 @@
+{
+  "title": "执行",
+  "run": "运行",
+  "stop": "停止",
+  "execute": "执行",
+  "running": "运行中...",
+  "stopExecution": "停止执行",
+  "executionResult": "执行结果",
+  "executionError": "执行错误",
+  "waitingForStart": "等待执行开始...",
+  "noNodeRecords": "暂无节点记录",
+  "status": {
+    "idle": "空闲",
+    "pending": "等待中",
+    "running": "运行中",
+    "completed": "已完成",
+    "failed": "失败",
+    "cancelled": "已取消",
+    "success": "成功"
+  },
+  "noExecutions": "还没有执行记录",
+  "output": "输出",
+  "parameters": "参数",
+  "input": "输入",
+  "error": "错误",
+  "duration": "持续时间",
+  "startedAt": "开始时间",
+  "completedAt": "完成时间",
+  "history": {
+    "title": "执行历史",
+    "allStatuses": "所有状态",
+    "noExecutionsFound": "未找到执行记录",
+    "status": "状态",
+    "started": "开始时间",
+    "completed": "完成时间",
+    "duration": "持续时间",
+    "actions": "操作",
+    "details": "执行详情",
+    "nodeRecords": "节点记录",
+    "node": "节点",
+    "output": "输出",
+    "failedToFetch": "获取执行记录失败"
+  },
+  "agent": {
+    "execution": "Agent 执行",
+    "iterations": "{{count}} 次迭代",
+    "iterations_plural": "{{count}} 次迭代",
+    "subAgents": "子 Agent ({{count}})",
+    "streaming": "流式传输中...",
+    "iteration": "迭代",
+    "toolCalls": "{{count}} 个工具调用",
+    "toolCalls_plural": "{{count}} 个工具调用"
+  },
+  "llm": {
+    "thinking": "LLM 思考",
+    "tokens": "{{count}} tokens",
+    "systemPrompt": "系统提示词",
+    "waitingForResponse": "等待响应...",
+    "noThinkingContent": "暂无思考内容",
+    "prompt": "提示词: {{count}}",
+    "completion": "补全: {{count}}",
+    "total": "总计: {{count}}"
+  },
+  "tool": {
+    "noToolCalls": "暂无工具调用",
+    "noInputOutput": "暂无输入/输出数据"
+  },
+  "button": {
+    "saveBeforeExecute": "执行前请先保存工作流",
+    "noWorkflowSelected": "未选择工作流",
+    "addAtLeastOneNode": "请至少添加一个节点"
+  },
+  "codeViewer": {
+    "copy": "复制",
+    "copied": "已复制",
+    "fullScreen": "全屏"
+  }
+}

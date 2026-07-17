@@ -1,0 +1,23 @@
+{
+  "title": "Help & MCP Configuration",
+  "whatIsMcp": "What is MCP?",
+  "whatIsMcpDesc": "MCP (Model Context Protocol) lets AI clients such as Claude Desktop, Cursor, and CodeBuddy connect to Flow Engine and build, modify, validate, and run workflows through natural language instead of editing JSON directly.",
+  "connectingClient": "Connecting your AI client",
+  "connectingClientDesc": "Flow Engine exposes an MCP server over Streamable HTTP at the <0>/mcp</0> endpoint. A personal API key is generated for you automatically below and embedded into the client config — copy the config and drop it into your AI client:",
+  "agentSkill": "Agent skill",
+  "agentSkillDesc": "Drop the Skill definition below into your agent so it knows how to drive Flow Engine through MCP. The file path convention is <0>/.&lt;ide name&gt;/skills/flow-engine/SKILL.md</0> — for example:",
+  "skillContent": "Use this exact content for <0>SKILL.md</0>:",
+  "usingNaturalLanguage": "Using natural language",
+  "usingNaturalLanguageDesc": "Once connected, you can ask your AI client to:",
+  "createWorkflows": "Create workflows: \"Build a workflow that fetches weather data every hour\"",
+  "modifyWorkflows": "Modify workflows: \"Add an email notification step after the HTTP request\"",
+  "validateWorkflows": "Validate: \"Check if my workflow is correctly configured\"",
+  "executeWorkflows": "Execute: \"Run the workflow and show me the results\"",
+  "reviewingDrafts": "Reviewing AI drafts",
+  "reviewingDraftsDesc": "When an AI client submits a draft, it appears in your workflow list with an <0>AI</0> badge. Open it to enter Review Mode: inspect the proposed changes, run a dry run, then Confirm & Activate or Reject with feedback.",
+  "generatingApiKey": "Generating API key…",
+  "yourApiKey": "Your API key",
+  "copied": "Copied",
+  "copy": "Copy",
+  "apiKeyHint": "Copy and store it securely — it is shown only for this browser session."
+}

@@ -1,0 +1,23 @@
+{
+  "workflows": "工作流",
+  "documents": "文档",
+  "executions": "执行记录",
+  "settings": "设置",
+  "admin": "管理",
+  "help": "帮助",
+  "system": "系统",
+  "userManagement": "用户管理",
+  "projectClassification": "项目分类",
+  "auditLog": "审计日志",
+  "fileManagement": "文件管理",
+  "manageCredentials": "管理凭据",
+  "credentials": "凭据",
+  "switchToLightMode": "切换到浅色模式",
+  "switchToDarkMode": "切换到深色模式",
+  "toggleColorScheme": "切换颜色主题",
+  "notifications": "通知",
+  "menu": "菜单",
+  "notSignedIn": "未登录",
+  "logout": "退出登录",
+  "signOut": "退出登录"
+}

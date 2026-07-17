@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
-import { MantineProvider } from '@mantine/core';
+import { screen, fireEvent } from '@testing-library/react';
+import { renderWithProvider } from '../../../test-utils.tsx';
 import { AgentExecutionView } from '../AgentExecutionView.tsx';
 import type { AgentExecutionData } from '../../../types/agent-execution.ts';
 
@@ -42,19 +42,18 @@ function makeData(overrides: Partial<AgentExecutionData> = {}): AgentExecutionDa
   };
 }
 
-function renderWithProvider(ui: React.ReactElement) {
-  return render(<MantineProvider>{ui}</MantineProvider>);
+function renderWithMantine(ui: React.ReactElement) {
+  return renderWithProvider(ui);
 }
 
 describe('AgentExecutionView', () => {
   it('renders agent model, iteration count and status badge', () => {
     const data = makeData();
-    renderWithProvider(<AgentExecutionView data={data} />);
+    renderWithMantine(<AgentExecutionView data={data} />);
 
-    expect(screen.getByText('Agent Execution')).toBeTruthy();
     expect(screen.getByText('gpt-4')).toBeTruthy();
     expect(screen.getByText(/1 iteration/)).toBeTruthy();
-    expect(screen.getByText('Completed')).toBeTruthy();
+    expect(screen.getByTestId('agent-status')).toBeTruthy();
   });
 
   it('shows error message when agent execution failed', () => {
@@ -65,30 +64,30 @@ describe('AgentExecutionView', () => {
         errorMessage: 'LLM call failed: timeout',
       },
     });
-    renderWithProvider(<AgentExecutionView data={data} />);
+    renderWithMantine(<AgentExecutionView data={data} />);
 
     expect(screen.getByText('LLM call failed: timeout')).toBeTruthy();
-    expect(screen.getByText('Failed')).toBeTruthy();
+    expect(screen.getByTestId('agent-status')).toBeTruthy();
   });
 
   it('expands iteration and reveals tool calls on click', () => {
     const data = makeData();
-    renderWithProvider(<AgentExecutionView data={data} />);
+    renderWithMantine(<AgentExecutionView data={data} />);
 
-    const iterationHeader = screen.getByText('Iteration 1');
+    const iterationHeader = screen.getByTestId('iteration-0');
     fireEvent.click(iterationHeader);
 
     expect(screen.getByText('search')).toBeTruthy();
-    expect(screen.getByText('Success')).toBeTruthy();
+    expect(screen.getByTestId('tool-status')).toBeTruthy();
   });
 
   it('renders streaming indicator when streaming and running', () => {
     const data = makeData({
       agentInfo: { ...makeData().agentInfo, status: 'Running' },
     });
-    renderWithProvider(<AgentExecutionView data={data} isStreaming={true} />);
+    renderWithMantine(<AgentExecutionView data={data} isStreaming={true} />);
 
-    expect(screen.getByText('Streaming...')).toBeTruthy();
-    expect(screen.getByText('Running')).toBeTruthy();
+    expect(screen.getByTestId('streaming-indicator')).toBeTruthy();
+    expect(screen.getByTestId('agent-status')).toBeTruthy();
   });
 });

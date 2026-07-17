@@ -131,6 +131,7 @@ public sealed class WebhookRouteService(FlowEngineDbContext dbContext)
         var exists = await query.AnyAsync(cancellationToken).ConfigureAwait(false);
         if (exists)
         {
+            // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
             throw new BusinessException($"Webhook path '{path}' is already in use.");
         }
     }

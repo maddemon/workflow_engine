@@ -36,6 +36,6 @@ describe('SettingsPage', () => {
     });
 
     renderWithProvider(<SettingsPage />);
-    expect(screen.getByText('Settings')).toBeDefined();
+    expect(screen.getByRole('heading', { name: /settings/i })).toBeDefined();
   });
 });
