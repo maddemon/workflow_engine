@@ -1,0 +1,23 @@
+{
+  "title": "帮助与 MCP 配置",
+  "whatIsMcp": "什么是 MCP？",
+  "whatIsMcpDesc": "MCP（模型上下文协议）让 Claude Desktop、Cursor 和 CodeBuddy 等 AI 客户端能够连接到 Flow Engine，通过自然语言构建、修改、验证和运行工作流，而无需直接编辑 JSON。",
+  "connectingClient": "连接您的 AI 客户端",
+  "connectingClientDesc": "Flow Engine 通过 Streamable HTTP 在 <0>/mcp</0> 端点暴露 MCP 服务器。系统会自动为您生成个人 API 密钥并嵌入到客户端配置中——复制配置并粘贴到您的 AI 客户端：",
+  "agentSkill": "Agent 技能",
+  "agentSkillDesc": "将以下技能定义放入您的 agent 中，让它知道如何通过 MCP 驱动 Flow Engine。文件路径约定为 <0>/.&lt;ide 名称&gt;/skills/flow-engine/SKILL.md</0>——例如：",
+  "skillContent": "将此内容用于 <0>SKILL.md</0>：",
+  "usingNaturalLanguage": "使用自然语言",
+  "usingNaturalLanguageDesc": "连接后，您可以让 AI 客户端执行以下操作：",
+  "createWorkflows": "创建工作流：\"构建一个每小时获取天气数据的工作流\"",
+  "modifyWorkflows": "修改工作流：\"在 HTTP 请求后添加电子邮件通知步骤\"",
+  "validateWorkflows": "验证：\"检查我的工作流配置是否正确\"",
+  "executeWorkflows": "执行：\"运行工作流并显示结果\"",
+  "reviewingDrafts": "审查 AI 草稿",
+  "reviewingDraftsDesc": "当 AI 客户端提交草稿时，它会出现在您的工作流列表中，并带有 <0>AI</0> 徽章。打开它进入审查模式：检查提议的更改，运行试运行，然后确认并激活或拒绝并提供反馈。",
+  "generatingApiKey": "正在生成 API 密钥…",
+  "yourApiKey": "您的 API 密钥",
+  "copied": "已复制",
+  "copy": "复制",
+  "apiKeyHint": "请安全复制并保存——它仅在此浏览器会话中显示。"
+}

@@ -11,10 +11,10 @@ vi.mock('../../services/api.ts', () => ({
 describe('AdminAuditPage', () => {
   it('renders audit log title and search filters', () => {
     renderWithProvider(<AdminAuditPage />);
-    expect(screen.getByText('Audit Log')).toBeDefined();
-    expect(screen.getByPlaceholderText('Event Type')).toBeDefined();
-    expect(screen.getByPlaceholderText('Resource Type')).toBeDefined();
-    expect(screen.getByText('Search')).toBeDefined();
-    expect(screen.getByText('Reset')).toBeDefined();
+    expect(screen.getByRole('heading', { name: /audit/i })).toBeDefined();
+    expect(screen.getByPlaceholderText(/event type/i)).toBeDefined();
+    expect(screen.getByPlaceholderText(/resource type/i)).toBeDefined();
+    expect(screen.getByRole('button', { name: /search/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /reset/i })).toBeDefined();
   });
 });

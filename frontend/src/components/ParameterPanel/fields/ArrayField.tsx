@@ -5,6 +5,7 @@ import {
 } from '@mantine/core';
 import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, ChevronDown } from 'lucide-react';
+import { useParameterName } from '../useParameterName.ts';
 import type { ParameterDefinition } from '../../../types/workflow.ts';
 
 interface ArrayFieldProps {
@@ -16,6 +17,8 @@ interface ArrayFieldProps {
 
 export function ArrayField({ definition, value, onChange, error }: ArrayFieldProps) {
   const { t } = useTranslation('parameterPanel');
+  const paramName = useParameterName();
+  const label = paramName(definition.name, definition.displayName);
   const items = Array.isArray(value) ? value : [];
   const itemDef = definition.itemDefinition;
   const fields = itemDef?.fields;
@@ -57,7 +60,7 @@ export function ArrayField({ definition, value, onChange, error }: ArrayFieldPro
     <div>
       <Group justify="space-between" mb={4}>
         <Text size="sm" fw={400}>
-          {definition.displayName}
+          {label}
           {definition.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
         </Text>
         <Button variant="subtle" size="xs" leftSection={<Plus size={14} />} onClick={handleAdd}>
@@ -77,7 +80,7 @@ export function ArrayField({ definition, value, onChange, error }: ArrayFieldPro
               const obj = item as Record<string, unknown>;
               const titleField = findTitleField(fields!);
               const titleValue = titleField ? String(obj[titleField.name] ?? '') : '';
-              const headerLabel = titleValue || t('fields.array.itemLabel', { name: definition.displayName, index: index + 1 });
+              const headerLabel = titleValue || t('fields.array.itemLabel', { name: label, index: index + 1 });
 
               return (
                 <StructuredItem
@@ -124,6 +127,7 @@ interface StructuredItemProps {
 
 function StructuredItem({ label, defaultExpanded, fields, item, onFieldChange, onRemove }: StructuredItemProps) {
   const { t } = useTranslation('parameterPanel');
+  const paramName = useParameterName();
   const [expanded, setExpanded] = useState(defaultExpanded ?? false);
 
   return (
@@ -176,7 +180,7 @@ function StructuredItem({ label, defaultExpanded, fields, item, onFieldChange, o
             const fieldValue = item[field.name] ?? '';
             return (
               <div key={field.name}>
-                <Text size="xs" c="dimmed" mb={2}>{field.displayName}</Text>
+                <Text size="xs" c="dimmed" mb={2}>{paramName(field.name, field.displayName)}</Text>
                 {renderItem(field, fieldValue, (v) => onFieldChange(field.name, v))}
               </div>
             );

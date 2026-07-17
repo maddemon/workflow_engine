@@ -5,6 +5,7 @@ import { Upload, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useRequest } from 'ahooks';
 import { InfoTooltip } from './InfoTooltip.tsx';
+import { useParameterName } from '../useParameterName.ts';
 import { uploadFile, listFiles } from '../../../services/api.ts';
 import type { ParameterDefinition } from '../../../types/workflow.ts';
 
@@ -19,6 +20,8 @@ interface FileFieldProps {
 
 export function FileField({ definition, value, onChange, error, projectId }: FileFieldProps) {
   const { t } = useTranslation('parameterPanel');
+  const paramName = useParameterName();
+  const label = paramName(definition.name, definition.displayName);
   const [uploading, setUploading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -67,7 +70,7 @@ export function FileField({ definition, value, onChange, error, projectId }: Fil
     <div>
       <Group gap={4} mb={4}>
         <Text size="xs" fw={400}>
-          {definition.displayName}
+          {label}
           {definition.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
         </Text>
         {definition.description && <InfoTooltip label={definition.description} />}

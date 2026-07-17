@@ -74,6 +74,7 @@ function IterationGroup({
 
       <div style={{ flex: 1, minWidth: 0, paddingBottom: isLast ? 0 : 4 }}>
         <UnstyledButton
+          data-testid={`iteration-${iteration.index}`}
           onClick={onToggle}
           w="100%"
           style={{
@@ -258,6 +259,7 @@ export function AgentExecutionView({ data, isStreaming }: AgentExecutionViewProp
           </Group>
         </Stack>
         <Badge
+          data-testid="agent-status"
           color={statusInfo.color}
           variant="light"
           size="sm"
@@ -331,7 +333,7 @@ export function AgentExecutionView({ data, isStreaming }: AgentExecutionViewProp
       </Box>
 
       {isStreaming && agentInfo.status === 'Running' && (
-        <Group gap="xs" justify="center">
+        <Group gap="xs" justify="center" data-testid="streaming-indicator">
           <Loader size={12} speed={2} />
           <Text size="xs" c="dimmed">
             {t('agent.streaming')}

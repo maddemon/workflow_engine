@@ -13,7 +13,7 @@ vi.mock('../../services/api.ts', () => ({
 describe('AdminProjectsPage', () => {
   it('renders title and new project button', () => {
     renderWithProvider(<AdminProjectsPage />);
-    expect(screen.getByText('Project Classification')).toBeDefined();
-    expect(screen.getByText('New Project')).toBeDefined();
+    expect(screen.getByRole('heading', { name: /project/i })).toBeDefined();
+    expect(screen.getByRole('button', { name: /new project/i })).toBeDefined();
   });
 });

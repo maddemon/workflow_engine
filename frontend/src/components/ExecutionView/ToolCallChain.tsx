@@ -101,6 +101,7 @@ function ToolCallItem({
               {record.toolName}
             </Text>
             <Badge
+              data-testid="tool-status"
               color={config.color}
               variant="light"
               size="xs"

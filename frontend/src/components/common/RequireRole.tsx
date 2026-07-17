@@ -13,7 +13,7 @@ export function RequireRole({ role, children, fallback }: RequireRoleProps) {
 
   if (!hasRole(role)) {
     return fallback ?? (
-      <div style={{ padding: '2rem', textAlign: 'center', color: 'var(--mantine-color-dimmed)' }}>
+      <div data-testid="permission-denied" style={{ padding: '2rem', textAlign: 'center', color: 'var(--mantine-color-dimmed)' }}>
         {t('noPermission')}
       </div>
     );

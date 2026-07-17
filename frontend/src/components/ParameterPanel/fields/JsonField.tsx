@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Textarea, ActionIcon, Group, Text } from '@mantine/core';
 import { useTranslation } from 'react-i18next';
 import { Braces } from 'lucide-react';
+import { useParameterName } from '../useParameterName.ts';
 import type { ParameterDefinition } from '../../../types/workflow.ts';
 
 interface JsonFieldProps {
@@ -13,6 +14,7 @@ interface JsonFieldProps {
 
 export function JsonField({ definition, value, onChange, error }: JsonFieldProps) {
   const { t } = useTranslation('parameterPanel');
+  const paramName = useParameterName();
   const displayValue = typeof value === 'string' ? value : value === null || value === undefined ? '' : JSON.stringify(value, null, 2);
   const [parseError, setParseError] = useState<string | null>(null);
 
@@ -48,7 +50,7 @@ export function JsonField({ definition, value, onChange, error }: JsonFieldProps
     <div>
       <Group justify="space-between" gap="xs" mb={4}>
         <Text size="sm" fw={400}>
-          {definition.displayName}
+          {paramName(definition.name, definition.displayName)}
           {definition.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
         </Text>
         <ActionIcon variant="subtle" onClick={handleFormat} title={t('fields.json.format')} size="sm">

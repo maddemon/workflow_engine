@@ -1,11 +1,13 @@
 import { useState } from 'react';
 import { Paper, Stack, Group, Text, Badge, Alert, Avatar, Title, Button } from '@mantine/core';
+import { useTranslation } from 'react-i18next';
 import { AlertCircle, User } from 'lucide-react';
 import { useAuth } from '../hooks/AuthContext.tsx';
 import { useRoles } from '../hooks/useRoles.ts';
 import { RoleAssignModal } from '../components/admin/RoleAssignModal.tsx';
 
 export function AdminUsersPage() {
+  const { t } = useTranslation('admin');
   const { user } = useAuth();
   const { hasRole } = useRoles();
   const [roleModalOpen, setRoleModalOpen] = useState(false);
@@ -16,12 +18,11 @@ export function AdminUsersPage() {
   return (
     <Stack p="md" gap="md">
       <Group>
-        <Title order={3}>User Management</Title>
+        <Title order={3}>{t('usersPage.title')}</Title>
       </Group>
 
       <Alert icon={<AlertCircle size={16} />} color="blue" variant="light">
-        User list endpoint (GET /users) is not yet available from the backend. 
-        Only your account information is shown below.
+        {t('usersPage.userListUnavailable')}
       </Alert>
 
       <Paper withBorder p="md" radius="sm" key={refreshKey}>
@@ -41,7 +42,7 @@ export function AdminUsersPage() {
           </Group>
           {hasRole('Admin') && (
             <Button size="xs" variant="outline" onClick={() => setRoleModalOpen(true)}>
-              Manage Roles
+              {t('usersPage.manageRoles')}
             </Button>
           )}
         </Group>

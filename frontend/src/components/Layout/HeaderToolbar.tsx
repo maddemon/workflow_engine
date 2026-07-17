@@ -13,12 +13,12 @@ import {
   useComputedColorScheme,
   useMantineColorScheme,
 } from "@mantine/core"
-import { Bell, BookOpen, Home, Key, LogOut, Moon, Settings, Shield, Sun, User, Workflow } from "lucide-react"
-import { useMemo, useState } from "react"
+import { Bell, BookOpen, Home, LogOut, Moon, Settings, Shield, Sun, User, Workflow } from "lucide-react"
+import { useMemo } from "react"
 import { useRequest } from "ahooks"
 import { useTranslation } from "react-i18next"
 import { Link, useLocation, useNavigate } from "react-router-dom"
-import { CredentialListModal } from "../CredentialPanel/CredentialListModal.tsx"
+import { CredentialMenu } from "../CredentialPanel/CredentialMenu.tsx"
 import { LanguageSwitcher } from "../common/LanguageSwitcher.tsx"
 import { useAuth } from "../../hooks/AuthContext.tsx"
 import { useRoles } from "../../hooks/useRoles.ts"
@@ -37,7 +37,6 @@ const adminNavItems = [
 ]
 
 export function HeaderToolbar() {
-  const [credModalOpen, setCredModalOpen] = useState(false)
   const colorScheme = useComputedColorScheme("light")
   const { toggleColorScheme } = useMantineColorScheme()
   const location = useLocation()
@@ -126,17 +125,7 @@ export function HeaderToolbar() {
         </Group>
 
         <Group gap={4} wrap="nowrap">
-          <Tooltip label={t("manageCredentials")}>
-            <ActionIcon
-              variant="subtle"
-              color="gray"
-              size="sm"
-              onClick={() => setCredModalOpen(true)}
-              aria-label={t("credentials")}
-            >
-              <Key size={16} />
-            </ActionIcon>
-          </Tooltip>
+          <CredentialMenu />
           <Tooltip label={t(colorScheme === "dark" ? "switchToLightMode" : "switchToDarkMode")}>
             <ActionIcon
               variant="subtle"
@@ -175,7 +164,6 @@ export function HeaderToolbar() {
           </Menu>
         </Group>
       </Box>
-      <CredentialListModal opened={credModalOpen} onClose={() => setCredModalOpen(false)} />
     </>
   )
 }

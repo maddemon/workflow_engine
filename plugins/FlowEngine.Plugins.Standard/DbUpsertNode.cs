@@ -33,10 +33,10 @@ public sealed class DbUpsertNode : INodeType
     public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
 
     /// <summary>
-    /// 数据库连接凭据（类型为 <c>database</c>）。凭据按结构化字段（dbType/host/port/database/userid/password 等）
+    /// 数据库连接凭据（类型为 <c>connectionString</c>）。凭据按结构化字段（dbType/host/port/database/userid/password 等）
     /// 配置，运行时由对应方言的 <see cref="IConnectionStringBuilder"/> 生成 ADO.NET 连接字符串。
     /// </summary>
-    [Credential("database")]
+    [Credential("connectionString")]
     [Description("Database connection credential (type: database). Connection string is generated per dialect from its fields (dbType/host/port/database/userid/password).")]
     public CredentialValue? Connection { get; set; }
 

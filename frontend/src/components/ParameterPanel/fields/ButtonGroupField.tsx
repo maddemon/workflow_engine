@@ -1,5 +1,6 @@
 import { Button, Group, Text } from '@mantine/core';
 import { InfoTooltip } from './InfoTooltip.tsx';
+import { useParameterName } from '../useParameterName.ts';
 import type { ParameterDefinition } from '../../../types/workflow.ts';
 
 interface ButtonGroupFieldProps {
@@ -10,6 +11,8 @@ interface ButtonGroupFieldProps {
 }
 
 export function ButtonGroupField({ definition, value, onChange, error }: ButtonGroupFieldProps) {
+  const paramName = useParameterName();
+  const label = paramName(definition.name, definition.displayName);
   const options = definition.options ?? [];
   const current = String(value ?? '');
 
@@ -17,7 +20,7 @@ export function ButtonGroupField({ definition, value, onChange, error }: ButtonG
     <div>
       <Group gap={4} mb={4}>
         <Text size="xs" fw={400}>
-          {definition.displayName}
+          {label}
           {definition.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
         </Text>
         {definition.description && <InfoTooltip label={definition.description} />}

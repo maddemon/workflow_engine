@@ -15,8 +15,8 @@ vi.mock('../../services/api.ts', () => ({
 describe('AdminFilesPage', () => {
   it('renders title and project selector', () => {
     renderWithProvider(<AdminFilesPage />);
-    expect(screen.getByText('File Management')).toBeDefined();
-    expect(screen.getByPlaceholderText('Select a project')).toBeDefined();
+    expect(screen.getByRole('heading', { name: /file/i })).toBeDefined();
+    expect(screen.getByPlaceholderText(/select a project/i)).toBeDefined();
   });
 
   it('shows prompt to select a project when none selected', () => {

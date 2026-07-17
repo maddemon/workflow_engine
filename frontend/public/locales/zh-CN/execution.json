@@ -48,7 +48,8 @@
     "subAgents": "子 Agent ({{count}})",
     "streaming": "流式传输中...",
     "iteration": "迭代",
-    "toolCalls": "{{count}} 个工具调用"
+    "toolCalls": "{{count}} 个工具调用",
+    "toolCalls_plural": "{{count}} 个工具调用"
   },
   "llm": {
     "thinking": "LLM 思考",

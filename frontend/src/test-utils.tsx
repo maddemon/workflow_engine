@@ -8,6 +8,14 @@ import { initReactI18next } from 'react-i18next';
 import commonEn from '../public/locales/en/common.json';
 import settingsEn from '../public/locales/en/settings.json';
 import workflowEn from '../public/locales/en/workflow.json';
+import executionEn from '../public/locales/en/execution.json';
+import adminEn from '../public/locales/en/admin.json';
+import loginEn from '../public/locales/en/login.json';
+import headerEn from '../public/locales/en/header.json';
+import nodePanelEn from '../public/locales/en/nodePanel.json';
+import parameterPanelEn from '../public/locales/en/parameterPanel.json';
+import helpEn from '../public/locales/en/help.json';
+import credentialPanelEn from '../public/locales/en/credentialPanel.json';
 
 const testI18n = i18n.createInstance();
 
@@ -22,6 +30,14 @@ testI18n
         common: commonEn,
         settings: settingsEn,
         workflow: workflowEn,
+        execution: executionEn,
+        admin: adminEn,
+        login: loginEn,
+        header: headerEn,
+        nodePanel: nodePanelEn,
+        parameterPanel: parameterPanelEn,
+        help: helpEn,
+        credentialPanel: credentialPanelEn,
       },
     },
     react: {

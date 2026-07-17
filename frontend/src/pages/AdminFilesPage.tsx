@@ -1,11 +1,13 @@
 import { useState, useRef } from 'react';
 import { Paper, Stack, Group, Table, Button, Select, Text, Title, ActionIcon, Tooltip, Alert, Modal } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
+import { useTranslation } from 'react-i18next';
 import { useRequest } from 'ahooks';
 import { Upload, Download, Trash2, AlertCircle } from 'lucide-react';
 import { getProjects, listFiles, uploadFile, downloadFile, deleteFile, formatFileSize } from '../services/api.ts';
 
 export function AdminFilesPage() {
+  const { t } = useTranslation('admin');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: string; fileName: string } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -27,12 +29,12 @@ export function AdminFilesPage() {
     if (!file || !selectedProjectId) return;
     try {
       await uploadFile(file, selectedProjectId);
-      notifications.show({ title: 'Uploaded', message: `"${file.name}" uploaded.`, color: 'green' });
+      notifications.show({ title: t('filesPage.uploadedSuccess'), message: t('filesPage.uploadedMessage', { name: file.name }), color: 'green' });
       refresh();
     } catch (err) {
       notifications.show({
-        title: 'Upload failed',
-        message: err instanceof Error ? err.message : 'Upload failed',
+        title: t('filesPage.uploadFailed'),
+        message: err instanceof Error ? err.message : t('filesPage.uploadFailedMessage', { name: file.name }),
         color: 'red',
       });
     }
@@ -60,18 +62,18 @@ export function AdminFilesPage() {
     if (files.length === 0) return;
 
     if (!selectedProjectId) {
-      notifications.show({ title: 'Error', message: 'Select a project first to upload files.', color: 'yellow' });
+      notifications.show({ title: t('common:error'), message: t('filesPage.selectProjectFirst'), color: 'yellow' });
       return;
     }
 
     for (const file of files) {
       try {
         await uploadFile(file, selectedProjectId);
-        notifications.show({ title: 'Uploaded', message: `"${file.name}" uploaded.`, color: 'green' });
+        notifications.show({ title: t('filesPage.uploadedSuccess'), message: t('filesPage.uploadedMessage', { name: file.name }), color: 'green' });
       } catch (err) {
         notifications.show({
-          title: 'Upload failed',
-          message: err instanceof Error ? err.message : `Failed to upload "${file.name}"`,
+          title: t('filesPage.uploadFailed'),
+          message: err instanceof Error ? err.message : t('filesPage.uploadFailedMessage', { name: file.name }),
           color: 'red',
         });
       }
@@ -90,8 +92,8 @@ export function AdminFilesPage() {
       URL.revokeObjectURL(url);
     } catch (err) {
       notifications.show({
-        title: 'Download failed',
-        message: err instanceof Error ? err.message : 'Download failed',
+        title: t('filesPage.downloadFailed'),
+        message: err instanceof Error ? err.message : t('filesPage.downloadFailed'),
         color: 'red',
       });
     }
@@ -100,12 +102,12 @@ export function AdminFilesPage() {
   const handleDelete = async (id: string, fileName: string) => {
     try {
       await deleteFile(id);
-      notifications.show({ title: 'Deleted', message: `"${fileName}" deleted.`, color: 'green' });
+      notifications.show({ title: t('filesPage.deletedSuccess'), message: t('filesPage.deletedMessage', { name: fileName }), color: 'green' });
       refresh();
     } catch (err) {
       notifications.show({
-        title: 'Delete failed',
-        message: err instanceof Error ? err.message : 'Delete failed',
+        title: t('filesPage.deleteFailed'),
+        message: err instanceof Error ? err.message : t('filesPage.deleteFailed'),
         color: 'red',
       });
     }
@@ -120,12 +122,12 @@ export function AdminFilesPage() {
 
   return (
     <Stack p="md" gap="md">
-      <Title order={3}>File Management</Title>
+      <Title order={3}>{t('filesPage.title')}</Title>
 
       <Group>
         <Select
           size="sm"
-          placeholder="Select a project"
+          placeholder={t('filesPage.selectProject')}
           data={projectData}
           value={selectedProjectId}
           onChange={setSelectedProjectId}
@@ -144,9 +146,9 @@ export function AdminFilesPage() {
               size="xs"
               leftSection={<Upload size={14} />}
               onClick={() => fileInputRef.current?.click()}
-              aria-label="Upload file"
+              aria-label={t('filesPage.uploadFile')}
             >
-              Upload File
+              {t('filesPage.uploadFile')}
             </Button>
           </>
         )}
@@ -154,7 +156,7 @@ export function AdminFilesPage() {
 
       {!selectedProjectId && (
         <Alert icon={<AlertCircle size={16} />} color="blue" variant="light">
-          Please select a project to view and manage its files.
+          {t('filesPage.selectProjectHint')}
         </Alert>
       )}
 
@@ -184,18 +186,18 @@ export function AdminFilesPage() {
               borderRadius: 'var(--mantine-radius-sm)',
               pointerEvents: 'none',
             }}>
-              <Text size="sm" fw={500} c="blue">Drop files here to upload</Text>
+              <Text size="sm" fw={500} c="blue">{t('filesPage.dropFilesHere')}</Text>
             </div>
           )}
           <Paper withBorder radius="sm">
             <Table striped highlightOnHover>
               <Table.Thead>
                 <Table.Tr>
-                  <Table.Th>File Name</Table.Th>
-                  <Table.Th>Type</Table.Th>
-                  <Table.Th>Size</Table.Th>
-                  <Table.Th>Uploaded</Table.Th>
-                  <Table.Th style={{ width: 100, textAlign: 'right' }}>Actions</Table.Th>
+                  <Table.Th>{t('filesPage.fileName')}</Table.Th>
+                  <Table.Th>{t('filesPage.type')}</Table.Th>
+                  <Table.Th>{t('filesPage.size')}</Table.Th>
+                  <Table.Th>{t('filesPage.uploaded')}</Table.Th>
+                  <Table.Th style={{ width: 100, textAlign: 'right' }}>{t('filesPage.actions')}</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -207,13 +209,13 @@ export function AdminFilesPage() {
                     <Table.Td><Text size="sm">{new Date(f.createdAt).toLocaleString()}</Text></Table.Td>
                     <Table.Td>
                       <Group gap={4} justify="flex-end">
-                        <Tooltip label="Download">
-                          <ActionIcon variant="subtle" color="blue" size="sm" aria-label="Download" onClick={() => handleDownload(f.id, f.fileName)}>
+                        <Tooltip label={t('filesPage.download')}>
+                          <ActionIcon variant="subtle" color="blue" size="sm" aria-label={t('filesPage.download')} onClick={() => handleDownload(f.id, f.fileName)}>
                             <Download size={14} />
                           </ActionIcon>
                         </Tooltip>
-                        <Tooltip label="Delete">
-                          <ActionIcon variant="subtle" color="red" size="sm" aria-label="Delete" onClick={() => confirmDelete(f.id, f.fileName)}>
+                        <Tooltip label={t('filesPage.delete')}>
+                          <ActionIcon variant="subtle" color="red" size="sm" aria-label={t('filesPage.delete')} onClick={() => confirmDelete(f.id, f.fileName)}>
                             <Trash2 size={14} />
                           </ActionIcon>
                         </Tooltip>
@@ -223,7 +225,7 @@ export function AdminFilesPage() {
                 ))}
                 {files.length === 0 && !loading && (
                   <Table.Tr>
-                    <Table.Td colSpan={5}><Text ta="center" c="dimmed" py="md">No files in this project.</Text></Table.Td>
+                    <Table.Td colSpan={5}><Text ta="center" c="dimmed" py="md">{t('filesPage.noFiles')}</Text></Table.Td>
                   </Table.Tr>
                 )}
               </Table.Tbody>
@@ -236,16 +238,16 @@ export function AdminFilesPage() {
       <Modal
         opened={!!deleteConfirm}
         onClose={() => setDeleteConfirm(null)}
-        title="Confirm Delete"
+        title={t('filesPage.confirmDelete')}
         size="sm"
       >
         <Text size="sm" mb="md">
-          Are you sure you want to delete "{deleteConfirm?.fileName}"? This action cannot be undone.
+          {t('filesPage.deleteWarning', { fileName: deleteConfirm?.fileName })}
         </Text>
         <Group justify="flex-end">
-          <Button variant="subtle" onClick={() => setDeleteConfirm(null)}>Cancel</Button>
+          <Button variant="subtle" onClick={() => setDeleteConfirm(null)}>{t('filesPage.cancel')}</Button>
           <Button color="red" onClick={() => deleteConfirm && handleDelete(deleteConfirm.id, deleteConfirm.fileName)}>
-            Delete
+            {t('filesPage.delete')}
           </Button>
         </Group>
       </Modal>

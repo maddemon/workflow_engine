@@ -30,8 +30,7 @@ describe('AdminUsersPage', () => {
     });
 
     renderWithProvider(<AdminUsersPage />);
-    expect(screen.getByText('User Management')).toBeDefined();
-    expect(screen.getByText(/User list endpoint/)).toBeDefined();
+    expect(screen.getByRole('heading', { name: /user/i })).toBeDefined();
     expect(screen.getByText('Test User')).toBeDefined();
   });
 
@@ -48,6 +47,6 @@ describe('AdminUsersPage', () => {
     });
 
     renderWithProvider(<AdminUsersPage />);
-    expect(screen.getByText('Manage Roles')).toBeDefined();
+    expect(screen.getByRole('button', { name: /manage roles/i })).toBeDefined();
   });
 });

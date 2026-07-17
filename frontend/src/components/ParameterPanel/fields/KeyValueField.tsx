@@ -3,6 +3,7 @@ import { TextInput, ActionIcon, Group, Text, Stack } from '@mantine/core';
 import { useTranslation } from 'react-i18next';
 import { Plus, Trash, AlertTriangle } from 'lucide-react';
 import { InfoTooltip } from './InfoTooltip.tsx';
+import { useParameterName } from '../useParameterName.ts';
 import type { ParameterDefinition } from '../../../types/workflow.ts';
 
 interface KeyValueFieldProps {
@@ -41,6 +42,8 @@ function entriesToJson(entries: KeyValueEntry[]): string {
 
 export function KeyValueField({ definition, value, onChange, error }: KeyValueFieldProps) {
   const { t } = useTranslation('parameterPanel');
+  const paramName = useParameterName();
+  const label = paramName(definition.name, definition.displayName);
   const valueStr = String(value ?? '');
   const lastEmittedRef = useRef(valueStr);
   const [entries, setEntries] = useState<KeyValueEntry[]>(() => parseJsonToEntries(valueStr));
@@ -101,7 +104,7 @@ export function KeyValueField({ definition, value, onChange, error }: KeyValueFi
       <Group justify="space-between" gap="xs" mb={4}>
         <Group gap={4}>
           <Text size="xs" fw={400}>
-            {definition.displayName}
+            {label}
             {definition.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
           </Text>
           {definition.description && <InfoTooltip label={definition.description} />}

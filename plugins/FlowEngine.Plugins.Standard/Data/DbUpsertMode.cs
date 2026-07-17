@@ -10,7 +10,7 @@ public enum DbUpsertMode
     /// <summary>
     /// 有则更新，无则插入。
     /// </summary>
-    [Description("有则更新，无则插入")]
+    [Description("有则更新")]
     Upsert = 0,
 
     /// <summary>
