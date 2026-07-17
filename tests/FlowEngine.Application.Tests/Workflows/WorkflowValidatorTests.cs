@@ -270,6 +270,46 @@ public sealed class WorkflowValidatorTests
         Assert.DoesNotContain(result.Errors, e => e.Contains("孤立节点") && e.Contains("Source"));
     }
 
+    [Fact]
+    public void ValidateTriggerNodes_NoTrigger_ReportsError()
+    {
+        var registry = new StubNodeRegistry([
+            CreateDescriptor("action", ports:
+            [
+                new PortDefinition { Name = "input", Direction = PortDirection.Input, Type = PortType.Main },
+            ]),
+        ]);
+        var validator = new WorkflowValidator(registry);
+        var workflow = CreateWorkflow([
+            new NodeDefinition { Id = "n1", TypeName = "action", Name = "Action" },
+        ], []);
+
+        var errors = new List<string>();
+        validator.ValidateTriggerNodes(workflow, errors);
+
+        Assert.Contains(errors, e => e.Contains("触发器节点"));
+    }
+
+    [Fact]
+    public void ValidateTriggerNodes_HasTrigger_NoError()
+    {
+        var registry = new StubNodeRegistry([
+            CreateDescriptor("trigger", category: "Trigger", ports:
+            [
+                new PortDefinition { Name = "output", Direction = PortDirection.Output, Type = PortType.Main },
+            ]),
+        ]);
+        var validator = new WorkflowValidator(registry);
+        var workflow = CreateWorkflow([
+            new NodeDefinition { Id = "t1", TypeName = "trigger", Name = "Trigger" },
+        ], []);
+
+        var errors = new List<string>();
+        validator.ValidateTriggerNodes(workflow, errors);
+
+        Assert.Empty(errors);
+    }
+
     private static Workflow CreateWorkflow(
         NodeDefinition[] nodes,
         Func<NodeDefinition[], Connection>[] connectionFactories)
