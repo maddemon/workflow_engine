@@ -2,6 +2,7 @@ using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Core.Abstractions;
+using Mapster;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
@@ -134,13 +135,14 @@ public sealed class WorkflowModificationService(
             DraftStatus = draftWorkflow.DraftStatus,
             RejectionReason = draftWorkflow.RejectionReason,
             Diff = draftWorkflow.Diff,
-            Nodes = draftWorkflow.Nodes.Select(n => WorkflowMapper.ToDto(n)).ToList(),
-            Connections = draftWorkflow.Connections.Select(c =>
-                WorkflowMapper.ToDto(c, c.Id.ToString(), c.SourceNodeId, c.TargetNodeId)).ToList(),
+            Nodes = draftWorkflow.Nodes.Select(n => n.Adapt<NodeDefinitionDto>()).ToList(),
+            Connections = draftWorkflow.Connections.Select(c => c.Adapt<ConnectionDto>()).ToList(),
         };
 
         return new ModifyWorkflowResult
         {
+            // 修改操作在已有工作流上就地更新，DraftId 即被更新的工作流实体 Id，
+            // 确认时需用它定位同一条记录。
             DraftId = draftWorkflow.Id,
             Workflow = dto,
             Diff = diffs,

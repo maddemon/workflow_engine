@@ -1,6 +1,7 @@
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
+using Mapster;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
@@ -105,7 +106,7 @@ public sealed class FileService(
 
         await EnsureCanAccessFileAsync(file, requireWrite: false, cancellationToken).ConfigureAwait(false);
 
-        return MapToDto(file);
+        return file.Adapt<StoredFileDto>();
     }
 
     /// <summary>
@@ -125,7 +126,7 @@ public sealed class FileService(
         await EnsureCanAccessFileAsync(file, requireWrite: false, cancellationToken).ConfigureAwait(false);
 
         var stream = await fileStorage.ReadAsync(file.StoragePath, cancellationToken).ConfigureAwait(false);
-        return (stream, MapToDto(file));
+        return (stream, file.Adapt<StoredFileDto>());
     }
 
     /// <summary>
@@ -188,7 +189,7 @@ public sealed class FileService(
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        return files.Select(MapToDto).ToList();
+        return files.Select(f => f.Adapt<StoredFileDto>()).ToList();
     }
 
     private async Task EnsureCanAccessFileAsync(StoredFile file, bool requireWrite, CancellationToken cancellationToken)
@@ -202,19 +203,5 @@ public sealed class FileService(
     {
         await authGuard.RequireAccessAsync(ResourceKind.Project, projectId, operation, cancellationToken)
             .ConfigureAwait(false);
-    }
-
-    private static StoredFileDto MapToDto(StoredFile file)
-    {
-        return new StoredFileDto
-        {
-            Id = file.Id,
-            FileName = file.FileName,
-            ContentType = file.ContentType,
-            Size = file.Size,
-            ProjectId = file.ProjectId,
-            UploadedBy = file.UploadedBy,
-            CreatedAt = file.CreatedAt,
-        };
     }
 }

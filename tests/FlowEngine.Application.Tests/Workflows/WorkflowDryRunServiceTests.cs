@@ -211,7 +211,8 @@ public sealed class WorkflowDryRunServiceTests : IDisposable
             _contextFactory,
             NullLogger<WorkflowSchedulerKernel>.Instance,
             new FlowEngine.Runtime.Security.SecretMasker(),
-            new PermissiveAuthorizationGuard());
+            new PermissiveAuthorizationGuard(),
+            new FakeCredentialAccessor());
     }
 
     [Fact]
@@ -222,7 +223,8 @@ public sealed class WorkflowDryRunServiceTests : IDisposable
             _contextFactory,
             NullLogger<WorkflowSchedulerKernel>.Instance,
             new FlowEngine.Runtime.Security.SecretMasker(),
-            new UnauthenticatedAuthorizationGuard());
+            new UnauthenticatedAuthorizationGuard(),
+            new FakeCredentialAccessor());
 
         await Assert.ThrowsAsync<UnauthorizedException>(
             () => service.DryRunAsync(CreateSetNodeRequest(), TestContext.Current.CancellationToken));
@@ -236,7 +238,8 @@ public sealed class WorkflowDryRunServiceTests : IDisposable
             _contextFactory,
             NullLogger<WorkflowSchedulerKernel>.Instance,
             new FlowEngine.Runtime.Security.SecretMasker(),
-            new DenyingAuthorizationGuard());
+            new DenyingAuthorizationGuard(),
+            new FakeCredentialAccessor());
 
         await Assert.ThrowsAsync<PermissionDeniedException>(
             () => service.DryRunAsync(CreateSetNodeRequest(), TestContext.Current.CancellationToken));

@@ -19,6 +19,7 @@
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
     <PackageReference Include="xunit.v3" Version="3.2.2" />
+    <PackageReference Include="Dapper" Version="2.1.35" />
   </ItemGroup>
 
   <ItemGroup>

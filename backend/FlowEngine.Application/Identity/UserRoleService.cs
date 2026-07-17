@@ -1,11 +1,13 @@
 using FlowEngine.Application.Audit;
 using FlowEngine.Application.Dtos;
+using FlowEngine.Application.Validators;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.Identity;
 using FlowEngine.Core.Exceptions;
+using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Identity;
@@ -16,7 +18,8 @@ namespace FlowEngine.Application.Identity;
 public sealed class UserRoleService(
     FlowEngineDbContext dbContext,
     IEventBus eventBus,
-    AuditEventFactory auditFactory)
+    AuditEventFactory auditFactory,
+    IValidator<AssignRoleRequest> roleValidator)
 {
     /// <inheritdoc />
     public async Task<IReadOnlyList<string>> GetRolesAsync(Guid userId, CancellationToken cancellationToken = default)
@@ -34,8 +37,8 @@ public sealed class UserRoleService(
         AssignRoleRequest request,
         CancellationToken cancellationToken = default)
     {
-        if (request is null || string.IsNullOrWhiteSpace(request.Role)
-            || !Enum.TryParse<Role>(request.Role, ignoreCase: true, out var parsedRole))
+        var validation = await roleValidator.ValidateAsync(request, cancellationToken).ConfigureAwait(false);
+        if (!validation.IsValid)
         {
             return (false, "无效的角色。");
         }
@@ -47,7 +50,7 @@ public sealed class UserRoleService(
             return (false, "用户不存在。");
         }
 
-        var normalizedRole = parsedRole.ToString();
+        var normalizedRole = Enum.Parse<Role>(request.Role, ignoreCase: true).ToString();
 
         var exists = await dbContext.UserRoles
             .AnyAsync(ur => ur.UserId == userId && ur.Role == normalizedRole && !ur.Deleted, cancellationToken)
@@ -81,13 +84,13 @@ public sealed class UserRoleService(
         string role,
         CancellationToken cancellationToken = default)
     {
-        if (string.IsNullOrWhiteSpace(role)
-            || !Enum.TryParse<Role>(role, ignoreCase: true, out var parsedRole))
+        var validation = await roleValidator.ValidateAsync(new AssignRoleRequest { Role = role }, cancellationToken).ConfigureAwait(false);
+        if (!validation.IsValid)
         {
             return (false, "无效的角色。");
         }
 
-        var normalizedRole = parsedRole.ToString();
+        var normalizedRole = Enum.Parse<Role>(role, ignoreCase: true).ToString();
 
         var userRole = await dbContext.UserRoles
             .FirstOrDefaultAsync(ur => ur.UserId == userId && ur.Role == normalizedRole && !ur.Deleted, cancellationToken)

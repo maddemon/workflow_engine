@@ -2,6 +2,8 @@ using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
+using FluentValidation;
+using Mapster;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
@@ -31,7 +33,8 @@ public sealed class CredentialService(
     WorkflowRepository workflowRepository,
     IAuthorizationGuard authGuard,
     CredentialTypeRegistry credentialTypeRegistry,
-    AuthorizedOperationHandler handler)
+    AuthorizedOperationHandler handler,
+    IValidator<CreateCredentialDto> _createCredentialValidator)
 {
     private const string KeyVersion = "v1";
 
@@ -49,6 +52,7 @@ public sealed class CredentialService(
 
         await authGuard.RequireScopeAsync(Scope.Credential, Operation.Write, cancellationToken);
 
+        _createCredentialValidator.ValidateAndThrow(dto);
         ValidateCredentialType(dto.Type, dto.Fields);
         await ValidateNameNotInUseAsync(dto.Name, dto.ProjectId, null, cancellationToken).ConfigureAwait(false);
 
@@ -64,6 +68,7 @@ public sealed class CredentialService(
 
         await authGuard.RequireScopeAsync(Scope.Credential, Operation.Write, cancellationToken);
 
+        _createCredentialValidator.ValidateAndThrow(dto);
         ValidateCredentialType(dto.Type, dto.Fields);
 
         var existing = await dbContext.Credentials
@@ -295,6 +300,7 @@ public sealed class CredentialService(
 
     private CredentialDto MapToDto(Credential credential, bool maskValues)
     {
+        // custom mapping：凭据字段需解密/脱敏，无法由 Mapster 自动完成
         var fields = DecryptFields(credential);
         if (maskValues)
         {
@@ -304,16 +310,7 @@ public sealed class CredentialService(
             }
         }
 
-        return new CredentialDto
-        {
-            Id = credential.Id,
-            ProjectId = credential.ProjectId,
-            Name = credential.Name,
-            Type = credential.Type,
-            Fields = fields,
-            CreatedAt = credential.CreatedAt,
-            UpdatedAt = credential.UpdatedAt
-        };
+        return credential.Adapt<CredentialDto>() with { Fields = fields };
     }
 }
 

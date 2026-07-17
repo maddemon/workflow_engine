@@ -8,6 +8,8 @@ using FlowEngine.Application.Projects;
 using FlowEngine.Application.RateLimiting;
 using FlowEngine.Application.Triggers;
 using FlowEngine.Application.Workflows;
+using FlowEngine.Application.Dtos;
+using FlowEngine.Application.Validators;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Configuration;
 using FlowEngine.Core.Credentials;
@@ -19,8 +21,10 @@ using FlowEngine.Host.Middlewares;
 using FlowEngine.Host.Scheduling;
 using FlowEngine.Host.Services;
 using FlowEngine.Host.Webhooks;
+using FlowEngine.Host.RateLimiting;
 using FlowEngine.Host.WebSocketHandlers;
 using FlowEngine.Infrastructure.Audit;
+using Microsoft.AspNetCore.RateLimiting;
 using FlowEngine.Infrastructure.Identity;
 using FlowEngine.Infrastructure.Security;
 using FlowEngine.Infrastructure.Storage;
@@ -44,6 +48,8 @@ using System.Text;
 using System.Text.Json.Serialization;
 using FlowEngine.Resources;
 using FlowEngine.Resources.Localization;
+using FluentValidation;
+using MediatR;
 using Microsoft.Extensions.Localization;
 
 namespace FlowEngine.Host;
@@ -122,9 +128,11 @@ public static class ServiceCollectionExtensions
             }
         });
 
-        // ── Rate Limiting ───────────────────────────────────────────
+        // ── Rate Limiting（任务 2.3：System.Threading.RateLimiting 替换手写限流）──
+        // 通过 AddRateLimiter 注册全局分区限流器（按路径分类 + 每客户端独立限流），
+        // 由 ApplicationBuilderExtensions 中的 app.UseRateLimiter() 接入管道。
         services.Configure<RateLimitOptions>(configuration.GetSection(RateLimitOptions.SectionName));
-        services.AddTransient<RateLimitMiddleware>();
+        services.AddRateLimiter(RateLimiterSetup.Configure);
 
         // ── File Storage ───────────────────────────────────────────
         services.Configure<FlowEngine.Application.Files.FileStorageOptions>(
@@ -144,17 +152,25 @@ public static class ServiceCollectionExtensions
 
         // ── Infrastructure ──────────────────────────────────────────
         services.AddSingleton<InternalErrorSink>();
-        services.AddSingleton<IEventBus, InMemoryEventBus>();
+        // 2.1：事件总线 → MediatR。MediatrEventBus 委托 IMediator 分派通知处理器。
+        // 仅扫描 Core 程序集以满足 MediatR 的扫描要求（Core 内无处理器）；
+        // 实际事件处理器在 RegisterEventNotificationHandlers 中显式注册以精确控制生命周期。
+        services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(MediatrEventBus).Assembly));
+        services.AddSingleton<IEventBus, MediatrEventBus>();
         services.AddScoped<ParameterResolver>();
 
-        services.AddHostedService(sp =>
+        // 审计日志 Sink 同时作为单例服务（供 AuditEventNotificationHandler 解析）与托管服务。
+        // 任务 2.2：确保 Audit.NET 序列化适配器在宿主启动时注册（幂等；Sink 构造时亦会注册）。
+        AuditNetBootstrap.EnsureConfigured();
+        services.AddSingleton<AuditLogFileSink>(sp =>
         {
             var logPath = configuration["Audit:LogPath"] ?? "./storage/audit";
-            return new AuditLogFileSink(
-                logPath,
-                sp.GetRequiredService<IEventBus>(),
-                sp.GetService<ILogger<AuditLogFileSink>>());
+            return new AuditLogFileSink(logPath, sp.GetService<ILogger<AuditLogFileSink>>());
         });
+        services.AddHostedService(sp => sp.GetRequiredService<AuditLogFileSink>());
+        services.AddSingleton<AuditEventNotificationHandler>();
+
+        RegisterEventNotificationHandlers(services);
         services.AddSingleton<IAuditLogReader>(sp =>
         {
             var logPath = configuration["Audit:LogPath"] ?? "./storage/audit";
@@ -172,6 +188,14 @@ public static class ServiceCollectionExtensions
             FlowEngine.Application.Authorization.AuthorizationGuard>();
         services.AddScoped<FlowEngine.Application.Authorization.AuthorizedOperationHandler>();
         // ── Identity ────────────────────────────────────────────────
+        // FluentValidation：注册全部 DTO 校验器（任务 1.2）。
+        // 主 FluentValidation 包与 DI 扩展包存在同名类型/命名空间歧义，故显式注册各 IValidator<T>，
+        // 等价地满足 AddValidatorsFromAssemblyContaining 的注册意图，且避免该歧义导致的编译失败。
+        services.AddScoped<IValidator<AssignRoleRequest>, AssignRoleRequestValidator>();
+        services.AddScoped<IValidator<CreateProjectDto>, CreateProjectDtoValidator>();
+        services.AddScoped<IValidator<CreateCredentialDto>, CreateCredentialDtoValidator>();
+        services.AddScoped<IValidator<CreateWorkflowDto>, CreateWorkflowDtoValidator>();
+        services.AddScoped<IValidator<UpdateWorkflowDto>, UpdateWorkflowDtoValidator>();
         services.AddScoped<IPasswordHasher, PasswordHasher>();
         services.AddScoped<PasswordValidator>();
         services.AddScoped<ITokenService, JwtTokenService>();
@@ -326,6 +350,36 @@ public static class ServiceCollectionExtensions
                 tokenService: provider.GetRequiredService<IOAuth2TokenService>(),
                 llmClientFactory: provider.GetRequiredService<ILlmClientFactory>());
         });
+    }
+
+    /// <summary>
+    /// 注册领域事件通知处理器，将各事件类型映射到对应的单例处理器服务
+    /// （<see cref="WebSocketEventPushService"/> 负责实时推送，<see cref="AuditEventNotificationHandler"/> 负责审计落盘）。
+    /// 显式注册以精确控制生命周期（处理器服务为单例），避免 MediatR 自动扫描产生 transient 多实例。
+    /// </summary>
+    private static void RegisterEventNotificationHandlers(IServiceCollection services)
+    {
+        // WebSocket 实时推送处理器（8 种执行事件）。
+        services.AddSingleton<INotificationHandler<WorkflowStartedEvent>>(sp => sp.GetRequiredService<WebSocketEventPushService>());
+        services.AddSingleton<INotificationHandler<NodeStartedEvent>>(sp => sp.GetRequiredService<WebSocketEventPushService>());
+        services.AddSingleton<INotificationHandler<NodeExecutedEvent>>(sp => sp.GetRequiredService<WebSocketEventPushService>());
+        services.AddSingleton<INotificationHandler<NodeErrorEvent>>(sp => sp.GetRequiredService<WebSocketEventPushService>());
+        services.AddSingleton<INotificationHandler<WorkflowCompletedEvent>>(sp => sp.GetRequiredService<WebSocketEventPushService>());
+        services.AddSingleton<INotificationHandler<WorkflowFailedEvent>>(sp => sp.GetRequiredService<WebSocketEventPushService>());
+        services.AddSingleton<INotificationHandler<WorkflowCancelledEvent>>(sp => sp.GetRequiredService<WebSocketEventPushService>());
+        services.AddSingleton<INotificationHandler<LlmTokenStreamEvent>>(sp => sp.GetRequiredService<WebSocketEventPushService>());
+
+        // 审计落盘处理器（全部 AuditEvent 子类型）。
+        services.AddSingleton<INotificationHandler<AuditLogEvent>>(sp => sp.GetRequiredService<AuditEventNotificationHandler>());
+        services.AddSingleton<INotificationHandler<ExecutionCleanupEvent>>(sp => sp.GetRequiredService<AuditEventNotificationHandler>());
+        services.AddSingleton<INotificationHandler<WorkflowStartedEvent>>(sp => sp.GetRequiredService<AuditEventNotificationHandler>());
+        services.AddSingleton<INotificationHandler<WorkflowCompletedEvent>>(sp => sp.GetRequiredService<AuditEventNotificationHandler>());
+        services.AddSingleton<INotificationHandler<WorkflowFailedEvent>>(sp => sp.GetRequiredService<AuditEventNotificationHandler>());
+        services.AddSingleton<INotificationHandler<WorkflowCancelledEvent>>(sp => sp.GetRequiredService<AuditEventNotificationHandler>());
+        services.AddSingleton<INotificationHandler<NodeStartedEvent>>(sp => sp.GetRequiredService<AuditEventNotificationHandler>());
+        services.AddSingleton<INotificationHandler<NodeExecutedEvent>>(sp => sp.GetRequiredService<AuditEventNotificationHandler>());
+        services.AddSingleton<INotificationHandler<NodeErrorEvent>>(sp => sp.GetRequiredService<AuditEventNotificationHandler>());
+        services.AddSingleton<INotificationHandler<CredentialAccessedEvent>>(sp => sp.GetRequiredService<AuditEventNotificationHandler>());
     }
 
     private static void AddAuthentication(IServiceCollection services, IConfiguration configuration)

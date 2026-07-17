@@ -174,7 +174,8 @@ public sealed class WorkflowModificationServiceTests : IDisposable
         var result = await _service.ModifyAsync(workflowId, request);
 
         Assert.NotEqual(Guid.Empty, result.DraftId);
-        Assert.NotEqual(workflowId, result.DraftId);
+        // 修改操作在原工作流上就地更新，草稿即原工作流本身，DraftId 等于其 Id。
+        Assert.Equal(workflowId, result.DraftId);
         Assert.Single(result.Diff);
         Assert.Equal("modify", result.Diff[0].Op);
         Assert.Equal("fetch", result.Diff[0].NodeId);

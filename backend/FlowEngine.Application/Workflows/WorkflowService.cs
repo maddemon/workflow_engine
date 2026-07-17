@@ -2,6 +2,8 @@ using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Triggers;
+using FluentValidation;
+using Mapster;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
@@ -27,7 +29,9 @@ public sealed class WorkflowService(
     AuthorizedOperationHandler handler,
     WorkflowStatisticsLoader statisticsLoader,
     WorkflowTriggerSync triggerSync,
-    ILogger<WorkflowService> logger) : IWorkflowService
+    ILogger<WorkflowService> logger,
+    IValidator<CreateWorkflowDto> _createWorkflowValidator,
+    IValidator<UpdateWorkflowDto> _updateWorkflowValidator) : IWorkflowService
 {
     private static readonly AuthorizationPolicy UpdatePolicy = new(
         ResourceKind.Workflow, Operation.Write, Scope.Workflow, AdminPhase: false, ProjectScoped: false);
@@ -40,6 +44,7 @@ public sealed class WorkflowService(
     public async Task<WorkflowDto> CreateAsync(CreateWorkflowDto dto, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dto);
+        _createWorkflowValidator.ValidateAndThrow(dto);
 
         var (nodes, connections) = ConvertFromDtos(dto.Nodes, dto.Connections);
 
@@ -64,7 +69,7 @@ public sealed class WorkflowService(
             new Dictionary<string, object> { ["name"] = workflow.Name }),
             cancellationToken).ConfigureAwait(false);
 
-        return MapToDto(workflow);
+        return workflow.Adapt<WorkflowDto>();
     }
 
     /// <summary>
@@ -83,7 +88,7 @@ public sealed class WorkflowService(
             return null;
         }
 
-        return MapToDto(workflow);
+        return workflow.Adapt<WorkflowDto>();
     }
 
     /// <summary>
@@ -146,6 +151,7 @@ public sealed class WorkflowService(
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dto);
+        _updateWorkflowValidator.ValidateAndThrow(dto);
 
         await handler.AuthorizePreAsync(UpdatePolicy, id, cancellationToken);
 
@@ -211,7 +217,7 @@ public sealed class WorkflowService(
             new Dictionary<string, object> { ["name"] = existing.Name },
             cancellationToken).ConfigureAwait(false);
 
-        return MapToDto(existing);
+        return existing.Adapt<WorkflowDto>();
     }
 
     /// <summary>
@@ -220,6 +226,7 @@ public sealed class WorkflowService(
     public async Task<WorkflowDto> CreateDraftAsync(CreateWorkflowDto dto, CancellationToken cancellationToken = default, WorkflowSource source = WorkflowSource.Human)
     {
         ArgumentNullException.ThrowIfNull(dto);
+        _createWorkflowValidator.ValidateAndThrow(dto);
 
         var (nodes, connections) = ConvertFromDtos(dto.Nodes, dto.Connections);
 
@@ -246,7 +253,7 @@ public sealed class WorkflowService(
             new Dictionary<string, object> { ["name"] = workflow.Name }),
             cancellationToken).ConfigureAwait(false);
 
-        return MapToDto(workflow);
+        return workflow.Adapt<WorkflowDto>();
     }
 
     /// <summary>
@@ -270,7 +277,7 @@ public sealed class WorkflowService(
         existing.UpdatedAt = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        return MapToDto(existing);
+        return existing.Adapt<WorkflowDto>();
     }
 
     /// <summary>
@@ -294,7 +301,7 @@ public sealed class WorkflowService(
         existing.UpdatedAt = DateTime.UtcNow;
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
-        return MapToDto(existing);
+        return existing.Adapt<WorkflowDto>();
     }
 
     /// <summary>
@@ -366,7 +373,7 @@ public sealed class WorkflowService(
             .AsNoTracking()
             .FirstOrDefaultAsync(w => w.Id == id && w.Version == version, cancellationToken)
             .ConfigureAwait(false);
-        return workflow is null ? null : MapToDto(workflow);
+        return workflow is null ? null : workflow.Adapt<WorkflowDto>();
     }
 
     /// <summary>
@@ -392,8 +399,8 @@ public sealed class WorkflowService(
         List<NodeDefinitionDto> nodeDtos,
         List<ConnectionDto> connectionDtos)
     {
-        var nodes = nodeDtos.Select(WorkflowMapper.ToEntity).ToList();
-        var connections = connectionDtos.Select(WorkflowMapper.ToEntity).ToList();
+        var nodes = nodeDtos.Select(n => n.Adapt<NodeDefinition>()).ToList();
+        var connections = connectionDtos.Select(c => c.Adapt<Connection>()).ToList();
         return (nodes, connections);
     }
 
@@ -405,32 +412,5 @@ public sealed class WorkflowService(
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
             throw new BusinessException("Workflow validation failed: " + string.Join("; ", result.Errors));
         }
-    }
-
-    /// <summary>
-    /// 将领域实体转换为 API 响应 DTO。
-    /// 直接使用实体的字符串 ID（与前端 ID 一致）。
-    /// </summary>
-    private static WorkflowDto MapToDto(Workflow workflow)
-    {
-        return new WorkflowDto
-        {
-            Id = workflow.Id,
-            ProjectId = workflow.ProjectId,
-            Name = workflow.Name,
-            Version = workflow.Version,
-            CreatedBy = workflow.CreatedBy,
-            CreatedAt = workflow.CreatedAt,
-            UpdatedAt = workflow.UpdatedAt,
-            IsActive = workflow.IsActive,
-            Source = workflow.Source,
-            DraftStatus = workflow.DraftStatus,
-            RejectionReason = workflow.RejectionReason,
-            Diff = workflow.Diff,
-            StyleSettings = workflow.StyleSettings,
-            Nodes = workflow.Nodes.Select(n => WorkflowMapper.ToDto(n)).ToList(),
-            Connections = workflow.Connections.Select(c =>
-                WorkflowMapper.ToDto(c, c.Id.ToString(), c.SourceNodeId, c.TargetNodeId)).ToList(),
-        };
     }
 }

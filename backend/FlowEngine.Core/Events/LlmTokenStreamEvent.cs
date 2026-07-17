@@ -1,11 +1,12 @@
 using FlowEngine.Core.Abstractions;
+using MediatR;
 
 namespace FlowEngine.Core.Events;
 
 /// <summary>
 /// LLM 流式 token 输出事件，由 AgentNode 等 LLM 节点在流式调用过程中逐 chunk 发布。
 /// </summary>
-public record LlmTokenStreamEvent : IDomainEvent
+public record LlmTokenStreamEvent : IDomainEvent, INotification
 {
     /// <inheritdoc />
     public Guid EventId { get; init; } = Guid.NewGuid();

@@ -1,11 +1,12 @@
 using FlowEngine.Core.Abstractions;
+using MediatR;
 
 namespace FlowEngine.Core.Events;
 
 /// <summary>
 /// 审计事件基类。
 /// </summary>
-public abstract record AuditEvent : IDomainEvent
+public abstract record AuditEvent : IDomainEvent, INotification
 {
     /// <inheritdoc />
     public Guid EventId { get; init; } = Guid.NewGuid();

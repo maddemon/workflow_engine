@@ -3,6 +3,7 @@ using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Executions;
+using FlowEngine.Application.Validators;
 using FlowEngine.Application.Identity;
 using FlowEngine.Application.Triggers;
 using FlowEngine.Application.Workflows;
@@ -48,7 +49,7 @@ public sealed class WorkflowEndToEndTests : IDisposable
         var handler = new AuthorizedOperationHandler(authGuard, eventBus, auditFactory);
         var statisticsLoader = new WorkflowStatisticsLoader(_dbContext);
         var triggerSync = new WorkflowTriggerSync(triggerService, handler);
-        _workflowService = new WorkflowService(_dbContext, validator, eventBus, auditFactory, triggerService, authGuard, handler, statisticsLoader, triggerSync, NullLogger<WorkflowService>.Instance);
+        _workflowService = new WorkflowService(_dbContext, validator, eventBus, auditFactory, triggerService, authGuard, handler, statisticsLoader, triggerSync, NullLogger<WorkflowService>.Instance, new CreateWorkflowDtoValidator(), new UpdateWorkflowDtoValidator());
         _engine = new StubEngine(_dbContext);
         _executionService = new ExecutionService(_engine, _dbContext, new StubIdempotencyService(), AuthorizationGuardFactory.Create(userContext, resourceAuthorization), eventBus, auditFactory);
     }

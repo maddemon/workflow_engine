@@ -2,6 +2,8 @@ using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
+using FluentValidation;
+using Mapster;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
@@ -22,7 +24,8 @@ public sealed class ProjectService(
     IEventBus eventBus,
     AuditEventFactory auditFactory,
     AuthorizedOperationHandler handler,
-    ProjectCascadeDeleter cascadeDeleter)
+    ProjectCascadeDeleter cascadeDeleter,
+    IValidator<CreateProjectDto> _createProjectValidator)
 {
     private static readonly AuthorizationPolicy UpdatePolicy = new(
         Resource: null, Access: Operation.Write, Scope: null, AdminPhase: false, ProjectScoped: true);
@@ -34,6 +37,7 @@ public sealed class ProjectService(
     public async Task<ProjectDto> CreateAsync(CreateProjectDto dto, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(dto);
+        _createProjectValidator.ValidateAndThrow(dto);
 
         var userId = userContext.UserId
             ?? throw new UnauthorizedException("用户未认证。");
@@ -55,7 +59,7 @@ public sealed class ProjectService(
             new Dictionary<string, object> { ["name"] = project.Name }),
             cancellationToken).ConfigureAwait(false);
 
-        return MapToDto(project);
+        return project.Adapt<ProjectDto>();
     }
 
     /// <summary>
@@ -78,7 +82,7 @@ public sealed class ProjectService(
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        return projects.Select(MapToDto).ToList();
+        return projects.Select(p => p.Adapt<ProjectDto>()).ToList();
     }
 
     /// <summary>
@@ -97,7 +101,7 @@ public sealed class ProjectService(
 
         await EnsureCanAccessProjectAsync(id, Operation.Read, cancellationToken).ConfigureAwait(false);
 
-        return MapToDto(project);
+        return project.Adapt<ProjectDto>();
     }
 
     /// <summary>
@@ -130,7 +134,7 @@ public sealed class ProjectService(
             new Dictionary<string, object> { ["name"] = project.Name },
             cancellationToken).ConfigureAwait(false);
 
-        return MapToDto(project);
+        return project.Adapt<ProjectDto>();
     }
 
     /// <summary>
@@ -174,19 +178,6 @@ public sealed class ProjectService(
     private bool IsSystemAdmin()
     {
         return userContext.Roles.Contains(RoleConstants.Admin, StringComparer.OrdinalIgnoreCase);
-    }
-
-    private static ProjectDto MapToDto(Project project)
-    {
-        return new ProjectDto
-        {
-            Id = project.Id,
-            Name = project.Name,
-            Description = project.Description,
-            CreatedBy = project.CreatedBy,
-            CreatedAt = project.CreatedAt,
-            UpdatedAt = project.UpdatedAt,
-        };
     }
 
 }

@@ -1,51 +1,140 @@
 using System.Text.Json;
-using FlowEngine.Core.Abstractions;
-using FlowEngine.Core.Entities;
 using FlowEngine.Core.Events;
+using MediatR;
 
 namespace FlowEngine.Host.WebSocketHandlers;
 
 /// <summary>
-/// 执行进度事件推送服务，订阅 EventBus 中的执行事件并转发到 WebSocket 连接。
-/// 同时负责将事件存储到 WebSocketReplayService 用于断线重连补偿。
+/// 执行进度事件推送服务，将执行事件转发到 WebSocket 连接，并存储到 WebSocketReplayService 用于断线重连补偿。
+/// 通过实现 <see cref="INotificationHandler{TNotification}"/> 消费 MediatR 发布的领域事件
+/// （替代原通过 <c>IEventBus.Subscribe</c> 的订阅，见任务 2.1：事件总线 → MediatR）。
 /// </summary>
-public sealed class WebSocketEventPushService : IDisposable
+public sealed class WebSocketEventPushService(
+    WebSocketConnectionManager connectionManager,
+    WebSocketReplayService replayService,
+    ILogger<WebSocketEventPushService> logger) :
+    IDisposable,
+    INotificationHandler<WorkflowStartedEvent>,
+    INotificationHandler<NodeStartedEvent>,
+    INotificationHandler<NodeExecutedEvent>,
+    INotificationHandler<NodeErrorEvent>,
+    INotificationHandler<WorkflowCompletedEvent>,
+    INotificationHandler<WorkflowFailedEvent>,
+    INotificationHandler<WorkflowCancelledEvent>,
+    INotificationHandler<LlmTokenStreamEvent>
 {
     private static readonly System.Text.Json.JsonSerializerOptions SendJsonOptions = new()
     {
         PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
     };
 
-    private readonly IEventBus _eventBus;
-    private readonly WebSocketConnectionManager _connectionManager;
-    private readonly WebSocketReplayService _replayService;
-    private readonly ILogger<WebSocketEventPushService> _logger;
+    private readonly WebSocketConnectionManager _connectionManager = connectionManager;
+    private readonly WebSocketReplayService _replayService = replayService;
+    private readonly ILogger<WebSocketEventPushService> _logger = logger;
     private long _sequenceCounter;
-    private readonly List<IDisposable> _subscriptions = new();
 
-    public WebSocketEventPushService(
-        IEventBus eventBus,
-        WebSocketConnectionManager connectionManager,
-        WebSocketReplayService replayService,
-        ILogger<WebSocketEventPushService> logger)
+    /// <inheritdoc />
+    public async Task Handle(WorkflowStartedEvent notification, CancellationToken cancellationToken)
     {
-        _eventBus = eventBus;
-        _connectionManager = connectionManager;
-        _replayService = replayService;
-        _logger = logger;
-        SubscribeToEvents();
+        try
+        {
+            await OnWorkflowStartedAsync(notification, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "推送 WorkflowStartedEvent 失败，execution={ExecutionId}", notification.ExecutionId);
+        }
     }
 
-    private void SubscribeToEvents()
+    /// <inheritdoc />
+    public async Task Handle(NodeStartedEvent notification, CancellationToken cancellationToken)
     {
-        _subscriptions.Add(_eventBus.Subscribe<WorkflowStartedEvent>(OnWorkflowStartedAsync));
-        _subscriptions.Add(_eventBus.Subscribe<NodeStartedEvent>(OnNodeStartedAsync));
-        _subscriptions.Add(_eventBus.Subscribe<NodeExecutedEvent>(OnNodeExecutedAsync));
-        _subscriptions.Add(_eventBus.Subscribe<NodeErrorEvent>(OnNodeErrorAsync));
-        _subscriptions.Add(_eventBus.Subscribe<WorkflowCompletedEvent>(OnWorkflowCompletedAsync));
-        _subscriptions.Add(_eventBus.Subscribe<WorkflowFailedEvent>(OnWorkflowFailedAsync));
-        _subscriptions.Add(_eventBus.Subscribe<WorkflowCancelledEvent>(OnWorkflowCancelledAsync));
-        _subscriptions.Add(_eventBus.Subscribe<LlmTokenStreamEvent>(OnLlmTokenStreamAsync));
+        try
+        {
+            await OnNodeStartedAsync(notification, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "推送 NodeStartedEvent 失败，execution={ExecutionId}", notification.ExecutionId);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task Handle(NodeExecutedEvent notification, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await OnNodeExecutedAsync(notification, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "推送 NodeExecutedEvent 失败，execution={ExecutionId}", notification.ExecutionId);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task Handle(NodeErrorEvent notification, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await OnNodeErrorAsync(notification, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "推送 NodeErrorEvent 失败，execution={ExecutionId}", notification.ExecutionId);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task Handle(WorkflowCompletedEvent notification, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await OnWorkflowCompletedAsync(notification, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "推送 WorkflowCompletedEvent 失败，execution={ExecutionId}", notification.ExecutionId);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task Handle(WorkflowFailedEvent notification, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await OnWorkflowFailedAsync(notification, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "推送 WorkflowFailedEvent 失败，execution={ExecutionId}", notification.ExecutionId);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task Handle(WorkflowCancelledEvent notification, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await OnWorkflowCancelledAsync(notification, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "推送 WorkflowCancelledEvent 失败，execution={ExecutionId}", notification.ExecutionId);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task Handle(LlmTokenStreamEvent notification, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await OnLlmTokenStreamAsync(notification, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "推送 LlmTokenStreamEvent 失败，execution={ExecutionId}", notification.ExecutionId);
+        }
     }
 
     private async Task OnWorkflowStartedAsync(WorkflowStartedEvent evt, CancellationToken cancellationToken)
@@ -274,10 +363,6 @@ public sealed class WebSocketEventPushService : IDisposable
     /// <inheritdoc />
     public void Dispose()
     {
-        foreach (var subscription in _subscriptions)
-        {
-            subscription?.Dispose();
-        }
-        _subscriptions.Clear();
+        // 事件消费现由 MediatR 处理器完成，无需注销订阅。
     }
 }

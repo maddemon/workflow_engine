@@ -1,6 +1,4 @@
 using System.Threading.Channels;
-using System.Text.Json;
-using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Events;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -8,17 +6,13 @@ using Microsoft.Extensions.Logging;
 namespace FlowEngine.Infrastructure.Audit;
 
 /// <summary>
-/// 审计日志文件 Sink，订阅 EventBus 事件并写入 NDJSON 文件。
+/// 审计日志文件 Sink，接收审计事件并写入 NDJSON 文件。
+/// 事件由对应的 MediatR 通知处理器（<see cref="AuditEventNotificationHandler"/>）转发至此。
 /// 所有事件先入队，再由后台任务批量刷盘，避免阻塞发布线程。
 /// 作为托管服务（IHostedService）随宿主启动/停止，避免“为副作用而解析”。
 /// </summary>
 public sealed class AuditLogFileSink : IHostedService, IDisposable
 {
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-    };
-
     private readonly string _logDirectory;
     private readonly ILogger<AuditLogFileSink>? _logger;
     private readonly Lock _writerLock = new();
@@ -34,15 +28,18 @@ public sealed class AuditLogFileSink : IHostedService, IDisposable
     /// 初始化审计日志文件 Sink。
     /// </summary>
     /// <param name="logDirectory">日志目录路径。</param>
-    /// <param name="eventBus">事件总线，用于订阅审计事件。</param>
     /// <param name="logger">可选日志记录器。</param>
     public AuditLogFileSink(
         string logDirectory,
-        IEventBus eventBus,
         ILogger<AuditLogFileSink>? logger = null)
     {
         _logDirectory = logDirectory;
         _logger = logger;
+
+        // 任务 2.2：确保 Audit.NET 已配置（序列化适配器注册为进程级全局状态，幂等）。
+        // 这样即使 Sink 在 DI 容器之外被直接构造（如单元测试），也能获得正确的 NDJSON 序列化。
+        AuditNetBootstrap.EnsureConfigured();
+
         _channel = Channel.CreateUnbounded<AuditEvent>(new UnboundedChannelOptions
         {
             SingleReader = true,
@@ -53,7 +50,6 @@ public sealed class AuditLogFileSink : IHostedService, IDisposable
         Directory.CreateDirectory(logDirectory);
         EnsureWriter();
 
-        eventBus.Subscribe<AuditEvent>(OnEventAsync);
         _processor = Task.Run(ProcessLoopAsync);
         _flushTimer = new Timer(_ => Flush(), null, TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1));
     }
@@ -244,17 +240,22 @@ public sealed class AuditLogFileSink : IHostedService, IDisposable
     {
         try
         {
-            return JsonSerializer.Serialize(new
+            // 任务 2.2：将领域 AuditEvent 映射到 Audit.NET 事件模型，并以 Audit.NET 的可插拔
+            // JsonAdapter（FlowEngineAuditJsonAdapter）序列化为与历史 NDJSON 完全一致的字段布局。
+            // 文件轮转、追加与后台刷盘逻辑保持不变。
+            var mapped = new FlowEngineAuditEvent
             {
-                id = audit.EventId,
-                eventType = audit.EventType,
-                timestamp = audit.OccurredAt,
-                actor = audit.Actor,
-                resourceType = audit.ResourceType,
-                resourceId = audit.ResourceId,
-                payload = audit.Payload,
-                metadata = audit.Metadata,
-            }, JsonOptions);
+                Id = audit.EventId,
+                EventType = audit.EventType,
+                Timestamp = audit.OccurredAt,
+                Actor = audit.Actor,
+                ResourceType = audit.ResourceType,
+                ResourceId = audit.ResourceId,
+                Payload = audit.Payload,
+                Metadata = audit.Metadata,
+            };
+
+            return global::Audit.Core.Configuration.JsonAdapter.Serialize(mapped);
         }
         catch
         {

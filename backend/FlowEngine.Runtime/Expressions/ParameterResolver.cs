@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
@@ -33,6 +35,13 @@ public sealed class ParameterResolver
     private static readonly Regex s_guidRegex = new(
         @"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
         RegexOptions.Compiled);
+
+    // 裸上下文标识符（无 $ 前缀）：与 $ 前缀内建变量一一对应，如 input / now / vars
+    private static readonly HashSet<string> s_bareContextIdentifiers = new(
+        s_knownIdentifiers.Select(x => x.TrimStart('$')), StringComparer.OrdinalIgnoreCase);
+
+    // 函数调用形态：单词后接 "("，如 Math.Max( / Now( / eval(
+    private static readonly Regex s_functionCallRegex = new(@"\w+\s*\(", RegexOptions.Compiled);
 
     private readonly ILogger<ParameterResolver> _logger;
     private readonly ScriptCache _scriptCache;
@@ -225,17 +234,21 @@ public sealed class ParameterResolver
     {
         if (string.IsNullOrWhiteSpace(str)) return false;
 
-        var trimmed = str.AsSpan().TrimStart();
+        var trimmed = str.AsSpan().Trim();
         if (trimmed.Length == 0) return false;
 
         if (trimmed is "true" or "false" or "null") return true;
 
-        if (int.TryParse(trimmed, out _) || long.TryParse(trimmed, out _) || double.TryParse(trimmed, out _))
-            return true;
+        // 纯数字（含可选正负号）作为字面量，不参与表达式求值，
+        // 避免 "-5" 等被负数符号误判为表达式
+        if (IsPureNumber(trimmed)) return false;
 
         // 现代约定：表达式必须含 $ 前缀内建变量（plan-004 评审5 命名铁律）
         var firstWord = GetFirstWord(trimmed);
         if (s_knownIdentifiers.Contains(firstWord)) return true;
+
+        // 裸上下文标识符（无 $ 前缀），如 input / now / vars / execution / env，同样视为表达式
+        if (s_bareContextIdentifiers.Contains(firstWord)) return true;
 
         // 扫描整个字符串，定位任意位置的 $xxx 内建变量（如 "url" + $credentials.x）
         for (int i = 0; i < trimmed.Length - 1; i++)
@@ -253,6 +266,41 @@ public sealed class ParameterResolver
         if (s_guidRegex.IsMatch(trimmed.ToString())) return false;
         if (trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
             || trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) return false;
+
+        // 函数调用形态：单词后接 "("，如 Math.Max( / Now( / eval(
+        if (s_functionCallRegex.IsMatch(trimmed.ToString())) return true;
+
+        // 含算术/比较/逻辑运算符：* + / % = < > ! & | ^（'-' 仅在非首位/操作数之间时）
+        if (ContainsExpressionOperator(trimmed)) return true;
+
+        return false;
+    }
+
+    private static bool IsPureNumber(ReadOnlySpan<char> text)
+    {
+        // 允许可选正负号、小数点、指数形式；要求整体可解析为数字，
+        // 从而把 "42" / "-5" / "3.14" 等纯数字作为字面量而非表达式
+        return double.TryParse(text.ToString(), NumberStyles.Float, CultureInfo.InvariantCulture, out _);
+    }
+
+    private static bool ContainsExpressionOperator(ReadOnlySpan<char> text)
+    {
+        for (int i = 0; i < text.Length; i++)
+        {
+            var c = text[i];
+            if (c == '-')
+            {
+                // 负号符号（如 "-5"）不视为运算符；'-' 仅当其位于操作数之间
+                // （非首位）或后接其他运算符时才作为运算符触发表达式检测
+                if (i == 0) continue;
+                return true;
+            }
+
+            if (c is '*' or '/' or '%' or '+' or '=' or '<' or '>' or '!' or '&' or '|' or '^')
+            {
+                return true;
+            }
+        }
 
         return false;
     }

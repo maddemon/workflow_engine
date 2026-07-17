@@ -3,6 +3,7 @@
 using FlowEngine.Application.Audit;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
+using FlowEngine.Application.Validators;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Application.Authorization;
@@ -445,7 +446,9 @@ public sealed class WorkflowAssemblyServiceTests : IDisposable
             null!, // AuthorizedOperationHandler - not used in CreateDraftAsync
             null!, // WorkflowStatisticsLoader - not used in CreateDraftAsync
             null!, // WorkflowTriggerSync - not used in CreateDraftAsync
-            NullLogger<WorkflowService>.Instance
+            NullLogger<WorkflowService>.Instance,
+            new CreateWorkflowDtoValidator(),
+            new UpdateWorkflowDtoValidator()
         );
     }
 

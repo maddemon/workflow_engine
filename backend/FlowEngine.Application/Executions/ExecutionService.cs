@@ -3,6 +3,7 @@ using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Core;
+using Mapster;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
@@ -188,15 +189,9 @@ public sealed class ExecutionService(
 
     private static ExecutionDto MapToDto(Core.Entities.ExecutionRecord record)
     {
-        return new ExecutionDto
-        {
-            Id = record.Id,
-            WorkflowDefinitionId = record.WorkflowDefinitionId,
-            Status = record.Status.ToString(),
-            StartedAt = record.StartedAt,
-            CompletedAt = record.CompletedAt,
-            NodeRecords = record.NodeRecords.Select(MapToNodeRecord).ToList()
-        };
+        // custom mapping：节点记录含自定义序列化，单独处理
+        var dto = record.Adapt<ExecutionDto>();
+        return dto with { NodeRecords = record.NodeRecords.Select(MapToNodeRecord).ToList() };
     }
 
     private static NodeExecutionRecordDto MapToNodeRecord(Core.Entities.NodeExecutionRecord node)
@@ -218,14 +213,7 @@ public sealed class ExecutionService(
 
     private static ExecutionSummaryDto MapToSummary(Core.Entities.ExecutionRecord record)
     {
-        return new ExecutionSummaryDto
-        {
-            Id = record.Id,
-            WorkflowDefinitionId = record.WorkflowDefinitionId,
-            Status = record.Status.ToString(),
-            StartedAt = record.StartedAt,
-            CompletedAt = record.CompletedAt
-        };
+        return record.Adapt<ExecutionSummaryDto>();
     }
 
     private static Dictionary<string, object>? SerializeInputs(IReadOnlyDictionary<string, Core.Entities.DataBatch>? inputs)

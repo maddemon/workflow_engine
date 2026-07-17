@@ -686,6 +686,6 @@ public class WorkflowLifecycleToolsTests
         workflowService ??= Mock.Of<IWorkflowService>();
         executionService ??= Mock.Of<IExecutionService>();
         feedbackService ??= Mock.Of<IWorkflowExecutionFeedbackService>();
-        return new WorkflowLifecycleTools(validationService, workflowService, executionService, feedbackService);
+        return new WorkflowLifecycleTools(validationService, workflowService, executionService, feedbackService, null!);
     }
 }

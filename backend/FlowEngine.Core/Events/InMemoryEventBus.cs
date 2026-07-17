@@ -43,6 +43,11 @@ public sealed class InternalErrorSink
 /// <summary>
 /// 内存事件总线实现，使用有界 Channel 做背压，后台单线程消费，订阅者异常隔离。
 /// </summary>
+/// <remarks>
+/// 已由 <see cref="MediatrEventBus"/> 取代（任务 2.1：事件总线 → MediatR）。保留文件仅作历史参考，
+/// 后续清理计划中将删除。
+/// </remarks>
+[Obsolete("Replaced by MediatrEventBus (MediatR). Will be removed in a later cleanup.")]
 public sealed class InMemoryEventBus : IEventBus, IDisposable
 {
     private readonly Channel<IDomainEvent> _channel =

@@ -1,5 +1,6 @@
 using FlowEngine.Application.Dtos;
 using FlowEngine.Core.Abstractions;
+using Mapster;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Exceptions;
@@ -231,9 +232,8 @@ public sealed class WorkflowAssemblyService(
             Name = workflow.Name,
             ProjectId = workflow.ProjectId,
             CreatedBy = "ai-assembler",
-            Nodes = workflow.Nodes.Select(n => WorkflowMapper.ToDto(n)).ToList(),
-            Connections = workflow.Connections.Select(c =>
-                WorkflowMapper.ToDto(c, c.Id.ToString(), c.SourceNodeId, c.TargetNodeId)).ToList(),
+            Nodes = workflow.Nodes.Select(n => n.Adapt<NodeDefinitionDto>()).ToList(),
+            Connections = workflow.Connections.Select(c => c.Adapt<ConnectionDto>()).ToList(),
         };
 
         var draftDto = await workflowService.CreateDraftAsync(createDto, cancellationToken)

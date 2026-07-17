@@ -2,6 +2,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Core;
+using Mapster;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Ai;
 using FlowEngine.Core.Data;
@@ -64,8 +65,8 @@ public sealed class WorkflowValidationService(
         }
         else if (request.Nodes is not null)
         {
-            nodes = request.Nodes.Select(WorkflowMapper.ToEntity).ToList();
-            connections = request.Connections?.Select(WorkflowMapper.ToEntity).ToList() ?? [];
+            nodes = request.Nodes.Select(n => n.Adapt<NodeDefinition>()).ToList();
+            connections = request.Connections?.Select(c => c.Adapt<Connection>()).ToList() ?? [];
         }
 
         // ── 2. 基础空值校验 ────────────────────────────────────

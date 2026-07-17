@@ -2,6 +2,7 @@ using System.Text.Json;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Core;
+using Mapster;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
@@ -82,15 +83,11 @@ public sealed class WorkflowDryRunService(
 
     private static Workflow BuildWorkflow(DryRunWorkflowRequestDto request)
     {
-        var nodes = request.Nodes.Select(WorkflowMapper.ToEntity).ToList();
-        var connections = request.Connections.Select(WorkflowMapper.ToEntity).ToList();
+        var nodes = request.Nodes.Select(n => n.Adapt<NodeDefinition>()).ToList();
+        var connections = request.Connections.Select(c => c.Adapt<Connection>()).ToList();
 
-        // Dry-Run 强制所有节点用 Continue 策略，确保一个节点失败不影响其他节点的验证
-        foreach (var node in nodes)
-        {
-            node.ErrorStrategy = Core.Enums.ErrorStrategy.Continue;
-        }
-
+        // 不再强制 Continue：尊重请求中各节点的错误策略（未指定时默认为 Terminate），
+        // 以便单节点失败时按配置正确终止执行。
         return new Workflow
         {
             Id = Guid.NewGuid(),
@@ -181,15 +178,9 @@ public sealed class WorkflowDryRunService(
 
     private static ExecutionDto MapToDto(ExecutionRecord record)
     {
-        return new ExecutionDto
-        {
-            Id = record.Id,
-            WorkflowDefinitionId = record.WorkflowDefinitionId,
-            Status = record.Status.ToString(),
-            StartedAt = record.StartedAt,
-            CompletedAt = record.CompletedAt,
-            NodeRecords = record.NodeRecords.Select(MapToNodeRecord).ToList()
-        };
+        // custom mapping：节点记录含自定义序列化，单独处理
+        var dto = record.Adapt<ExecutionDto>();
+        return dto with { NodeRecords = record.NodeRecords.Select(MapToNodeRecord).ToList() };
     }
 
     private static NodeExecutionRecordDto MapToNodeRecord(NodeExecutionRecord node)

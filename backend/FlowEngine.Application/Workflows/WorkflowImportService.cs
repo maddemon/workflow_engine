@@ -3,6 +3,7 @@ using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Core.Abstractions;
+using Mapster;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
@@ -155,8 +156,8 @@ public sealed class WorkflowImportService(
             };
         }
 
-        var nodes = exportResult.Nodes.Select(WorkflowMapper.ToEntity).ToList();
-        var connections = exportResult.Connections.Select(WorkflowMapper.ToEntity).ToList();
+        var nodes = exportResult.Nodes.Select(n => n.Adapt<NodeDefinition>()).ToList();
+        var connections = exportResult.Connections.Select(c => c.Adapt<Connection>()).ToList();
 
         var workflow = new Workflow
         {

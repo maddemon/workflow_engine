@@ -1,5 +1,6 @@
 using FlowEngine.Core.Events;
 
+#pragma warning disable CS0618 // 类型已过时：InMemoryEventBus 已迁移至 MediatrEventBus，保留仅供历史参考
 namespace FlowEngine.Core.Tests;
 
 /// <summary>
@@ -89,3 +90,5 @@ public class InMemoryEventBusTests
         bus.Dispose();
     }
 }
+
+#pragma warning restore CS0618

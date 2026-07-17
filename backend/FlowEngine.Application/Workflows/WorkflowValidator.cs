@@ -100,20 +100,36 @@ public sealed class WorkflowValidator(INodeRegistry registry)
 
     /// <summary>
     /// 校验非入口节点必须至少有一条入边，防止孤立节点。
+    /// 以下情况不视为孤立节点：
+    /// - 节点本身是入口（<see cref="NodeDefinition.IsEntry"/>）；
+    /// - 节点是触发器/可入口节点（无需入边即可启动工作流）；
+    /// - 节点有出边（它是其它节点的来源，属于图的一部分）；
+    /// - 工作流不存在任何连接（单节点草稿、断开操作后残留节点等，无图拓扑可言）。
     /// </summary>
-    private static void ValidateOrphanNodes(Workflow workflow, List<string> errors)
+    private void ValidateOrphanNodes(Workflow workflow, List<string> errors)
     {
+        // 没有任何连接时，节点间不存在图关系，孤立检查无意义，直接跳过。
+        if (workflow.Connections.Count == 0)
+        {
+            return;
+        }
+
         var hasIncoming = workflow.Connections
             .Select(c => c.TargetNodeId)
+            .ToHashSet();
+
+        var hasOutgoing = workflow.Connections
+            .Select(c => c.SourceNodeId)
             .ToHashSet();
 
         foreach (var node in workflow.Nodes)
         {
             if (node.IsEntry) continue;
-            if (!hasIncoming.Contains(node.Id))
-            {
-                errors.Add($"节点 '{node.Name}' ({node.TypeName}) 没有入边连接，工作流中不允许存在孤立节点。");
-            }
+            if (IsTriggerNode(node.TypeName)) continue;
+            if (hasIncoming.Contains(node.Id)) continue;
+            if (hasOutgoing.Contains(node.Id)) continue;
+
+            errors.Add($"节点 '{node.Name}' ({node.TypeName}) 没有入边连接，工作流中不允许存在孤立节点。");
         }
     }
 

@@ -25,6 +25,11 @@
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.9" />
     <PackageReference Include="OpenAI" Version="2.11.0" />
     <PackageReference Include="System.IdentityModel.Tokens.Jwt" Version="8.19.1" />
+    <!-- 任务 2.2：审计日志写入/序列化改用 Audit.NET（含核心 AuditEvent 模型、可插拔 JsonAdapter，
+         以及 FileLog/Sqlite 等 sink 包）。当前沿用既有 NDJSON Sink 的每日轮转 + 追加 + 后台刷盘行为，
+         仅以 Audit.NET 核心承担事件模型与序列化（Audit.NET.FileLog 的每事件独立文件 / 非 NDJSON 追加语义
+         与 audit-*.ndjson 布局不兼容，故未用作实际写入器，但包已随 Audit.NET 元包可用）。详见 FlowEngineAuditJsonAdapter 注释。 -->
+    <PackageReference Include="Audit.NET" Version="32.2.0" />
   </ItemGroup>
 
 </Project>

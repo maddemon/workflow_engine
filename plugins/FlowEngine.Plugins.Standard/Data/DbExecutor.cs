@@ -1,4 +1,5 @@
 using System.Data.Common;
+using Dapper;
 
 namespace FlowEngine.Plugins.Standard.Data;
 
@@ -35,35 +36,48 @@ public sealed class DbExecutor : IAsyncDisposable
     /// </summary>
     public async Task<int> ExecuteNonQueryAsync(string sql, IReadOnlyList<object?> parameters, CancellationToken ct)
     {
-        await using var command = _connection.CreateCommand();
-        command.Transaction = _transaction;
-        command.CommandText = sql;
-        for (var i = 0; i < parameters.Count; i++)
-        {
-            var parameter = command.CreateParameter();
-            parameter.ParameterName = $"@p{i}";
-            parameter.Value = parameters[i] ?? DBNull.Value;
-            command.Parameters.Add(parameter);
-        }
-        return await command.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+        var dynamicParams = BuildParameters(parameters);
+        return await _connection.ExecuteAsync(new CommandDefinition(
+            sql, dynamicParams, _transaction, cancellationToken: ct)).ConfigureAwait(false);
     }
 
     /// <summary>
     /// 执行标量查询（如检查行是否存在）。
     /// </summary>
+    /// <remarks>与原始 ADO.NET 行为一致：结果为数据库 NULL 时返回 <see cref="DBNull.Value"/>。</remarks>
     public async Task<object?> ExecuteScalarAsync(string sql, IReadOnlyList<object?> parameters, CancellationToken ct)
     {
-        await using var command = _connection.CreateCommand();
-        command.Transaction = _transaction;
-        command.CommandText = sql;
+        var dynamicParams = BuildParameters(parameters);
+        var result = await _connection.ExecuteScalarAsync(new CommandDefinition(
+            sql, dynamicParams, _transaction, cancellationToken: ct)).ConfigureAwait(false);
+        // Dapper 会把 DBNull 转为 null，这里还原为原始 ADO.NET 契约。
+        return result ?? DBNull.Value;
+    }
+
+    /// <summary>
+    /// 执行查询并将每行映射为 <typeparamref name="T"/>。
+    /// 供未来的读节点（如 DbReaderNode）使用。
+    /// </summary>
+    public async Task<IReadOnlyList<T>> QueryAsync<T>(string sql, IReadOnlyList<object?>? parameters, CancellationToken ct)
+    {
+        DynamicParameters? dynamicParams = parameters is { Count: > 0 } ? BuildParameters(parameters) : null;
+        var result = await _connection.QueryAsync<T>(new CommandDefinition(
+            sql, dynamicParams, _transaction, cancellationToken: ct)).ConfigureAwait(false);
+        return result.AsList();
+    }
+
+    /// <summary>
+    /// 将位置参数列表转换为 Dapper 命名参数（@p0、@p1 …）。
+    /// 空参数会被 Dapper 自动转换为 DBNull，与原始 ADO.NET 行为一致。
+    /// </summary>
+    private static DynamicParameters BuildParameters(IReadOnlyList<object?> parameters)
+    {
+        var dynamicParams = new DynamicParameters();
         for (var i = 0; i < parameters.Count; i++)
         {
-            var parameter = command.CreateParameter();
-            parameter.ParameterName = $"@p{i}";
-            parameter.Value = parameters[i] ?? DBNull.Value;
-            command.Parameters.Add(parameter);
+            dynamicParams.Add($"@p{i}", parameters[i], null);
         }
-        return await command.ExecuteScalarAsync(ct).ConfigureAwait(false);
+        return dynamicParams;
     }
 
     /// <summary>

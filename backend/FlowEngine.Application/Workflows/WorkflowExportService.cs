@@ -4,6 +4,7 @@ using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Core.Abstractions;
+using Mapster;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Events;
@@ -114,7 +115,7 @@ public sealed class WorkflowExportService(
         {
             // 导出前对参数做凭据脱敏，移除 CredentialValue 中的明文字段（GAP-01）。
             var sanitized = SanitizeParameters(n.Parameters);
-            var dto = WorkflowMapper.ToDto(n, n.Id);
+            var dto = n.Adapt<NodeDefinitionDto>();
             return new NodeDefinitionDto
             {
                 Id = dto.Id,
@@ -131,8 +132,7 @@ public sealed class WorkflowExportService(
             };
         }).ToList();
 
-        var connectionDtos = workflow.Connections.Select(c =>
-            WorkflowMapper.ToDto(c, c.Id.ToString(), c.SourceNodeId, c.TargetNodeId)).ToList();
+        var connectionDtos = workflow.Connections.Select(c => c.Adapt<ConnectionDto>()).ToList();
 
         return new WorkflowExportResult
         {

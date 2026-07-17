@@ -3,6 +3,7 @@ using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Credentials;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
+using FlowEngine.Application.Validators;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
@@ -51,7 +52,8 @@ public sealed class CredentialServiceTests : IDisposable
             new WorkflowRepository(_dbContext),
             authGuard,
             new CredentialTypeRegistry(),
-            handler);
+            handler,
+            new CreateCredentialDtoValidator());
     }
 
     public void Dispose()

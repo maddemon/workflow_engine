@@ -5,6 +5,7 @@ using FlowEngine.Core.Enums;
 using FlowEngine.Core.Identity;
 using FlowEngine.Host.Middlewares;
 using FlowEngine.Host.Webhooks;
+using Microsoft.AspNetCore.RateLimiting;
 using FlowEngine.Host.WebSocketHandlers;
 using FlowEngine.Infrastructure.Audit;
 using FlowEngine.Migrations;
@@ -105,7 +106,10 @@ public static class ApplicationBuilderExtensions
         // L7：SPA 静态资源（index.html、js、css）匿名可访问，置于认证/授权前，
         // 避免登录页等公共资源被强制要求先登录；安全响应头仍作用于静态响应。
         app.UseStaticFiles();
-        app.UseMiddleware<RateLimitMiddleware>();
+        // 限流（任务 2.3）：基于 System.Threading.RateLimiting 的全局分区限流器，
+        // 按路径分类 Login/Register/Api 并对每客户端独立限流，白名单/禁用规则跳过。
+        // 置于认证/授权之前，使登录/注册等匿名端点同样受限，与原手搓中间件位置一致。
+        app.UseRateLimiter();
         app.UseCors();
         app.UseAuthentication();
         app.UseMiddleware<CurrentUserMiddleware>();

@@ -3,6 +3,7 @@ using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Core.Abstractions;
+using Mapster;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
@@ -407,24 +408,7 @@ public sealed class TriggerService(
 
     private static TriggerDto MapToDto(Trigger trigger)
     {
-        TriggerSettingsDto? settings = null;
-        if (trigger.Settings is not null)
-        {
-            settings = ConvertToTriggerSettingsDto(trigger.Settings);
-        }
-
-        return new TriggerDto
-        {
-            Id = trigger.Id,
-            WorkflowDefinitionId = trigger.WorkflowDefinitionId,
-            WorkflowVersion = trigger.WorkflowVersion,
-            Type = trigger.Type,
-            Name = trigger.Name,
-            IsActive = trigger.IsActive,
-            Settings = settings,
-            LastTriggeredAt = trigger.LastTriggeredAt,
-            NextTriggerAt = trigger.NextTriggerAt,
-        };
+        return trigger.Adapt<TriggerDto>();
     }
 
     /// <summary>
@@ -432,50 +416,12 @@ public sealed class TriggerService(
     /// </summary>
     private static TriggerSettings ConvertToTriggerSettings(TriggerSettingsDto dto)
     {
-        return new TriggerSettings
-        {
-            CronExpression = dto.CronExpression,
-            TimeZone = dto.TimeZone,
-            StartAt = dto.StartAt,
-            EndAt = dto.EndAt,
-            WebhookPath = dto.WebhookPath,
-            Secret = dto.Secret,
-            AllowedIps = dto.AllowedIps,
-            AllowedOrigins = dto.AllowedOrigins,
-            IsSync = dto.IsSync,
-            MaxWaitSeconds = dto.MaxWaitSeconds,
-            IntervalSeconds = dto.IntervalSeconds,
-            TimeoutSeconds = dto.TimeoutSeconds,
-            PollNodeId = dto.PollNodeId,
-            DedupStrategy = dto.DedupStrategy,
-            SkipIfRunning = dto.SkipIfRunning,
-            LastPollId = dto.LastPollId,
-            LastPollTime = dto.LastPollTime,
-        };
+        return dto.Adapt<TriggerSettings>();
     }
 
     private static TriggerSettingsDto ConvertToTriggerSettingsDto(TriggerSettings settings)
     {
-        return new TriggerSettingsDto
-        {
-            CronExpression = settings.CronExpression,
-            TimeZone = settings.TimeZone,
-            StartAt = settings.StartAt,
-            EndAt = settings.EndAt,
-            WebhookPath = settings.WebhookPath,
-            Secret = settings.Secret,
-            AllowedIps = settings.AllowedIps,
-            AllowedOrigins = settings.AllowedOrigins,
-            IsSync = settings.IsSync,
-            MaxWaitSeconds = settings.MaxWaitSeconds,
-            IntervalSeconds = settings.IntervalSeconds,
-            TimeoutSeconds = settings.TimeoutSeconds,
-            PollNodeId = settings.PollNodeId,
-            DedupStrategy = settings.DedupStrategy,
-            SkipIfRunning = settings.SkipIfRunning,
-            LastPollId = settings.LastPollId,
-            LastPollTime = settings.LastPollTime,
-        };
+        return settings.Adapt<TriggerSettingsDto>();
     }
 
     private async Task RegisterPollTriggerAsync(

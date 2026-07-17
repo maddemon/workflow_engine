@@ -1,19 +1,18 @@
-using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Events;
 using FlowEngine.Host.WebSocketHandlers;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Microsoft.Extensions.Logging;
 using System.Net.WebSockets;
+using MediatR;
 
 namespace FlowEngine.Host.Tests;
 
 /// <summary>
-/// WebSocketEventPushService 测试。
+/// WebSocketEventPushService 测试（迁移至 MediatR 通知处理器后）。
 /// </summary>
 public class WebSocketEventPushServiceTests : IDisposable
 {
-    private readonly Mock<IEventBus> _eventBusMock = new();
     private readonly WebSocketConnectionManager _connectionManager = new();
     private readonly Mock<ILogger<WebSocketReplayService>> _replayLoggerMock = new();
     private readonly WebSocketReplayService _replayService;
@@ -23,64 +22,56 @@ public class WebSocketEventPushServiceTests : IDisposable
     public WebSocketEventPushServiceTests()
     {
         _replayService = new WebSocketReplayService(_replayLoggerMock.Object, Mock.Of<IServiceScopeFactory>());
-
-        _eventBusMock.Setup(e => e.Subscribe(It.IsAny<Func<WorkflowStartedEvent, CancellationToken, Task>>()))
-            .Returns(Mock.Of<IDisposable>());
-        _eventBusMock.Setup(e => e.Subscribe(It.IsAny<Func<NodeExecutedEvent, CancellationToken, Task>>()))
-            .Returns(Mock.Of<IDisposable>());
-        _eventBusMock.Setup(e => e.Subscribe(It.IsAny<Func<NodeErrorEvent, CancellationToken, Task>>()))
-            .Returns(Mock.Of<IDisposable>());
-        _eventBusMock.Setup(e => e.Subscribe(It.IsAny<Func<WorkflowCompletedEvent, CancellationToken, Task>>()))
-            .Returns(Mock.Of<IDisposable>());
-        _eventBusMock.Setup(e => e.Subscribe(It.IsAny<Func<WorkflowFailedEvent, CancellationToken, Task>>()))
-            .Returns(Mock.Of<IDisposable>());
-        _eventBusMock.Setup(e => e.Subscribe(It.IsAny<Func<WorkflowCancelledEvent, CancellationToken, Task>>()))
-            .Returns(Mock.Of<IDisposable>());
-
-        _service = new WebSocketEventPushService(
-            _eventBusMock.Object,
-            _connectionManager,
-            _replayService,
-            _loggerMock.Object);
+        _service = new WebSocketEventPushService(_connectionManager, _replayService, _loggerMock.Object);
     }
 
     [Fact]
-    public void Constructor_SubscribesToAllEvents()
+    public void Constructor_ImplementsAllNotificationHandlers()
     {
-        _eventBusMock.Verify(e =>
-            e.Subscribe(It.IsAny<Func<WorkflowStartedEvent, CancellationToken, Task>>()), Times.Once);
-        _eventBusMock.Verify(e =>
-            e.Subscribe(It.IsAny<Func<NodeExecutedEvent, CancellationToken, Task>>()), Times.Once);
-        _eventBusMock.Verify(e =>
-            e.Subscribe(It.IsAny<Func<NodeErrorEvent, CancellationToken, Task>>()), Times.Once);
-        _eventBusMock.Verify(e =>
-            e.Subscribe(It.IsAny<Func<WorkflowCompletedEvent, CancellationToken, Task>>()), Times.Once);
-        _eventBusMock.Verify(e =>
-            e.Subscribe(It.IsAny<Func<WorkflowFailedEvent, CancellationToken, Task>>()), Times.Once);
-        _eventBusMock.Verify(e =>
-            e.Subscribe(It.IsAny<Func<WorkflowCancelledEvent, CancellationToken, Task>>()), Times.Once);
+        Assert.IsAssignableFrom<INotificationHandler<WorkflowStartedEvent>>(_service);
+        Assert.IsAssignableFrom<INotificationHandler<NodeStartedEvent>>(_service);
+        Assert.IsAssignableFrom<INotificationHandler<NodeExecutedEvent>>(_service);
+        Assert.IsAssignableFrom<INotificationHandler<NodeErrorEvent>>(_service);
+        Assert.IsAssignableFrom<INotificationHandler<WorkflowCompletedEvent>>(_service);
+        Assert.IsAssignableFrom<INotificationHandler<WorkflowFailedEvent>>(_service);
+        Assert.IsAssignableFrom<INotificationHandler<WorkflowCancelledEvent>>(_service);
+        Assert.IsAssignableFrom<INotificationHandler<LlmTokenStreamEvent>>(_service);
     }
 
     [Fact]
-    public void Dispose_UnsubscribesFromAllEvents()
+    public async Task Handle_WorkflowStartedEvent_RecordsToReplay()
     {
-        var disposableMock = new Mock<IDisposable>();
-        _eventBusMock.Setup(e => e.Subscribe(It.IsAny<Func<WorkflowStartedEvent, CancellationToken, Task>>()))
-            .Returns(disposableMock.Object);
+        var executionId = Guid.NewGuid();
 
-        var service = new WebSocketEventPushService(
-            _eventBusMock.Object,
-            _connectionManager,
-            _replayService,
-            _loggerMock.Object);
+        await ((INotificationHandler<WorkflowStartedEvent>)_service)
+            .Handle(new WorkflowStartedEvent(executionId, Guid.NewGuid()), CancellationToken.None);
 
-        service.Dispose();
+        var events = _replayService.GetMissingEvents(executionId, 0);
+        Assert.Contains(events, e => e.Type == "execution_started");
+    }
 
-        disposableMock.Verify(d => d.Dispose(), Times.Once);
+    [Fact]
+    public async Task Handle_NodeExecutedEvent_RecordsToReplay()
+    {
+        var executionId = Guid.NewGuid();
+        var evt = new NodeExecutedEvent(executionId, "node-1", 0, new FlowEngine.Core.Entities.NodeExecutionResult());
+
+        await ((INotificationHandler<NodeExecutedEvent>)_service)
+            .Handle(evt, CancellationToken.None);
+
+        var events = _replayService.GetMissingEvents(executionId, 0);
+        Assert.Contains(events, e => e.Type == "node_executed");
+    }
+
+    [Fact]
+    public void Dispose_DoesNotThrow()
+    {
+        _service.Dispose();
     }
 
     public void Dispose()
     {
         _service?.Dispose();
+        _replayService.Dispose();
     }
 }
