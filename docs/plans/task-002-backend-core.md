@@ -26,9 +26,9 @@
 
 ## 待完成项
 
-- [ ] **2.1 实体属性往返测试**：`Project` / `Workflow` / `NodeDefinition` 构造 + 关键属性 get/set 往返；重点验证 `NodeDefinition.Id` 为 string、`Entity.Id` 为 Guid 的类型差异。
-- [ ] **2.2 枚举 [Description] 测试**：对带描述的枚举验证 `DescriptionAttribute` 取值（如 `ExecutionStatus.Completed` 的描述），覆盖无描述兜底。
-- [ ] **2.3 值对象测试**：`ExecutionId` / `WorkflowDefinitionId` 的 `New()` 与 `From(guid)` 等价性、`ToString()`；`CredentialKey(guid, field).ToString()` 格式。
+- [x] **2.1 实体属性往返测试**：`Project` / `Workflow` / `NodeDefinition` 构造 + 关键属性 get/set 往返；重点验证 `NodeDefinition.Id` 为 string、`Entity.Id` 为 Guid 的类型差异。
+- [x] **2.2 枚举 [Description] 测试**：对带描述的枚举验证 `DescriptionAttribute` 取值（如 `ExecutionStatus.Completed` 的描述），覆盖无描述兜底。
+- [x] **2.3 值对象测试**：`ExecutionId` / `WorkflowDefinitionId` 的 `New()` 与 `From(guid)` 等价性、`ToString()`；`CredentialKey(guid, field).ToString()` 格式。
 
 ## 完成标准
 
@@ -40,10 +40,11 @@
 
 ## 完成状态
 
-- [ ] 2.1
-- [ ] 2.2
-- [ ] 2.3
+- [x] 2.1
+- [x] 2.2
+- [x] 2.3
 
 ## 主要修改记录
 
 - 重写自 `plan-unit-test-coverage.md`：修正原草稿"值对象不存在"的错误判断（实际存在但 API 不同），明确实体 Id 类型差异与枚举/值对象真实 API。
+- 2026-07-19：基于已有未提交测试文件补充并验收，`FlowEngine.Core` 行覆盖率 52.5% → 65.01%（2646/4070），`dotnet test tests/FlowEngine.Core.Tests` 633 通过、0 失败。

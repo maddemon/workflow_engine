@@ -15,6 +15,16 @@ public class EntitiesTests
     }
 
     [Fact]
+    public void NodeExecutionResult_BranchIndex_RoundTrips()
+    {
+        var result = new NodeExecutionResult();
+
+        result.BranchIndex = 2;
+
+        Assert.Equal(2, result.BranchIndex);
+    }
+
+    [Fact]
     public void DataBatch_Can_Hold_Items()
     {
         var batch = new DataBatch
