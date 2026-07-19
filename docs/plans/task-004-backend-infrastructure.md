@@ -47,9 +47,11 @@
 
 ## 完成状态
 
-- [ ] 4.1
-- [ ] 4.2
-- [ ] 4.3
+- [x] 4.1 LocalFileStorage 测试已补充（临时目录、Save/Read/Exists/Delete、非法 projectId、路径穿越等）。
+- [x] 4.2 PasswordHasher 测试已补充（哈希/验证、错误密码、两次哈希不同、V2 RehashNeeded）。
+- [x] 4.3 JwtTokenService 测试已补充（配置构造、claims 校验、缺密钥异常、默认过期等）。
+
+**实测覆盖率**：`FlowEngine.Infrastructure` 行覆盖率 `41.7%` → `66.97%`（≥65%，达标）。
 
 ## 主要修改记录
 
