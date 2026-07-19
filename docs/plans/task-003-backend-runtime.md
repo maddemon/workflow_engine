@@ -40,26 +40,38 @@
 
 ## 待完成项
 
-- [ ] **3.1 SsrfGuard 测试**：`IsInternalTarget` 对 localhost / 内网地址 / 公网 URL 的判定；null/空字符串。
-- [ ] **3.2 ErrorStrategyHandler 测试**：`Handle` 在不同 `ErrorStrategy` 下的结果；`CreateInputTimeoutResult` 产出结构。使用真实 `RetryPolicy`（注意 `BaseDelay` 非 `DelayMs`）。
-- [ ] **3.3 参数水合与转换器测试**：经 `ParameterHydrator.HydrateAsync` 覆盖 `bool` / `numeric` / `DateTime` / `Uri` / `enum` / `Json` 等目标类型转换；`CodeParameterExtractor.Extract` 的 `Dictionary<string,object>` 入参版本。
-- [ ] **3.4 ParameterResolver 测试**：表达式解析正常路径、`JsonElement` 转换、四类异常路径。
+### Runtime 部分（已完成）
+- [x] **3.1 SsrfGuard 测试**：`IsInternalTarget` 对 localhost / 内网地址 / 公网 URL 的判定；null/空字符串。→ `tests/FlowEngine.Runtime.Tests/Security/SsrfGuardTests.cs`
+- [x] **3.2 ErrorStrategyHandler 测试**：`Handle` 在不同 `ErrorStrategy` 下的结果；`CreateInputTimeoutResult` 产出结构。使用真实 `RetryPolicy`（注意 `BaseDelay` 非 `DelayMs`）。→ `tests/FlowEngine.Runtime.Tests/Executor/ErrorStrategyHandlerTests.cs`
+- [x] **3.3 参数水合与转换器测试**：`ParameterHydratorCoverageTests`（经 `HydrateAsync` 覆盖大部分）+ `Registry/Converters/ConverterUnitTests`（经 `[InternalsVisibleTo]` 直接覆盖 12 个 internal 转换器）；`CodeParameterExtractor.Extract` 的 `Dictionary<string,object>` 入参版本 → `tests/FlowEngine.Runtime.Tests/Executor/CodeParameterExtractorTests.cs`。
+- [x] **3.4 ParameterResolver 测试**（表达式解析正常路径、`JsonElement` 转换、四类异常路径）+ 表达式异常类（`NodeOutputNotFoundException` / `FieldNotFoundException` / `ExpressionEvaluationException`）→ `tests/FlowEngine.Runtime.Tests/Expressions/ParameterResolverExceptionsTests.cs` + `Expressions/Exceptions/ExpressionExceptionTests.cs`。
+- [x] **3.5 执行队列 / HTTP 池**：`ExecutionQueue.Enqueue/Dequeue/Reader` + `NodeWorkItem` 记录 → `tests/FlowEngine.Runtime.Tests/Executor/ExecutionQueueTests.cs`；`HttpClientPool.GetClient/Dispose` → `tests/FlowEngine.Runtime.Tests/Http/HttpClientPoolTests.cs`。
+
+### Plugins.Standard 部分（进行中，58.1% → 70%）
+- [ ] **3.6 简单纯逻辑节点**（低投入、高行覆盖）：`LimitNode`（Skip/Take）、`MemoryNode`（Read/Write/Clear + JSON 字面量回退）、`ManualTriggerNode`（DefaultIsEntry 输出 triggeredAt）、`WaitNode`（Amount/Unit/LimitWaitTime 计算 WaitTime）、`DeduplicateNode`（CompareField/KeepFirst 全项与字段键）、`CalculatorToolNode`（expression/query/math 取值 + 脚本求值 + 错误路径）。
+  - 测试上下文复用模式见 `tests/FlowEngine.Runtime.Tests/Plugins/FilterNodeTests.cs`：`NodeRegistry` + `NodeExecutionContextFactory(ScriptCache, ParameterResolver, NullCredentialAccessor, whitelist)` + `factory.CreateAsync(...)` + 内部 `NullCredentialAccessor`。
+  - 节点通过 `new XxxNode { Prop = ... }.ExecuteAsync(context, ct)` 直接执行；输入经 `FlowConstants.PortNames.Input` 的 `DataBatch`。
+- [ ] **3.7 较大缺口节点**（按需）：`AggregateNode`(~90 未覆盖)、`DataQualityNode`(~79)、`ThinkToolNode`(~74)、`SubWorkflowExecutor`(~72)、`MergeNode`(~64)、`WebhookNode`(~55)、`ScheduleTriggerNode`(~46)。
 
 ## 完成标准
 
-- `dotnet test tests/FlowEngine.Runtime.Tests` 全绿。
-- 不出现 `FluentAssertions`；`Moq` 仅当确须 mock 外部依赖时使用，否则用手写 fake / InMemory。
-- 所有签名与上文核实一致；如启用 `[InternalsVisibleTo]` 仅限 Runtime 一处。
-
-- 对应项目 `dotnet build` 通过（无编译错误，新增测试不得引入类型/签名错误）。
+- `dotnet test tests/FlowEngine.Runtime.Tests` 全绿（Runtime 实测 75.2% / 499 用例通过）。
+- 不出现 `FluentAssertions`；`Moq` 仅限 `FlowEngine.Host.Tests`，Runtime 测试用手写 fake / InMemory（`NullCredentialAccessor` 等）。
+- 所有签名与上文核实一致；`[InternalsVisibleTo("FlowEngine.Runtime.Tests")]` 仅 Runtime 一处（已加）。
+- 对应项目 `dotnet build` 通过。
 
 ## 完成状态
 
-- [ ] 3.1
-- [ ] 3.2
-- [ ] 3.3
-- [ ] 3.4
+- [x] 3.1 SsrfGuard
+- [x] 3.2 ErrorStrategyHandler
+- [x] 3.3 参数水合与转换器
+- [x] 3.4 ParameterResolver 与表达式异常
+- [x] 3.5 执行队列 / HTTP 池
+- [ ] 3.6 简单节点（Limit/Memory/ManualTrigger/Wait/Deduplicate/Calculator）
+- [ ] 3.7 较大缺口节点（Aggregate/DataQuality/ThinkTool/SubWorkflow/Merge/Webhook/ScheduleTrigger）
 
 ## 主要修改记录
 
 - 重写自 `plan-unit-test-coverage.md`：修正 `IsSafeUrl(Uri)`→`IsInternalTarget(string?)`、`ShouldRetry/CalculateDelay`→`Handle/CreateInputTimeoutResult`、`Convert(string)→bool`→`ConvertAsync(object?,Type,ctx)→Task<object?>`、`DelayMs`→`BaseDelay`、虚构 `ExpressionEvaluator` 等。
+- 2026-07-19 进度：Runtime 部分（3.1–3.5）全部完成，新增 9 个测试文件、共 ~83 用例，Runtime 覆盖率 65.0% → **75.2%**（499 用例全绿）。Plugins.Standard 部分（3.6–3.7）尚未开始写测试，仍 58.1%；已核实 6 个简单节点源码与 `FilterNodeTests` 上下文模板，可直接开工。
+- 已发现但未修复的 3 个生产缺陷（计划禁止修改生产逻辑，仅记录）：① `WorkflowRepository.FindReferencingCredentialAsync` 的 EF JsonElement 问题；② `NumericConverter` 返回 boxed `Double`（int/long/float 分支被三元提升）；③ `FallbackConverter` 的 string→Guid 失败。
