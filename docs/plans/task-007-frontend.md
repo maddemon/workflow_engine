@@ -35,10 +35,10 @@
 
 ## 待完成项
 
-- [ ] **7.1 api 拦截器与错误处理测试**：验证请求拦截器注入 `baseURL`/`Authorization` header；响应拦截器对 `ApiError` 的处理；`ApiError` 类行为。（测试文件 `src/services/__tests__/api.test.ts` 或等价路径）
-- [ ] **7.2 workflowStore 测试**：用真实 action 名（`setSelectedNode(string)` / `addNode` / `removeNode` / `loadWorkflow` 等）与 `string` 类型 `selectedNodeId` 验证状态变更；**不得**使用 `selectedNode` / `setCurrentWorkflow` 等虚构 API。注意 zustand 单例需在测试间重置状态。
-- [ ] **7.3 工具函数测试**：`tokenStore.getToken/setToken/clear`；`setupGlobalErrorHandlers` 调用；`serializeWorkflow` / `deserializeWorkflow` 往返；`execution.tsx` 的 `statusConfig[status].color` 与 `formatDuration`。
-- [ ] **7.4 页面渲染测试**：`LoginPage` 必须包 `<AuthProvider>` + Router + i18n（必要时 `<MantineProvider>`）；`HelpPage` / `WorkflowEditorPage` / `ExecutionHistoryPage` 按上表装配后渲染不抛错、关键文案可见。
+- [x] **7.1 api 拦截器与错误处理测试**：验证请求拦截器注入 `baseURL`/`Authorization` header；响应拦截器对 `ApiError` 的处理；`ApiError` 类行为。（测试文件 `src/services/__tests__/api.test.ts`）
+- [x] **7.2 workflowStore 测试**：用真实 action 名（`setSelectedNode(string)` / `addNode` / `removeNode` / `loadWorkflow` 等）与 `string` 类型 `selectedNodeId` 验证状态变更；**不得**使用 `selectedNode` / `setCurrentWorkflow` 等虚构 API。注意 zustand 单例需在测试间重置状态。
+- [x] **7.3 工具函数测试**：`tokenStore.getToken/setToken/clear`；`setupGlobalErrorHandlers` 调用；`serializeWorkflow` / `deserializeWorkflow` 往返；`execution.tsx` 的 `statusConfig[status].color` 与 `formatDuration`。
+- [x] **7.4 页面渲染测试**：`LoginPage` 必须包 `<AuthProvider>` + Router + i18n（必要时 `<MantineProvider>`）；`HelpPage` / `WorkflowEditorPage` / `ExecutionHistoryPage` 按上表装配后渲染不抛错、关键文案可见。
 
 ## 完成标准
 
@@ -50,11 +50,24 @@
 
 ## 完成状态
 
-- [ ] 7.1
-- [ ] 7.2
-- [ ] 7.3
-- [ ] 7.4
+- [x] 7.1
+- [x] 7.2
+- [x] 7.3
+- [x] 7.4
+
+## 验证结果
+
+- `npx vitest run --coverage`：45 个测试文件，394 个用例全部通过。
+- 覆盖率：Statements 66.17% / Branches 50.77% / Functions 61.91% / **Lines 67.34%**（目标 ≥65% 已达成）。
+- `npm run typecheck`：通过。
+- `npm run build`：通过。
+- 前端测试文件中未发现 `as any`。
 
 ## 主要修改记录
 
 - 重写自 `plan-unit-test-coverage.md`：修正 `apiClient`→`api`、拦截器 `.handlers`→`.use`、store `selectedNode`/`setSelectedNode({})`→`selectedNodeId`/`setSelectedNode(string)`、`execution` 路径与 `getStatusColor`→`statusConfig`、页面缺 provider 必抛错等问题。
+- 新增/补全测试：services/api、stores/workflowStore、utils/*、pages/*、Canvas、ParameterPanel（含 fields）、ExecutionPanel、ExecutionView、WorkflowList、hooks、websocket 等。
+- 修复测试中发现的问题：
+  - `DiffPanel.test.tsx`：使用 `getAllByText` 处理多个匹配节点文本。
+  - `ValidationChecklistModal.test.tsx`：精确定位 loading 文案。
+  - `ValidationChecklistModal.tsx`：移除 `useRequest` 的 `manual: true`（原配置导致弹窗打开时永远不会触发校验，为功能缺陷修复）。

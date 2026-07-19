@@ -5,6 +5,7 @@ export const statusConfig: Record<ExecutionStatus, { color: string; icon: React.
   Pending: { color: 'gray', icon: <Clock size={14} />, labelKey: 'status.pending' },
   Running: { color: 'blue', icon: <Loader size={14} speed={2} />, labelKey: 'status.running' },
   Completed: { color: 'green', icon: <Check size={14} strokeWidth={3} />, labelKey: 'status.completed' },
+  DryRunCompleted: { color: 'green', icon: <Check size={14} strokeWidth={3} />, labelKey: 'status.completed' },
   Failed: { color: 'red', icon: <X size={14} strokeWidth={3} />, labelKey: 'status.failed' },
   Cancelled: { color: 'gray', icon: <X size={14} />, labelKey: 'status.cancelled' },
 };

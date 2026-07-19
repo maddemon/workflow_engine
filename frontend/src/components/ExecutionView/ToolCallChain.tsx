@@ -22,6 +22,7 @@ const statusConfig: Record<ExecutionStatus, { color: string; icon: React.ReactNo
   Pending: { color: 'gray', icon: <Clock size={12} />, labelKey: 'status.pending' },
   Running: { color: 'blue', icon: <Loader size={12} speed={2} />, labelKey: 'status.running' },
   Completed: { color: 'green', icon: <Check size={12} strokeWidth={3} />, labelKey: 'status.success' },
+  DryRunCompleted: { color: 'green', icon: <Check size={12} strokeWidth={3} />, labelKey: 'status.success' },
   Failed: { color: 'red', icon: <X size={12} strokeWidth={3} />, labelKey: 'status.failed' },
   Cancelled: { color: 'gray', icon: <X size={12} />, labelKey: 'status.cancelled' },
 };

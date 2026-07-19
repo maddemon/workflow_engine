@@ -17,6 +17,18 @@ import parameterPanelEn from '../public/locales/en/parameterPanel.json';
 import helpEn from '../public/locales/en/help.json';
 import credentialPanelEn from '../public/locales/en/credentialPanel.json';
 
+import commonZh from '../public/locales/zh-CN/common.json';
+import settingsZh from '../public/locales/zh-CN/settings.json';
+import workflowZh from '../public/locales/zh-CN/workflow.json';
+import executionZh from '../public/locales/zh-CN/execution.json';
+import adminZh from '../public/locales/zh-CN/admin.json';
+import loginZh from '../public/locales/zh-CN/login.json';
+import headerZh from '../public/locales/zh-CN/header.json';
+import nodePanelZh from '../public/locales/zh-CN/nodePanel.json';
+import parameterPanelZh from '../public/locales/zh-CN/parameterPanel.json';
+import helpZh from '../public/locales/zh-CN/help.json';
+import credentialPanelZh from '../public/locales/zh-CN/credentialPanel.json';
+
 const testI18n = i18n.createInstance();
 
 testI18n
@@ -38,6 +50,19 @@ testI18n
         parameterPanel: parameterPanelEn,
         help: helpEn,
         credentialPanel: credentialPanelEn,
+      },
+      'zh-CN': {
+        common: commonZh,
+        settings: settingsZh,
+        workflow: workflowZh,
+        execution: executionZh,
+        admin: adminZh,
+        login: loginZh,
+        header: headerZh,
+        nodePanel: nodePanelZh,
+        parameterPanel: parameterPanelZh,
+        help: helpZh,
+        credentialPanel: credentialPanelZh,
       },
     },
     react: {

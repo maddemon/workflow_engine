@@ -18,7 +18,6 @@ export function ValidationChecklistModal({ opened, onClose, onProceed }: IValida
   const { data: result, loading, error } = useRequest(
     () => validateWorkflow(workflowId!),
     {
-      manual: true,
       ready: opened && !!workflowId,
       refreshDeps: [workflowId],
     },

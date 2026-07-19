@@ -203,7 +203,7 @@ export interface UpdateWorkflowDto {
   connections: Connection[];
 }
 
-export type ExecutionStatus = 'Pending' | 'Running' | 'Completed' | 'Failed' | 'Cancelled';
+export type ExecutionStatus = 'Pending' | 'Running' | 'Completed' | 'Failed' | 'Cancelled' | 'DryRunCompleted';
 
 export interface NodeExecutionRecordDto {
   id: string;
