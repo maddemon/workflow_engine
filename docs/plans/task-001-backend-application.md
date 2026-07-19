@@ -44,10 +44,10 @@
 
 ## 待完成项
 
-- [ ] **1.1 WorkflowService 核心方法测试**：覆盖 `CreateAsync` / `GetAsync` / `GetAllAsync` / `UpdateAsync` / `DeleteAsync`。使用 InMemory `FlowEngineDbContext`（`Microsoft.EntityFrameworkCore.InMemory`，Application.Tests 已引用）+ 手写 fake 依赖（参考现有 `RecordingEventBus`、`StubIdempotencyService` 写法）。覆盖正常路径与无效输入（`Guid.Empty`、缺字段 DTO）。
-- [ ] **1.2 WorkflowModificationService 测试**：经 `ModifyAsync(ModifyWorkflowRequest)` 覆盖增加/删除/更新节点路径（验证 `DeepClone` 被间接调用、返回值 `ModifyWorkflowResult` 正确）。
-- [ ] **1.3 AuthorizationGuard 测试**：以 `RequireAccessAsync` / `RequireScopeAsync` / `RequireAdminAsync` 覆盖授权通过与拒绝路径（fake 资源/作用域）。
-- [ ] **1.4 校验与映射测试**：`WorkflowValidator.Validate` / `ValidateTriggerNodes`；`WorkflowDraftValidator.ValidateAsync` 及其静态收集方法；`WorkflowMapper.Register` 后 `Workflow→WorkflowDto` 映射；`WorkflowRepository.FindReferencingCredentialAsync`。
+- [x] **1.1 WorkflowService 核心方法测试**：覆盖 `CreateAsync` / `GetAsync` / `GetAllAsync` / `UpdateAsync` / `DeleteAsync`。使用 InMemory `FlowEngineDbContext`（`Microsoft.EntityFrameworkCore.InMemory`，Application.Tests 已引用）+ 手写 fake 依赖（参考现有 `RecordingEventBus`、`StubIdempotencyService` 写法）。覆盖正常路径与无效输入（`Guid.Empty`、缺字段 DTO）。
+- [x] **1.2 WorkflowModificationService 测试**：经 `ModifyAsync(ModifyWorkflowRequest)` 覆盖增加/删除/更新节点路径（验证 `DeepClone` 被间接调用、返回值 `ModifyWorkflowResult` 正确）。
+- [x] **1.3 AuthorizationGuard 测试**：以 `RequireAccessAsync` / `RequireScopeAsync` / `RequireAdminAsync` 覆盖授权通过与拒绝路径（fake 资源/作用域）。
+- [x] **1.4 校验与映射测试**：`WorkflowValidator.Validate` / `ValidateTriggerNodes`；`WorkflowDraftValidator.ValidateAsync` 及其静态收集方法；`WorkflowMapper.Register` 后 `Workflow→WorkflowDto` 映射；`WorkflowRepository.FindReferencingCredentialAsync`。
 
 ## 完成标准
 
@@ -59,11 +59,12 @@
 
 ## 完成状态
 
-- [ ] 1.1
-- [ ] 1.2
-- [ ] 1.3
-- [ ] 1.4
+- [x] 1.1
+- [x] 1.2
+- [x] 1.3
+- [x] 1.4
 
 ## 主要修改记录
 
 - 重写自 `plan-unit-test-coverage.md`，修正原草稿中 `IWorkflowRepository`、`ActivateAsync/DeactivateAsync`、`HasPermission`、`DeepClone` 公开调用等虚构/错误 API。
+- 补充 Application.Tests：WorkflowService CRUD、WorkflowModificationService 边界、WorkflowValidator / WorkflowDraftValidator / PollDeduplication / WorkflowRepository；Application 行覆盖 76.8%→83.5%。

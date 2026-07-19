@@ -310,6 +310,94 @@ public sealed class WorkflowValidatorTests
         Assert.Empty(errors);
     }
 
+    [Fact]
+    public void ValidateTriggerNodes_DefaultIsEntry_NoError()
+    {
+        var registry = new StubNodeRegistry([
+            CreateDescriptor("entry", defaultIsEntry: true, ports:
+            [
+                new PortDefinition { Name = "output", Direction = PortDirection.Output, Type = PortType.Main },
+            ]),
+        ]);
+        var validator = new WorkflowValidator(registry);
+        var workflow = CreateWorkflow([
+            new NodeDefinition { Id = "e1", TypeName = "entry", Name = "Entry" },
+        ], []);
+
+        var errors = new List<string>();
+        validator.ValidateTriggerNodes(workflow, errors);
+
+        Assert.Empty(errors);
+    }
+
+    [Fact]
+    public void Validate_DeriveEntryNodes_SetsFirstTriggerWhenNoneExplicit()
+    {
+        var registry = new StubNodeRegistry([
+            CreateDescriptor("trigger", category: "Trigger", ports:
+            [
+                new PortDefinition { Name = "output", Direction = PortDirection.Output, Type = PortType.Main },
+            ]),
+        ]);
+        var validator = new WorkflowValidator(registry);
+        var workflow = CreateWorkflow([
+            new NodeDefinition { Id = "t1", TypeName = "trigger", Name = "T1", IsEntry = false },
+        ], []);
+
+        var result = validator.Validate(workflow);
+
+        Assert.True(result.IsValid);
+        Assert.True(workflow.Nodes[0].IsEntry);
+    }
+
+    [Fact]
+    public void Validate_DeriveEntryNodes_RespectsExplicitIsEntry()
+    {
+        var registry = new StubNodeRegistry([
+            CreateDescriptor("trigger", category: "Trigger", ports:
+            [
+                new PortDefinition { Name = "output", Direction = PortDirection.Output, Type = PortType.Main },
+            ]),
+        ]);
+        var validator = new WorkflowValidator(registry);
+        var workflow = CreateWorkflow([
+            new NodeDefinition { Id = "t1", TypeName = "trigger", Name = "T1", IsEntry = true },
+            new NodeDefinition { Id = "t2", TypeName = "trigger", Name = "T2", IsEntry = false },
+        ], []);
+
+        validator.Validate(workflow);
+
+        Assert.True(workflow.Nodes[0].IsEntry);
+        Assert.False(workflow.Nodes[1].IsEntry);
+    }
+
+    [Fact]
+    public void Validate_PortTypeMismatch_ReportsError()
+    {
+        var registry = new StubNodeRegistry([
+            CreateDescriptor("source", ports:
+            [
+                new PortDefinition { Name = "output", Direction = PortDirection.Output, Type = PortType.AgentTool },
+            ]),
+            CreateDescriptor("sink", ports:
+            [
+                new PortDefinition { Name = "input", Direction = PortDirection.Input, Type = PortType.Memory },
+            ]),
+        ]);
+        var validator = new WorkflowValidator(registry);
+        var workflow = CreateWorkflow([
+            new NodeDefinition { Id = "source", TypeName = "source", Name = "Source" },
+            new NodeDefinition { Id = "sink", TypeName = "sink", Name = "Sink" },
+        ], [
+            (n) => new Connection { Id = Guid.NewGuid(), SourceNodeId = n[0].Id, TargetNodeId = n[1].Id, SourcePortName = "output", TargetPortName = "input" },
+        ]);
+
+        var result = validator.Validate(workflow);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.Contains("端口类型不兼容"));
+    }
+
     private static Workflow CreateWorkflow(
         NodeDefinition[] nodes,
         Func<NodeDefinition[], Connection>[] connectionFactories)
@@ -325,7 +413,8 @@ public sealed class WorkflowValidatorTests
         string typeName,
         string category = "Test",
         List<PortDefinition>? ports = null,
-        List<ParameterDefinition>? parameters = null)
+        List<ParameterDefinition>? parameters = null,
+        bool defaultIsEntry = false)
     {
         return new NodeTypeDescriptor
         {
@@ -334,6 +423,7 @@ public sealed class WorkflowValidatorTests
             Category = category,
             Ports = ports ?? [],
             Parameters = parameters ?? [],
+            DefaultIsEntry = defaultIsEntry,
         };
     }
 

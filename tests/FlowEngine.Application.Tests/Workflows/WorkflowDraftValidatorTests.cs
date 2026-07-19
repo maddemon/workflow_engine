@@ -342,6 +342,174 @@ public class WorkflowDraftValidatorTests
         Assert.NotEmpty(errors);
     }
 
+    [Fact]
+    public async Task ValidateAsync_DuplicateNodeId_ReturnsInvalid()
+    {
+        var draft = JsonNode.Parse("""
+        {
+          "name": "x",
+          "nodes": [
+            { "id": "n1", "typeName": "noop", "isEntry": true },
+            { "id": "n1", "typeName": "noop" }
+          ]
+        }
+        """)!;
+
+        var result = await CreateValidator().ValidateAsync(draft, CancellationToken.None);
+
+        Assert.False(result.Valid);
+        Assert.Contains(result.Errors, e => e.Contains("重复"));
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ConnectionsNotArray_ReturnsInvalid()
+    {
+        var draft = JsonNode.Parse("""
+        {
+          "name": "x",
+          "nodes": [ { "id": "n1", "typeName": "noop", "isEntry": true } ],
+          "connections": "bad"
+        }
+        """)!;
+
+        var result = await CreateValidator().ValidateAsync(draft, CancellationToken.None);
+
+        Assert.False(result.Valid);
+        Assert.Contains(result.Errors, e => e.Contains("connections 必须是数组"));
+    }
+
+    [Fact]
+    public async Task ValidateAsync_PortTypeIncompatible_ReturnsInvalid()
+    {
+        var registry = new FakeNodeRegistry([
+            new NodeTypeDescriptor
+            {
+                TypeName = "fetch",
+                Ports =
+                [
+                    new PortDefinition { Name = "out", Direction = PortDirection.Output, Type = PortType.AgentTool },
+                ],
+                Parameters = [new ParameterDefinition { Name = "url", Required = true }],
+            },
+            new NodeTypeDescriptor
+            {
+                TypeName = "store",
+                Ports =
+                [
+                    new PortDefinition { Name = "in", Direction = PortDirection.Input, Type = PortType.Memory },
+                ],
+                Parameters = [],
+            },
+        ]);
+        var validator = new WorkflowDraftValidator(registry, new FakeCredentialAccessor([]));
+        var draft = JsonNode.Parse("""
+        {
+          "name": "x",
+          "nodes": [
+            { "id": "n1", "typeName": "fetch", "isEntry": true, "parameters": { "url": "https://x" } },
+            { "id": "n2", "typeName": "store" }
+          ],
+          "connections": [
+            { "sourceNodeId": "n1", "sourcePortName": "out", "targetNodeId": "n2", "targetPortName": "in" }
+          ]
+        }
+        """)!;
+
+        var result = await validator.ValidateAsync(draft, CancellationToken.None);
+
+        Assert.False(result.Valid);
+        Assert.Contains(result.Errors, e => e.Contains("端口类型不兼容"));
+    }
+
+    [Fact]
+    public async Task ValidateAsync_IsolatedNode_ReturnsInvalid()
+    {
+        var draft = JsonNode.Parse("""
+        {
+          "name": "x",
+          "nodes": [
+            { "id": "n1", "typeName": "noop", "isEntry": true },
+            { "id": "n2", "typeName": "noop" }
+          ],
+          "connections": [
+            { "sourceNodeId": "n1", "sourcePortName": "x", "targetNodeId": "n1", "targetPortName": "y" }
+          ]
+        }
+        """)!;
+
+        var result = await CreateValidator().ValidateAsync(draft, CancellationToken.None);
+
+        Assert.False(result.Valid);
+        Assert.Contains(result.Errors, e => e.Contains("孤立节点"));
+    }
+
+    [Fact]
+    public async Task ValidateAsync_ValidExpressionParameter_Passes()
+    {
+        var registry = new FakeNodeRegistry([
+            new NodeTypeDescriptor
+            {
+                TypeName = "httpRequest",
+                Parameters =
+                [
+                    new ParameterDefinition { Name = "url", Type = ParameterType.String, Hint = PresentationHint.Expression },
+                ],
+                Ports = [],
+            },
+        ]);
+        var validator = new WorkflowDraftValidator(registry, new FakeCredentialAccessor([]));
+        var draft = JsonNode.Parse("""
+        {
+          "name": "x",
+          "nodes": [
+            { "id": "n1", "typeName": "httpRequest", "isEntry": true, "parameters": { "url": "'https://api.com?token=' + $json.token" } }
+          ]
+        }
+        """)!;
+
+        var result = await validator.ValidateAsync(draft, CancellationToken.None);
+
+        Assert.True(result.Valid);
+    }
+
+    [Fact]
+    public void CollectCredentialReferences_InNestedObject_AddsNames()
+    {
+        var node = JsonNode.Parse("""
+        {
+          "parameters": {
+            "headers": { "Authorization": "$credentials.apiKey.token" },
+            "list": ["$credentials.db.password"]
+          }
+        }
+        """)!;
+        var names = new HashSet<string>();
+
+        WorkflowDraftValidator.CollectCredentialReferences(node["parameters"], names);
+
+        Assert.Contains("apiKey", names);
+        Assert.Contains("db", names);
+    }
+
+    [Fact]
+    public void CollectMustacheErrors_NestedObject_Reported()
+    {
+        var node = JsonNode.Parse("""
+        {
+          "id":"n",
+          "typeName":"httpRequest",
+          "parameters":{
+            "headers": { "Authorization": "Bearer {{token}}" }
+          }
+        }
+        """)!;
+        var errors = new List<string>();
+
+        WorkflowDraftValidator.CollectMustacheErrors(node["parameters"], "n", errors);
+
+        Assert.Contains(errors, e => e.Contains("{{") && e.Contains("Authorization"));
+    }
+
     private sealed class FakeCredentialAccessor : ICredentialAccessor
     {
         private readonly HashSet<string> _existing;

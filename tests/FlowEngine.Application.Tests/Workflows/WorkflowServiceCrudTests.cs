@@ -239,9 +239,170 @@ public sealed class WorkflowServiceCrudTests : IDisposable
         Assert.False(deleted);
     }
 
+    // ── Draft lifecycle ──────────────────────────────────────
+
+    [Fact]
+    public async Task ConfirmDraftAsync_ExistingDraft_ActivatesAndReturnsDto()
+    {
+        _userContext.Roles = [RoleConstants.Editor];
+        var workflow = SeedWorkflow("Draft", Guid.NewGuid(), isActive: false);
+
+        var result = await _service.ConfirmDraftAsync(workflow.Id, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(result);
+        Assert.True(result.IsActive);
+        Assert.Equal(DraftStatus.Confirmed, result.DraftStatus);
+    }
+
+    [Fact]
+    public async Task ConfirmDraftAsync_NonExistent_ReturnsNull()
+    {
+        _userContext.Roles = [RoleConstants.Editor];
+
+        var result = await _service.ConfirmDraftAsync(Guid.NewGuid(), TestContext.Current.CancellationToken);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task RejectDraftAsync_ExistingDraft_SetsStatusAndReason()
+    {
+        _userContext.Roles = [RoleConstants.Editor];
+        var workflow = SeedWorkflow("Draft", Guid.NewGuid(), isActive: false);
+
+        var result = await _service.RejectDraftAsync(workflow.Id, "bad draft", TestContext.Current.CancellationToken);
+
+        Assert.NotNull(result);
+        Assert.Equal(DraftStatus.Rejected, result.DraftStatus);
+        Assert.Equal("bad draft", result.RejectionReason);
+    }
+
+    [Fact]
+    public async Task RejectDraftAsync_NonExistent_ReturnsNull()
+    {
+        _userContext.Roles = [RoleConstants.Editor];
+
+        var result = await _service.RejectDraftAsync(Guid.NewGuid(), "reason", TestContext.Current.CancellationToken);
+
+        Assert.Null(result);
+    }
+
+    // ── Version queries ────────────────────────────────────────
+
+    [Fact]
+    public async Task GetVersionAsync_ExistingVersion_ReturnsMappedDto()
+    {
+        _userContext.Roles = [RoleConstants.Viewer];
+        var workflow = SeedWorkflow("Versioned", Guid.NewGuid());
+
+        var result = await _service.GetVersionAsync(workflow.Id, workflow.Version, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(result);
+        Assert.Equal(workflow.Version, result.Version);
+    }
+
+    [Fact]
+    public async Task GetVersionAsync_NonExistentVersion_ReturnsNull()
+    {
+        _userContext.Roles = [RoleConstants.Viewer];
+        var workflow = SeedWorkflow("Versioned", Guid.NewGuid());
+
+        var result = await _service.GetVersionAsync(workflow.Id, 999, TestContext.Current.CancellationToken);
+
+        Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task GetVersionsAsync_Existing_ReturnsVersionList()
+    {
+        _userContext.Roles = [RoleConstants.Viewer];
+        var workflow = SeedWorkflow("Versioned", Guid.NewGuid());
+
+        var result = await _service.GetVersionsAsync(workflow.Id, TestContext.Current.CancellationToken);
+
+        Assert.Single(result);
+        Assert.Contains(workflow.Version, result);
+    }
+
+    // ── Activation transitions ─────────────────────────────────
+
+    [Fact]
+    public async Task UpdateAsync_DeactivateWorkflow_CallsUnregisterAndSaves()
+    {
+        _userContext.Roles = [RoleConstants.Editor];
+        var workflow = SeedWorkflow("Active", Guid.NewGuid(), isActive: true);
+        var dto = new UpdateWorkflowDto
+        {
+            Name = workflow.Name,
+            IsActive = false,
+            Nodes = [],
+            Connections = [],
+        };
+
+        var result = await _service.UpdateAsync(workflow.Id, dto, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(result);
+        Assert.False(result.IsActive);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_ActivateWorkflow_CallsRegisterAndSaves()
+    {
+        _userContext.Roles = [RoleConstants.Editor];
+        var workflow = SeedWorkflow("Inactive", Guid.NewGuid(), isActive: false);
+        var dto = new UpdateWorkflowDto
+        {
+            Name = workflow.Name,
+            IsActive = true,
+            Nodes = [],
+            Connections = [],
+        };
+
+        var result = await _service.UpdateAsync(workflow.Id, dto, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(result);
+        Assert.True(result.IsActive);
+    }
+
+    [Fact]
+    public async Task UpdateAsync_RegisterThrows_LogsAndCommits()
+    {
+        _userContext.Roles = [RoleConstants.Editor];
+        var workflow = SeedWorkflow("Inactive", Guid.NewGuid(), isActive: false);
+        var dto = new UpdateWorkflowDto
+        {
+            Name = workflow.Name,
+            IsActive = true,
+            Nodes = [],
+            Connections = [],
+        };
+        var throwingService = BuildServiceWithScheduleManager(new ThrowingScheduleManager(throwOnRegister: true));
+
+        var result = await throwingService.UpdateAsync(workflow.Id, dto, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(result);
+        Assert.True(result.IsActive);
+        var persisted = await _dbContext.Workflows.FindAsync([workflow.Id], TestContext.Current.CancellationToken);
+        Assert.True(persisted!.IsActive);
+    }
+
+    [Fact]
+    public async Task DeleteAsync_UnregisterThrows_LogsAndDeletes()
+    {
+        _userContext.Roles = [RoleConstants.Admin];
+        var workflow = SeedWorkflow("ToDelete", Guid.NewGuid());
+        var throwingService = BuildServiceWithScheduleManager(new ThrowingScheduleManager(throwOnUnregister: true));
+
+        var deleted = await throwingService.DeleteAsync(workflow.Id, TestContext.Current.CancellationToken);
+
+        Assert.True(deleted);
+        var persisted = await _dbContext.Workflows.FindAsync([workflow.Id], TestContext.Current.CancellationToken);
+        Assert.Null(persisted);
+    }
+
     // ── Helpers ────────────────────────────────────────────────
 
-    private Workflow SeedWorkflow(string name, Guid projectId)
+    private Workflow SeedWorkflow(string name, Guid projectId, bool isActive = true)
     {
         var workflow = new Workflow
         {
@@ -249,13 +410,28 @@ public sealed class WorkflowServiceCrudTests : IDisposable
             ProjectId = projectId,
             Name = name,
             CreatedBy = "tester",
-            IsActive = true,
+            IsActive = isActive,
             Nodes = [new NodeDefinition { Id = "n1", TypeName = "fetch", Name = "Fetch" }],
             Connections = [],
         };
         _dbContext.Workflows.Add(workflow);
         _dbContext.SaveChanges();
         return workflow;
+    }
+
+    private WorkflowService BuildServiceWithScheduleManager(IScheduleManager scheduleManager)
+    {
+        var auditFactory = new AuditEventFactory(_userContext);
+        var resourceAuthorization = new RoleBasedResourceAuthorizationService(_userContext);
+        var authGuard = AuthorizationGuardFactory.Create(_userContext, resourceAuthorization, _eventBus);
+        var triggerService = new TriggerService(
+            _dbContext, _eventBus, auditFactory, scheduleManager, authGuard, new WebhookRouteService(_dbContext), NullLogger<TriggerService>.Instance);
+        var validator = new WorkflowValidator(new StubNodeRegistry([]));
+        var handler = new AuthorizedOperationHandler(authGuard, _eventBus, auditFactory);
+        var statisticsLoader = new WorkflowStatisticsLoader(_dbContext);
+        var triggerSync = new WorkflowTriggerSync(triggerService, handler);
+        return new WorkflowService(
+            _dbContext, validator, _eventBus, auditFactory, triggerService, authGuard, handler, statisticsLoader, triggerSync, NullLogger<WorkflowService>.Instance);
     }
 
     private sealed class StubNodeRegistry(IReadOnlyCollection<NodeTypeDescriptor> descriptors) : INodeRegistry
@@ -266,6 +442,23 @@ public sealed class WorkflowServiceCrudTests : IDisposable
         public IReadOnlyCollection<INodeType> GetAll() => [];
         public INodeType CreateInstance(string typeName) => throw new InvalidOperationException();
         public IReadOnlyCollection<NodeTypeDescriptor> GetDescriptors() => descriptors;
-        public NodeTypeDescriptor GetDescriptor(string typeName) => descriptors.First(d => d.TypeName == typeName);
+        public NodeTypeDescriptor GetDescriptor(string typeName) =>
+            descriptors.First(d => d.TypeName == typeName);
+    }
+
+    private sealed class ThrowingScheduleManager(bool throwOnRegister = false, bool throwOnUnregister = false) : IScheduleManager
+    {
+        public Task StartAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task StopAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public Task RegisterScheduleAsync(Guid triggerId, Guid workflowDefinitionId, string cronExpression, string? timeZone = null, DateTime? startAt = null, DateTime? endAt = null, CancellationToken cancellationToken = default)
+            => throwOnRegister ? throw new InvalidOperationException("register failed") : Task.CompletedTask;
+        public Task UnregisterScheduleAsync(Guid triggerId, CancellationToken cancellationToken = default)
+            => throwOnUnregister ? throw new InvalidOperationException("unregister failed") : Task.CompletedTask;
+        public Task<DateTime?> GetNextFireTimeAsync(Guid triggerId, CancellationToken cancellationToken = default)
+            => Task.FromResult<DateTime?>(null);
+        public Task RegisterPollTriggerAsync(Guid triggerId, Guid workflowDefinitionId, int intervalSeconds, CancellationToken cancellationToken = default)
+            => throwOnRegister ? throw new InvalidOperationException("register failed") : Task.CompletedTask;
+        public Task UnregisterPollTriggerAsync(Guid triggerId, CancellationToken cancellationToken = default)
+            => throwOnUnregister ? throw new InvalidOperationException("unregister failed") : Task.CompletedTask;
     }
 }
