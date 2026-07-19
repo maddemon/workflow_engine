@@ -12,5 +12,8 @@ public class FlowEngineWebApplicationFactory : WebApplicationFactory<Program>
     static FlowEngineWebApplicationFactory()
     {
         Environment.SetEnvironmentVariable("FLOWENGINE_ADMIN_PASSWORD", "TestP@ssw0rd123!");
+        Environment.SetEnvironmentVariable(
+            "FLOWENGINE_CRYPTO_KEY",
+            "000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F");
     }
 }

@@ -17,14 +17,14 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
 using Microsoft.Extensions.Hosting;
 
-namespace FlowEngine.Host.Tests.Executions;
+namespace FlowEngine.Host.Tests.Controllers;
 
-public class ExecutionsControllerTests : IClassFixture<FlowEngineWebApplicationFactory>, IDisposable
+public class TriggersControllerTests : IClassFixture<FlowEngineWebApplicationFactory>, IDisposable
 {
     private readonly WebApplicationFactory<Program> _factory;
     private readonly string _tempRoot;
 
-    public ExecutionsControllerTests(FlowEngineWebApplicationFactory factory)
+    public TriggersControllerTests(FlowEngineWebApplicationFactory factory)
     {
         _tempRoot = Path.Combine(Path.GetTempPath(), "flowengine-tests", Guid.NewGuid().ToString());
         var dbDirectory = Path.Combine(_tempRoot, "db");
@@ -36,7 +36,6 @@ public class ExecutionsControllerTests : IClassFixture<FlowEngineWebApplicationF
         _factory = factory.WithWebHostBuilder(builder =>
         {
             builder.UseSetting("ConnectionStrings:Default", $"Data Source={dbPath};Mode=ReadWriteCreate");
-            builder.UseSetting("ExecutionCleanup:Enabled", "false");
             builder.UseSetting("Audit:LogPath", auditDirectory);
             builder.ConfigureServices(services =>
             {
@@ -62,146 +61,167 @@ public class ExecutionsControllerTests : IClassFixture<FlowEngineWebApplicationF
     }
 
     [Fact]
-    public async Task Execute_WithInputs_ReturnsOkAndStartsExecution()
+    public async Task GetAll_AuthenticatedAdmin_ReturnsOkWithTriggers()
     {
         var ct = TestContext.Current.CancellationToken;
-        var email = "jwt-execute-inputs@example.com";
+        var email = "triggers-getall@example.com";
         var client = await CreateAuthenticatedClientAsync(email, [RoleConstants.Admin], ct);
-        var workflow = await SeedWorkflowAsync(email, ct);
+        var trigger = await SeedTriggerAsync(email, ct);
 
-        var dto = new ExecuteWorkflowDto
-        {
-            Inputs = new Dictionary<string, object> { ["greeting"] = "hello" },
-        };
-
-        var response = await client.PostAsJsonAsync($"/api/v1/workflows/{workflow.Id}/execute", dto, ct);
+        var response = await client.GetAsync("/api/v1/triggers", ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var result = await response.Content.ReadFromJsonAsync<ExecutionDto>(TestJsonOptions, ct);
+        var result = await response.Content.ReadFromJsonAsync<IReadOnlyCollection<TriggerDto>>(TestJsonOptions, ct);
         Assert.NotNull(result);
-        Assert.Equal(workflow.Id, result!.WorkflowDefinitionId);
-
-        using var scope = _factory.Services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
-        var record = await dbContext.ExecutionRecords.FirstOrDefaultAsync(e => e.Id == result.Id, ct);
-        Assert.NotNull(record);
+        Assert.Contains(result, t => t.Id == trigger.Id);
     }
 
     [Fact]
-    public async Task Execute_BodyIdempotencyKeyOverridesHeader()
+    public async Task GetAll_ByWorkflow_ReturnsOkWithTriggers()
     {
         var ct = TestContext.Current.CancellationToken;
-        var email = "jwt-execute-idempotency@example.com";
+        var email = "triggers-getall-wf@example.com";
         var client = await CreateAuthenticatedClientAsync(email, [RoleConstants.Admin], ct);
-        var workflow = await SeedWorkflowAsync(email, ct);
+        var trigger = await SeedTriggerAsync(email, ct);
 
-        var dto = new ExecuteWorkflowDto
-        {
-            IdempotencyKey = "body-key",
-        };
-        client.DefaultRequestHeaders.Add("X-Idempotency-Key", "header-key");
-
-        var response = await client.PostAsJsonAsync($"/api/v1/workflows/{workflow.Id}/execute", dto, ct);
+        var response = await client.GetAsync($"/api/v1/triggers?workflowDefinitionId={trigger.WorkflowDefinitionId}", ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task Execute_WithoutBody_BackwardCompatible()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var email = "jwt-execute-no-body@example.com";
-        var client = await CreateAuthenticatedClientAsync(email, [RoleConstants.Admin], ct);
-        var workflow = await SeedWorkflowAsync(email, ct);
-
-        var response = await client.PostAsync($"/api/v1/workflows/{workflow.Id}/execute", null, ct);
-
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var result = await response.Content.ReadFromJsonAsync<ExecutionDto>(TestJsonOptions, ct);
+        var result = await response.Content.ReadFromJsonAsync<IReadOnlyCollection<TriggerDto>>(TestJsonOptions, ct);
         Assert.NotNull(result);
+        Assert.Contains(result, t => t.Id == trigger.Id);
     }
 
     [Fact]
-    public async Task Execute_NonExistingWorkflow_ReturnsNotFound()
+    public async Task GetById_Existing_ReturnsOk()
     {
         var ct = TestContext.Current.CancellationToken;
-        var client = await CreateAuthenticatedClientAsync("jwt-execute-notfound@example.com", [RoleConstants.Admin], ct);
+        var email = "triggers-get@example.com";
+        var client = await CreateAuthenticatedClientAsync(email, [RoleConstants.Admin], ct);
+        var trigger = await SeedTriggerAsync(email, ct);
 
-        var response = await client.PostAsync($"/api/v1/workflows/{Guid.NewGuid()}/execute", null, ct);
+        var response = await client.GetAsync($"/api/v1/triggers/{trigger.Id}", ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await response.Content.ReadFromJsonAsync<TriggerDto>(TestJsonOptions, ct);
+        Assert.NotNull(result);
+        Assert.Equal(trigger.Id, result!.Id);
+    }
+
+    [Fact]
+    public async Task GetById_NotFound_Returns404()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = await CreateAuthenticatedClientAsync("triggers-get-notfound@example.com", [RoleConstants.Admin], ct);
+
+        var response = await client.GetAsync($"/api/v1/triggers/{Guid.NewGuid()}", ct);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
-    public async Task Execute_Viewer_ReturnsForbidden()
+    public async Task Create_ValidDto_ReturnsCreated()
     {
         var ct = TestContext.Current.CancellationToken;
-        var email = "jwt-execute-viewer@example.com";
-        var client = await CreateAuthenticatedClientAsync(email, [RoleConstants.Viewer], ct);
+        var email = "triggers-create@example.com";
+        var client = await CreateAuthenticatedClientAsync(email, [RoleConstants.Admin], ct);
         var workflow = await SeedWorkflowAsync(email, ct);
+        var dto = new CreateTriggerDto
+        {
+            WorkflowDefinitionId = workflow.Id,
+            WorkflowVersion = 1,
+            Type = TriggerType.Schedule,
+            Name = "Daily Trigger",
+            Settings = new TriggerSettingsDto
+            {
+                CronExpression = "0 0 * * *",
+            },
+        };
 
-        var response = await client.PostAsync($"/api/v1/workflows/{workflow.Id}/execute", null, ct);
+        var response = await client.PostAsJsonAsync("/api/v1/triggers", dto, ct);
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
+        var result = await response.Content.ReadFromJsonAsync<TriggerDto>(TestJsonOptions, ct);
+        Assert.NotNull(result);
+        Assert.Equal(dto.Name, result!.Name);
     }
 
     [Fact]
-    public async Task Cancel_PendingExecution_ReturnsOkAndSetsCancelled()
+    public async Task Create_InvalidDto_ReturnsBadRequest()
     {
         var ct = TestContext.Current.CancellationToken;
-        var email = "jwt-cancel-pending@example.com";
-        var client = await CreateAuthenticatedClientAsync(email, [RoleConstants.Admin], ct);
-        var execution = await SeedExecutionAsync(email, ExecutionStatus.Pending, ct);
+        var client = await CreateAuthenticatedClientAsync("triggers-create-invalid@example.com", [RoleConstants.Admin], ct);
+        var dto = new CreateTriggerDto
+        {
+            WorkflowDefinitionId = Guid.Empty,
+            Name = string.Empty,
+        };
 
-        var response = await client.PostAsync($"/api/v1/executions/{execution.Id}/cancel", null, ct);
+        var response = await client.PostAsJsonAsync("/api/v1/triggers", dto, ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Update_Existing_ReturnsOk()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var email = "triggers-update@example.com";
+        var client = await CreateAuthenticatedClientAsync(email, [RoleConstants.Admin], ct);
+        var trigger = await SeedTriggerAsync(email, ct);
+        var dto = new UpdateTriggerDto
+        {
+            Name = "Updated Trigger",
+            IsActive = false,
+        };
+
+        var response = await client.PutAsJsonAsync($"/api/v1/triggers/{trigger.Id}", dto, ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var result = await response.Content.ReadFromJsonAsync<ExecutionDto>(TestJsonOptions, ct);
+        var result = await response.Content.ReadFromJsonAsync<TriggerDto>(TestJsonOptions, ct);
         Assert.NotNull(result);
-        Assert.Equal(nameof(ExecutionStatus.Cancelled), result!.Status);
-
-        using var scope = _factory.Services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
-        var record = await dbContext.ExecutionRecords.FindAsync([execution.Id], ct);
-        Assert.NotNull(record);
-        Assert.Equal(ExecutionStatus.Cancelled, record.Status);
+        Assert.Equal(dto.Name, result!.Name);
+        Assert.False(result.IsActive);
     }
 
     [Fact]
-    public async Task Cancel_CompletedExecution_ReturnsConflict()
+    public async Task Update_NotFound_Returns404()
     {
         var ct = TestContext.Current.CancellationToken;
-        var email = "jwt-cancel-completed@example.com";
-        var client = await CreateAuthenticatedClientAsync(email, [RoleConstants.Admin], ct);
-        var execution = await SeedExecutionAsync(email, ExecutionStatus.Completed, ct);
+        var client = await CreateAuthenticatedClientAsync("triggers-update-notfound@example.com", [RoleConstants.Admin], ct);
+        var dto = new UpdateTriggerDto
+        {
+            Name = "Updated Trigger",
+            IsActive = false,
+        };
 
-        var response = await client.PostAsync($"/api/v1/executions/{execution.Id}/cancel", null, ct);
-
-        Assert.Equal(HttpStatusCode.Conflict, response.StatusCode);
-    }
-
-    [Fact]
-    public async Task Cancel_NonExistingExecution_ReturnsNotFound()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var client = await CreateAuthenticatedClientAsync("jwt-cancel-notfound@example.com", [RoleConstants.Admin], ct);
-
-        var response = await client.PostAsync($"/api/v1/executions/{Guid.NewGuid()}/cancel", null, ct);
+        var response = await client.PutAsJsonAsync($"/api/v1/triggers/{Guid.NewGuid()}", dto, ct);
 
         Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     [Fact]
-    public async Task Cancel_Viewer_ReturnsForbidden()
+    public async Task Delete_Existing_ReturnsNoContent()
     {
         var ct = TestContext.Current.CancellationToken;
-        var email = "jwt-cancel-viewer@example.com";
-        var client = await CreateAuthenticatedClientAsync(email, [RoleConstants.Viewer], ct);
-        var execution = await SeedExecutionAsync(email, ExecutionStatus.Pending, ct);
+        var email = "triggers-delete@example.com";
+        var client = await CreateAuthenticatedClientAsync(email, [RoleConstants.Admin], ct);
+        var trigger = await SeedTriggerAsync(email, ct);
 
-        var response = await client.PostAsync($"/api/v1/executions/{execution.Id}/cancel", null, ct);
+        var response = await client.DeleteAsync($"/api/v1/triggers/{trigger.Id}", ct);
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        Assert.Equal(HttpStatusCode.NoContent, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task Delete_NotFound_Returns404()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = await CreateAuthenticatedClientAsync("triggers-delete-notfound@example.com", [RoleConstants.Admin], ct);
+
+        var response = await client.DeleteAsync($"/api/v1/triggers/{Guid.NewGuid()}", ct);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
     }
 
     private async Task<HttpClient> CreateAuthenticatedClientAsync(string email, IReadOnlyList<string>? roles = null, CancellationToken ct = default)
@@ -244,13 +264,13 @@ public class ExecutionsControllerTests : IClassFixture<FlowEngineWebApplicationF
         using var scope = _factory.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
 
+        var user = await dbContext.Set<User>().FirstAsync(u => u.Email == email, ct);
         var workflow = new Workflow
         {
             Name = "Test Workflow",
-            ProjectId = Guid.NewGuid(),
             Nodes = [],
             Connections = [],
-            CreatedBy = email,
+            CreatedBy = user.Id.ToString(),
             Version = 1,
             IsActive = true,
         };
@@ -259,25 +279,25 @@ public class ExecutionsControllerTests : IClassFixture<FlowEngineWebApplicationF
         return workflow;
     }
 
-    private async Task<ExecutionRecord> SeedExecutionAsync(string email, ExecutionStatus status, CancellationToken ct)
+    private async Task<Trigger> SeedTriggerAsync(string email, CancellationToken ct)
     {
         using var scope = _factory.Services.CreateScope();
         var dbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
 
         var workflow = await SeedWorkflowAsync(email, ct);
-
-        var execution = new ExecutionRecord
+        var trigger = new Trigger
         {
             WorkflowDefinitionId = workflow.Id,
             ProjectId = workflow.ProjectId,
-            Status = status,
-            StartedAt = DateTime.UtcNow,
-            CompletedAt = status is ExecutionStatus.Completed or ExecutionStatus.Cancelled or ExecutionStatus.Failed ? DateTime.UtcNow : null,
-            NodeRecords = [],
+            WorkflowVersion = 1,
+            Type = TriggerType.Schedule,
+            Name = "Test Trigger",
+            IsActive = true,
+            Settings = new TriggerSettings(),
         };
-        dbContext.ExecutionRecords.Add(execution);
+        dbContext.Triggers.Add(trigger);
         await dbContext.SaveChangesAsync(ct);
-        return execution;
+        return trigger;
     }
 
     private static JsonSerializerOptions TestJsonOptions => HostTestJsonOptions.Default;

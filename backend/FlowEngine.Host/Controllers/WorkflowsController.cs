@@ -1,3 +1,4 @@
+using System.Text.Json;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Authorization;
@@ -21,6 +22,11 @@ public class WorkflowsController(
     WorkflowDryRunService dryRunService,
     IStringLocalizer<SharedResource> localizer) : ControllerBase
 {
+    private static readonly JsonSerializerOptions ExportJsonOptions = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+    };
+
     /// <summary>
     /// 分页获取工作流摘要列表。
     /// </summary>
@@ -152,7 +158,7 @@ public class WorkflowsController(
     {
         var exportedBy = User.Identity?.Name ?? "unknown";
         var json = await exportService.ExportAsync(id, exportedBy, cancellationToken).ConfigureAwait(false);
-        var result = System.Text.Json.JsonSerializer.Deserialize<WorkflowExportResult>(json);
+        var result = JsonSerializer.Deserialize<WorkflowExportResult>(json, ExportJsonOptions);
         return this.OkOrNotFound(result);
     }
 
@@ -175,7 +181,7 @@ public class WorkflowsController(
         {
             var json = await exportService.ExportBatchAsync(request.Ids, exportedBy, cancellationToken)
                 .ConfigureAwait(false);
-            var results = System.Text.Json.JsonSerializer.Deserialize<List<WorkflowExportResult>>(json);
+            var results = JsonSerializer.Deserialize<List<WorkflowExportResult>>(json, ExportJsonOptions);
             return this.OkOrNotFound(results);
         }
         catch (InvalidOperationException)

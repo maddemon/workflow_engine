@@ -260,5 +260,5 @@ public class ApiKeyAuthenticationTests : IClassFixture<FlowEngineWebApplicationF
         return client;
     }
 
-    private static JsonSerializerOptions TestJsonOptions => new(JsonSerializerDefaults.Web);
+    private static JsonSerializerOptions TestJsonOptions => HostTestJsonOptions.Default;
 }

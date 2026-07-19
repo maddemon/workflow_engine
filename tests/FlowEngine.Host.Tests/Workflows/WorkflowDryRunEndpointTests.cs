@@ -347,5 +347,5 @@ public class WorkflowDryRunEndpointTests : IClassFixture<FlowEngineWebApplicatio
         return (client, created.Key, user.Id);
     }
 
-    private static JsonSerializerOptions TestJsonOptions => new(JsonSerializerDefaults.Web);
+    private static JsonSerializerOptions TestJsonOptions => HostTestJsonOptions.Default;
 }

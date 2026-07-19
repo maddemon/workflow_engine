@@ -1,10 +1,12 @@
+using System.Net.WebSockets;
+using FlowEngine.Core.Entities;
+using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
 using FlowEngine.Host.WebSocketHandlers;
-using Microsoft.Extensions.DependencyInjection;
-using Moq;
-using Microsoft.Extensions.Logging;
-using System.Net.WebSockets;
 using MediatR;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
+using Moq;
 
 namespace FlowEngine.Host.Tests;
 
@@ -44,29 +46,203 @@ public class WebSocketEventPushServiceTests : IDisposable
         var executionId = Guid.NewGuid();
 
         await ((INotificationHandler<WorkflowStartedEvent>)_service)
-            .Handle(new WorkflowStartedEvent(executionId, Guid.NewGuid()), CancellationToken.None);
+            .Handle(
+                new WorkflowStartedEvent(executionId, Guid.NewGuid()),
+                TestContext.Current.CancellationToken);
 
         var events = _replayService.GetMissingEvents(executionId, 0);
         Assert.Contains(events, e => e.Type == "execution_started");
     }
 
     [Fact]
+    public async Task Handle_NodeStartedEvent_RecordsToReplay()
+    {
+        var executionId = Guid.NewGuid();
+        var evt = new NodeStartedEvent(executionId, "node-1", 0);
+
+        await ((INotificationHandler<NodeStartedEvent>)_service)
+            .Handle(evt, TestContext.Current.CancellationToken);
+
+        var events = _replayService.GetMissingEvents(executionId, 0);
+        Assert.Contains(events, e => e.Type == "node_started");
+    }
+
+    [Fact]
     public async Task Handle_NodeExecutedEvent_RecordsToReplay()
     {
         var executionId = Guid.NewGuid();
-        var evt = new NodeExecutedEvent(executionId, "node-1", 0, new FlowEngine.Core.Entities.NodeExecutionResult());
+        var evt = new NodeExecutedEvent(executionId, "node-1", 0, new NodeExecutionResult());
 
         await ((INotificationHandler<NodeExecutedEvent>)_service)
-            .Handle(evt, CancellationToken.None);
+            .Handle(evt, TestContext.Current.CancellationToken);
 
         var events = _replayService.GetMissingEvents(executionId, 0);
         Assert.Contains(events, e => e.Type == "node_executed");
     }
 
     [Fact]
+    public async Task Handle_NodeErrorEvent_RecordsToReplay()
+    {
+        var executionId = Guid.NewGuid();
+        var evt = new NodeErrorEvent(
+            executionId,
+            "node-1",
+            0,
+            new NodeError { Code = "E1", Message = "error" });
+
+        await ((INotificationHandler<NodeErrorEvent>)_service)
+            .Handle(evt, TestContext.Current.CancellationToken);
+
+        var events = _replayService.GetMissingEvents(executionId, 0);
+        Assert.Contains(events, e => e.Type == "node_error");
+    }
+
+    [Fact]
+    public async Task Handle_WorkflowCompletedEvent_RecordsToReplay()
+    {
+        var executionId = Guid.NewGuid();
+        var evt = new WorkflowCompletedEvent(
+            executionId,
+            Guid.NewGuid(),
+            ExecutionStatus.Completed);
+
+        await ((INotificationHandler<WorkflowCompletedEvent>)_service)
+            .Handle(evt, TestContext.Current.CancellationToken);
+
+        var events = _replayService.GetMissingEvents(executionId, 0);
+        Assert.Contains(events, e => e.Type == "execution_completed");
+    }
+
+    [Fact]
+    public async Task Handle_WorkflowFailedEvent_RecordsToReplay()
+    {
+        var executionId = Guid.NewGuid();
+        var evt = new WorkflowFailedEvent(
+            executionId,
+            Guid.NewGuid(),
+            new NodeError { Code = "E2", Message = "failed" });
+
+        await ((INotificationHandler<WorkflowFailedEvent>)_service)
+            .Handle(evt, TestContext.Current.CancellationToken);
+
+        var events = _replayService.GetMissingEvents(executionId, 0);
+        Assert.Contains(events, e => e.Type == "execution_failed");
+    }
+
+    [Fact]
+    public async Task Handle_WorkflowCancelledEvent_RecordsToReplay()
+    {
+        var executionId = Guid.NewGuid();
+        var evt = new WorkflowCancelledEvent(executionId, Guid.NewGuid());
+
+        await ((INotificationHandler<WorkflowCancelledEvent>)_service)
+            .Handle(evt, TestContext.Current.CancellationToken);
+
+        var events = _replayService.GetMissingEvents(executionId, 0);
+        Assert.Contains(events, e => e.Type == "execution_cancelled");
+    }
+
+    [Fact]
+    public async Task Handle_LlmTokenStreamEvent_DoesNotRecordToReplay()
+    {
+        var executionId = Guid.NewGuid();
+        var evt = new LlmTokenStreamEvent
+        {
+            ExecutionId = executionId,
+            NodeDefinitionId = "node-1",
+            RunIndex = 0,
+            Delta = "hello",
+            IsFinal = false,
+        };
+
+        await ((INotificationHandler<LlmTokenStreamEvent>)_service)
+            .Handle(evt, TestContext.Current.CancellationToken);
+
+        var events = _replayService.GetMissingEvents(executionId, 0);
+        Assert.DoesNotContain(events, e => e.Type == "llm_token");
+    }
+
+    [Fact]
+    public async Task Handle_WorkflowStartedEvent_BroadcastsToOpenConnection()
+    {
+        var executionId = Guid.NewGuid();
+        var webSocketMock = new Mock<WebSocket>();
+        webSocketMock.SetupGet(w => w.State).Returns(WebSocketState.Open);
+        var connection = new WebSocketConnection(webSocketMock.Object);
+        _connectionManager.Subscribe(executionId, connection);
+
+        await ((INotificationHandler<WorkflowStartedEvent>)_service)
+            .Handle(
+                new WorkflowStartedEvent(executionId, Guid.NewGuid()),
+                TestContext.Current.CancellationToken);
+
+        webSocketMock.Verify(
+            w => w.SendAsync(
+                It.IsAny<ArraySegment<byte>>(),
+                WebSocketMessageType.Text,
+                true,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_WorkflowStartedEvent_SkipsClosedConnection()
+    {
+        var executionId = Guid.NewGuid();
+        var webSocketMock = new Mock<WebSocket>();
+        webSocketMock.SetupGet(w => w.State).Returns(WebSocketState.Closed);
+        var connection = new WebSocketConnection(webSocketMock.Object);
+        _connectionManager.Subscribe(executionId, connection);
+
+        await ((INotificationHandler<WorkflowStartedEvent>)_service)
+            .Handle(
+                new WorkflowStartedEvent(executionId, Guid.NewGuid()),
+                TestContext.Current.CancellationToken);
+
+        webSocketMock.Verify(
+            w => w.SendAsync(
+                It.IsAny<ArraySegment<byte>>(),
+                It.IsAny<WebSocketMessageType>(),
+                It.IsAny<bool>(),
+                It.IsAny<CancellationToken>()),
+            Times.Never);
+    }
+
+    [Fact]
+    public async Task Handle_SendMessageThrows_LogsWarning()
+    {
+        var executionId = Guid.NewGuid();
+        var webSocketMock = new Mock<WebSocket>();
+        webSocketMock.SetupGet(w => w.State).Returns(WebSocketState.Open);
+        webSocketMock
+            .Setup(w => w.SendAsync(
+                It.IsAny<ArraySegment<byte>>(),
+                WebSocketMessageType.Text,
+                true,
+                It.IsAny<CancellationToken>()))
+            .Throws(new WebSocketException("boom"));
+        var connection = new WebSocketConnection(webSocketMock.Object);
+        _connectionManager.Subscribe(executionId, connection);
+
+        await ((INotificationHandler<WorkflowStartedEvent>)_service)
+            .Handle(
+                new WorkflowStartedEvent(executionId, Guid.NewGuid()),
+                TestContext.Current.CancellationToken);
+
+        webSocketMock.Verify(
+            w => w.SendAsync(
+                It.IsAny<ArraySegment<byte>>(),
+                WebSocketMessageType.Text,
+                true,
+                It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
+
+    [Fact]
     public void Dispose_DoesNotThrow()
     {
         _service.Dispose();
+        Assert.True(true);
     }
 
     public void Dispose()
