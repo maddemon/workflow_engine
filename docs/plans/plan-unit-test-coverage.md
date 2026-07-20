@@ -75,31 +75,37 @@ Phase7(前端) ─────────────────────�
 - `ExecutionCleanupService` 已由现有 `ExecutionCleanupServiceTests.cs` 覆盖其唯一公共方法 `CleanupAsync`，**不重复劳动**，不计入剩余待补工作量。
 - 后端整体已近 70%（68.9%），Phase 1/3（Application/Runtime）以降低投入原则执行，避免为凑数而注水；真正缺口在 Infrastructure / Host / Core / Plugins.Standard 与整个前端（见 §1.1）。
 
-## 5.1 实时进度追踪（2026-07-19）
+## 5.1 实时进度追踪（2026-07-19，Task 008 最终实测）
 
-> 口径：Cobertura line-rate（行覆盖）。Runtime 与 Plugins.Standard 数字为 2026-07-19 实测（`dotnet test tests/FlowEngine.Runtime.Tests --collect:"XPlat Code Coverage"`，499 用例全绿）；其余模块为 Task 008 基线（2026-07-17），尚未补测。
+> 口径：Cobertura line-rate（行覆盖）。后端按各程序集最优（MAX）加权；前端取 Vitest v8 `% Lines`。
+> 全量命令：`dotnet test FlowEngine.sln --no-restore --collect:"XPlat Code Coverage"`（2035 用例，2034 通过 / 1 跳过）；`cd frontend && npx vitest run --coverage`（394 通过）。
 
 | 模块 | 基线 | 当前实测 | 目标（75%+ 标准） | 状态 |
 |------|------|----------|----------------|------|
-| Core | 52.5% | 53.8% | 65%+ | 待补（Phase 2） |
-| Application | 76.8% | 76.8%（未重测） | 82%+ | 待补（Phase 1） |
-| **Runtime** | 65.0% | **75.2%** | 75%+ | ✅ 已达成（task-003 §3.1–3.5） |
-| **Plugins.Standard** | 58.1% | **58.1%** | 70%+ | 🔶 进行中（task-003 §3.6–3.7，未写测试） |
-| Infrastructure | 41.7% | 23.2%（仅 Runtime 套件顺带） | 65%+ | 待补（Phase 4） |
-| Host | 58.9% | 未重测 | 75%+ | 待补（Phase 5/6） |
-| Resources | 57.5% | 未重测 | 按需补 | 待补 |
-| **后端整体（加权）** | 68.9% | 待 Task 008 重测 | **75%+** | 🔶 Runtime 达标，整体仍差 ~6pt |
-| 前端 Lines | 16.43% | 未重测 | 65%+ | 待补（Phase 7，最大缺口） |
+| Core | 52.5% | **65.01%** | 65%+ | ✅ 已达成（task-002） |
+| Application | 76.8% | **83.51%** | 82%+ | ✅ 已达成（task-001） |
+| Runtime | 65.0% | **75.26%** | 75%+ | ✅ 已达成（task-003 §3.1–3.5） |
+| Plugins.Standard | 58.1% | **75.46%** | 70%+ | ✅ 已达成（task-003 §3.6–3.7） |
+| Infrastructure | 41.7% | **66.97%** | 65%+ | ✅ 已达成（task-004） |
+| Host | 58.9% | **76.18%** | 75%+ | ✅ 已达成（task-005/006） |
+| Resources | 57.5% | 58.26% | 按需补 | 未主动补测 |
+| Migrations | 97.0% | 96.98% | 非目标 | 保持稳定 |
+| **后端整体（加权）** | 68.9% | **79.33%**（20105/25345） | **75%+** | ✅ 已达成 |
+| 前端 Lines | 16.43% | **67.34%** | 65%+ | ✅ 已达成（task-007） |
 
-**本会话已落地（未提交，位于分支 `coverage-75`）**：
-- Runtime 部分（task-003 §3.1–3.5）：9 个新测试文件，约 83 用例，Runtime 65.0% → 75.2%，499 用例全绿。
-- 文件清单（均 `tests/FlowEngine.Runtime.Tests/` 下，当前 untracked）：`Security/SsrfGuardTests.cs`、`Executor/ErrorStrategyHandlerTests.cs`、`Executor/CodeParameterExtractorTests.cs`、`Executor/ExecutionQueueTests.cs`、`Expressions/ParameterResolverExceptionsTests.cs`、`Expressions/Exceptions/ExpressionExceptionTests.cs`、`Registry/ParameterHydratorCoverageTests.cs`、`Registry/Converters/ConverterUnitTests.cs`、`Http/HttpClientPoolTests.cs`。
+**各 Task 提交记录（分支 `coverage-75`，均未 push）**：
+- `a4e7b57` test: 补充 Runtime 单元测试（converters/水合/错误策略/表达式/队列），覆盖率 65%→75.2%
+- `99c638a` Add unit tests for FlowEngine.Plugins.Standard nodes to raise line coverage to 75.5%.
+- `61856e5` test(application): 补充 Application 单元测试，行覆盖 76.8%→83.5%
+- `0473e4f` test(infrastructure): 补充 Infrastructure 单元测试，行覆盖 41.7%→66.97%
+- `fa1bca9` test(core): 补充 Core 单元测试，行覆盖 52.5%→65.01%
+- `1f37b2a` test(host): 补充 Host 控制器与中间件单元测试，行覆盖 58.9%→76.18%
+- `d3bfaee` test(frontend): 补充前端单元测试，行覆盖 16.43%→67.34%
 
-**待办（本计划剩余）**：
-1. 提交 Runtime 进度（分支 `coverage-75`，中性 message）。
-2. task-003 §3.6–3.7：Plugins.Standard 58.1% → 70%（见下「提示词」）。
-3. Phase 1/2/4/5/6/7 各模块补测（见下「提示词」）。
-4. Task 008：全量重测 + 回流 + grep 合规校验 + 最终提交。
+**合规校验**（Task 008 第 5 步）：
+- 全仓库代码中无 `FluentAssertions`（仅计划文档提及）。
+- 仅 `tests/FlowEngine.Host.Tests/FlowEngine.Host.Tests.csproj` 引用 Moq。
+- 前端无 `as any`。
 
 **3 个已发现但未修复的生产缺陷**（计划禁止改生产逻辑，仅记录，待用户决策）：
 1. `WorkflowRepository.FindReferencingCredentialAsync` 的 EF JsonElement 问题。
