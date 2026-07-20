@@ -95,7 +95,7 @@ Phase7(前端) ─────────────────────�
 
 **各 Task 提交记录（分支 `coverage-75`，均未 push）**：
 - `a4e7b57` test: 补充 Runtime 单元测试（converters/水合/错误策略/表达式/队列），覆盖率 65%→75.2%
-- `99c638a` Add unit tests for FlowEngine.Plugins.Standard nodes to raise line coverage to 75.5%.
+- `3d85773` test(plugins,verification): 补充 Plugins.Standard 节点测试并完成覆盖率验证收尾
 - `61856e5` test(application): 补充 Application 单元测试，行覆盖 76.8%→83.5%
 - `0473e4f` test(infrastructure): 补充 Infrastructure 单元测试，行覆盖 41.7%→66.97%
 - `fa1bca9` test(core): 补充 Core 单元测试，行覆盖 52.5%→65.01%
