@@ -104,13 +104,18 @@ public sealed class AuditLogFileSink : IHostedService, IDisposable
         }
 
         _channel.Writer.Complete();
-        _cts.Cancel();
         _flushTimer?.Dispose();
         _flushTimer = null;
 
         try
         {
-            _processor.Wait(TimeSpan.FromSeconds(5));
+            // 先等待后台任务自然排空通道（通道已完成，处理完剩余事件后会自行退出）。
+            // 若超时仍未退出，再取消令牌强制终止，避免在事件尚未处理前就被取消导致 flaky。
+            if (!_processor.Wait(TimeSpan.FromSeconds(5)))
+            {
+                _cts.Cancel();
+                _processor.Wait(TimeSpan.FromSeconds(1));
+            }
         }
         catch (Exception ex)
         {

@@ -46,13 +46,10 @@ public class ParameterHydratorCoverageTests
         Assert.Equal("hello", node.Str);
         Assert.True(node.Flag);
         Assert.Null(node.NullableFlag);
-        // 已知生产缺陷（task-003 记录，按规约不修改生产逻辑）：NumericConverter 对 int/long/float
-        // 目标返回 double，经 HydrateAsync.SetValue 抛 InvalidCastException 被吞，属性保留默认值 0。
-        // 此处如实断言当前行为，覆盖率测试仅保证代码路径被执行。
-        Assert.Equal(0, node.IntVal);
-        Assert.Equal(0L, node.LongVal);
+        Assert.Equal(42, node.IntVal);
+        Assert.Equal(9000000000L, node.LongVal);
         Assert.Equal(3.14, node.DoubleVal);
-        Assert.Equal(0f, node.FloatVal);
+        Assert.Equal(1.5f, node.FloatVal);
         Assert.Equal(DateTime.Parse("2024-01-02T03:04:05"), node.DtVal);
         Assert.Equal(DateTimeOffset.Parse("2024-01-02T03:04:05+00:00"), node.DtoVal);
         Assert.Equal(new Uri("https://example.com/p"), node.UriVal);

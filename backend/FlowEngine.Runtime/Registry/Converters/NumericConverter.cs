@@ -15,11 +15,32 @@ internal sealed class NumericConverter : IValueConverter
 
     public Task<object?> ConvertAsync(object? value, Type targetType, ParameterHydratorContext context)
     {
-        object? result = targetType == typeof(int) ? ConvertToInt(value!)
-            : targetType == typeof(long) ? ConvertToLong(value!)
-            : targetType == typeof(double) ? ConvertToDouble(value!)
-            : ConvertToFloat(value!);
-        return Task.FromResult<object?>(result);
+        if (value is null)
+        {
+            return Task.FromResult<object?>(null);
+        }
+
+        if (targetType == typeof(int))
+        {
+            return Task.FromResult<object?>(ConvertToInt(value));
+        }
+
+        if (targetType == typeof(long))
+        {
+            return Task.FromResult<object?>(ConvertToLong(value));
+        }
+
+        if (targetType == typeof(double))
+        {
+            return Task.FromResult<object?>(ConvertToDouble(value));
+        }
+
+        if (targetType == typeof(float))
+        {
+            return Task.FromResult<object?>(ConvertToFloat(value));
+        }
+
+        return Task.FromResult<object?>(null);
     }
 
     private static int ConvertToInt(object value)
@@ -45,6 +66,7 @@ internal sealed class NumericConverter : IValueConverter
             long l => l,
             int i => i,
             double d => (long)Math.Clamp(d, long.MinValue, long.MaxValue),
+            float f => (long)Math.Clamp(f, long.MinValue, long.MaxValue),
             string s => long.TryParse(s, out var r) ? r : 0,
             JsonElement element => element.ValueKind == JsonValueKind.Number
                 ? (long)element.GetDouble()

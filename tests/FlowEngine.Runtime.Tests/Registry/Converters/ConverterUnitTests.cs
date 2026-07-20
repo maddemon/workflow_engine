@@ -81,11 +81,20 @@ public class ConverterUnitTests
 
     #region NumericConverter
 
-    // 已知生产缺陷（task-003 记录，按规约不修改生产逻辑）：NumericConverter.ConvertAsync 的三元表达式
-    // `int ? long ? double : float` 会将被选择臂统一提升为 double，故 int/long/float 目标实际返回
-    // 装箱的 Double 而非目标类型。此处以 object 读取并按数值比较，覆盖各 switch 分支而不依赖装箱类型。
     private static async Task<double> ConvertNum(IValueConverter c, object? v, Type t)
         => System.Convert.ToDouble(await Conv<object>(c, v, t));
+
+    [Theory]
+    [InlineData(typeof(int), 42, typeof(int))]
+    [InlineData(typeof(long), 42L, typeof(long))]
+    [InlineData(typeof(double), 3.5, typeof(double))]
+    [InlineData(typeof(float), 1.5f, typeof(float))]
+    public async Task NumericConverter_ReturnsExactTargetType(Type targetType, object input, Type expectedType)
+    {
+        var result = await new NumericConverter().ConvertAsync(input, targetType, Ctx);
+        Assert.NotNull(result);
+        Assert.IsType(expectedType, result);
+    }
 
     [Fact]
     public void NumericConverter_CanConvert_NumericOnly()
@@ -403,6 +412,14 @@ public class ConverterUnitTests
     [Fact]
     public async Task FallbackConverter_FromIncompatible_LogsAndReturnsNull()
         => Assert.Null(await new FallbackConverter().ConvertAsync(Je("{\"a\":1}"), typeof(int), CtxWithLogger));
+
+    [Fact]
+    public async Task FallbackConverter_FromStringToGuid_ReturnsGuid()
+    {
+        var id = Guid.NewGuid();
+        var result = await Conv<Guid>(new FallbackConverter(), id.ToString(), typeof(Guid), CtxWithLogger);
+        Assert.Equal(id, result);
+    }
 
     #endregion
 

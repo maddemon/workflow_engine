@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, fireEvent, waitFor, within } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { renderWithProvider } from '../../../test-utils.tsx';
 import { WorkflowListPage } from '../WorkflowListPage.tsx';
@@ -17,6 +18,7 @@ vi.mock('../../../services/api.ts', () => ({
 
 vi.mock('../../../hooks/AuthContext.tsx', () => ({
   useAuth: vi.fn(),
+  AuthProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
 vi.mock('@mantine/notifications', () => ({

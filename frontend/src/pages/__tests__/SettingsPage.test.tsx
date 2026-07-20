@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { renderWithProvider } from '../../test-utils.tsx';
 import { SettingsPage } from '../SettingsPage';
 import type { ApiKeyDto } from '../../services/api.ts';
@@ -7,6 +8,7 @@ import type { CreateApiKeyResult } from '../../types/workflow.ts';
 
 vi.mock('../../hooks/AuthContext.tsx', () => ({
   useAuth: vi.fn(),
+  AuthProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
 vi.mock('../../hooks/useRoles.ts', () => ({

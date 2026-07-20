@@ -5,18 +5,14 @@ using System.Text.Json;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
 using FlowEngine.Core;
-using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Identity;
 using FlowEngine.Host.Tests.Infrastructure;
-using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 
 namespace FlowEngine.Host.Tests.Workflows;
 
@@ -24,46 +20,14 @@ namespace FlowEngine.Host.Tests.Workflows;
 /// Dry-Run 端点集成测试：验证直接传入 DSL 执行，需已认证且拥有 Workflow.Execute 权限（Admin/Editor）；
 /// Viewer 等无 Execute 权限的角色返回 403，未认证返回 401。
 /// </summary>
-public class WorkflowDryRunEndpointTests : IClassFixture<FlowEngineWebApplicationFactory>, IDisposable
+public class WorkflowDryRunEndpointTests : HostIntegrationTestBase
 {
-    private readonly WebApplicationFactory<Program> _factory;
-    private readonly string _tempRoot;
-
     public WorkflowDryRunEndpointTests(FlowEngineWebApplicationFactory factory)
-    {
-        _tempRoot = Path.Combine(Path.GetTempPath(), "flowengine-tests", Guid.NewGuid().ToString());
-        var dbDirectory = Path.Combine(_tempRoot, "db");
-        var auditDirectory = Path.Combine(_tempRoot, "audit");
-        Directory.CreateDirectory(dbDirectory);
-        Directory.CreateDirectory(auditDirectory);
-
-        var dbPath = Path.Combine(dbDirectory, "flowengine.db");
-        _factory = factory.WithWebHostBuilder(builder =>
+        : base(factory, builder =>
         {
-            builder.UseSetting("ConnectionStrings:Default", $"Data Source={dbPath};Mode=ReadWriteCreate");
             builder.UseSetting("ExecutionCleanup:Enabled", "false");
-            builder.UseSetting("Audit:LogPath", auditDirectory);
-            builder.ConfigureServices(services =>
-            {
-                services.Replace(ServiceDescriptor.Singleton<IScheduleManager, NoOpScheduleManager>());
-                services.RemoveAll<IHostedService>();
-            });
-        });
-
-        _factory.ClientOptions.BaseAddress = new Uri("http://localhost");
-    }
-
-    public void Dispose()
+        })
     {
-        _factory.Dispose();
-        try
-        {
-            Directory.Delete(_tempRoot, true);
-        }
-        catch
-        {
-            // 忽略清理临时目录时的错误，不影响测试结果。
-        }
     }
 
     [Fact]
@@ -274,41 +238,6 @@ public class WorkflowDryRunEndpointTests : IClassFixture<FlowEngineWebApplicatio
         };
     }
 
-    private async Task<HttpClient> CreateAuthenticatedClientAsync(string email, IReadOnlyList<string>? roles = null, CancellationToken ct = default)
-    {
-        using var scope = _factory.Services.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
-        var passwordHasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
-        var tokenService = scope.ServiceProvider.GetRequiredService<ITokenService>();
-
-        var user = new User
-        {
-            Email = email,
-            UserName = email.Split('@')[0],
-            DisplayName = email,
-            PasswordHash = passwordHasher.HashPassword("StrongP@ss1"),
-            IsActive = true,
-        };
-        dbContext.Set<User>().Add(user);
-        await dbContext.SaveChangesAsync(ct);
-
-        if (roles is not null)
-        {
-            foreach (var role in roles)
-            {
-                dbContext.Set<UserRole>().Add(new UserRole { UserId = user.Id, Role = role });
-            }
-
-            await dbContext.SaveChangesAsync(ct);
-        }
-
-        var token = tokenService.GenerateAccessToken(user.Id, user.Email, roles ?? []);
-
-        var client = _factory.CreateClient();
-        client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
-        return client;
-    }
-
     private async Task<(HttpClient Client, string Key, Guid UserId)> CreateClientWithApiKeyAsync(
         string email,
         IReadOnlyList<string>? roles = null,
@@ -346,6 +275,4 @@ public class WorkflowDryRunEndpointTests : IClassFixture<FlowEngineWebApplicatio
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", created.Key);
         return (client, created.Key, user.Id);
     }
-
-    private static JsonSerializerOptions TestJsonOptions => HostTestJsonOptions.Default;
 }

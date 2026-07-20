@@ -398,6 +398,50 @@ public sealed class WorkflowValidatorTests
         Assert.Contains(result.Errors, e => e.Contains("端口类型不兼容"));
     }
 
+    [Fact]
+    public void Validate_ConnectionWithMissingTarget_ReportsError()
+    {
+        var registry = new StubNodeRegistry([
+            CreateDescriptor("source", ports:
+            [
+                new PortDefinition { Name = "output", Direction = PortDirection.Output, Type = PortType.Main },
+            ]),
+        ]);
+        var validator = new WorkflowValidator(registry);
+        var workflow = CreateWorkflow([
+            new NodeDefinition { Id = "source", TypeName = "source", Name = "Source" },
+        ], [
+            (n) => new Connection { Id = Guid.NewGuid(), SourceNodeId = "source", TargetNodeId = "missing", SourcePortName = "output", TargetPortName = "input" },
+        ]);
+
+        var result = validator.Validate(workflow);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.Contains("目标节点不存在"));
+    }
+
+    [Fact]
+    public void Validate_UnknownNodeType_IsIgnoredForRequiredParameters()
+    {
+        var registry = new StubNodeRegistry([
+            CreateDescriptor("known", parameters:
+            [
+                new ParameterDefinition { Name = "required", DisplayName = "Required", Required = true },
+            ]),
+        ]);
+        var validator = new WorkflowValidator(registry);
+        var workflow = CreateWorkflow([
+            new NodeDefinition { Id = "unknown", TypeName = "unknownType", Name = "Unknown", Parameters = [] },
+            new NodeDefinition { Id = "known", TypeName = "known", Name = "Known", Parameters = [] },
+        ], []);
+
+        var result = validator.Validate(workflow);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.Contains("Known") && e.Contains("缺少必填参数"));
+        Assert.DoesNotContain(result.Errors, e => e.Contains("Unknown"));
+    }
+
     private static Workflow CreateWorkflow(
         NodeDefinition[] nodes,
         Func<NodeDefinition[], Connection>[] connectionFactories)

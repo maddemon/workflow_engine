@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { screen, fireEvent, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { renderWithProvider } from '../../test-utils.tsx';
 import { WorkflowEditorPage } from '../WorkflowEditorPage';
@@ -25,6 +25,8 @@ vi.mock('../../services/api.ts', async (importOriginal) => {
     ...actual,
     confirmWorkflow: vi.fn(),
     rejectDraft: vi.fn(),
+    validateWorkflow: vi.fn(),
+    getTriggers: vi.fn().mockResolvedValue([]),
   };
 });
 
@@ -35,7 +37,7 @@ vi.mock('@mantine/notifications', () => ({
 import { useNodeTypes } from '../../hooks/useNodeTypes.ts';
 import { useExecution } from '../../hooks/useExecution.ts';
 import { useWorkflowVersionPolling } from '../../hooks/useWorkflowVersionPolling.ts';
-import { confirmWorkflow, rejectDraft } from '../../services/api.ts';
+import { confirmWorkflow, rejectDraft, validateWorkflow } from '../../services/api.ts';
 import { notifications } from '@mantine/notifications';
 
 const mockedUseNodeTypes = vi.mocked(useNodeTypes);
@@ -43,6 +45,7 @@ const mockedUseExecution = vi.mocked(useExecution);
 const mockedUseWorkflowVersionPolling = vi.mocked(useWorkflowVersionPolling);
 const mockedConfirmWorkflow = vi.mocked(confirmWorkflow);
 const mockedRejectDraft = vi.mocked(rejectDraft);
+const mockedValidateWorkflow = vi.mocked(validateWorkflow);
 const mockedNotifications = vi.mocked(notifications);
 
 const descriptor: NodeTypeDescriptor = {
@@ -87,6 +90,12 @@ function renderPage(path = '/workflows/wf-1/edit', onLayoutChange?: (navbar: Rea
 }
 
 describe('WorkflowEditorPage', () => {
+  const originalConfirm = window.confirm;
+
+  afterEach(() => {
+    window.confirm = originalConfirm;
+  });
+
   beforeEach(() => {
     vi.clearAllMocks();
     useWorkflowStore.getState().newWorkflow();
@@ -196,6 +205,7 @@ describe('WorkflowEditorPage', () => {
 
   it('opens_validationModal_and_confirmsActivation', async () => {
     useWorkflowStore.setState({ reviewMode: true });
+    mockedValidateWorkflow.mockResolvedValue({ valid: true, errors: [], canAutoFix: false });
     mockedConfirmWorkflow.mockResolvedValue({
       id: 'wf-1',
       projectId: null,
@@ -213,14 +223,21 @@ describe('WorkflowEditorPage', () => {
     renderPage('/workflows/wf-1/edit');
     fireEvent.click(await screen.findByText(/Confirm & Activate/i));
 
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toBeInTheDocument();
+
     await waitFor(() => {
-      expect(screen.getByRole('dialog')).toBeInTheDocument();
+      expect(within(dialog).getByText(/all checks passed/i)).toBeInTheDocument();
     });
 
-    // Confirm is disabled until ValidationChecklistModal calls onProceed
-    // Since validateWorkflow is not mocked to return data, we cannot directly click confirm in modal.
-    // Instead trigger handleConfirm by simulating ValidationChecklistModal's onProceed via direct call is hard.
-    // We verify the modal opened.
+    const confirmButton = within(dialog).getByRole('button', { name: /confirm & activate/i });
+    expect(confirmButton).not.toBeDisabled();
+    fireEvent.click(confirmButton);
+
+    await waitFor(() => {
+      expect(mockedConfirmWorkflow).toHaveBeenCalledWith('wf-1');
+    });
+    expect(mockedNotifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: 'green' }));
   });
 
   it('opens_rejectModal_and_submitsRejection', async () => {

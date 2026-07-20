@@ -1,57 +1,26 @@
 using System.Net;
 using System.Net.Http.Json;
-using System.Text.Json;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Host.Tests.Infrastructure;
-using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 
 namespace FlowEngine.Host.Tests.Controllers;
 
-public class NodeTypesControllerTests : IClassFixture<FlowEngineWebApplicationFactory>, IDisposable
+public class NodeTypesControllerTests : HostIntegrationTestBase
 {
-    private readonly WebApplicationFactory<Program> _factory;
-    private readonly string _tempRoot;
-
     public NodeTypesControllerTests(FlowEngineWebApplicationFactory factory)
-    {
-        _tempRoot = Path.Combine(Path.GetTempPath(), "flowengine-tests", Guid.NewGuid().ToString());
-        var dbDirectory = Path.Combine(_tempRoot, "db");
-        var auditDirectory = Path.Combine(_tempRoot, "audit");
-        Directory.CreateDirectory(dbDirectory);
-        Directory.CreateDirectory(auditDirectory);
-
-        var dbPath = Path.Combine(dbDirectory, "flowengine.db");
-        _factory = factory.WithWebHostBuilder(builder =>
+        : base(factory, builder =>
         {
-            builder.UseSetting("ConnectionStrings:Default", $"Data Source={dbPath};Mode=ReadWriteCreate");
-            builder.UseSetting("Audit:LogPath", auditDirectory);
             builder.ConfigureServices(services =>
             {
-                services.Replace(ServiceDescriptor.Singleton<IScheduleManager, NoOpScheduleManager>());
-                services.RemoveAll<IHostedService>();
                 services.Replace(ServiceDescriptor.Singleton<INodeRegistry>(new FakeNodeRegistry()));
             });
-        });
-
-        _factory.ClientOptions.BaseAddress = new Uri("http://localhost");
-    }
-
-    public void Dispose()
+        })
     {
-        _factory.Dispose();
-        try
-        {
-            Directory.Delete(_tempRoot, true);
-        }
-        catch
-        {
-            // 忽略清理临时目录时的错误，不影响测试结果。
-        }
     }
 
     [Fact]
@@ -81,16 +50,6 @@ public class NodeTypesControllerTests : IClassFixture<FlowEngineWebApplicationFa
         Assert.NotNull(result);
         Assert.Single(result);
         Assert.Equal("Start", result!.First().TypeName);
-    }
-
-    private static JsonSerializerOptions TestJsonOptions
-    {
-        get
-        {
-            var options = new JsonSerializerOptions(JsonSerializerDefaults.Web);
-            options.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
-            return options;
-        }
     }
 
     private sealed class FakeNodeRegistry : INodeRegistry

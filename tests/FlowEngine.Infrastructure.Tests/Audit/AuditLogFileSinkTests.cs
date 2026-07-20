@@ -54,7 +54,7 @@ public sealed class AuditLogFileSinkTests : IDisposable
         Assert.True(Directory.Exists(_logDirectory));
     }
 
-    [Fact(Skip = "在完整解决方案运行时因后台通道处理时序不稳定而偶发失败，单项目运行稳定。")]
+    [Fact]
     public async Task OnEventAsync_CriticalEvent_WritesToFile()
     {
         var sink = new AuditLogFileSink(_logDirectory, NullLogger<AuditLogFileSink>.Instance);

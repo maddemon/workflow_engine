@@ -1,11 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import { screen } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { renderWithProvider } from '../../../test-utils.tsx';
 import { RequireRole } from '../RequireRole';
 
 // Mock the useAuth hook
 vi.mock('../../../hooks/AuthContext.tsx', () => ({
   useAuth: vi.fn(),
+  AuthProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
 vi.mock('../../../hooks/useRoles.ts', () => ({

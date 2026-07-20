@@ -14,8 +14,10 @@ public class ScriptCompilerTests
 
         var result = ScriptCompiler.Compile(script);
 
-        var text = result.ToString();
-        Assert.False(string.IsNullOrEmpty(text));
+        Assert.Equal(ScriptLanguage.JavaScript, script.Language);
+        Assert.Equal(string.Empty, script.Source);
+        Assert.True(result.IsValid);
+        Assert.NotNull(result.Program);
     }
 
     [Fact]
@@ -25,8 +27,9 @@ public class ScriptCompilerTests
 
         var result = ScriptCompiler.Compile(script);
 
-        var text = result.ToString();
-        Assert.False(string.IsNullOrEmpty(text));
+        Assert.Equal("1 + 1", script.Source);
+        Assert.True(result.IsValid);
+        Assert.NotNull(result.Program);
     }
 
     [Fact]
@@ -36,8 +39,9 @@ public class ScriptCompilerTests
 
         var result = ScriptCompiler.Compile(script);
 
-        var text = result.ToString();
-        Assert.False(string.IsNullOrEmpty(text));
+        Assert.Equal("{}", script.Source);
+        Assert.True(result.IsValid);
+        Assert.NotNull(result.Program);
     }
 
     [Fact]
@@ -47,8 +51,8 @@ public class ScriptCompilerTests
 
         var result = ScriptCompiler.Compile(script);
 
-        var text = result.ToString();
-        Assert.False(string.IsNullOrEmpty(text));
+        Assert.True(result.IsValid);
+        Assert.NotNull(result.Program);
     }
 
     [Fact]
@@ -58,8 +62,8 @@ public class ScriptCompilerTests
 
         var result = ScriptCompiler.Compile(script);
 
-        var text = result.ToString();
-        Assert.False(string.IsNullOrEmpty(text));
+        Assert.True(result.IsValid);
+        Assert.NotNull(result.Program);
     }
 
     [Fact]
@@ -67,7 +71,8 @@ public class ScriptCompilerTests
     {
         var script = new Script { Source = "x", Language = (ScriptLanguage)999 };
 
-        Assert.Throws<NotSupportedException>(() => ScriptCompiler.Compile(script));
+        var ex = Assert.Throws<NotSupportedException>(() => ScriptCompiler.Compile(script));
+        Assert.Contains("999", ex.Message);
     }
 
     [Fact]
@@ -79,6 +84,7 @@ public class ScriptCompilerTests
 
         Assert.True(success);
         Assert.Null(error);
+        Assert.Equal(ScriptLanguage.JavaScript, script.Language);
     }
 
     [Fact]
@@ -90,5 +96,7 @@ public class ScriptCompilerTests
 
         Assert.False(success);
         Assert.NotNull(error);
+        Assert.NotNull(error!.Message);
+        Assert.Same(script, error.Script);
     }
 }

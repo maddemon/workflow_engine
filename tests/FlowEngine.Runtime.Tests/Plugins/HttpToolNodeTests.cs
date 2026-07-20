@@ -1,13 +1,17 @@
+using System.Net;
+using System.Text;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
+using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Scripting;
 using FlowEngine.Plugins.Standard;
+using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Runtime.Tests.Plugins;
 
-public class HttpToolNodeTests
+public sealed class HttpToolNodeTests
 {
     [Fact]
     public async Task Execute_MissingUrl_ReturnsError()
@@ -22,24 +26,24 @@ public class HttpToolNodeTests
     }
 
     [Fact]
-    public async Task Execute_WithResolvedUrl_DoesNotReturnMissingUrl()
+    public async Task Execute_WithResolvedUrl_SendsRequestAndReturnsSuccess()
     {
+        var handler = new RecordingHandler();
+        using var client = new HttpClient(handler);
+        var pool = new StubHttpClientPool(client);
+
         var node = new HttpToolNode
         {
-            Url = ResolvedUrl("https://httpbin.org/get"),
+            Url = ResolvedUrl("http://example.com/api"),
             Method = HttpMethodOption.Get
         };
-        var context = CreateContext(new JsonObject());
+        var context = CreateContext(new JsonObject(), pool);
 
-        // Execute - may succeed or fail depending on network
         var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
 
-        // Verify URL was resolved correctly
-        // The request may succeed or fail depending on network, just verify no URL error
-        if (!result.Success)
-        {
-            Assert.NotEqual("MissingUrl", result.Error?.Code);
-        }
+        Assert.True(result.Success);
+        Assert.Equal(1, handler.CallCount);
+        Assert.Equal("http://example.com/api", handler.LastRequest?.RequestUri?.ToString());
     }
 
     private static Script ResolvedUrl(string url)
@@ -50,6 +54,47 @@ public class HttpToolNodeTests
             Language = ScriptLanguage.JavaScript,
             ReturnType = ScriptReturnType.String
         }.WithResolvedValue(JsonValue.Create(url));
+    }
+
+    private sealed class StubHttpClientPool : IHttpClientPool
+    {
+        private readonly HttpClient _client;
+        public StubHttpClientPool(HttpClient client) => _client = client;
+        public HttpClient GetClient(string? name = null) => _client;
+    }
+
+    private sealed class RecordingHandler : HttpMessageHandler
+    {
+        public int CallCount { get; private set; }
+        public HttpRequestMessage? LastRequest { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            CallCount++;
+            LastRequest = request;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{}", Encoding.UTF8, "application/json")
+            });
+        }
+    }
+
+    // 仅用于满足 NodeExecutionContext 的必填属性；本测试不验证凭证/日志分支。
+    private sealed class NullCredentialAccessor : ICredentialAccessor
+    {
+        public Task<CredentialValue> GetCredentialAsync(Guid credentialId, CancellationToken ct = default) =>
+            Task.FromResult(new CredentialValue { Name = "null", Type = "apiKey" });
+
+        public Task<CredentialValue?> GetCredentialByNameAsync(string name, CancellationToken ct = default) =>
+            Task.FromResult<CredentialValue?>(null);
+    }
+
+    // 仅用于满足 NodeExecutionContext 的必填属性；本测试不验证日志分支。
+    private sealed class NullExecutionLogger : IExecutionLogger
+    {
+        public void LogInformation(string message, params object?[] args) { }
+        public void LogWarning(string message, params object?[] args) { }
+        public void LogError(Exception? exception, string message, params object?[] args) { }
     }
 
     [Fact]
@@ -71,7 +116,7 @@ public class HttpToolNodeTests
         Assert.Contains(node.Ports, p => p.Name == FlowConstants.PortNames.Output && p.Direction == PortDirection.Output);
     }
 
-    private static NodeExecutionContext CreateContext(JsonObject inputPayload)
+    private static NodeExecutionContext CreateContext(JsonObject inputPayload, IHttpClientPool? pool = null)
     {
         return new NodeExecutionContext
         {
@@ -102,6 +147,11 @@ public class HttpToolNodeTests
             },
             RawParameters = new Dictionary<string, object>(),
             ResolvedParameters = new Dictionary<string, object>(),
+            Credentials = new NullCredentialAccessor(),
+            Logger = new NullExecutionLogger(),
+            HttpClientPool = pool,
+            ScriptCache = new ScriptCache(Options.Create(new JsEngineOptions())),
+            EngineOptions = new JsEngineOptions(),
             CancellationToken = CancellationToken.None
         };
     }

@@ -11,6 +11,9 @@ public sealed class ScriptCompilerTests
         var script = new Script { Source = "" };
         var prepared = ScriptCompiler.Compile(script);
 
+        Assert.Equal(ScriptLanguage.JavaScript, script.Language);
+        Assert.Equal(string.Empty, script.Source);
+
         using var engine = JsEngine.Create();
         var result = engine.EvaluatePrepared(prepared);
 
@@ -22,6 +25,9 @@ public sealed class ScriptCompilerTests
     {
         var script = new Script { Source = "1 + 2" };
         var prepared = ScriptCompiler.Compile(script);
+
+        Assert.Equal(ScriptLanguage.JavaScript, script.Language);
+        Assert.Equal("1 + 2", script.Source);
 
         using var engine = JsEngine.Create();
         var result = engine.EvaluatePrepared(prepared);
@@ -35,6 +41,9 @@ public sealed class ScriptCompilerTests
         var script = new Script { Source = "const x = 1; const y = 2;" };
         var prepared = ScriptCompiler.Compile(script);
 
+        Assert.Equal(ScriptLanguage.JavaScript, script.Language);
+        Assert.Equal("const x = 1; const y = 2;", script.Source);
+
         using var engine = JsEngine.Create();
         var result = engine.EvaluatePrepared(prepared);
 
@@ -46,6 +55,9 @@ public sealed class ScriptCompilerTests
     {
         var script = new Script { Source = "const x = 5; return x * 2;" };
         var prepared = ScriptCompiler.Compile(script);
+
+        Assert.True(prepared.IsValid);
+        Assert.NotNull(prepared.Program);
 
         using var engine = JsEngine.Create();
         var result = engine.EvaluatePrepared(prepared);
@@ -59,6 +71,9 @@ public sealed class ScriptCompilerTests
         var script = new Script { Source = "function f() { return 7; } return f();" };
         var prepared = ScriptCompiler.Compile(script);
 
+        Assert.True(prepared.IsValid);
+        Assert.NotNull(prepared.Program);
+
         using var engine = JsEngine.Create();
         var result = engine.EvaluatePrepared(prepared);
 
@@ -70,6 +85,9 @@ public sealed class ScriptCompilerTests
     {
         var script = new Script { Source = "const x = 1; 2 + 3;" };
         var prepared = ScriptCompiler.Compile(script);
+
+        Assert.True(prepared.IsValid);
+        Assert.NotNull(prepared.Program);
 
         using var engine = JsEngine.Create();
         var result = engine.EvaluatePrepared(prepared);
@@ -83,6 +101,9 @@ public sealed class ScriptCompilerTests
         var script = new Script { Source = "1 + 1;" };
         var prepared = ScriptCompiler.Compile(script);
 
+        Assert.True(prepared.IsValid);
+        Assert.NotNull(prepared.Program);
+
         using var engine = JsEngine.Create();
         var result = engine.EvaluatePrepared(prepared);
 
@@ -94,6 +115,7 @@ public sealed class ScriptCompilerTests
     {
         var script = new Script { Source = "print('hi')", Language = ScriptLanguage.Python };
 
-        Assert.Throws<NotSupportedException>(() => ScriptCompiler.Compile(script));
+        var ex = Assert.Throws<NotSupportedException>(() => ScriptCompiler.Compile(script));
+        Assert.Contains("Python", ex.Message);
     }
 }

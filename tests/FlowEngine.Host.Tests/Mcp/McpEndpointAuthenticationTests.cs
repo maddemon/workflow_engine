@@ -1,60 +1,21 @@
 using System.Net;
-using FlowEngine.Core.Abstractions;
 using FlowEngine.Host.Tests.Infrastructure;
-using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.DependencyInjection.Extensions;
-using Microsoft.Extensions.Hosting;
 
 namespace FlowEngine.Host.Tests.Mcp;
 
 /// <summary>
 /// MCP /mcp 端点鉴权集成测试。
 /// </summary>
-public class McpEndpointAuthenticationTests : IClassFixture<FlowEngineWebApplicationFactory>, IDisposable
+public class McpEndpointAuthenticationTests : HostIntegrationTestBase
 {
-    private readonly WebApplicationFactory<Program> _factory;
-    private readonly string _tempRoot;
-
-    /// <summary>
-    /// 初始化集成测试工厂，使用临时 SQLite 数据库与独立的审计日志目录。
-    /// </summary>
     public McpEndpointAuthenticationTests(FlowEngineWebApplicationFactory factory)
-    {
-        _tempRoot = Path.Combine(Path.GetTempPath(), "flowengine-tests", Guid.NewGuid().ToString());
-        var dbDirectory = Path.Combine(_tempRoot, "db");
-        var auditDirectory = Path.Combine(_tempRoot, "audit");
-        Directory.CreateDirectory(dbDirectory);
-        Directory.CreateDirectory(auditDirectory);
-
-        var dbPath = Path.Combine(dbDirectory, "flowengine.db");
-        _factory = factory.WithWebHostBuilder(builder =>
+        : base(factory, builder =>
         {
-            builder.UseSetting("ConnectionStrings:Default", $"Data Source={dbPath};Mode=ReadWriteCreate");
             builder.UseSetting("ExecutionCleanup:Enabled", "false");
-            builder.UseSetting("Audit:LogPath", auditDirectory);
-            builder.ConfigureServices(services =>
-            {
-                services.Replace(ServiceDescriptor.Singleton<IScheduleManager, NoOpScheduleManager>());
-                services.RemoveAll<IHostedService>();
-            });
-        });
-
-        _factory.ClientOptions.BaseAddress = new Uri("http://localhost");
-    }
-
-    /// <inheritdoc />
-    public void Dispose()
+        })
     {
-        _factory.Dispose();
-        try
-        {
-            Directory.Delete(_tempRoot, true);
-        }
-        catch
-        {
-            // 忽略清理临时目录时的错误，不影响测试结果。
-        }
     }
 
     /// <summary>

@@ -1,11 +1,13 @@
 import { describe, it, expect, vi } from 'vitest';
 import { screen, fireEvent, waitFor } from '@testing-library/react';
+import type { ReactNode } from 'react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { renderWithProvider } from '../../test-utils.tsx';
 import { LoginPage } from '../LoginPage';
 
 vi.mock('../../hooks/AuthContext.tsx', () => ({
   useAuth: vi.fn(),
+  AuthProvider: ({ children }: { children: ReactNode }) => children,
 }));
 
 import { useAuth } from '../../hooks/AuthContext.tsx';

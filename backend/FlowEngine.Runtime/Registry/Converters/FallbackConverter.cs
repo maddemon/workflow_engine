@@ -13,6 +13,11 @@ internal sealed class FallbackConverter : IValueConverter
     {
         try
         {
+            if (targetType == typeof(Guid) && value is string guidString)
+            {
+                return Task.FromResult<object?>(Guid.Parse(guidString));
+            }
+
             return Task.FromResult<object?>(Convert.ChangeType(value, targetType));
         }
         catch (Exception ex)

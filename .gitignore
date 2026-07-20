@@ -412,3 +412,6 @@ dingtalk_sync_copy.db
 flowengine_copy.db
 backend/FlowEngine.Host/data/crypto.key
 frontend/coverage/
+
+# Explicitly ignore test coverage output directories under tests/
+tests/**/TestResults/

@@ -110,4 +110,62 @@ describe('ParameterPanel', () => {
 
     expect(useWorkflowStore.getState().nodes[0].data.retryPolicy).not.toBeNull();
   });
+
+  it('displays validation errors for the selected node', async () => {
+    const node = makeNode('n1', { message: 'hello' });
+    useWorkflowStore.setState({
+      nodes: [node],
+      selectedNodeId: 'n1',
+      validationErrors: { n1: { message: 'Message is required' } },
+    });
+
+    renderWithProvider(<ParameterPanel />);
+    await waitFor(() => {
+      expect(screen.getByText(/fix 1 error/i)).toBeInTheDocument();
+    });
+    expect(screen.getByText('Message is required')).toBeInTheDocument();
+  });
+
+  it('rejects negative timeout values', async () => {
+    const node = makeNode('n1');
+    useWorkflowStore.setState({ nodes: [node], selectedNodeId: 'n1' });
+
+    renderWithProvider(<ParameterPanel />);
+    fireEvent.click(screen.getByText(/settings/i));
+
+    const timeoutInput = await screen.findByLabelText(/timeout/i);
+    fireEvent.change(timeoutInput, { target: { value: '-10' } });
+
+    const updated = useWorkflowStore.getState().nodes[0].data.timeout;
+    expect(updated === null || updated === undefined || updated >= 0).toBe(true);
+  });
+
+  it('allows zero timeout and treats it as no timeout', async () => {
+    const node = makeNode('n1');
+    useWorkflowStore.setState({ nodes: [node], selectedNodeId: 'n1' });
+
+    renderWithProvider(<ParameterPanel />);
+    fireEvent.click(screen.getByText(/settings/i));
+
+    const timeoutInput = await screen.findByLabelText(/timeout/i);
+    fireEvent.change(timeoutInput, { target: { value: '0' } });
+
+    expect(useWorkflowStore.getState().nodes[0].data.timeout).toBeNull();
+  });
+
+  it('switches panel content when selected node changes', async () => {
+    const nodeA = makeNode('n1', { message: 'first' });
+    const nodeB = makeNode('n2', { message: 'second' });
+    useWorkflowStore.setState({ nodes: [nodeA, nodeB], selectedNodeId: 'n1' });
+
+    renderWithProvider(<ParameterPanel />);
+    expect(screen.getByDisplayValue('first')).toBeInTheDocument();
+
+    useWorkflowStore.setState({ selectedNodeId: 'n2' });
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('second')).toBeInTheDocument();
+    });
+    expect(screen.queryByDisplayValue('first')).not.toBeInTheDocument();
+  });
 });

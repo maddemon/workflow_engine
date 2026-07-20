@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import type {
   NodeTypeDescriptor,
   Workflow,
@@ -86,6 +86,9 @@ describe('api service', () => {
   });
 
   describe('interceptors', () => {
+    const originalLocation = window.location;
+    const originalLocalStorage = window.localStorage;
+
     beforeEach(() => {
       const store: Record<string, string> = {};
       Object.defineProperty(window, 'localStorage', {
@@ -95,6 +98,17 @@ describe('api service', () => {
           setItem: (key: string, value: string) => { store[key] = value; },
           removeItem: (key: string) => { delete store[key]; },
         },
+      });
+    });
+
+    afterEach(() => {
+      Object.defineProperty(window, 'location', {
+        writable: true,
+        value: originalLocation,
+      });
+      Object.defineProperty(window, 'localStorage', {
+        writable: true,
+        value: originalLocalStorage,
       });
     });
 

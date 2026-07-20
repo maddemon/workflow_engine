@@ -1,9 +1,11 @@
-import { type ReactElement } from 'react';
+import { type ReactElement, type ReactNode } from 'react';
 import { render, type RenderOptions } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { I18nextProvider } from 'react-i18next';
+import { MemoryRouter } from 'react-router-dom';
 import i18n from 'i18next';
 import { initReactI18next } from 'react-i18next';
+import { AuthProvider } from './hooks/AuthContext.tsx';
 
 import commonEn from '../public/locales/en/common.json';
 import settingsEn from '../public/locales/en/settings.json';
@@ -70,15 +72,40 @@ testI18n
     },
   });
 
-/**
- * Render a React element wrapped in MantineProvider and I18nextProvider.
- * Use for components that use Mantine UI primitives or react-i18next.
- */
-export function renderWithProvider(ui: ReactElement, options?: RenderOptions) {
-  return render(
+interface RenderWithProviderOptions extends RenderOptions {
+  withRouter?: boolean;
+  withAuth?: boolean;
+  initialEntries?: string[];
+}
+
+function Providers({ children, withRouter, withAuth, initialEntries }: { children: ReactNode; withRouter?: boolean; withAuth?: boolean; initialEntries?: string[] }) {
+  let content: ReactNode = (
     <I18nextProvider i18n={testI18n}>
-      <MantineProvider>{ui}</MantineProvider>
-    </I18nextProvider>,
-    options,
+      <MantineProvider>
+        {withAuth ? <AuthProvider>{children}</AuthProvider> : children}
+      </MantineProvider>
+    </I18nextProvider>
+  );
+
+  if (withRouter) {
+    content = <MemoryRouter initialEntries={initialEntries ?? ['/']}>{content}</MemoryRouter>;
+  }
+
+  return content;
+}
+
+/**
+ * Render a React element wrapped in I18nextProvider, MantineProvider and optional AuthProvider.
+ * Use for components that use Mantine UI primitives, react-i18next or auth context.
+ * Set `withRouter: true` to also wrap in MemoryRouter.
+ * Set `withAuth: true` to wrap in AuthProvider.
+ */
+export function renderWithProvider(ui: ReactElement, options?: RenderWithProviderOptions) {
+  const { withRouter, withAuth, initialEntries, ...renderOptions } = options ?? {};
+  return render(
+    <Providers withRouter={withRouter} withAuth={withAuth} initialEntries={initialEntries}>
+      {ui}
+    </Providers>,
+    renderOptions,
   );
 }

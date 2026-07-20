@@ -215,7 +215,7 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <CanvasToolbar onExecute={onExecute} onCancel={onCancel} onDryRun={onDryRun} dryRunLoading={dryRunLoading} />
-      <div ref={reactFlowWrapper} className="workflow-canvas">
+      <div ref={reactFlowWrapper} className="workflow-canvas" data-testid="workflow-canvas">
         <ReactFlow
           nodes={nodes}
           edges={edges}

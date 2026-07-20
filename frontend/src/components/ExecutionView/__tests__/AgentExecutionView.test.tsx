@@ -56,7 +56,7 @@ describe('AgentExecutionView', () => {
     expect(screen.getByTestId('agent-status')).toBeTruthy();
   });
 
-  it('shows error message when agent execution failed', () => {
+  it('shows error message when agent execution failed', async () => {
     const data = makeData({
       agentInfo: {
         ...makeData().agentInfo,
@@ -66,7 +66,8 @@ describe('AgentExecutionView', () => {
     });
     renderWithMantine(<AgentExecutionView data={data} />);
 
-    expect(screen.getByText('LLM call failed: timeout')).toBeTruthy();
+    // 使用异步查找，吸收 i18n 资源就绪前的渲染时序波动（避免偶发 flake）。
+    expect(await screen.findByText('LLM call failed: timeout')).toBeTruthy();
     expect(screen.getByTestId('agent-status')).toBeTruthy();
   });
 

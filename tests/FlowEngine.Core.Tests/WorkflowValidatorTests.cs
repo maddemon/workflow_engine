@@ -44,4 +44,42 @@ public class WorkflowValidatorTests
 
         Assert.Null(error);
     }
+
+    [Fact]
+    public void EnsureNonEmpty_WorkflowWithConnectionsAndNodes_ReturnsNull()
+    {
+        var workflow = new Workflow
+        {
+            Nodes =
+            [
+                new NodeDefinition { Id = "a", TypeName = "manualTrigger" },
+                new NodeDefinition { Id = "b", TypeName = "set" },
+            ],
+            Connections =
+            [
+                new Connection { Id = Guid.NewGuid(), SourceNodeId = "a", TargetNodeId = "b" },
+            ],
+        };
+
+        var error = WorkflowValidator.EnsureNonEmpty(workflow);
+
+        Assert.Null(error);
+    }
+
+    [Fact]
+    public void EnsureNonEmpty_WorkflowWithMixedNodeTypes_ReturnsNull()
+    {
+        var workflow = new Workflow
+        {
+            Nodes =
+            [
+                new NodeDefinition { Id = "trigger", TypeName = "manualTrigger" },
+                new NodeDefinition { Id = "action", TypeName = "set" },
+            ],
+        };
+
+        var error = WorkflowValidator.EnsureNonEmpty(workflow);
+
+        Assert.Null(error);
+    }
 }
