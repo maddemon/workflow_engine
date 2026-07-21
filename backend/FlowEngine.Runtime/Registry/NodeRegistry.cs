@@ -12,7 +12,8 @@ public sealed class NodeRegistry : INodeRegistry
 {
     private readonly ConcurrentDictionary<string, Type> _nodeTypes = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, INodeType> _instances = new(StringComparer.OrdinalIgnoreCase);
-    private readonly ConcurrentDictionary<string, NodeTypeDescriptor> _descriptors = new(StringComparer.OrdinalIgnoreCase);
+    // 延迟创建描述符：注册时不立即做参数反射，首次访问时才通过 Lazy 计算，降低启动开销（L5/L6）。
+    private readonly ConcurrentDictionary<string, Lazy<NodeTypeDescriptor>> _descriptors = new(StringComparer.OrdinalIgnoreCase);
     private readonly ParameterDiscoverer _parameterDiscoverer;
     private readonly ILogger<NodeRegistry> _logger;
 
@@ -48,7 +49,8 @@ public sealed class NodeRegistry : INodeRegistry
 
         // 缓存无状态节点实例，避免每次获取都反射创建（L5）。
         _instances[normalizedName] = nodeType;
-        _descriptors[normalizedName] = CreateDescriptor(nodeType);
+        // 描述符延迟创建：首次访问 GetDescriptor(s) 时才触发参数反射。
+        _descriptors[normalizedName] = new Lazy<NodeTypeDescriptor>(() => CreateDescriptor(nodeType));
         _logger.LogDebug("已注册节点类型 {TypeName}", nodeType.TypeName);
     }
 
@@ -108,7 +110,7 @@ public sealed class NodeRegistry : INodeRegistry
     /// <inheritdoc />
     public IReadOnlyCollection<NodeTypeDescriptor> GetDescriptors()
     {
-        return _descriptors.Values.ToList();
+        return _descriptors.Values.Select(lazy => lazy.Value).ToList();
     }
 
     /// <inheritdoc />
@@ -117,9 +119,9 @@ public sealed class NodeRegistry : INodeRegistry
         ArgumentException.ThrowIfNullOrEmpty(typeName);
 
         var normalizedName = typeName.ToLowerInvariant();
-        if (_descriptors.TryGetValue(normalizedName, out var descriptor))
+        if (_descriptors.TryGetValue(normalizedName, out var lazy))
         {
-            return descriptor;
+            return lazy.Value;
         }
 
         throw new InvalidOperationException($"节点类型 '{typeName}' 未注册。");
