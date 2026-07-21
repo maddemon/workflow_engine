@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using FlowEngine.Application.Audit;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -21,11 +22,13 @@ public class AuditEventsController(IAuditLogReader reader) : ControllerBase
     {
         var result = await reader.QueryAsync(parameters, cancellationToken).ConfigureAwait(false);
 
+        // 使用内置 JsonNode.Parse 将审计事件文档直接转换为节点树，避免手写递归转换，
+        // 输出语义（字段名/类型/结构）与原始 JSON 完全一致。
         var events = result.Events.Select(doc =>
         {
             using (doc)
             {
-                return JsonNodeFromElement(doc.RootElement);
+                return (object)JsonNode.Parse(doc.RootElement.GetRawText())!;
             }
         }).ToList();
 
@@ -36,21 +39,5 @@ public class AuditEventsController(IAuditLogReader reader) : ControllerBase
             limit = parameters.Limit,
             events,
         });
-    }
-
-    private static object JsonNodeFromElement(JsonElement element)
-    {
-        return element.ValueKind switch
-        {
-            JsonValueKind.Object => element.EnumerateObject()
-                .ToDictionary(p => p.Name, p => JsonNodeFromElement(p.Value)),
-            JsonValueKind.Array => element.EnumerateArray()
-                .Select(JsonNodeFromElement).ToList(),
-            JsonValueKind.String => element.GetString()!,
-            JsonValueKind.Number => element.TryGetInt64(out var l) ? l : element.GetDouble(),
-            JsonValueKind.True => true,
-            JsonValueKind.False => false,
-            _ => null!,
-        };
     }
 }

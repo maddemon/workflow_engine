@@ -113,7 +113,7 @@ public class FilesController(
     /// 删除文件。
     /// </summary>
     [HttpDelete("{id:guid}")]
-    [AuthorizePermission(Scope.File, Operation.Write)]
+    [AuthorizePermission(Scope.File, Operation.Delete)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         var deleted = await fileService.DeleteAsync(id, cancellationToken).ConfigureAwait(false);

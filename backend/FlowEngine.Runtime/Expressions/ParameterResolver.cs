@@ -47,6 +47,14 @@ public sealed class ParameterResolver
     // 函数调用形态：单词后接 "(" 并有配对的参数列表，如 Math.Max(1,2) / Now() / eval(x)
     private static readonly Regex s_functionCallRegex = new(@"\b[a-zA-Z_]\w*\s*\([^)]*\)", RegexOptions.Compiled);
 
+    // "xxx is not defined" 形式缺失标识符提取（Jint 抛错消息）。
+    private static readonly Regex s_notDefinedRegex =
+        new(@"^\s*([\w$]+)\s+is not defined", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // "Cannot read properties of undefined (reading 'xxx')" 形式缺失属性提取。
+    private static readonly Regex s_readingPropertyRegex =
+        new(@"reading ['""]([\w$]+)['""]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private readonly ILogger<ParameterResolver> _logger;
     private readonly ScriptCache _scriptCache;
 
@@ -218,14 +226,14 @@ public sealed class ParameterResolver
     private static string? TryExtractMissingName(string message)
     {
         // Jint "xxx is not defined"
-        var match = Regex.Match(message, @"^\s*([\w$]+)\s+is not defined", RegexOptions.IgnoreCase);
+        var match = s_notDefinedRegex.Match(message);
         if (match.Success)
         {
             return match.Groups[1].Value;
         }
 
         // "Cannot read properties of undefined (reading 'xxx')"
-        match = Regex.Match(message, @"reading ['""]([\w$]+)['""]", RegexOptions.IgnoreCase);
+        match = s_readingPropertyRegex.Match(message);
         if (match.Success)
         {
             return match.Groups[1].Value;

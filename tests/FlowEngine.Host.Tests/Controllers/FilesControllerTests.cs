@@ -1,11 +1,13 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Reflection;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Identity;
+using FlowEngine.Host.Controllers;
 using FlowEngine.Host.Tests.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
@@ -179,6 +181,22 @@ public class FilesControllerTests : HostIntegrationTestBase
         Assert.Equal(1, result.Page);
         Assert.Equal(20, result.PageSize);
         Assert.True(result.TotalCount >= 1);
+    }
+
+    [Fact]
+    public void Delete_Endpoint_Requires_OperationDelete_Permission()
+    {
+        // 删除文件的授权粒度应与"删除"语义一致，而非复用的写入权限。
+        var method = typeof(FilesController).GetMethod(
+            nameof(FilesController.Delete),
+            BindingFlags.Public | BindingFlags.Instance,
+            [typeof(Guid), typeof(CancellationToken)]);
+        Assert.NotNull(method);
+
+        var attribute = method!.GetCustomAttribute<AuthorizePermissionAttribute>();
+        Assert.NotNull(attribute);
+        Assert.Equal(Scope.File, attribute!.Scope);
+        Assert.Equal(Operation.Delete, attribute.Operation);
     }
 
     private async Task<Guid> SeedProjectAsync(string email, CancellationToken ct)

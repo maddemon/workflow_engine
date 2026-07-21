@@ -46,12 +46,15 @@ public class RbacAuthorizationMiddleware(RequestDelegate next)
                     }),
                     context.RequestAborted).ConfigureAwait(false);
 
+                // 返回与全局异常中间件一致的统一错误包络 { success, errorCode, message, details }。
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 await context.Response.WriteAsJsonAsync(new
                 {
-                    error = "Forbidden",
-                    message = $"Insufficient permissions: {attribute.Scope}:{attribute.Operation} required."
-                });
+                    success = false,
+                    errorCode = "Forbidden",
+                    message = $"Insufficient permissions: {attribute.Scope}:{attribute.Operation} required.",
+                    details = (object?)null,
+                }).ConfigureAwait(false);
                 return;
             }
         }

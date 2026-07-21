@@ -22,6 +22,13 @@ public class SecurityHeadersMiddleware(
             ? "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:"
             : "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'";
 
+        // 仅在生产/非开发环境启用 HSTS，强制客户端通过 HTTPS 访问，防止降级攻击。
+        // 开发环境（自承载/本地调试）不应下发，避免浏览器缓存导致的本地 HTTP 访问困难。
+        if (!environment.IsDevelopment())
+        {
+            context.Response.Headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains";
+        }
+
         await next(context);
     }
 }

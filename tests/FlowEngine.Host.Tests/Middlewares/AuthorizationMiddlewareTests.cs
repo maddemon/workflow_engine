@@ -46,7 +46,7 @@ public class AuthorizationMiddlewareTests
     }
 
     [Fact]
-    public async Task DeniedPermission_Returns403WithJson()
+    public async Task DeniedPermission_Returns403WithUnifiedErrorEnvelope()
     {
         var context = CreateHttpContext("/test");
         var endpoint = CreateEndpointWithAttribute(Scope.Workflow, Operation.Read);
@@ -58,9 +58,14 @@ public class AuthorizationMiddlewareTests
         Assert.Equal(StatusCodes.Status403Forbidden, context.Response.StatusCode);
 
         context.Response.Body.Seek(0, System.IO.SeekOrigin.Begin);
-        var body = await System.Text.Json.JsonSerializer.DeserializeAsync<Dictionary<string, string>>(context.Response.Body, cancellationToken: TestContext.Current.CancellationToken);
-        Assert.NotNull(body);
-        Assert.Equal("Forbidden", body!["error"]);
+        using var doc = await System.Text.Json.JsonDocument.ParseAsync(context.Response.Body, cancellationToken: TestContext.Current.CancellationToken);
+        var root = doc.RootElement;
+
+        // 统一错误包络：{ success, errorCode, message, details }，与 GlobalExceptionHandlerMiddleware 一致。
+        Assert.False(root.GetProperty("success").GetBoolean());
+        Assert.Equal("Forbidden", root.GetProperty("errorCode").GetString());
+        Assert.Contains("Workflow:Read", root.GetProperty("message").GetString());
+        Assert.Equal(System.Text.Json.JsonValueKind.Null, root.GetProperty("details").ValueKind);
     }
 
     [Fact]

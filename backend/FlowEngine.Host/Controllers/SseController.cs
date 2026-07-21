@@ -88,7 +88,7 @@ public class SseController(
                 eventType: "connected");
 
             heartbeatCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            _ = RunHeartbeatAsync(channel.Writer, heartbeatCts.Token);
+            _ = RunHeartbeatAsync(channel.Writer, heartbeatCts.Token, executionId);
 
             await foreach (var message in channel.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
@@ -265,7 +265,10 @@ public class SseController(
     /// <summary>
     /// 周期性向通道写入心跳事件，保持 SSE 连接活跃。
     /// </summary>
-    private async Task RunHeartbeatAsync(ChannelWriter<WebSocketPushMessage> writer, CancellationToken cancellationToken)
+    private async Task RunHeartbeatAsync(
+        ChannelWriter<WebSocketPushMessage> writer,
+        CancellationToken cancellationToken,
+        Guid executionId)
     {
         using var timer = new PeriodicTimer(HeartbeatInterval);
         try
@@ -286,6 +289,12 @@ public class SseController(
         catch (ChannelClosedException)
         {
             // 通道已关闭，正常退出
+        }
+        catch (Exception ex)
+        {
+            // 心跳循环中的非预期异常（如底层写入故障）不得静默忽略，
+            // 记录日志以便观测，避免连接泄漏或心跳停摆而无从排查。
+            logger.LogError(ex, "SSE 心跳任务异常，连接 {ExecutionId} 心跳可能已停止", executionId);
         }
     }
 }

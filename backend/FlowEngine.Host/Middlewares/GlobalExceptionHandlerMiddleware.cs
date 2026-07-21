@@ -60,7 +60,7 @@ public class GlobalExceptionHandlerMiddleware(
         };
 
         await context.Response.WriteAsync(
-            JsonSerializer.Serialize(payload, JsonOptions));
+            JsonSerializer.Serialize(payload, JsonOptions)).ConfigureAwait(false);
     }
 
     private static (int status, string errorCode) MapException(Exception exception)

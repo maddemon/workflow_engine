@@ -85,6 +85,20 @@ public class ParameterResolverTests
     }
 
     [Fact]
+    public async Task Resolve_RepeatedCalls_ReturnsConsistentResult()
+    {
+        // 多次解析同一表达式（含函数调用/缺失字段路径，触发缓存的正则分支）应得到稳定结果。
+        using var js = CreateJsEngine(new JsonObject { ["statusCode"] = 200 });
+        var raw = new Dictionary<string, object> { ["condition"] = "input.statusCode === 200" };
+
+        for (var i = 0; i < 50; i++)
+        {
+            var result = await _resolver.ResolveAsync(raw, js);
+            Assert.Equal(true, result["condition"]);
+        }
+    }
+
+    [Fact]
     public async Task Resolve_ForbiddenIdentifier_ThrowsSecurityViolationException()
     {
         using var js = CreateJsEngine();

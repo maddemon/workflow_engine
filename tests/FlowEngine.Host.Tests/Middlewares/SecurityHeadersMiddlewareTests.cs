@@ -23,6 +23,7 @@ public class SecurityHeadersMiddlewareTests
         Assert.Equal("1; mode=block", context.Response.Headers.XXSSProtection);
         Assert.Equal("strict-origin-when-cross-origin", context.Response.Headers["Referrer-Policy"]);
         Assert.Equal("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'", context.Response.Headers["Content-Security-Policy"]);
+        Assert.Equal("max-age=31536000; includeSubDomains", context.Response.Headers["Strict-Transport-Security"]);
     }
 
     [Fact]
@@ -37,6 +38,8 @@ public class SecurityHeadersMiddlewareTests
         await middleware.InvokeAsync(context);
 
         Assert.Equal("default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' ws: wss:", context.Response.Headers["Content-Security-Policy"]);
+        // 开发环境不应下发 HSTS，避免浏览器 HSTS 缓存导致本地 HTTP 调试困难。
+        Assert.False(context.Response.Headers.ContainsKey("Strict-Transport-Security"));
     }
 
     [Fact]
