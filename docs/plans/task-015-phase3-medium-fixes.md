@@ -23,14 +23,14 @@
 - [x] #24 `TriggerService` 事务补充：关系型路径下 `CreateAsync` 显式事务；`RemoveTriggersByWorkflowIdAsync` 改 `ExecuteDeleteAsync` 且不开启嵌套事务
 - [x] #25 `WaitingArea` 锁粒度：`PortState` 改 `ConcurrentDictionary` + `AddOrUpdate` 纯函数 `Merge`，移除手动 `lock`
 - [x] #2 热查询列补索引（`FlowEngineDbContext`），已生成 EF 迁移 `AddHotQueryIndexes` —— 批次 B2 第一部分完成
-- [ ] #4 / #6 单次执行重复加载同一工作流（透传 Workflow/编译定义）—— 待批次 B2 第二部分
+- [x] #4 / #6 单次执行重复加载同一工作流（透传 Workflow/编译定义）—— 批次 B2 第二部分完成
 - [x] #20 `WorkflowExecutionWorker` scope 优化（per-item scope 解析 `WorkflowExecutor`）—— 批次 B2 第一部分完成
 - [x] #23 统计/授权批量查询优化（防 N+1）—— 批次 B2 第一部分完成（经核实已批量，仅补锁定测试）
 - [x] #26 前端其他类型/选择器优化 —— 批次 B2 第一部分完成（经核实类型已对齐，仅 `ParameterPanel` 选择器/回调稳定性优化）
 
 ### 批次 B2（剩余中等项，已派发第一部分）
 - [x] #2 热查询列补索引（EF 迁移 `AddHotQueryIndexes`）
-- [ ] #4 / #6 单次执行重复加载同一工作流（透传）
+- [x] #4 / #6 单次执行重复加载同一工作流（透传）
 - [x] #20 `WorkflowExecutionWorker` scope 优化（与 #27 合并）
 - [x] #23 统计/授权批量查询优化（防 N+1）
 - [x] #26 前端其他类型/选择器优化（与 C #11/#12 前端部分合并）
@@ -54,7 +54,7 @@
 ## 完成状态
 - [x] 批次 A（8/8）
 - [x] 批次 B（6/11，剩余 5 项归入批次 B2）
-- [ ] 批次 B2（第一部分 4/4 完成，第二部分 #4/#6 待派发）
+- [x] 批次 B2（第一部分 4/4 完成，第二部分 #4/#6 完成）
 - [ ] 批次 C
 
 ## 主要修改记录
@@ -69,3 +69,6 @@
   - **#2 热查询列补索引**：为 `ExecutionRecord` 增加 `[Index(nameof(WorkflowDefinitionId))]`、`[Index(nameof(ProjectId))]`、`[Index(nameof(Status), nameof(CompletedAt))]`（复合），为 `Workflow` 增加 `[Index(nameof(ProjectId))]`；均用 Data Annotations（符合规则）。已通过 `dotnet ef migrations add AddHotQueryIndexes` 生成迁移（命名空间 `FlowEngine.Migrations.Migrations.Sqlite`，与既有布局一致），无需 fallback 任务文档注记。
   - **#20 `WorkflowExecutionWorker` scope 优化**：将 `WorkflowExecutor` 与 `FlowEngineDbContext` 的解析从外层长生命周期 scope 移入每个执行项内部的 `using var executionScope = _scopeFactory.CreateScope()`，使其 scoped `DbContext` 随 scope 释放，避免长生命周期 scope 捕获 `DbContext` 导致跨执行数据污染。新增回归测试 `WorkflowExecutionWorkerScopeTests.Execute_SequentialItems_ResolveIndependentScopedDbContexts`，断言两个连续执行项各自解析出独立 `DbContext` 实例（非同一引用）。运行路径行为不变。
   - 验证：`dotnet build FlowEngine.Host` 0 警告 0 错误；`dotnet test FlowEngine.Application.Tests` 463 通过、`dotnet test FlowEngine.Host.Tests` 321 通过（均 0 失败）；前端 `typecheck`/`build` 通过。偏差：#23、#26 经核实无需按原计划改代码（已对齐/已批量），仅以测试锁定现状与做一处安全的渲染稳定性优化，未扩大范围。
+- 批次 B2 第二部分（#6 重复加载透传、#4 执行列表分页）完成，遵循 TDD：
+  - **#6 单次执行重复加载同一工作流**：单次执行请求此前对 `Workflow` 实体读取 3 次（`ExecutionService` 鉴权读、`WorkflowExecutor.StartAsync` 重载读、`WorkflowExecutionWorker` 后台读）。新增 `IEngine.StartAsync(Guid, Workflow, object?, CancellationToken)` 重载与 `WorkflowExecutionWorkItem.PreloadedWorkflow` 字段（4 参带默认值，旧 3 参调用与 Moq 测试均不受影响），将 `ExecutionService` 已加载的 `Workflow` 透传至 `StartAsync`→队列→`Worker`，消除后两次 DB 往返；两者在 `Id` 不匹配时回退内部加载。队列为内存 `System.Threading.Channels`，按引用持有工作项，携带实体引用安全。新增测试 `WorkflowExecutorTests.StartAsync_WithPreloadedWorkflow_EnqueuesItemCarryingWorkflow`（含 `Id` 不匹配回退用例）、`WorkflowExecutionWorkerScopeTests.Execute_WithPreloadedWorkflow_ReusesInstanceWithoutRequery`。
+  - **#4 执行列表分页 + 独立运行中端点**：`ExecutionService.GetByWorkflowAsync` 改为服务端分页，返回 `PagedResult<ExecutionSummaryDto>`，支持 `status`/`page`/`pageSize`（`page≥1`、`pageSize` 收敛 1–200，`AsNoTracking`）；新增 `GetActiveAsync` 仅返回 `Pending`/`Running` 活跃执行。`ExecutionsController` 对应更新 `GetByWorkflow` 查询参数并新增 `GetActive` 端点（`workflows/{id}/executions/active`，无路由冲突）。前端 `getWorkflowExecutions` 改为接受 `ExecutionQuery` 并返回 `PagedResult`，新增 `getActiveExecutions`；`ExecutionHistoryPage` 由客户端分页切换为服务端分页（`useRequest` + `refreshDeps:[id,page,statusFilter]`，移除客户端过滤/`slice` memo）；`useExecution` 实时跟踪改用 `getActiveExecutions`。补充 `ExecutionServicePagingTests`（分页数、TotalPages、次页、状态过滤、GetActiveAsync）。验证：`dotnet build FlowEngine.sln` 0 警告 0 错误；`FlowEngine.Application.Tests` 465、`FlowEngine.Host.Tests` 322 全绿；前端 `typecheck`/`build` 成功、`vitest run` 440 全绿。偏差：用户经 AskUserQuestion 选择「全分页+独立运行中端点」方案，故未采用「后端封顶不改契约」的简化方案。
