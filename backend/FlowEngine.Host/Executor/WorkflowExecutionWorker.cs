@@ -35,7 +35,6 @@ public sealed class WorkflowExecutionWorker : BackgroundService
 
         using var scope = _scopeFactory.CreateScope();
         var queue = scope.ServiceProvider.GetRequiredService<WorkflowExecutionQueue>();
-        var executor = scope.ServiceProvider.GetRequiredService<WorkflowExecutor>();
         var cancellationRegistry = scope.ServiceProvider.GetRequiredService<ExecutionCancellationRegistry>();
 
         while (!stoppingToken.IsCancellationRequested)
@@ -53,8 +52,11 @@ public sealed class WorkflowExecutionWorker : BackgroundService
 
             try
             {
+                // P3 #20：每个执行项在独立 scope 内解析 WorkflowExecutor（其 scoped DbContext 随 scope 释放），
+                // 避免长生命周期 scope 捕获 DbContext 导致跨执行数据污染/线程安全隐患。
                 using var executionScope = _scopeFactory.CreateScope();
                 var dbContext = executionScope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
+                var executor = executionScope.ServiceProvider.GetRequiredService<WorkflowExecutor>();
 
                 var workflow = await dbContext.Workflows
                     .FirstOrDefaultAsync(w => w.Id == item.WorkflowDefinitionId, stoppingToken)
