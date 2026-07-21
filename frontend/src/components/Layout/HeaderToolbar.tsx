@@ -49,7 +49,7 @@ export function HeaderToolbar() {
   });
 
   const pendingAiDrafts = useMemo(
-    () => workflows.filter((w) => w.source === 'ai' && w.draftStatus === 'pending').length,
+    () => workflows.filter((w) => w.source === 'Ai' && w.draftStatus === 'Pending').length,
     [workflows],
   );
 

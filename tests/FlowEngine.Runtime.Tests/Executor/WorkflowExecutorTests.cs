@@ -315,11 +315,59 @@ public class WorkflowExecutorTests
             .FirstOrDefaultAsync(e => e.Id == executionRecord.Id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(reloaded);
-        Assert.True(
-            reloaded.Status is ExecutionStatus.Cancelled or ExecutionStatus.Failed,
-            $"Expected cancelled or failed, but was {reloaded.Status}.");
+        // 取消应经状态机转为 Cancelled 终态（而非被误判为 Failed）。
+        Assert.Equal(ExecutionStatus.Cancelled, reloaded.Status);
         Assert.True(sw.Elapsed < TimeSpan.FromSeconds(5),
             $"Execution took {sw.Elapsed.TotalSeconds:F1}s, expected cancellation within 5s.");
+    }
+
+    [Fact]
+    public async Task CancelAsync_ViaRegistry_TransitionsRunningExecutionToCancelled()
+    {
+        var nodeA = CreateNode("a", "slow", isEntry: true);
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "cancel_registry",
+            CreatedBy = "test",
+            Nodes = [nodeA],
+            Connections = []
+        };
+
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var executionRecord = new ExecutionRecord
+        {
+            Id = Guid.NewGuid(),
+            WorkflowDefinitionId = workflow.Id,
+            StartedAt = DateTime.UtcNow,
+            Status = ExecutionStatus.Pending,
+            NodeRecords = []
+        };
+        _dbContext.ExecutionRecords.Add(executionRecord);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // 模拟后台 worker：登记每执行取消令牌源，并将其令牌传入执行循环。
+        var registry = new ExecutionCancellationRegistry();
+        using var cts = new CancellationTokenSource();
+        registry.Register(executionRecord.Id, cts);
+
+        var execTask = _executor.ExecuteLoopAsync(
+            workflow, executionRecord.Id, null, _dbContext, cts.Token);
+
+        // 执行进行中经注册表触发取消（对应 ExecutionService.CancelAsync 的行为）。
+        await Task.Delay(TimeSpan.FromMilliseconds(200), TestContext.Current.CancellationToken);
+        registry.TryCancel(executionRecord.Id);
+
+        await execTask;
+
+        var reloaded = await _dbContext.ExecutionRecords
+            .FirstOrDefaultAsync(e => e.Id == executionRecord.Id, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(reloaded);
+        Assert.Equal(ExecutionStatus.Cancelled, reloaded!.Status);
+        Assert.NotNull(reloaded.CompletedAt);
     }
 
     [Fact]

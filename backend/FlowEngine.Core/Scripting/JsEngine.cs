@@ -92,8 +92,20 @@ public sealed class JsEngine : IDisposable
     public async Task<JsValue> RunAsync(string script, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        var result = _engine.Evaluate($"(async function() {{ {script} }})()");
-        return await result.UnwrapIfPromiseAsync(cancellationToken).ConfigureAwait(false);
+        
+        // 使用 CancellationTokenSource 强制超时，防止异步操作长时间挂起
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(TimeSpan.FromMilliseconds(5000)); // 默认 5 秒超时
+        
+        try
+        {
+            var result = _engine.Evaluate($"(async function() {{ {script} }})()");
+            return await result.UnwrapIfPromiseAsync(timeoutCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException("脚本执行超时");
+        }
     }
 
     /// <summary>

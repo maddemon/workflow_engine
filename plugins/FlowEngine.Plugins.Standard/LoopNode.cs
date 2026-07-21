@@ -1,6 +1,5 @@
-using FlowEngine.Core;
 using System.ComponentModel;
-using System.Text.Json.Nodes;
+using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -8,7 +7,9 @@ using FlowEngine.Core.Enums;
 namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
-/// 循环节点，将数据分批处理。
+/// 循环节点（单窗口语义）。将输入集合的前 <see cref="BatchSize"/> 项从 Loop 输出口发出单个窗口；
+/// 当输入为空时直接走 Done 输出口（空批）。
+/// <para>限制：本节点仅发送单个窗口（前 BatchSize 项），超出部分不会被迭代处理。请勿将 Loop 输出口回连本节点输入，否则内核重跑仍只发首批，可能造成死循环或数据重复。</para>
 /// </summary>
 public sealed class LoopNode : INodeType
 {
@@ -28,9 +29,9 @@ public sealed class LoopNode : INodeType
     public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
 
     /// <summary>
-    /// 批次大小。
+    /// 单窗口包含的最大项数（仅发送前 BatchSize 项，超出部分不迭代处理）。
     /// </summary>
-    [Description("Number of items to process in each batch.")]
+    [Description("单窗口包含的最大项数（仅发送前 BatchSize 项，超出部分不迭代处理）。")]
     public int BatchSize { get; set; } = 1;
 
     /// <summary>
@@ -51,48 +52,21 @@ public sealed class LoopNode : INodeType
     public bool DefaultIsEntry => false;
 
     /// <inheritdoc />
+    /// <remarks>
+    /// 单窗口语义：输入为空时走 Done 输出口（BranchIndex = 1）并返回空批；
+    /// 否则取前 min(BatchSize, 总项数) 条，从 Loop 输出口（BranchIndex = 0）发出单个窗口。
+    /// 执行内核不会回灌 nextBatch/position 等迭代参数，因此不会迭代，也不存在死循环路径。
+    /// </remarks>
     public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
     {
         BatchSize = Math.Max(1, BatchSize);
 
         var inputBatch = context.GetInputBatch();
-
-        // Check if this is a "next batch" call from downstream
-        if (IsNextBatchCall(context))
-        {
-            return HandleNextBatch(context, inputBatch);
-        }
-
-        // Initial call - return first batch on loop output
-        return HandleInitialBatch(context, inputBatch);
-    }
-
-    private bool IsNextBatchCall(NodeExecutionContext context)
-    {
-        // Check if there's a "nextBatch" parameter indicating this is a subsequent call
-        return context.ResolvedParameters.TryGetValue("nextBatch", out var nextBatch) &&
-               nextBatch is JsonValue boolVal &&
-               boolVal.TryGetValue<bool>(out var isNext) &&
-               isNext;
-    }
-
-    private Task<NodeExecutionResult> HandleNextBatch(NodeExecutionContext context, DataBatch inputBatch)
-    {
-        // Get current position from context
-        var position = 0;
-        if (context.ResolvedParameters.TryGetValue("position", out var posVal) &&
-            posVal is JsonValue posJson &&
-            posJson.TryGetValue<int>(out var pos))
-        {
-            position = pos;
-        }
-
         var allItems = inputBatch.Items;
-        var totalItems = allItems.Count;
 
-        if (position >= totalItems)
+        // 输入为空：直接走 Done 输出口，返回空批。
+        if (allItems.Count == 0)
         {
-            // No more items, return done
             return Task.FromResult(new NodeExecutionResult
             {
                 Success = true,
@@ -101,41 +75,13 @@ public sealed class LoopNode : INodeType
             });
         }
 
-        // Return next batch on loop output
-        var batchItems = allItems.Skip(position).Take(BatchSize).ToList();
-        var newPosition = position + batchItems.Count;
+        // 单窗口：仅取前 min(BatchSize, 总项数) 条，从 Loop 输出口发出。
+        var windowItems = allItems.Take(BatchSize).ToList();
 
         return Task.FromResult(new NodeExecutionResult
         {
             Success = true,
-            Output = new DataBatch { Items = batchItems },
-            BranchIndex = 0 // loop
-        });
-    }
-
-    private Task<NodeExecutionResult> HandleInitialBatch(NodeExecutionContext context, DataBatch inputBatch)
-    {
-        var allItems = inputBatch.Items;
-        var totalItems = allItems.Count;
-
-        if (totalItems == 0)
-        {
-            // No items, return done immediately
-            return Task.FromResult(new NodeExecutionResult
-            {
-                Success = true,
-                Output = new DataBatch(),
-                BranchIndex = 1 // done
-            });
-        }
-
-        // Return first batch on loop output
-        var batchItems = allItems.Take(BatchSize).ToList();
-
-        return Task.FromResult(new NodeExecutionResult
-        {
-            Success = true,
-            Output = new DataBatch { Items = batchItems },
+            Output = new DataBatch { Items = windowItems },
             BranchIndex = 0 // loop
         });
     }

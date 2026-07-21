@@ -45,7 +45,7 @@ public class ExecutionsController(
             });
         }
 
-        return Ok(execution);
+        return CreatedAtAction(nameof(Get), new { id = execution.Id }, execution);
     }
 
     /// <summary>
@@ -58,7 +58,12 @@ public class ExecutionsController(
         var (execution, conflict) = await executionService.CancelAsync(id, cancellationToken).ConfigureAwait(false);
         if (execution is null)
         {
-            return NotFound();
+            return NotFound(new
+            {
+                success = false,
+                errorCode = "ExecutionNotFound",
+                message = localizer["ExecutionNotFoundFormat", id],
+            });
         }
 
         if (conflict)

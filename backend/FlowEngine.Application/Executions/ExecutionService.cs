@@ -10,6 +10,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.Exceptions;
+using FlowEngine.Runtime.Executor;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Executions;
@@ -23,7 +24,8 @@ public sealed class ExecutionService(
     IExecutionIdempotencyService idempotencyService,
     IAuthorizationGuard authGuard,
     IEventBus eventBus,
-    AuditEventFactory auditFactory) : IExecutionService
+    AuditEventFactory auditFactory,
+    ExecutionCancellationRegistry cancellationRegistry) : IExecutionService
 {
 
     /// <summary>
@@ -129,9 +131,17 @@ public sealed class ExecutionService(
             return (ExecutionMapper.MapToDto(record), true);
         }
 
-        record.Status = ExecutionStatus.Cancelled;
-        record.CompletedAt = DateTime.UtcNow;
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        // 信号给后台 worker：若是运行中执行，worker 检测到取消后走 StateMachine.Cancel() 并落库 Cancelled；
+        // 若是尚未出队的 Pending 执行，则直接落库 Cancelled，避免 worker 后续覆写回 Running。
+        cancellationRegistry.TryCancel(executionId);
+
+        if (record.Status == ExecutionStatus.Pending)
+        {
+            // Pending 尚未被 worker 取出执行：直接落库 Cancelled（worker 取出时会跳过终态执行，不会覆写）。
+            record.Status = ExecutionStatus.Cancelled;
+            record.CompletedAt = DateTime.UtcNow;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
 
         var cancelledEvent = new WorkflowCancelledEvent(record.Id, record.WorkflowDefinitionId);
         await eventBus.PublishAsync(cancelledEvent, cancellationToken).ConfigureAwait(false);

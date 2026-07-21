@@ -143,11 +143,11 @@ export function CredentialField({ definition, value, onChange, error }: Credenti
                 <Group gap={4} wrap="nowrap">
                   <Text size="sm" fw={500}>
                     {paramName(field.name, field.displayName)}
-                    {field.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
+                    {field.isRequired && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
                   </Text>
                   {field.hint && <InfoTooltip label={field.hint} />}
                 </Group>
-                {field.sensitive ? (
+                {field.secret ? (
                   <PasswordInput
                     placeholder={field.name}
                     value={formValues[field.name] ?? ''}

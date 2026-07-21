@@ -27,6 +27,12 @@ public class SseController(
     ILogger<SseController> logger) : ControllerBase
 {
     private static readonly TimeSpan HeartbeatInterval = TimeSpan.FromSeconds(30);
+    /// <summary>
+    /// 连接内事件序号计数器（每个 SSE 连接独立，从 0 开始单调递增）。
+    /// 与 WebSocket 全局计数器（WebSocketEventPushService._sequenceCounter）不同，
+    /// SSE 当前未实现断线重连补偿，序号仅用于单连接内消息排序。
+    /// </summary>
+    private long _sequenceCounter;
 
     /// <summary>
     /// 订阅指定执行的事件流（SSE）。
@@ -77,6 +83,7 @@ public class SseController(
                     Type = "connected",
                     ExecutionId = executionId,
                     Timestamp = DateTime.UtcNow,
+                    Sequence = Interlocked.Increment(ref _sequenceCounter),
                 },
                 eventType: "connected");
 
@@ -85,7 +92,12 @@ public class SseController(
 
             await foreach (var message in channel.Reader.ReadAllAsync(cancellationToken).ConfigureAwait(false))
             {
-                yield return new SseItem<WebSocketPushMessage>(message, eventType: message.Type);
+                // 为 SSE 推送的消息补充 Sequence 字段，与 WebSocket 推送保持一致
+                var messageWithSequence = message with
+                {
+                    Sequence = Interlocked.Increment(ref _sequenceCounter)
+                };
+                yield return new SseItem<WebSocketPushMessage>(messageWithSequence, eventType: message.Type);
             }
         }
         finally
@@ -264,6 +276,7 @@ public class SseController(
                 {
                     Type = "heartbeat",
                     Timestamp = DateTime.UtcNow,
+                    Sequence = Interlocked.Increment(ref _sequenceCounter),
                 });
             }
         }

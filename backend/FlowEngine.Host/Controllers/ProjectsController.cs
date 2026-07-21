@@ -19,9 +19,19 @@ public class ProjectsController(ProjectService projectService) : ControllerBase
     /// </summary>
     [HttpGet]
     [AuthorizePermission(Scope.Project, Operation.Read)]
-    public async Task<ActionResult<IReadOnlyList<ProjectDto>>> GetAll(CancellationToken cancellationToken)
+    public async Task<ActionResult<PagedResult<ProjectDto>>> GetAll(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
     {
-        var result = await projectService.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        var items = await projectService.GetAllAsync(cancellationToken).ConfigureAwait(false);
+        var result = new PagedResult<ProjectDto>
+        {
+            Items = items,
+            TotalCount = items.Count,
+            Page = page,
+            PageSize = pageSize,
+        };
         return Ok(result);
     }
 

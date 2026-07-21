@@ -12,6 +12,7 @@ using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.ValueObjects;
+using FlowEngine.Runtime.Executor;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Tests.Executions;
@@ -22,6 +23,7 @@ public sealed class ExecutionServiceTests : IDisposable
     private readonly FakeUserContext _userContext;
     private readonly CapturingEngine _engine;
     private readonly RecordingEventBus _eventBus;
+    private readonly ExecutionCancellationRegistry _cancellationRegistry;
     private readonly ExecutionService _service;
 
     public ExecutionServiceTests()
@@ -37,13 +39,15 @@ public sealed class ExecutionServiceTests : IDisposable
         var auditFactory = new AuditEventFactory(_userContext);
         var resourceAuthorization = new StubResourceAuthorizationService(_userContext);
         var idempotencyService = new StubIdempotencyService();
+        _cancellationRegistry = new ExecutionCancellationRegistry();
         _service = new ExecutionService(
             _engine,
             _dbContext,
             idempotencyService,
             AuthorizationGuardFactory.Create(_userContext, resourceAuthorization),
             _eventBus,
-            auditFactory);
+            auditFactory,
+            _cancellationRegistry);
     }
 
     public void Dispose()
@@ -135,18 +139,59 @@ public sealed class ExecutionServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task CancelAsync_RunningExecution_SetsCancelled()
+    public async Task CancelAsync_RunningExecution_SignalsCancellationRegistry()
     {
         var ct = TestContext.Current.CancellationToken;
         var execution = CreateTestExecution(ExecutionStatus.Running);
         _dbContext.ExecutionRecords.Add(execution);
         await _dbContext.SaveChangesAsync(ct);
 
+        // 模拟后台 worker 已为该执行登记取消令牌源。
+        using var workerCts = new CancellationTokenSource();
+        _cancellationRegistry.Register(execution.Id, workerCts);
+
+        var (result, conflict) = await _service.CancelAsync(execution.Id, ct);
+
+        // 运行中执行：CancelAsync 仅信号注册表触发取消，不直接落库 Cancelled（由 worker 落库）。
+        Assert.False(conflict);
+        Assert.NotNull(result);
+        Assert.True(workerCts.IsCancellationRequested, "运行中的执行应经注册表触发取消。");
+        // worker 尚未处理，DB 中状态仍为 Running（取消为异步）。
+        var record = await _dbContext.ExecutionRecords.FindAsync([execution.Id], ct);
+        Assert.Equal(ExecutionStatus.Running, record!.Status);
+    }
+
+    [Fact]
+    public async Task CancelAsync_PendingExecution_SetsCancelledAndSignalsRegistry()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var execution = CreateTestExecution(ExecutionStatus.Pending);
+        _dbContext.ExecutionRecords.Add(execution);
+        await _dbContext.SaveChangesAsync(ct);
+
+        using var workerCts = new CancellationTokenSource();
+        _cancellationRegistry.Register(execution.Id, workerCts);
+
         var (result, conflict) = await _service.CancelAsync(execution.Id, ct);
 
         Assert.False(conflict);
         Assert.NotNull(result);
         Assert.Equal(nameof(ExecutionStatus.Cancelled), result!.Status);
+
+        var record = await _dbContext.ExecutionRecords.FindAsync([execution.Id], ct);
+        Assert.NotNull(record);
+        Assert.Equal(ExecutionStatus.Cancelled, record.Status);
+        Assert.NotNull(record.CompletedAt);
+
+        // 未出队的 Pending 执行同样应触发取消信号（worker 取出后会跳过终态）。
+        Assert.True(workerCts.IsCancellationRequested);
+
+        var cancelledEvent = _eventBus.PublishedEvents
+            .OfType<WorkflowCancelledEvent>()
+            .FirstOrDefault();
+        Assert.NotNull(cancelledEvent);
+        Assert.Equal(execution.Id, cancelledEvent.ExecutionId);
+        Assert.Equal(execution.WorkflowDefinitionId, cancelledEvent.WorkflowDefinitionId);
     }
 
     [Fact]

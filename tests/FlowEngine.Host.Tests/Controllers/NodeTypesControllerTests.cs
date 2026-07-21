@@ -27,7 +27,7 @@ public class NodeTypesControllerTests : HostIntegrationTestBase
     public async Task GetAll_ReturnsNodeTypes()
     {
         var ct = TestContext.Current.CancellationToken;
-        var client = _factory.CreateClient();
+        var client = await CreateAuthenticatedClientAsync("nodetypes@example.com", ct);
 
         var response = await client.GetAsync("/api/v1/node-types", ct);
 
@@ -41,7 +41,7 @@ public class NodeTypesControllerTests : HostIntegrationTestBase
     public async Task GetAll_WithCategoryFilter_ReturnsFilteredNodeTypes()
     {
         var ct = TestContext.Current.CancellationToken;
-        var client = _factory.CreateClient();
+        var client = await CreateAuthenticatedClientAsync("nodetypes-filter@example.com", ct);
 
         var response = await client.GetAsync("/api/v1/node-types?category=Core", ct);
 

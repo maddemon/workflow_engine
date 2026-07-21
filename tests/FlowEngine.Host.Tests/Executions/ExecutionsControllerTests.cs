@@ -23,7 +23,7 @@ public class ExecutionsControllerTests : HostIntegrationTestBase
     }
 
     [Fact]
-    public async Task Execute_WithInputs_ReturnsOkAndStartsExecution()
+    public async Task Execute_WithInputs_ReturnsCreatedAndStartsExecution()
     {
         var ct = TestContext.Current.CancellationToken;
         var email = "jwt-execute-inputs@example.com";
@@ -37,7 +37,7 @@ public class ExecutionsControllerTests : HostIntegrationTestBase
 
         var response = await client.PostAsJsonAsync($"/api/v1/workflows/{workflow.Id}/execute", dto, ct);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var result = await response.Content.ReadFromJsonAsync<ExecutionDto>(TestJsonOptions, ct);
         Assert.NotNull(result);
         Assert.Equal(workflow.Id, result!.WorkflowDefinitionId);
@@ -64,11 +64,11 @@ public class ExecutionsControllerTests : HostIntegrationTestBase
 
         var response = await client.PostAsJsonAsync($"/api/v1/workflows/{workflow.Id}/execute", dto, ct);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
     }
 
     [Fact]
-    public async Task Execute_WithoutBody_BackwardCompatible()
+    public async Task Execute_WithoutBody_ReturnsCreated()
     {
         var ct = TestContext.Current.CancellationToken;
         var email = "jwt-execute-no-body@example.com";
@@ -77,7 +77,7 @@ public class ExecutionsControllerTests : HostIntegrationTestBase
 
         var response = await client.PostAsync($"/api/v1/workflows/{workflow.Id}/execute", null, ct);
 
-        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var result = await response.Content.ReadFromJsonAsync<ExecutionDto>(TestJsonOptions, ct);
         Assert.NotNull(result);
     }

@@ -259,10 +259,10 @@ describe('workflowStore', () => {
     });
 
     it('setDraftSource and setDraftStatus update state', () => {
-      useWorkflowStore.getState().setDraftSource('ai');
-      useWorkflowStore.getState().setDraftStatus('pending');
-      expect(useWorkflowStore.getState().draftSource).toBe('ai');
-      expect(useWorkflowStore.getState().draftStatus).toBe('pending');
+      useWorkflowStore.getState().setDraftSource('Ai');
+      useWorkflowStore.getState().setDraftStatus('Pending');
+      expect(useWorkflowStore.getState().draftSource).toBe('Ai');
+      expect(useWorkflowStore.getState().draftStatus).toBe('Pending');
     });
 
     it('setStructuredDiff updates diff', () => {

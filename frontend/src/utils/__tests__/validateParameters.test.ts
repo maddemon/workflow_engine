@@ -35,44 +35,96 @@ describe('validateParameters', () => {
   });
 
   it('skips validation for empty non-required fields', () => {
-    const defs = [makeDef({ name: 'url', validationRules: ['minlength:5'] })];
+    const defs = [makeDef({ name: 'url', validationRules: [{ type: 'minLength', value: 5 }] })];
     const result = validateParameters({ url: '' }, defs);
     expect(Object.keys(result)).toHaveLength(0);
   });
 
-  it('validates minlength rule', () => {
-    const defs = [makeDef({ name: 'code', displayName: 'Code', validationRules: ['minlength:3'] })];
+  it('validates minLength rule', () => {
+    const defs = [makeDef({ name: 'code', displayName: 'Code', validationRules: [{ type: 'minLength', value: 3 }] })];
     const result = validateParameters({ code: 'ab' }, defs);
     expect(result['code']).toContain('at least 3');
   });
 
-  it('validates maxlength rule', () => {
-    const defs = [makeDef({ name: 'code', displayName: 'Code', validationRules: ['maxlength:5'] })];
+  it('validates maxLength rule', () => {
+    const defs = [makeDef({ name: 'code', displayName: 'Code', validationRules: [{ type: 'maxLength', value: 5 }] })];
     const result = validateParameters({ code: 'abcdef' }, defs);
     expect(result['code']).toContain('at most 5');
   });
 
   it('validates min rule for numbers', () => {
-    const defs = [makeDef({ name: 'count', type: 'Number', displayName: 'Count', validationRules: ['min:1'] })];
+    const defs = [makeDef({ name: 'count', type: 'Number', displayName: 'Count', validationRules: [{ type: 'min', value: 1 }] })];
     const result = validateParameters({ count: 0 }, defs);
     expect(result['count']).toContain('at least 1');
   });
 
   it('validates max rule for numbers', () => {
-    const defs = [makeDef({ name: 'count', type: 'Number', displayName: 'Count', validationRules: ['max:100'] })];
+    const defs = [makeDef({ name: 'count', type: 'Number', displayName: 'Count', validationRules: [{ type: 'max', value: 100 }] })];
     const result = validateParameters({ count: 200 }, defs);
     expect(result['count']).toContain('at most 100');
   });
 
   it('validates pattern rule', () => {
-    const defs = [makeDef({ name: 'email', displayName: 'Email', validationRules: ['pattern:^\\S+@\\S+$'] })];
+    const defs = [makeDef({ name: 'email', displayName: 'Email', validationRules: [{ type: 'pattern', value: '^\\S+@\\S+$' }] })];
     const result = validateParameters({ email: 'invalid' }, defs);
     expect(result['email']).toContain('format is invalid');
   });
 
   it('returns no error for valid pattern', () => {
-    const defs = [makeDef({ name: 'email', displayName: 'Email', validationRules: ['pattern:^\\S+@\\S+$'] })];
+    const defs = [makeDef({ name: 'email', displayName: 'Email', validationRules: [{ type: 'pattern', value: '^\\S+@\\S+$' }] })];
     const result = validateParameters({ email: 'test@example.com' }, defs);
     expect(Object.keys(result)).toHaveLength(0);
+  });
+
+  describe('object validationRules parsing (#9)', () => {
+    it('uses custom errorMessage when provided', () => {
+      const defs = [makeDef({
+        name: 'code',
+        displayName: 'Code',
+        validationRules: [{ type: 'minLength', value: 3, errorMessage: 'Too short' }],
+      })];
+      const result = validateParameters({ code: 'ab' }, defs);
+      expect(result['code']).toBe('Too short');
+    });
+
+    it('parses rule type case-insensitively', () => {
+      const defs = [makeDef({
+        name: 'code',
+        displayName: 'Code',
+        validationRules: [{ type: 'MINLENGTH', value: 3 }],
+      })];
+      const result = validateParameters({ code: 'ab' }, defs);
+      expect(result['code']).toContain('at least 3');
+    });
+
+    it('returns no error when value satisfies the rule (boundary)', () => {
+      const defs = [makeDef({
+        name: 'code',
+        displayName: 'Code',
+        validationRules: [{ type: 'minLength', value: 3 }],
+      })];
+      const result = validateParameters({ code: 'abc' }, defs);
+      expect(Object.keys(result)).toHaveLength(0);
+    });
+
+    it('ignores rule with non-numeric value and does not throw', () => {
+      const defs = [makeDef({
+        name: 'code',
+        displayName: 'Code',
+        validationRules: [{ type: 'minLength', value: true }],
+      })];
+      const result = validateParameters({ code: 'ab' }, defs);
+      expect(Object.keys(result)).toHaveLength(0);
+    });
+
+    it('ignores unsupported rule types', () => {
+      const defs = [makeDef({
+        name: 'code',
+        displayName: 'Code',
+        validationRules: [{ type: 'unknown', value: 3 }],
+      })];
+      const result = validateParameters({ code: 'ab' }, defs);
+      expect(Object.keys(result)).toHaveLength(0);
+    });
   });
 });

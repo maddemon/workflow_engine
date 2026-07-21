@@ -36,7 +36,7 @@ public class AuthControllerTests : HostIntegrationTestBase
     }
 
     [Fact]
-    public async Task Login_ValidCredentials_ReturnsTokenAndCookie()
+    public async Task Login_ValidCredentials_SetsHttpOnlyCookie()
     {
         var ct = TestContext.Current.CancellationToken;
         var email = "login@example.com";
@@ -50,11 +50,13 @@ public class AuthControllerTests : HostIntegrationTestBase
             ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        // 验证 JWT 通过 HttpOnly Cookie 下发
         Assert.NotNull(response.Headers.GetValues("Set-Cookie").FirstOrDefault(c => c.Contains("fe_auth")));
         var result = await response.Content.ReadFromJsonAsync<LoginResult>(TestJsonOptions, ct);
         Assert.NotNull(result);
         Assert.True(result!.Success);
-        Assert.NotNull(result.Token);
+        // 安全加固：响应体不再包含 Token，避免 XSS 或第三方脚本从响应中提取 JWT
+        Assert.Null(result.Token);
     }
 
     [Fact]

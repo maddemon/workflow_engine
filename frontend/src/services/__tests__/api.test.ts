@@ -528,14 +528,6 @@ describe('api service', () => {
   });
 
   describe('users', () => {
-    it('listUsers returns items', async () => {
-      const items: UserDto[] = [];
-      mockedCreate.get.mockResolvedValue({ data: { items } });
-      const result = await api.listUsers();
-      expect(result).toBe(items);
-      expect(mockedCreate.get).toHaveBeenCalledWith('/users');
-    });
-
     it('getUserRoles returns roles', async () => {
       mockedCreate.get.mockResolvedValue({ data: ['Admin'] });
       const result = await api.getUserRoles('1');

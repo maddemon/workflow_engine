@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { applyNodeChanges, applyEdgeChanges } from '@xyflow/react';
 import type { Node, Edge, NodeChange, EdgeChange } from '@xyflow/react';
-import type { NodeTypeDescriptor, ParameterDefinition, WorkflowStyleSettings, NodeExecutionRecordDto, StructuredDiff } from '../types/workflow.ts';
+import type { NodeTypeDescriptor, ParameterDefinition, WorkflowStyleSettings, NodeExecutionRecordDto, StructuredDiff, RetryPolicyDto } from '../types/workflow.ts';
 import { DEFAULT_STYLE_SETTINGS } from '../types/workflow.ts';
 import { deserializeWorkflow, serializeWorkflow } from '../utils/workflowSerializer.ts';
 import { validateParameters } from '../utils/validateParameters.ts';
@@ -15,7 +15,7 @@ export type WorkflowNodeData = {
   isEntry: boolean;
   descriptor: NodeTypeDescriptor;
   errorStrategy: string;
-  retryPolicy: string | null;
+  retryPolicy: RetryPolicyDto | null;
   timeout: number | null;
   executionStatus?: 'idle' | 'running' | 'success' | 'error' | 'waiting';
 };
@@ -55,8 +55,8 @@ interface WorkflowState {
   /** 凭据变更版本号，用于跨组件触发凭据下拉刷新 */
   credentialRevision: number;
   reviewMode: boolean;
-  draftSource?: 'ai' | 'human';
-  draftStatus?: 'pending' | 'rejected' | 'confirmed';
+  draftSource?: 'Ai' | 'Human';
+  draftStatus?: 'Pending' | 'Rejected' | 'Confirmed';
   structuredDiff?: StructuredDiff[];
 
   setNodes: (nodes: WorkflowNode[]) => void;
@@ -68,7 +68,7 @@ interface WorkflowState {
   updateNodePosition: (nodeId: string, position: { x: number; y: number }) => void;
   updateNodeParameters: (nodeId: string, parameters: Record<string, unknown>) => void;
   updateNodeName: (nodeId: string, name: string) => void;
-  updateNodeSettings: (nodeId: string, settings: { errorStrategy?: string; retryPolicy?: string | null; timeout?: number | null }) => void;
+  updateNodeSettings: (nodeId: string, settings: { errorStrategy?: string; retryPolicy?: RetryPolicyDto | null; timeout?: number | null }) => void;
   copyNode: (nodeId: string) => void;
   pasteNode: (position: { x: number; y: number }) => void;
   bumpCredentialRevision: () => void;
@@ -91,8 +91,8 @@ interface WorkflowState {
   upsertNodeExecutionRecords: (records: NodeExecutionRecordDto[]) => void;
   clearNodeExecutionRecords: () => void;
   setReviewMode: (mode: boolean) => void;
-  setDraftSource: (source?: 'ai' | 'human') => void;
-  setDraftStatus: (status?: 'pending' | 'rejected' | 'confirmed') => void;
+  setDraftSource: (source?: 'Ai' | 'Human') => void;
+  setDraftStatus: (status?: 'Pending' | 'Rejected' | 'Confirmed') => void;
   setStructuredDiff: (diff?: StructuredDiff[]) => void;
   canUndo: boolean;
   canRedo: boolean;
@@ -380,8 +380,8 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => {
           nodeExecutionRecords: {},
           canUndo: false,
           canRedo: false,
-          reviewMode: workflow.source === 'ai' && workflow.draftStatus === 'pending',
-          draftSource: workflow.source === 'ai' ? 'ai' : 'human',
+          reviewMode: workflow.source === 'Ai' && workflow.draftStatus === 'Pending',
+          draftSource: workflow.source === 'Ai' ? 'Ai' : 'Human',
           draftStatus: workflow.draftStatus,
           structuredDiff: workflow.diff,
         });

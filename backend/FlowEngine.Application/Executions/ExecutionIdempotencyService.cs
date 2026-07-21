@@ -60,6 +60,23 @@ public sealed class ExecutionIdempotencyService(
             {
                 return concurrent.ExecutionId;
             }
+
+            // 极端情况：并发插入的记录已过期或被清理，重试插入当前记录。
+            // 注意：EF Core 在 SaveChanges 失败后实体仍被追踪为 Added 状态，
+            // 直接再次调用 SaveChangesAsync 即可重试，无需再次调用 Add。
+            try
+            {
+                await dbContext.SaveChangesAsync(ct).ConfigureAwait(false);
+            }
+            catch (DbUpdateException)
+            {
+                // 最终兜底：再次查询，确保获取到已存在的记录
+                var fallback = await dbContext.ExecutionDedups
+                    .Where(e => e.IdempotencyKey == idempotencyKey)
+                    .FirstOrDefaultAsync(ct)
+                    .ConfigureAwait(false);
+                return fallback?.ExecutionId;
+            }
         }
 
         return null;

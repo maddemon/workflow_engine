@@ -51,33 +51,50 @@ public sealed class WorkflowSchedulerKernel(
         await EnqueueEntryNodesAsync(session, triggerPayload, cancellationToken).ConfigureAwait(false);
 
         const int IdleDelayMilliseconds = 500;
+        var cancelled = false;
 
-        while (!cancellationToken.IsCancellationRequested)
+        try
         {
-            await ProcessTimeoutsAsync(session, sideEffects, cancellationToken).ConfigureAwait(false);
-
-            if (session.Queue.Reader.TryRead(out var item))
+            while (!cancellationToken.IsCancellationRequested)
             {
-                var shouldStop = await ProcessNodeAsync(item, session, sideEffects, cancellationToken).ConfigureAwait(false);
+                await ProcessTimeoutsAsync(session, sideEffects, cancellationToken).ConfigureAwait(false);
 
-                if (shouldStop)
+                if (session.Queue.Reader.TryRead(out var item))
                 {
-                    session.StateMachine.Fail();
+                    var shouldStop = await ProcessNodeAsync(item, session, sideEffects, cancellationToken).ConfigureAwait(false);
+
+                    if (shouldStop)
+                    {
+                        session.StateMachine.Fail();
+                        break;
+                    }
+
+                    continue;
+                }
+
+                if (session.WaitingArea.IsEmpty)
+                {
                     break;
                 }
 
-                continue;
+                try
+                {
+                    await Task.Delay(IdleDelayMilliseconds, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    // 空闲等待期间被取消，退出循环交由下方统一处理 Cancelled。
+                    break;
+                }
             }
-
-            if (session.WaitingArea.IsEmpty)
-            {
-                break;
-            }
-
-            await Task.Delay(IdleDelayMilliseconds, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // 节点处理 / 超时 / 副作用回调期间被取消：捕获后统一转为 Cancelled 终态，不向上抛。
+            cancelled = true;
         }
 
-        if (cancellationToken.IsCancellationRequested)
+        if (cancelled || cancellationToken.IsCancellationRequested)
         {
             session.StateMachine.Cancel();
             session.WaitingArea.CleanupExecution(session.Execution.Id);
@@ -150,6 +167,9 @@ public sealed class WorkflowSchedulerKernel(
             : 1;
 
         NodeExecutionResult? finalResult = null;
+        // 累积本节点本次调用的各次成功运行输出（OncePerItem 会按批次多次运行同一节点），
+        // 全部项都需进入 SuccessfulOutputs / LatestBatches，供下游 $node.<name> / $items(<name>) 读取。
+        var accumulatedItems = new List<DataItem>();
 
         for (var runIndex = 0; runIndex < runCount; runIndex++)
         {
@@ -238,8 +258,21 @@ public sealed class WorkflowSchedulerKernel(
 
             finalResult = result;
 
+            // 累积成功运行的输出项：OncePerItem 多次运行须全部保留，而非仅最后一次。
+            if (result.Success)
+            {
+                accumulatedItems.AddRange(result.Output.Items);
+            }
+
             if (!result.Success && node.ErrorStrategy != ErrorStrategy.Continue)
             {
+                // 取消优先：若已请求取消，交由 RunAsync 外层统一转为 Cancelled，
+                // 避免取消中的节点被误判为 Failed 而丢失取消语义。
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return false;
+                }
+
                 session.Execution.Status = ExecutionStatus.Failed;
                 session.Execution.CompletedAt = DateTime.UtcNow;
                 await sideEffects.PersistFailedStateAsync(CancellationToken.None).ConfigureAwait(false);
@@ -253,13 +286,45 @@ public sealed class WorkflowSchedulerKernel(
             return false;
         }
 
-        session.LatestBatches[node.Name] = finalResult.Output;
-        if (finalResult.Success)
+        // 已请求取消：不再路由输出、不再覆写状态，交由 RunAsync 外层统一落库 Cancelled。
+        if (cancellationToken.IsCancellationRequested)
         {
-            session.SuccessfulOutputs[node.Name] = finalResult.Output;
+            return false;
         }
 
-        await RouteOutputsAsync(node, nodeType, finalResult, session, cancellationToken).ConfigureAwait(false);
+        // 累积本节点本次调用的全部成功运行输出（OncePerItem 按批次多次运行同一节点，
+        // 覆盖式赋值会丢失其余项，导致下游 $node.<name> / $items(<name>) 只看到最后一项）。
+        if (accumulatedItems.Count > 0)
+        {
+            var cumulative = new DataBatch { Items = accumulatedItems.ToList() };
+            session.LatestBatches[node.Name] = cumulative;
+
+            var priorItems = session.SuccessfulOutputs.TryGetValue(node.Name, out var prior) && prior.Items.Count > 0
+                ? prior.Items
+                : [];
+            session.SuccessfulOutputs[node.Name] = new DataBatch
+            {
+                Items = priorItems.Concat(accumulatedItems).ToList()
+            };
+        }
+        else
+        {
+            // 无任何成功运行（全部失败等）：保留原有语义，仅刷新 LatestBatches 为最终批，不写入 SuccessfulOutputs。
+            session.LatestBatches[node.Name] = finalResult.Output;
+        }
+
+        // OncePerItem：下游边消费的是累积批（全部项）而非最后一次运行的单批，避免静默丢数据。
+        var resultForRouting = accumulatedItems.Count > 0
+            ? new NodeExecutionResult
+            {
+                Success = finalResult.Success,
+                Output = session.LatestBatches[node.Name],
+                BranchIndex = finalResult.BranchIndex,
+                Error = finalResult.Error,
+                ToolExecutionRecords = finalResult.ToolExecutionRecords,
+            }
+            : finalResult;
+        await RouteOutputsAsync(node, nodeType, resultForRouting, session, cancellationToken).ConfigureAwait(false);
 
         return false;
     }
@@ -642,26 +707,25 @@ public sealed class WorkflowSchedulerKernel(
         return delay;
     }
 
-    private static readonly ConcurrentDictionary<string, IReadOnlyList<string>> InputPortCache = new(StringComparer.OrdinalIgnoreCase);
-
-    private static readonly ConcurrentDictionary<string, IReadOnlyList<string>> OutputPortCache = new(StringComparer.OrdinalIgnoreCase);
-
+    // 端口名称直接从（已按当前节点参数水合的）INodeType 实例读取。
+    // 注意：注册表返回的是按 TypeName 缓存的单例，执行器在处理每个节点时会用该节点的
+    // 参数（含 SwitchNode.Cases）水合该单例，且节点按队列顺序串行执行+路由，因此此处读取到的
+    // 即当前节点的端口。原先按 TypeName 缓存端口会导致不同 Cases 的 Switch 节点互相串扰（路由错位），
+    // 故不再缓存，直接读取以兼得正确性与无界缓存风险消除。
     private static IReadOnlyList<string> GetInputPortNames(INodeType nodeType)
     {
-        return InputPortCache.GetOrAdd(nodeType.TypeName, _ =>
-            nodeType.Ports
-                .Where(p => p.Direction == PortDirection.Input)
-                .Select(p => p.Name)
-                .ToList());
+        return nodeType.Ports
+            .Where(p => p.Direction == PortDirection.Input)
+            .Select(p => p.Name)
+            .ToList();
     }
 
     private static IReadOnlyList<string> GetOutputPortNames(INodeType nodeType)
     {
-        return OutputPortCache.GetOrAdd(nodeType.TypeName, _ =>
-            nodeType.Ports
-                .Where(p => p.Direction == PortDirection.Output)
-                .Select(p => p.Name)
-                .ToList());
+        return nodeType.Ports
+            .Where(p => p.Direction == PortDirection.Output)
+            .Select(p => p.Name)
+            .ToList();
     }
 
     private static ILlmClient? ResolveLlmClientForNode(

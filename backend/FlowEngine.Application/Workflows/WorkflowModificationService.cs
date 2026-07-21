@@ -45,9 +45,8 @@ public sealed class WorkflowModificationService(
         // RBAC：修改前校验工作流写权限。
         await authGuard.RequireAccessAsync(ResourceKind.Workflow, workflowId, Operation.Write, cancellationToken).ConfigureAwait(false);
 
-        // ── 1. 加载现有工作流 ──────────────────────────────────
+        // ── 1. 加载现有工作流（受跟踪，单一来源，避免二次加载造成丢失更新）──
         var existing = await dbContext.Workflows
-            .AsNoTracking()
             .FirstOrDefaultAsync(w => w.Id == workflowId, cancellationToken)
             .ConfigureAwait(false);
         if (existing is null)
@@ -56,7 +55,7 @@ public sealed class WorkflowModificationService(
             throw new BusinessException($"Workflow '{workflowId}' does not exist.");
         }
 
-        // ── 2. 深拷贝工作流结构 ────────────────────────────────
+        // ── 2. 深拷贝工作流结构（在脱离跟踪的副本上计算修改，避免污染被跟踪实体）──
         var workflow = DeepClone(existing);
         var diffs = new List<StructuredDiff>();
 
@@ -104,14 +103,19 @@ public sealed class WorkflowModificationService(
                 "Validation failed after modification: " + string.Join("; ", validationErrors));
         }
 
-        // ── 5. 就地更新工作流 ──────────────────────────────────
-        var draftWorkflow = await dbContext.Workflows
-            .FirstAsync(w => w.Id == workflowId, cancellationToken)
-            .ConfigureAwait(false);
-        draftWorkflow.Name = workflow.Name;
-        draftWorkflow.Diff = diffs;
-        draftWorkflow.Nodes = workflow.Nodes;
-        draftWorkflow.Connections = workflow.Connections;
+        // ── 5. 就地更新工作流（read-modify-write，单一受跟踪加载，避免覆盖并发更新）──
+        existing.Name = workflow.Name;
+        existing.Diff = diffs;
+        existing.Nodes = workflow.Nodes;
+        existing.Connections = workflow.Connections;
+        // 仅当存在"实质内容变更"时才递增版本号（修复：原实现无条件 Version += 1，
+        // 导致 no-op 修改也会膨胀版本）。参数为 JSON 列，diff 的 Before/After 经反序列化后
+        // 可能为 JsonElement，故用值语义（JSON 文本）比较而非引用/类型比较。
+        var hasContentChanged = diffs.Any(d => !ValuesEqual(d.Before, d.After));
+        if (hasContentChanged)
+        {
+            existing.Version += 1;
+        }
 
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
@@ -119,11 +123,11 @@ public sealed class WorkflowModificationService(
         var auditEvent = auditFactory.Create<AuditLogEvent>(
             AuditEventTypes.WorkflowUpdated,
             "Workflow",
-            draftWorkflow.Id,
-            new Dictionary<string, object> { ["name"] = draftWorkflow.Name });
+            existing.Id,
+            new Dictionary<string, object> { ["name"] = existing.Name });
         await eventBus.PublishAsync(auditEvent, cancellationToken).ConfigureAwait(false);
 
-        var dto = draftWorkflow.Adapt<WorkflowDto>() with
+        var dto = existing.Adapt<WorkflowDto>() with
         {
             Diff = diffs,
         };
@@ -132,7 +136,7 @@ public sealed class WorkflowModificationService(
         {
             // 修改操作在已有工作流上就地更新，DraftId 即被更新的工作流实体 Id，
             // 确认时需用它定位同一条记录。
-            DraftId = draftWorkflow.Id,
+            DraftId = existing.Id,
             Workflow = dto,
             Diff = diffs,
         };
@@ -523,6 +527,29 @@ public sealed class WorkflowModificationService(
             Op = "disconnect", NodeId = null, Field = null,
             Before = $"{op.From} -> {op.To}", After = null,
         });
+    }
+
+    /// <summary>
+    /// 比较两个差异值是否在"内容"上相等。参数为 JSON 列，diff 的 Before/After 经反序列化后
+    /// 可能是 <see cref="JsonElement"/>（而请求值通常是 <see cref="string"/>），直接 <see cref="object.Equals(object)"/>
+    /// 会因类型不同误判为不等。这里统一按 JSON 文本比较，使 no-op 修改被正确识别为"无变化"。
+    /// </summary>
+    private static bool ValuesEqual(object? left, object? right)
+    {
+        if (ReferenceEquals(left, right))
+        {
+            return true;
+        }
+
+        if (left is JsonElement l && right is JsonElement r)
+        {
+            return l.GetRawText() == r.GetRawText();
+        }
+
+        // 任一侧为 JsonElement 时，取其对等 JSON 文本后再与另一侧比较。
+        var leftJson = left is JsonElement le ? le.GetRawText() : JsonSerializer.Serialize(left, JsonDefaults.Options);
+        var rightJson = right is JsonElement re ? re.GetRawText() : JsonSerializer.Serialize(right, JsonDefaults.Options);
+        return leftJson == rightJson;
     }
 
     /// <summary>

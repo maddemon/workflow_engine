@@ -214,6 +214,50 @@ public sealed class WorkflowServiceCrudTests : IDisposable
         Assert.Null(result);
     }
 
+    // 修复：更新内容真正变更时 Version 应递增。
+    [Fact]
+    public async Task UpdateAsync_WithContentChange_IncrementsVersion()
+    {
+        _userContext.Roles = [RoleConstants.Editor];
+        var workflow = SeedWorkflow("Original", Guid.NewGuid());
+        var before = workflow.Version;
+        var dto = new UpdateWorkflowDto
+        {
+            Name = "Renamed",
+            IsActive = true,
+            Nodes = [new NodeDefinitionDto { Id = "n1", TypeName = "fetch", Name = "Fetch", ErrorStrategy = ErrorStrategy.Terminate }],
+            Connections = [],
+        };
+
+        var result = await _service.UpdateAsync(workflow.Id, dto, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(result);
+        Assert.Equal(before + 1, result.Version);
+        var persisted = await _dbContext.Workflows.FindAsync([workflow.Id], TestContext.Current.CancellationToken);
+        Assert.Equal(before + 1, persisted!.Version);
+    }
+
+    // 边界：未变更内容时 Version 不应递增（避免无意义的版本膨胀）。
+    [Fact]
+    public async Task UpdateAsync_WithoutContentChange_KeepsVersion()
+    {
+        _userContext.Roles = [RoleConstants.Editor];
+        var workflow = SeedWorkflow("Original", Guid.NewGuid());
+        var before = workflow.Version;
+        var dto = new UpdateWorkflowDto
+        {
+            Name = "Original",
+            IsActive = true,
+            Nodes = [new NodeDefinitionDto { Id = "n1", TypeName = "fetch", Name = "Fetch", ErrorStrategy = ErrorStrategy.Terminate }],
+            Connections = [],
+        };
+
+        var result = await _service.UpdateAsync(workflow.Id, dto, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(result);
+        Assert.Equal(before, result.Version);
+    }
+
     // ── DeleteAsync ────────────────────────────────────────────
 
     [Fact]

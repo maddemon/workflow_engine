@@ -29,9 +29,30 @@ public class ProjectsControllerTests : HostIntegrationTestBase
         var response = await client.GetAsync("/api/v1/projects", ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var result = await response.Content.ReadFromJsonAsync<IReadOnlyList<ProjectDto>>(TestJsonOptions, ct);
+        var result = await response.Content.ReadFromJsonAsync<PagedResult<ProjectDto>>(TestJsonOptions, ct);
         Assert.NotNull(result);
-        Assert.Contains(result, p => p.Id == project.Id);
+        Assert.Contains(result.Items, p => p.Id == project.Id);
+    }
+
+    [Fact]
+    public async Task GetAll_ReturnsPagedShape_NotBareArray()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var email = "projects-paged@example.com";
+        var client = await CreateAuthenticatedClientAsync(email, [RoleConstants.Admin], ct);
+        var project = await SeedProjectAsync(email, ct);
+
+        var response = await client.GetAsync("/api/v1/projects?page=1&pageSize=20", ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await response.Content.ReadFromJsonAsync<PagedResult<ProjectDto>>(TestJsonOptions, ct);
+        Assert.NotNull(result);
+        // PagedResult 契约：必须包含 items / totalCount / page / pageSize，而非裸数组。
+        Assert.NotNull(result.Items);
+        Assert.Contains(result.Items, p => p.Id == project.Id);
+        Assert.Equal(1, result.Page);
+        Assert.Equal(20, result.PageSize);
+        Assert.True(result.TotalCount >= 1);
     }
 
     [Fact]

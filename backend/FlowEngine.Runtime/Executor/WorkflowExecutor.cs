@@ -98,13 +98,24 @@ public sealed class WorkflowExecutor : IEngine
             .ConfigureAwait(false);
         if (execution is null) return;
 
+        // 已被取消（如未出队时由 CancelAsync 直接落库 Cancelled）或已进入其他终态：不再执行，避免覆写终态。
+        if (execution.Status is ExecutionStatus.Cancelled or ExecutionStatus.Completed or ExecutionStatus.Failed
+            or ExecutionStatus.Compensated or ExecutionStatus.CompensationFailed or ExecutionStatus.DryRunCompleted)
+        {
+            return;
+        }
+
         var session = new ExecutionSession(workflow, execution, executionRecordId, _nodeRegistry)
         {
             SensitiveValues = ExecutionSession.EmptySensitiveValues
         };
-        // 状态机由 WorkflowSchedulerKernel.RunAsync 负责启动；此处仅将执行记录标记为 Running 并落库。
-        session.Execution.Status = ExecutionStatus.Running;
-        await executionStore.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        // 状态机由 WorkflowSchedulerKernel.RunAsync 负责启动；此处仅将待处理的 Pending 执行标记为 Running 并落库。
+        // 仅当仍为 Pending 时才覆写为 Running，避免覆盖 CancelAsync 已写入的 Cancelled 终态。
+        if (execution.Status == ExecutionStatus.Pending)
+        {
+            session.Execution.Status = ExecutionStatus.Running;
+            await executionStore.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
 
         var sideEffects = new ExecutorSideEffects(executionStore, execution, _eventBus, _logger);
         await _kernel.RunAsync(session, sideEffects, triggerPayload, cancellationToken).ConfigureAwait(false);

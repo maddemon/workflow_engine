@@ -8,6 +8,7 @@ import { useDisplayRule } from '../../hooks/useDisplayRule.ts';
 import { FieldResolver } from './FieldResolver.tsx';
 import { TriggerConfig } from './TriggerConfig.tsx';
 import { InfoTooltip } from './fields/InfoTooltip.tsx';
+import { toRetryPolicyDto, fromRetryPolicyDto, DEFAULT_RETRY_POLICY_UI } from '../../utils/retryPolicy.ts';
 import type { ParameterDefinition } from '../../types/workflow.ts';
 
 function groupParameters(
@@ -241,7 +242,7 @@ export function ParameterPanel() {
                   if (selectedNode.data.retryPolicy !== null) {
                     updateNodeSettings(selectedNode.id, { retryPolicy: null });
                   } else {
-                    updateNodeSettings(selectedNode.id, { retryPolicy: JSON.stringify({ maxRetries: 2, baseDelayMs: 1000 }) });
+                    updateNodeSettings(selectedNode.id, { retryPolicy: toRetryPolicyDto(DEFAULT_RETRY_POLICY_UI) });
                   }
                 }}
                 style={{ cursor: 'pointer' }}
@@ -251,7 +252,7 @@ export function ParameterPanel() {
                   checked={selectedNode.data.retryPolicy !== null}
                   onChange={(e) => {
                     if (e.currentTarget.checked) {
-                      updateNodeSettings(selectedNode.id, { retryPolicy: JSON.stringify({ maxRetries: 2, baseDelayMs: 1000 }) });
+                      updateNodeSettings(selectedNode.id, { retryPolicy: toRetryPolicyDto(DEFAULT_RETRY_POLICY_UI) });
                     } else {
                       updateNodeSettings(selectedNode.id, { retryPolicy: null });
                     }
@@ -266,16 +267,13 @@ export function ParameterPanel() {
               </Group>
 
               {selectedNode.data.retryPolicy !== null && (() => {
-                const policy = (() => {
-                  try { return JSON.parse(selectedNode.data.retryPolicy!) as { maxRetries: number; baseDelayMs: number }; }
-                  catch { return { maxRetries: 2, baseDelayMs: 1000 }; }
-                })();
+                const policy = fromRetryPolicyDto(selectedNode.data.retryPolicy!);
                 return (
                   <Stack gap="sm" ml="md">
                     <Select
                       label={t('nodeSettings.maxRetries')}
                       value={String(policy.maxRetries)}
-                      onChange={(v) => updateNodeSettings(selectedNode.id, { retryPolicy: JSON.stringify({ ...policy, maxRetries: v != null ? Number(v) : 2 }) })}
+                      onChange={(v) => updateNodeSettings(selectedNode.id, { retryPolicy: toRetryPolicyDto({ ...policy, maxRetries: v != null ? Number(v) : 2 }) })}
                       data={[
                         { label: '2', value: '2' },
                         { label: '3', value: '3' },
@@ -286,7 +284,7 @@ export function ParameterPanel() {
                     <Select
                       label={t('nodeSettings.delayBetweenRetries')}
                       value={String(policy.baseDelayMs)}
-                      onChange={(v) => updateNodeSettings(selectedNode.id, { retryPolicy: JSON.stringify({ ...policy, baseDelayMs: v != null ? Number(v) : 1000 }) })}
+                      onChange={(v) => updateNodeSettings(selectedNode.id, { retryPolicy: toRetryPolicyDto({ ...policy, baseDelayMs: v != null ? Number(v) : 1000 }) })}
                       data={[
                         { label: '500', value: '500' },
                         { label: '1000', value: '1000' },

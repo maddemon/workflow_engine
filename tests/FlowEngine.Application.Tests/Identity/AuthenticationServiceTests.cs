@@ -201,6 +201,54 @@ public class AuthenticationServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task LoginAsync_NonExistentUser_StillInvokesVerifyPassword()
+    {
+        // 时序攻击防护回归测试：用户不存在时也必须执行一次等价的（昂贵的）哈希校验，
+        // 否则攻击者可借响应时间差异枚举邮箱是否存在。
+        var ct = TestContext.Current.CancellationToken;
+        var spyHasher = new SpyPasswordHasher();
+
+        var options = new DbContextOptionsBuilder<FlowEngineDbContext>()
+            .UseSqlite("DataSource=:memory:")
+            .Options;
+        await using var dbContext = new FlowEngineDbContext(options);
+        dbContext.Database.OpenConnection();
+        dbContext.Database.EnsureCreated();
+
+        var service = new AuthenticationService(
+            new UserStore(dbContext),
+            spyHasher,
+            new PasswordValidator(),
+            new StubTokenService(),
+            new StubEventBus(),
+            new AuditEventFactory(new StubUserContext()),
+            new MemoryCache(new MemoryCacheOptions()));
+
+        var loginResult = await service.LoginAsync(new LoginRequest
+        {
+            Email = "enum-target@example.com",
+            Password = "StrongP@ss1",
+        }, ct);
+
+        Assert.False(loginResult.Success);
+        Assert.True(spyHasher.VerifyPasswordCallCount >= 1,
+            "用户不存在时也应调用 VerifyPassword 以对齐响应耗时，防止通过响应时间枚举邮箱");
+    }
+
+    private sealed class SpyPasswordHasher : IPasswordHasher
+    {
+        public int VerifyPasswordCallCount { get; private set; }
+
+        public string HashPassword(string password) => "spy-hash";
+
+        public PasswordVerifyResult VerifyPassword(string hashedPassword, string password)
+        {
+            VerifyPasswordCallCount++;
+            return PasswordVerifyResult.Failed;
+        }
+    }
+
+    [Fact]
     public async Task LoginAsync_EmptyCredentials_ReturnsError()
     {
         var ct = TestContext.Current.CancellationToken;

@@ -245,6 +245,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWebhookHandler, WebhookHandler>();
         services.AddScoped<ErrorStrategyHandler>();
         services.AddSingleton<WorkflowExecutionQueue>();
+        // 按 executionId 索引的执行取消令牌注册表（单例）：worker 登记每执行 CTS，CancelAsync 触发取消。
+        services.AddSingleton<ExecutionCancellationRegistry>();
 
         // ── File Storage ───────────────────────────────────────────
         services.AddSingleton<IFileStorage>(sp =>

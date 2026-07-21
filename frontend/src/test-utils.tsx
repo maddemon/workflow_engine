@@ -102,10 +102,12 @@ function Providers({ children, withRouter, withAuth, initialEntries }: { childre
  */
 export function renderWithProvider(ui: ReactElement, options?: RenderWithProviderOptions) {
   const { withRouter, withAuth, initialEntries, ...renderOptions } = options ?? {};
-  return render(
-    <Providers withRouter={withRouter} withAuth={withAuth} initialEntries={initialEntries}>
-      {ui}
-    </Providers>,
-    renderOptions,
-  );
+  return render(ui, {
+    wrapper: ({ children }) => (
+      <Providers withRouter={withRouter} withAuth={withAuth} initialEntries={initialEntries}>
+        {children}
+      </Providers>
+    ),
+    ...renderOptions,
+  });
 }

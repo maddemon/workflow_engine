@@ -24,6 +24,11 @@ public partial class AuthenticationService(
     private static readonly TimeSpan AttemptWindow = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan LockoutDuration = TimeSpan.FromMinutes(15);
 
+    // 时序攻击防护用的占位哈希：与真实密码哈希同算法（ASP.NET Core Identity 的 PHC 格式），
+    // 在构造时一次性生成。用户不存在/禁用时仍对它执行一次 VerifyPassword，使该分支的 CPU 耗时
+    // 与"用户存在但密码错误"分支一致，攻击者无法通过响应时间枚举邮箱。
+    private readonly string _dummyPasswordHash = passwordHasher.HashPassword("timing-attack-dummy");
+
     /// <summary>
     /// 用户注册。
     /// </summary>
@@ -104,8 +109,14 @@ public partial class AuthenticationService(
             };
         }
 
+        // 时序攻击防护：无论用户是否存在，都执行相同的操作流程
+        var user = await userStore.GetByEmailAsync(request.Email, ct).ConfigureAwait(false);
+        
+        // 统一检查锁定状态（即使用户不存在也记录失败尝试，防止邮箱枚举）
         if (IsLockedOut(request.Email, clientIp))
         {
+            // 即使用户不存在，也记录失败尝试（防止邮箱枚举）
+            RecordFailedAttempt(request.Email, clientIp);
             return new LoginResult
             {
                 Success = false,
@@ -113,9 +124,12 @@ public partial class AuthenticationService(
             };
         }
 
-        var user = await userStore.GetByEmailAsync(request.Email, ct).ConfigureAwait(false);
+        // 用户不存在或已禁用，使用与密码错误相同的响应
         if (user is null || !user.IsActive)
         {
+            // 时序攻击防护：即便用户不存在/禁用也执行一次等价耗时的哈希校验，
+            // 使响应时间与"用户存在但密码错误"路径一致，避免通过响应时间枚举邮箱。
+            passwordHasher.VerifyPassword(_dummyPasswordHash, request.Password);
             RecordFailedAttempt(request.Email, clientIp);
             return new LoginResult
             {

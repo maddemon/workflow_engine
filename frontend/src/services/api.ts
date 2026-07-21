@@ -299,11 +299,6 @@ export async function revokeApiKey(id: string): Promise<void> {
 
 // --- User Roles ---
 
-export async function listUsers(): Promise<UserDto[]> {
-  const res = await api.get<{ items: UserDto[] }>('/users');
-  return res.data.items;
-}
-
 export async function getUserRoles(userId: string): Promise<string[]> {
   const res = await api.get<string[]>(`/users/${userId}/roles`);
   return res.data;

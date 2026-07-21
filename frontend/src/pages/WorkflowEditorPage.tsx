@@ -40,15 +40,24 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
   const [rejectReason, setRejectReason] = useState("")
   const { changed, newVersion, dismiss } = useWorkflowVersionPolling(workflowId)
 
+  // Clear prior execution state only when switching to a different workflow,
+  // NOT on every execution-status update (clearExecution's identity changes
+  // whenever executionMeta changes, which would otherwise re-trigger the load).
+  useEffect(() => {
+    clearExecution()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id])
+
+  // Load the workflow keyed only on [id, ready]; do not depend on clearExecution/
+  // loadWorkflow/newWorkflow so live execution updates don't reload/reset it.
   useEffect(() => {
     if (!ready) return
-    clearExecution()
     if (id && id !== "new") {
       loadWorkflow(id)
     } else {
       newWorkflow()
     }
-  }, [id, ready, clearExecution, loadWorkflow, newWorkflow])
+  }, [id, ready, loadWorkflow, newWorkflow])
 
   const navbar = useMemo(() => <NodePanel />, [])
 
