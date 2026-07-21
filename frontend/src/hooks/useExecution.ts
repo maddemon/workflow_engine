@@ -3,13 +3,14 @@ import { notifications } from '@mantine/notifications';
 import { executeWorkflow, getActiveExecutions, getExecution, cancelExecution as apiCancelExecution, dryRun as apiDryRun } from '../services/api.ts';
 import { serializeWorkflow } from '../utils/workflowSerializer.ts';
 import { useWorkflowStore } from '../stores/workflowStore.ts';
+import { useCanvasStore } from '../components/Canvas/stores/canvasStore.ts';
 import { useWebSocketExecution } from './useWebSocketExecution.ts';
 import type { ExecutionDto, NodeExecutionRecordDto } from '../types/workflow.ts';
 
 type ExecutionHookStatus = 'idle' | 'loading' | 'running' | 'completed' | 'failed';
 
 function applyNodeStatuses(records: NodeExecutionRecordDto[]) {
-  const store = useWorkflowStore.getState();
+  const store = useCanvasStore.getState();
   for (const r of records) {
     const mapped: Record<string, typeof store.nodes[0]['data']['executionStatus']> = {
       Pending: 'waiting',
@@ -60,11 +61,11 @@ export function useExecution() {
           stopPolling();
           setExecutionMeta(latest);
           if (latest.nodeRecords && latest.nodeRecords.length > 0) {
-            useWorkflowStore.getState().upsertNodeExecutionRecords(latest.nodeRecords);
+            useCanvasStore.getState().upsertNodeExecutionRecords(latest.nodeRecords);
             applyNodeStatuses(latest.nodeRecords);
           }
           setStatus(latest.status === 'Completed' ? 'completed' : 'failed');
-          useWorkflowStore.getState().setIsExecuting(false);
+          useCanvasStore.getState().setIsExecuting(false);
         }
       } catch {
         // 忽略轮询错误
@@ -112,7 +113,7 @@ export function useExecution() {
 
           setExecutionMeta(detailedExecution);
           setStatus('running');
-          useWorkflowStore.getState().setIsExecuting(true);
+          useCanvasStore.getState().setIsExecuting(true);
 
           // 订阅该执行的 WebSocket 事件
           subscribe(runningExecution.id);
@@ -121,7 +122,7 @@ export function useExecution() {
 
           // 如果有节点执行记录，应用它们
           if (detailedExecution.nodeRecords && detailedExecution.nodeRecords.length > 0) {
-            useWorkflowStore.getState().upsertNodeExecutionRecords(detailedExecution.nodeRecords);
+            useCanvasStore.getState().upsertNodeExecutionRecords(detailedExecution.nodeRecords);
             applyNodeStatuses(detailedExecution.nodeRecords);
           }
         }
@@ -142,7 +143,7 @@ export function useExecution() {
     async (workflowId: string) => {
       setStatus('loading');
       setError(null);
-      const store = useWorkflowStore.getState();
+      const store = useCanvasStore.getState();
       store.setIsExecuting(true);
       store.clearExecutionStatuses();
       store.clearNodeExecutionRecords();
@@ -186,35 +187,35 @@ export function useExecution() {
     setExecutionMeta(null);
     setStatus('idle');
     setError(null);
-    useWorkflowStore.getState().setIsExecuting(false);
-    useWorkflowStore.getState().clearExecutionStatuses();
-    useWorkflowStore.getState().clearNodeExecutionRecords();
+    useCanvasStore.getState().setIsExecuting(false);
+    useCanvasStore.getState().clearExecutionStatuses();
+    useCanvasStore.getState().clearNodeExecutionRecords();
   }, [executionMeta, unsubscribe, stopPolling]);
 
   const cancelExecution = useCallback(async () => {
     if (!executionMeta) return;
     try {
       await apiCancelExecution(executionMeta.id);
-      setStatus('failed');
-      useWorkflowStore.getState().setIsExecuting(false);
-      stopPolling();
-    } catch (err: unknown) {
-      // 409 = 执行已结束，获取最新状态
-      const axiosErr = err as { response?: { status?: number } } | undefined;
-      if (axiosErr?.response?.status === 409) {
+        setStatus('failed');
+        useCanvasStore.getState().setIsExecuting(false);
         stopPolling();
-        try {
-          const latest = await getExecution(executionMeta.id);
-          setExecutionMeta(latest);
-          if (latest.nodeRecords && latest.nodeRecords.length > 0) {
-            useWorkflowStore.getState().upsertNodeExecutionRecords(latest.nodeRecords);
-            applyNodeStatuses(latest.nodeRecords);
+      } catch (err: unknown) {
+        // 409 = 执行已结束，获取最新状态
+        const axiosErr = err as { response?: { status?: number } } | undefined;
+        if (axiosErr?.response?.status === 409) {
+          stopPolling();
+          try {
+            const latest = await getExecution(executionMeta.id);
+            setExecutionMeta(latest);
+            if (latest.nodeRecords && latest.nodeRecords.length > 0) {
+              useCanvasStore.getState().upsertNodeExecutionRecords(latest.nodeRecords);
+              applyNodeStatuses(latest.nodeRecords);
+            }
+            setStatus(latest.status === 'Completed' ? 'completed' : 'failed');
+          } catch {
+            setStatus('completed');
           }
-          setStatus(latest.status === 'Completed' ? 'completed' : 'failed');
-        } catch {
-          setStatus('completed');
-        }
-        useWorkflowStore.getState().setIsExecuting(false);
+          useCanvasStore.getState().setIsExecuting(false);
       } else {
         console.error('Failed to cancel execution:', err);
       }
@@ -222,19 +223,20 @@ export function useExecution() {
   }, [executionMeta, stopPolling]);
 
   const dryRun = useCallback(async () => {
-    const store = useWorkflowStore.getState();
-    store.clearNodeExecutionRecords();
-    store.clearExecutionStatuses();
+    const canvas = useCanvasStore.getState();
+    const { workflowName } = useWorkflowStore.getState();
+    canvas.clearNodeExecutionRecords();
+    canvas.clearExecutionStatuses();
     setError(null);
     setDryRunLoading(true);
     try {
-      if (!store.validateAllNodes()) {
+      if (!canvas.validateAllNodes()) {
         const msg = '请先修正节点配置错误后再试运行。';
         setError(msg);
         notifications.show({ title: 'Dry Run', message: msg, color: 'red', autoClose: 3000 });
         return;
       }
-      const { nodeDefinitions, connections } = serializeWorkflow(store.nodes, store.edges, store.workflowName);
+      const { nodeDefinitions, connections } = serializeWorkflow(canvas.nodes, canvas.edges, workflowName);
       if (nodeDefinitions.length === 0) {
         const msg = '请先添加节点后再试运行。';
         setError(msg);
@@ -244,7 +246,7 @@ export function useExecution() {
       const result = await apiDryRun({ nodes: nodeDefinitions, connections });
       setExecutionMeta(result);
       if (result.nodeRecords && result.nodeRecords.length > 0) {
-        store.upsertNodeExecutionRecords(result.nodeRecords);
+        canvas.upsertNodeExecutionRecords(result.nodeRecords);
         applyNodeStatuses(result.nodeRecords);
       }
       const success = result.status === 'Completed' || result.status === 'DryRunCompleted';

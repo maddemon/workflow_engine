@@ -3,7 +3,8 @@ import { Background, BackgroundVariant, MiniMap, ReactFlow, useReactFlow, type C
 import "@xyflow/react/dist/style.css"
 import { useCallback, useEffect, useMemo, useRef } from "react"
 import { useTranslation } from "react-i18next"
-import { useWorkflowStore } from "../../stores/workflowStore.ts"
+import { useCanvasStore } from "./stores/canvasStore.ts"
+import { ConnectedHandlesContext } from "./connectedHandlesContext.ts"
 import { CanvasToolbar } from "./CanvasToolbar.tsx"
 import { CustomEdge } from "./CustomEdge.tsx"
 import { CustomNode } from "./CustomNode.tsx"
@@ -27,18 +28,18 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
   const { t } = useTranslation(['workflow', 'common'])
   const reactFlowWrapper = useRef<HTMLDivElement>(null)
   const { screenToFlowPosition } = useReactFlow()
-  const nodesData = useWorkflowStore((s) => s.nodes)
-  const nodePositions = useWorkflowStore((s) => s.nodePositions)
-  const edges = useWorkflowStore((s) => s.edges)
-  const onNodesChange = useWorkflowStore((s) => s.onNodesChange)
-  const onEdgesChange = useWorkflowStore((s) => s.onEdgesChange)
-  const addEdge = useWorkflowStore((s) => s.addEdge)
-  const addNode = useWorkflowStore((s) => s.addNode)
-  const setSelectedNode = useWorkflowStore((s) => s.setSelectedNode)
-  const isExecuting = useWorkflowStore((s) => s.isExecuting)
-  const reviewMode = useWorkflowStore((s) => s.reviewMode)
-  const copyNode = useWorkflowStore((s) => s.copyNode)
-  const pasteNode = useWorkflowStore((s) => s.pasteNode)
+  const nodesData = useCanvasStore((s) => s.nodes)
+  const nodePositions = useCanvasStore((s) => s.nodePositions)
+  const edges = useCanvasStore((s) => s.edges)
+  const onNodesChange = useCanvasStore((s) => s.onNodesChange)
+  const onEdgesChange = useCanvasStore((s) => s.onEdgesChange)
+  const addEdge = useCanvasStore((s) => s.addEdge)
+  const addNode = useCanvasStore((s) => s.addNode)
+  const setSelectedNode = useCanvasStore((s) => s.setSelectedNode)
+  const isExecuting = useCanvasStore((s) => s.isExecuting)
+  const reviewMode = useCanvasStore((s) => s.reviewMode)
+  const copyNode = useCanvasStore((s) => s.copyNode)
+  const pasteNode = useCanvasStore((s) => s.pasteNode)
 
   const hasPositionOverrides = Object.keys(nodePositions).length > 0
   const nodes = useMemo(
@@ -51,6 +52,21 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
         : nodesData,
     [nodesData, nodePositions, hasPositionOverrides],
   )
+
+  // 一次性由 edges 计算每个节点已连接的 handle 集合（O(E)），通过 Context 下发，
+  // 避免每个 CustomNode 各自执行 O(N×E) 的 edges.filter。
+  const connectedHandlesByNode = useMemo(() => {
+    const map: Record<string, Set<string>> = {}
+    for (const e of edges) {
+      if (e.source && e.sourceHandle) {
+        (map[e.source] ??= new Set()).add(e.sourceHandle)
+      }
+      if (e.target && e.targetHandle) {
+        (map[e.target] ??= new Set()).add(e.targetHandle)
+      }
+    }
+    return map
+  }, [edges])
 
   const onConnect = useCallback(
     (params: Connection) => {
@@ -119,7 +135,7 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
         const maxConnections: Record<string, number> = { LLM: 1, Memory: 1 }
         const max = maxConnections[targetPort.type]
         if (max !== undefined) {
-          const existingCount = useWorkflowStore.getState().edges.filter(
+          const existingCount = useCanvasStore.getState().edges.filter(
             (e) => e.target === target && e.targetHandle === targetHandle,
           ).length
           if (existingCount >= max) {
@@ -133,7 +149,7 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
         }
       }
 
-      const isDuplicate = useWorkflowStore.getState().edges.some(
+      const isDuplicate = useCanvasStore.getState().edges.some(
         (e) =>
           e.source === source &&
           e.sourceHandle === sourceHandle &&
@@ -195,7 +211,7 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
       if (!(e.ctrlKey || e.metaKey)) return
       const target = e.target as HTMLElement | null
       if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)) return
-      const selectedId = useWorkflowStore.getState().selectedNodeId
+      const selectedId = useCanvasStore.getState().selectedNodeId
       if (e.key.toLowerCase() === "c" && selectedId) {
         e.preventDefault()
         copyNode(selectedId)
@@ -216,26 +232,28 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       <CanvasToolbar onExecute={onExecute} onCancel={onCancel} onDryRun={onDryRun} dryRunLoading={dryRunLoading} />
       <div ref={reactFlowWrapper} className="workflow-canvas" data-testid="workflow-canvas">
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodesDraggable={!isExecuting && !reviewMode}
-          nodesConnectable={!isExecuting && !reviewMode}
-          elementsSelectable={!isExecuting && !reviewMode}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onConnect={onConnect}
-          onNodeClick={onNodeClick}
-          onPaneClick={onPaneClick}
-          onDragOver={onDragOver}
-          onDrop={onDrop}
-          nodeTypes={nodeTypes}
-          edgeTypes={edgeTypes}
-          defaultEdgeOptions={defaultEdgeOptions}
-        >
-          <Background variant={BackgroundVariant.Lines} gap={200} color="rgba(128, 128, 128, 0.1)" size={1} />
-          <MiniMap pannable zoomable />
-        </ReactFlow>
+        <ConnectedHandlesContext.Provider value={connectedHandlesByNode}>
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodesDraggable={!isExecuting && !reviewMode}
+            nodesConnectable={!isExecuting && !reviewMode}
+            elementsSelectable={!isExecuting && !reviewMode}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onConnect={onConnect}
+            onNodeClick={onNodeClick}
+            onPaneClick={onPaneClick}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
+            nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
+            defaultEdgeOptions={defaultEdgeOptions}
+          >
+            <Background variant={BackgroundVariant.Lines} gap={200} color="rgba(128, 128, 128, 0.1)" size={1} />
+            <MiniMap pannable zoomable />
+          </ReactFlow>
+        </ConnectedHandlesContext.Provider>
       </div>
     </div>
   )

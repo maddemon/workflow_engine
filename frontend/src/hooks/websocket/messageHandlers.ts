@@ -1,5 +1,5 @@
 import { notifications } from '@mantine/notifications';
-import { useWorkflowStore } from '../../stores/workflowStore.ts';
+import { useCanvasStore } from '../../components/Canvas/stores/canvasStore.ts';
 import type { ExecutionDto, NodeExecutionRecordDto } from '../../types/workflow.ts';
 
 export type WebSocketStatus = 'connected' | 'disconnected' | 'error';
@@ -25,7 +25,7 @@ export interface WebSocketPushMessage {
 }
 
 export interface MessageHandlerContext {
-  store: ReturnType<typeof useWorkflowStore.getState>;
+  store: ReturnType<typeof useCanvasStore.getState>;
   notifications: typeof notifications;
   sendIfOpen: (data: string) => void;
   updateExecutionMeta: (updater: (prev: ExecutionDto | null) => ExecutionDto | null) => void;

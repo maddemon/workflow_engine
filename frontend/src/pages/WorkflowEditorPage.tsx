@@ -9,6 +9,7 @@ import { ParameterPanel } from "../components/ParameterPanel/ParameterPanel.tsx"
 import { useExecution } from "../hooks/useExecution.ts"
 import { useNodeTypes } from "../hooks/useNodeTypes.ts"
 import { useWorkflowStore } from "../stores/workflowStore.ts"
+import { useCanvasStore } from "../components/Canvas/stores/canvasStore.ts"
 import { DiffPanel } from "../components/ParameterPanel/DiffPanel.tsx"
 import { ValidationChecklistModal } from "../components/ParameterPanel/ValidationChecklistModal.tsx"
 import { Alert, Anchor, Stack, Text, Badge, Group, Button, Divider, Modal, Textarea } from "@mantine/core"
@@ -28,8 +29,8 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
   const { execution, clearExecution, execute, dryRun, dryRunLoading, cancelExecution, error } = useExecution()
   const loadWorkflow = useWorkflowStore((s) => s.loadWorkflow)
   const newWorkflow = useWorkflowStore((s) => s.newWorkflow)
-  const reviewMode = useWorkflowStore((s) => s.reviewMode)
-  const setReviewMode = useWorkflowStore((s) => s.setReviewMode)
+  const reviewMode = useCanvasStore((s) => s.reviewMode)
+  const setReviewMode = useCanvasStore((s) => s.setReviewMode)
   const structuredDiff = useWorkflowStore((s) => s.structuredDiff)
   const workflowId = useWorkflowStore((s) => s.workflowId)
   const workflowVersion = useWorkflowStore((s) => s.workflowVersion)

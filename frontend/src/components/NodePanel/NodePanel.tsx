@@ -2,13 +2,13 @@ import { useState, useMemo, useCallback } from 'react';
 import { Stack, TextInput, Text, Badge, UnstyledButton, Group, Box, Divider } from '@mantine/core';
 import { Search, ChevronRight, ChevronDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { useWorkflowStore } from '../../stores/workflowStore.ts';
+import { useCanvasStore } from '../Canvas/stores/canvasStore.ts';
 import { NodeCard } from './NodeCard.tsx';
 
 export function NodePanel() {
   const { t } = useTranslation('nodePanel');
-  const nodeTypes = useWorkflowStore((s) => s.nodeTypes);
-  const addNode = useWorkflowStore((s) => s.addNode);
+  const nodeTypes = useCanvasStore((s) => s.nodeTypes);
+  const addNode = useCanvasStore((s) => s.addNode);
   const [search, setSearch] = useState('');
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
 

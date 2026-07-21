@@ -4,6 +4,7 @@ import { ChevronRight, ChevronDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/shallow';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
+import { useCanvasStore } from '../Canvas/stores/canvasStore.ts';
 import { useDisplayRule } from '../../hooks/useDisplayRule.ts';
 import { FieldResolver } from './FieldResolver.tsx';
 import { TriggerConfig } from './TriggerConfig.tsx';
@@ -31,7 +32,7 @@ function groupParameters(
 
 export function ParameterPanel() {
   const { t } = useTranslation(['parameterPanel', 'common']);
-  const selectedNode = useWorkflowStore(
+  const selectedNode = useCanvasStore(
     useShallow((s) => {
       if (!s.selectedNodeId) return null;
       const node = s.nodes.find((n) => n.id === s.selectedNodeId);
@@ -39,17 +40,17 @@ export function ParameterPanel() {
       return { id: node.id, data: node.data };
     }),
   );
-  const isExecuting = useWorkflowStore((s) => s.isExecuting);
-  const reviewMode = useWorkflowStore((s) => s.reviewMode);
-  const updateNodeName = useWorkflowStore((s) => s.updateNodeName);
-  const updateNodeSettings = useWorkflowStore((s) => s.updateNodeSettings);
-  const validationErrors = useWorkflowStore((s) => s.validationErrors);
+  const isExecuting = useCanvasStore((s) => s.isExecuting);
+  const reviewMode = useCanvasStore((s) => s.reviewMode);
+  const updateNodeName = useCanvasStore((s) => s.updateNodeName);
+  const updateNodeSettings = useCanvasStore((s) => s.updateNodeSettings);
+  const validationErrors = useCanvasStore((s) => s.validationErrors);
   const isActive = useWorkflowStore((s) => s.isActive);
   const setIsActive = useWorkflowStore((s) => s.setIsActive);
-  const styleSettings = useWorkflowStore((s) => s.styleSettings);
-  const setStyleSettings = useWorkflowStore((s) => s.setStyleSettings);
-  const edgeCount = useWorkflowStore((s) => s.edges.length);
-  const nodeCount = useWorkflowStore((s) => s.nodes.length);
+  const styleSettings = useCanvasStore((s) => s.styleSettings);
+  const setStyleSettings = useCanvasStore((s) => s.setStyleSettings);
+  const edgeCount = useCanvasStore((s) => s.edges.length);
+  const nodeCount = useCanvasStore((s) => s.nodes.length);
   const workflowName = useWorkflowStore((s) => s.workflowName);
   const setWorkflowName = useWorkflowStore((s) => s.setWorkflowName);
   const isDirty = useWorkflowStore((s) => s.isDirty);
@@ -68,7 +69,7 @@ export function ParameterPanel() {
   // P3 #26：从 store 读取最新状态，使回调引用稳定，避免 selectedNode 每次渲染变化导致的非必要重渲染。
   const handleParameterChange = useCallback(
     (name: string, value: unknown) => {
-      const { selectedNodeId, nodes, updateNodeParameters } = useWorkflowStore.getState();
+      const { selectedNodeId, nodes, updateNodeParameters } = useCanvasStore.getState();
       if (!selectedNodeId) return;
       const node = nodes.find((n) => n.id === selectedNodeId);
       if (!node) return;

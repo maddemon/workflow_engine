@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useWebSocketExecution } from '../useWebSocketExecution';
-import { useWorkflowStore } from '../../stores/workflowStore';
+import { useCanvasStore } from '../../components/Canvas/stores/canvasStore';
 
 class MockWebSocket {
   static CONNECTING = 0;
@@ -195,7 +195,7 @@ describe('useWebSocketExecution SSE fallback', () => {
     });
 
     expect(result.current.lastSequence).toBe(7);
-    const record = useWorkflowStore.getState().nodeExecutionRecords['node-a'];
+    const record = useCanvasStore.getState().nodeExecutionRecords['node-a'];
     expect(record).toBeDefined();
     expect(record.status).toBe('Completed');
   });

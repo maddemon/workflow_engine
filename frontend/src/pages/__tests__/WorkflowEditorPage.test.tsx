@@ -4,6 +4,7 @@ import { MemoryRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import { renderWithProvider } from '../../test-utils.tsx';
 import { WorkflowEditorPage } from '../WorkflowEditorPage';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
+import { useCanvasStore } from '../../components/Canvas/stores/canvasStore.ts';
 import type { NodeTypeDescriptor } from '../../types/workflow.ts';
 import { useEffect, useState } from 'react';
 
@@ -117,11 +118,11 @@ describe('WorkflowEditorPage', () => {
     vi.clearAllMocks();
     useWorkflowStore.getState().newWorkflow();
     useWorkflowStore.setState({
-      nodeTypes: [descriptor],
       workflowId: 'wf-1',
       workflowName: 'Test Workflow',
       workflowVersion: 1,
     });
+    useCanvasStore.setState({ nodeTypes: [descriptor] });
 
     mockedUseNodeTypes.mockReturnValue({ ready: true, nodeTypes: [descriptor] });
     mockedUseExecution.mockReturnValue({
@@ -210,9 +211,9 @@ describe('WorkflowEditorPage', () => {
 
   it('switches_toReviewModePanel', async () => {
     useWorkflowStore.setState({
-      reviewMode: true,
       structuredDiff: [{ op: 'add', nodeId: 'n1' }],
     });
+    useCanvasStore.setState({ reviewMode: true });
 
     renderPage('/workflows/wf-1/edit');
     expect(await screen.findByText('Review Mode')).toBeInTheDocument();
@@ -221,7 +222,7 @@ describe('WorkflowEditorPage', () => {
   });
 
   it('opens_validationModal_and_confirmsActivation', async () => {
-    useWorkflowStore.setState({ reviewMode: true });
+    useCanvasStore.setState({ reviewMode: true });
     mockedValidateWorkflow.mockResolvedValue({ valid: true, errors: [], canAutoFix: false });
     mockedConfirmWorkflow.mockResolvedValue({
       id: 'wf-1',
@@ -258,7 +259,7 @@ describe('WorkflowEditorPage', () => {
   });
 
   it('opens_rejectModal_and_submitsRejection', async () => {
-    useWorkflowStore.setState({ reviewMode: true });
+    useCanvasStore.setState({ reviewMode: true });
     mockedRejectDraft.mockResolvedValue({
       id: 'wf-1',
       projectId: null,

@@ -8,6 +8,7 @@ import { InfoTooltip } from './InfoTooltip.tsx';
 import { useParameterName } from '../useParameterName.ts';
 import { getCredentials, createCredential, getCredentialTypes } from '../../../services/api.ts';
 import { useWorkflowStore } from '../../../stores/workflowStore.ts';
+import { useCanvasStore } from '../../Canvas/stores/canvasStore.ts';
 import type { ParameterDefinition, CredentialTypeDefinition } from '../../../types/workflow.ts';
 
 interface CredentialFieldProps {
@@ -20,7 +21,7 @@ interface CredentialFieldProps {
 export function CredentialField({ definition, value, onChange, error }: CredentialFieldProps) {
   const { t } = useTranslation('parameterPanel');
   const paramName = useParameterName();
-  const nodeId = useWorkflowStore((s) => s.selectedNodeId);
+  const nodeId = useCanvasStore((s) => s.selectedNodeId);
   const label = paramName(definition.name, definition.displayName);
   const credentialRevision = useWorkflowStore((s) => s.credentialRevision);
   const bumpCredentialRevision = useWorkflowStore((s) => s.bumpCredentialRevision);

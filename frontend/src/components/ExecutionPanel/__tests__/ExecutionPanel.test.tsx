@@ -3,6 +3,7 @@ import { screen, fireEvent } from '@testing-library/react';
 import { ExecutionPanel } from '../ExecutionPanel.tsx';
 import { renderWithProvider } from '../../../test-utils.tsx';
 import { useWorkflowStore } from '../../../stores/workflowStore.ts';
+import { useCanvasStore } from '../../Canvas/stores/canvasStore.ts';
 import type { ExecutionDto, NodeExecutionRecordDto } from '../../../types/workflow.ts';
 
 vi.mock('../NodeOutputList.tsx', () => ({
@@ -109,7 +110,7 @@ describe('ExecutionPanel', () => {
   });
 
   it('runningExecution_withRecords_rendersStopExecutionButton', () => {
-    useWorkflowStore.setState({
+    useCanvasStore.setState({
       nodeExecutionRecords: { n1: makeRecord('Running', 'n1') },
     });
     renderWithProvider(<ExecutionPanel execution={makeExecution({ status: 'Running' })} onClose={vi.fn()} onCancel={vi.fn()} />);

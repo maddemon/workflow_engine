@@ -3,6 +3,7 @@ import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { renderWithProvider } from '../../../../test-utils.tsx';
 import { CredentialField } from '../CredentialField.tsx';
 import { useWorkflowStore } from '../../../../stores/workflowStore.ts';
+import { useCanvasStore } from '../../../Canvas/stores/canvasStore.ts';
 import type { CredentialDto } from '../../../../types/workflow.ts';
 
 vi.mock('../../../../services/api.ts', () => ({
@@ -23,7 +24,7 @@ describe('CredentialField', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useWorkflowStore.getState().newWorkflow();
-    useWorkflowStore.setState({ selectedNodeId: 'n1' });
+    useCanvasStore.setState({ selectedNodeId: 'n1' });
   });
 
   it('renders credentials and allows selection', async () => {

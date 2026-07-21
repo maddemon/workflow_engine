@@ -1,10 +1,10 @@
 import { useRequest } from 'ahooks';
-import { useWorkflowStore } from '../stores/workflowStore.ts';
+import { useCanvasStore } from '../components/Canvas/stores/canvasStore.ts';
 import { getNodeTypes } from '../services/api.ts';
 
 export function useNodeTypes() {
-  const setNodeTypes = useWorkflowStore((s) => s.setNodeTypes);
-  const nodeTypes = useWorkflowStore((s) => s.nodeTypes);
+  const setNodeTypes = useCanvasStore((s) => s.setNodeTypes);
+  const nodeTypes = useCanvasStore((s) => s.nodeTypes);
 
   const { loading } = useRequest(getNodeTypes, {
     onSuccess: (data) => {

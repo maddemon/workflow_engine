@@ -2,12 +2,13 @@ import { Button, Tooltip } from '@mantine/core';
 import { Play } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
+import { useCanvasStore } from '../Canvas/stores/canvasStore.ts';
 import { useExecution } from '../../hooks/useExecution.ts';
 
 export function ExecutionButton() {
   const { t } = useTranslation('execution');
   const workflowId = useWorkflowStore((s) => s.workflowId);
-  const nodes = useWorkflowStore((s) => s.nodes);
+  const nodes = useCanvasStore((s) => s.nodes);
   const isDirty = useWorkflowStore((s) => s.isDirty);
   const { execute, status } = useExecution();
 

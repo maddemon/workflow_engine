@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { useExecution } from '../useExecution.ts';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
+import { useCanvasStore } from '../../components/Canvas/stores/canvasStore.ts';
 import * as api from '../../services/api.ts';
 import * as serializer from '../../utils/workflowSerializer.ts';
 import type { ExecutionDto, NodeExecutionRecordDto, NodeDefinition, ExecutionSummaryDto } from '../../types/workflow.ts';
@@ -113,7 +114,7 @@ describe('useExecution', () => {
     });
 
     expect(result.current.status).toBe('completed');
-    expect(useWorkflowStore.getState().isExecuting).toBe(false);
+    expect(useCanvasStore.getState().isExecuting).toBe(false);
   });
 
   it('execute_failed_setsStatusFailed', async () => {
@@ -126,7 +127,7 @@ describe('useExecution', () => {
     });
 
     expect(result.current.status).toBe('failed');
-    expect(useWorkflowStore.getState().isExecuting).toBe(false);
+    expect(useCanvasStore.getState().isExecuting).toBe(false);
   });
 
   it('execute_running_startsPolling', async () => {
@@ -165,8 +166,8 @@ describe('useExecution', () => {
   it('execute_withNodeRecords_appliesRecordsAndStatuses', async () => {
     const record = makeRecord('Completed', 'n1');
     mockedExecuteWorkflow.mockResolvedValue(makeExecution({ status: 'Completed', nodeRecords: [record] }));
-    useWorkflowStore.setState({
-      workflowId: 'wf-1',
+    useWorkflowStore.setState({ workflowId: 'wf-1' });
+    useCanvasStore.setState({
       nodes: [{
         id: 'n1',
         type: 'workflow',
@@ -198,8 +199,8 @@ describe('useExecution', () => {
       await result.current.execute('wf-1');
     });
 
-    expect(useWorkflowStore.getState().nodeExecutionRecords['n1']).toEqual(record);
-    expect(useWorkflowStore.getState().nodes[0].data.executionStatus).toBe('success');
+    expect(useCanvasStore.getState().nodeExecutionRecords['n1']).toEqual(record);
+    expect(useCanvasStore.getState().nodes[0].data.executionStatus).toBe('success');
   });
 
   it('clearExecution_resetsState', async () => {
@@ -217,7 +218,7 @@ describe('useExecution', () => {
 
     expect(result.current.status).toBe('idle');
     expect(result.current.execution).toBeNull();
-    expect(useWorkflowStore.getState().isExecuting).toBe(false);
+    expect(useCanvasStore.getState().isExecuting).toBe(false);
   });
 
   it('cancelExecution_success_setsStatusFailed', async () => {
@@ -235,7 +236,7 @@ describe('useExecution', () => {
     });
 
     expect(result.current.status).toBe('failed');
-    expect(useWorkflowStore.getState().isExecuting).toBe(false);
+    expect(useCanvasStore.getState().isExecuting).toBe(false);
   });
 
   it('cancelExecution_conflict409_fetchesLatestStatus', async () => {
@@ -290,7 +291,7 @@ describe('useExecution', () => {
   });
 
   it('dryRun_validationFails_setsError', async () => {
-    useWorkflowStore.setState({
+    useCanvasStore.setState({
       nodes: [{
         id: 'n1',
         type: 'workflow',

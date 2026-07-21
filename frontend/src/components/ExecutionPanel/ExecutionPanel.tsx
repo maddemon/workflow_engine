@@ -1,10 +1,11 @@
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect } from 'react';
 import { Stack, Text, Group, ActionIcon, Divider, Box, Loader, Badge, Button } from '@mantine/core';
 import { X, AlertCircle, Check, Clock, Loader as LoaderIcon, Square } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useShallow } from 'zustand/shallow';
 import type { ExecutionDto } from '../../types/workflow.ts';
 import { NodeOutputList } from './NodeOutputList.tsx';
-import { useWorkflowStore } from '../../stores/workflowStore.ts';
+import { useCanvasStore } from '../Canvas/stores/canvasStore.ts';
 
 interface ExecutionPanelProps {
   execution: ExecutionDto | null;
@@ -49,8 +50,7 @@ function useLiveDuration(startedAt: string | null, completedAt: string | null): 
 
 export function ExecutionPanel({ execution, onClose, onCancel, error }: ExecutionPanelProps) {
   const { t } = useTranslation('execution');
-  const nodeExecutionRecords = useWorkflowStore((s) => s.nodeExecutionRecords);
-  const nodes = useWorkflowStore((s) => s.nodes);
+  const nodeExecutionRecords = useCanvasStore((s) => s.nodeExecutionRecords);
   const records = Object.values(nodeExecutionRecords);
   const [cancelling, setCancelling] = useState(false);
 
@@ -64,22 +64,24 @@ export function ExecutionPanel({ execution, onClose, onCancel, error }: Executio
     }
   };
 
-  // 直接从 store 的 nodes 计算 nodeNames，确保 nodes 加载后自动更新
-  const nodeNames = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const node of nodes) {
-      map[node.id] = node.data.name;
-    }
-    return map;
-  }, [nodes]);
+  // 用稳定的派生选择器（useShallow 按 id→name 浅比较）计算 nodeNames/nodeTypeNames，
+  // 执行状态 tick 仅改变 node.executionStatus，不影响 name/typeName 映射，
+  // 因此不会触发本组件无谓重渲染（也不会在画布拖拽时重算）。
+  const nodeNames = useCanvasStore(
+    useShallow((s) => {
+      const map: Record<string, string> = {};
+      for (const n of s.nodes) map[n.id] = n.data.name;
+      return map;
+    }),
+  );
 
-  const nodeTypeNames = useMemo(() => {
-    const map: Record<string, string> = {};
-    for (const node of nodes) {
-      map[node.id] = node.data.typeName;
-    }
-    return map;
-  }, [nodes]);
+  const nodeTypeNames = useCanvasStore(
+    useShallow((s) => {
+      const map: Record<string, string> = {};
+      for (const n of s.nodes) map[n.id] = n.data.typeName;
+      return map;
+    }),
+  );
 
   const isRunning = execution?.status === 'Pending' || execution?.status === 'Running';
   const statusInfo = statusConfig[execution?.status ?? ''] ?? statusConfig.Pending;

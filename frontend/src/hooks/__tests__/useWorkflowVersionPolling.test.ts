@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useWorkflowVersionPolling } from '../useWorkflowVersionPolling.ts';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
+import { useCanvasStore } from '../../components/Canvas/stores/canvasStore.ts';
 import * as api from '../../services/api.ts';
 import type { Workflow } from '../../types/workflow.ts';
 
@@ -35,14 +36,16 @@ describe('useWorkflowVersionPolling', () => {
   });
 
   it('reviewMode_doesNotPoll', () => {
-    useWorkflowStore.setState({ reviewMode: true, workflowVersion: 1 });
+    useCanvasStore.setState({ reviewMode: true });
+    useWorkflowStore.setState({ workflowVersion: 1 });
     renderHook(() => useWorkflowVersionPolling('wf-1'));
     vi.advanceTimersByTime(60000);
     expect(mockedGetWorkflow).not.toHaveBeenCalled();
   });
 
   it('isExecuting_doesNotPoll', () => {
-    useWorkflowStore.setState({ isExecuting: true, workflowVersion: 1 });
+    useCanvasStore.setState({ isExecuting: true });
+    useWorkflowStore.setState({ workflowVersion: 1 });
     renderHook(() => useWorkflowVersionPolling('wf-1'));
     vi.advanceTimersByTime(60000);
     expect(mockedGetWorkflow).not.toHaveBeenCalled();
