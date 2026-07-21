@@ -459,6 +459,68 @@ public class WorkflowExecutorTests
         Assert.Equal("Timeout", record.NodeRecords[0].Output.Error?.Code);
     }
 
+    [Fact]
+    public async Task StartAsync_WithPreloadedWorkflow_EnqueuesItemCarryingWorkflow()
+    {
+        var nodeA = CreateNode("a", "passThrough", isEntry: true);
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "preloaded",
+            CreatedBy = "test",
+            Nodes = [nodeA],
+            Connections = []
+        };
+
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // 复用调用方已加载的工作流，触发透传路径（绕过引擎内部第二次查询）。
+        var executionId = await _executor.StartAsync(workflow.Id, workflow, null, TestContext.Current.CancellationToken);
+
+        // 出队工作项，断言携带了同一工作流实例引用（证明第 2 次 DB 加载被消除）。
+        var item = await _executionQueue.DequeueAsync(TestContext.Current.CancellationToken);
+        Assert.NotNull(item.PreloadedWorkflow);
+        Assert.Equal(workflow.Id, item.PreloadedWorkflow.Id);
+        Assert.Same(workflow, item.PreloadedWorkflow);
+
+        // 放回队列，交由 DrainAndExecuteAsync 实际执行，验证运行路径仍正常落库。
+        await _executionQueue.EnqueueAsync(item, TestContext.Current.CancellationToken);
+        var record = await WaitForExecutionAsync(executionId.Value, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(ExecutionStatus.Completed, record.Status);
+        Assert.Single(record.NodeRecords);
+    }
+
+    [Fact]
+    public async Task StartAsync_PreloadedWorkflowIdMismatch_FallsBackToInternalLoad()
+    {
+        var nodeA = CreateNode("a", "passThrough", isEntry: true);
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "preloaded-mismatch",
+            CreatedBy = "test",
+            Nodes = [nodeA],
+            Connections = []
+        };
+
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // 传入 Id 不匹配的预加载工作流：应回退内部加载，不抛异常且正确启动。
+        var other = new Workflow { Id = Guid.NewGuid(), Name = "other", CreatedBy = "test", Nodes = [], Connections = [] };
+        var executionId = await _executor.StartAsync(workflow.Id, other, null, TestContext.Current.CancellationToken);
+
+        var item = await _executionQueue.DequeueAsync(TestContext.Current.CancellationToken);
+        // 回退路径下，预加载工作流被丢弃（改为引擎内部加载并携带实际工作流实例）。
+        Assert.NotNull(item.PreloadedWorkflow);
+        Assert.Equal(workflow.Id, item.PreloadedWorkflow.Id);
+
+        await _executionQueue.EnqueueAsync(item, TestContext.Current.CancellationToken);
+        var record = await WaitForExecutionAsync(executionId.Value, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(ExecutionStatus.Completed, record.Status);
+    }
+
     private static NodeDefinition CreateNode(
         string name,
         string typeName,

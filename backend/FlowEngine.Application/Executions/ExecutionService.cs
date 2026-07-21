@@ -69,7 +69,7 @@ public sealed class ExecutionService(
             }
         }
 
-        var executionId = await engine.StartAsync(workflowId, inputs, cancellationToken).ConfigureAwait(false);
+        var executionId = await engine.StartAsync(workflowId, workflow, inputs, cancellationToken).ConfigureAwait(false);
 
         // 将幂等键从抢占用的 claimId 指向真实执行，保证后续请求返回真实结果。
         if (!string.IsNullOrEmpty(idempotencyKey))

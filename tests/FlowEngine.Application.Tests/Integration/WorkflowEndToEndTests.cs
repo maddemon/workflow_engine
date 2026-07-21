@@ -272,6 +272,9 @@ public sealed class WorkflowEndToEndTests : IDisposable
 
             return ExecutionId.From(record.Id);
         }
+
+        public Task<ExecutionId> StartAsync(Guid workflowDefinitionId, Workflow preloadedWorkflow, object? triggerPayload = null, CancellationToken cancellationToken = default)
+            => StartAsync(workflowDefinitionId, triggerPayload, cancellationToken);
     }
 
     private sealed class EmptyRegistry : INodeRegistry

@@ -137,6 +137,110 @@ public sealed class WorkflowExecutionWorkerScopeTests : HostIntegrationTestBase
     }
 
     /// <summary>
+    /// P3 #20 衍生：验证工作项携带 <see cref="WorkflowExecutionWorkItem.PreloadedWorkflow"/> 时，
+    /// worker 直接复用该实例而无需重新查询 Workflows。本用例刻意不将工作流写入数据库，
+    /// 若 worker 回退到数据库查询会得到 null 并跳过执行，从而可断言透传生效。
+    /// </summary>
+    [Fact]
+    public async Task Execute_WithPreloadedWorkflow_ReusesInstanceWithoutRequery()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        using var resolveScope = _factory.Services.CreateScope();
+        var rsp = resolveScope.ServiceProvider;
+        var nodeRegistry = rsp.GetRequiredService<INodeRegistry>();
+        var contextFactory = rsp.GetRequiredService<NodeExecutionContextFactory>();
+        var errorHandler = rsp.GetRequiredService<ErrorStrategyHandler>();
+        var secretMasker = rsp.GetRequiredService<SecretMasker>();
+        var execLogger = rsp.GetRequiredService<ILogger<WorkflowExecutor>>();
+        var kernelLogger = rsp.GetRequiredService<ILogger<WorkflowSchedulerKernel>>();
+
+        var queue = new WorkflowExecutionQueue();
+        var cancellationRegistry = new ExecutionCancellationRegistry();
+
+        // 记录每个执行项在各自 execution scope 中解析到的 DbContext 实例。
+        var resolvedDbContexts = new List<FlowEngineDbContext>();
+
+        var collection = new ServiceCollection();
+        collection.AddSingleton(nodeRegistry);
+        collection.AddSingleton(contextFactory);
+        collection.AddSingleton(errorHandler);
+        collection.AddSingleton(secretMasker);
+        collection.AddSingleton(execLogger);
+        collection.AddSingleton(kernelLogger);
+        collection.AddSingleton(queue);
+        collection.AddSingleton(cancellationRegistry);
+        collection.AddDbContext<FlowEngineDbContext>(o => o.UseInMemoryDatabase("worker-preloaded-test"));
+        collection.AddScoped<WorkflowExecutor>(sp =>
+        {
+            var db = sp.GetRequiredService<FlowEngineDbContext>();
+            resolvedDbContexts.Add(db);
+            return new WorkflowExecutor(db, nodeRegistry, contextFactory, errorHandler, queue, execLogger, kernelLogger, secretMasker);
+        });
+
+        var provider = collection.BuildServiceProvider();
+        IServiceScopeFactory scopeFactory = new DelegatingScopeFactory(provider);
+
+        // 仅写入执行记录（Completed 使 ExecuteLoopAsync 提前返回，不触达内核），
+        // 但刻意不将工作流写入数据库，以验证 worker 完全依赖 PreloadedWorkflow。
+        Guid workflowId;
+        var recordIds = new List<Guid>();
+        using (var seedScope = scopeFactory.CreateScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
+            var workflow = new Workflow
+            {
+                Name = "W",
+                ProjectId = Guid.NewGuid(),
+                Nodes = [],
+                Connections = [],
+                CreatedBy = "test",
+                Version = 1,
+                IsActive = true,
+            };
+            workflowId = workflow.Id;
+
+            var record = new ExecutionRecord
+            {
+                WorkflowDefinitionId = workflowId,
+                ProjectId = workflow.ProjectId,
+                Status = ExecutionStatus.Completed,
+                StartedAt = DateTime.UtcNow,
+                CompletedAt = DateTime.UtcNow,
+                NodeRecords = [],
+            };
+            db.ExecutionRecords.Add(record);
+            recordIds.Add(record.Id);
+
+            await db.SaveChangesAsync(ct);
+
+            // 工作项随带 PreloadedWorkflow；若该实例未被使用，worker 会回退查询并得到 null 而跳过。
+            await queue.EnqueueAsync(new WorkflowExecutionWorkItem(recordIds[0], workflowId, null, workflow), ct);
+        }
+
+        var worker = new WorkflowExecutionWorker(scopeFactory, null!, NullLogger<WorkflowExecutionWorker>.Instance);
+
+        using var stoppingCts = new CancellationTokenSource();
+        var executeMethod = typeof(BackgroundService).GetMethod("ExecuteAsync", BindingFlags.NonPublic | BindingFlags.Instance)
+            ?? throw new InvalidOperationException("未能通过反射获取 ExecuteAsync。");
+        var workerTask = (Task)executeMethod.Invoke(worker, new object[] { stoppingCts.Token })!;
+
+        // 等待执行项被处理（依赖预加载实例，未查询 Workflows）。
+        var deadline = DateTime.UtcNow.AddSeconds(10);
+        while (resolvedDbContexts.Count < 1 && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(20, ct);
+        }
+
+        // worker 使用了预加载工作流（否则因 Workflows 为空会跳过，resolvedDbContexts 仍为 0）。
+        Assert.Single(resolvedDbContexts);
+
+        stoppingCts.Cancel();
+        await Task.WhenAny(workerTask, Task.Delay(5000, ct));
+        Assert.True(workerTask.IsCompleted);
+    }
+
+    /// <summary>
     /// 将 <see cref="ServiceProvider"/> 适配为 <see cref="IServiceScopeFactory"/>。
     /// <see cref="ServiceProvider"/> 显式实现该接口，直接赋值转换在编译期不可见，故在此委托转发。
     /// </summary>

@@ -50,6 +50,13 @@ public sealed class WorkflowExecutor : IEngine
             defaultsOptions);
     }
 
+    /// <summary>
+    /// 启动指定工作流。由引擎内部加载工作流定义。
+    /// </summary>
+    /// <param name="workflowDefinitionId">工作流定义 ID。</param>
+    /// <param name="triggerPayload">触发负载。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>执行 ID。</returns>
     public async Task<ExecutionId> StartAsync(
         Guid workflowDefinitionId,
         object? triggerPayload = null,
@@ -65,6 +72,54 @@ public sealed class WorkflowExecutor : IEngine
             throw new NotFoundException($"工作流 '{workflowDefinitionId}' 不存在。");
         }
 
+        return await EnqueueExecutionAsync(workflow, workflowDefinitionId, triggerPayload, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 启动指定工作流（复用调用方已加载的工作流定义，避免重复查询）。
+    /// </summary>
+    /// <param name="workflowDefinitionId">工作流定义 ID。</param>
+    /// <param name="preloadedWorkflow">调用方已加载的工作流定义；其 Id 须等于 workflowDefinitionId，否则改回内部加载。</param>
+    /// <param name="triggerPayload">触发负载。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>执行 ID。</returns>
+    public async Task<ExecutionId> StartAsync(
+        Guid workflowDefinitionId,
+        Workflow preloadedWorkflow,
+        object? triggerPayload = null,
+        CancellationToken cancellationToken = default)
+    {
+        // 复用调用方已加载的工作流；Id 不匹配时回退内部加载，避免误用。
+        var workflow = (preloadedWorkflow is not null && preloadedWorkflow.Id == workflowDefinitionId)
+            ? preloadedWorkflow
+            : await _dbContext.Workflows.AsNoTracking()
+                .FirstOrDefaultAsync(w => w.Id == workflowDefinitionId, cancellationToken)
+                .ConfigureAwait(false);
+
+        if (workflow is null)
+        {
+            throw new NotFoundException($"工作流 '{workflowDefinitionId}' 不存在。");
+        }
+
+        return await EnqueueExecutionAsync(workflow, workflowDefinitionId, triggerPayload, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 创建执行记录并加入执行队列，返回执行 ID。两种 <see cref="StartAsync"/> 重载共用的核心逻辑。
+    /// </summary>
+    /// <param name="workflow">已加载的工作流定义。</param>
+    /// <param name="workflowDefinitionId">工作流定义 ID。</param>
+    /// <param name="triggerPayload">触发负载。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>执行 ID。</returns>
+    private async Task<ExecutionId> EnqueueExecutionAsync(
+        Workflow workflow,
+        Guid workflowDefinitionId,
+        object? triggerPayload,
+        CancellationToken cancellationToken)
+    {
         var executionRecord = new ExecutionRecord
         {
             WorkflowDefinitionId = workflowDefinitionId,
@@ -78,7 +133,7 @@ public sealed class WorkflowExecutor : IEngine
         await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         await _executionQueue.EnqueueAsync(
-            new WorkflowExecutionWorkItem(executionRecord.Id, workflowDefinitionId, triggerPayload),
+            new WorkflowExecutionWorkItem(executionRecord.Id, workflowDefinitionId, triggerPayload, workflow),
             cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation("执行 {ExecutionId} 已加入队列。", executionRecord.Id);

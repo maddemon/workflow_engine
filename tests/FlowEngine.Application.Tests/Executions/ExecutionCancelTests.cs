@@ -139,6 +139,9 @@ public sealed class ExecutionCancelTests : IDisposable
         public Task<ExecutionId> StartAsync(
             Guid workflowDefinitionId, object? triggerPayload = null, CancellationToken cancellationToken = default)
             => Task.FromResult(ExecutionId.From(Guid.NewGuid()));
+
+        public Task<ExecutionId> StartAsync(Guid workflowDefinitionId, Workflow preloadedWorkflow, object? triggerPayload = null, CancellationToken cancellationToken = default)
+            => StartAsync(workflowDefinitionId, triggerPayload, cancellationToken);
     }
 
     private sealed class NullIdempotencyService : IExecutionIdempotencyService

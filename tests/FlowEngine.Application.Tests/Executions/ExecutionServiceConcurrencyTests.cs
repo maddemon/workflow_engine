@@ -251,6 +251,9 @@ public sealed class ExecutionServiceConcurrencyIdempotencyTests : IDisposable
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
             return ExecutionId.From(executionId);
         }
+
+        public Task<ExecutionId> StartAsync(Guid workflowDefinitionId, Workflow preloadedWorkflow, object? triggerPayload = null, CancellationToken cancellationToken = default)
+            => StartAsync(workflowDefinitionId, triggerPayload, cancellationToken);
     }
 
     /// <summary>
@@ -266,6 +269,9 @@ public sealed class ExecutionServiceConcurrencyIdempotencyTests : IDisposable
             StartCount++;
             return Task.FromResult(ExecutionId.From(Guid.NewGuid()));
         }
+
+        public Task<ExecutionId> StartAsync(Guid workflowDefinitionId, Workflow preloadedWorkflow, object? triggerPayload = null, CancellationToken cancellationToken = default)
+            => StartAsync(workflowDefinitionId, triggerPayload, cancellationToken);
     }
 
     /// <summary>

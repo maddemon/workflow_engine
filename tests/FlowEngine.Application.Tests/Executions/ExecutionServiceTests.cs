@@ -291,6 +291,9 @@ public sealed class ExecutionServiceTests : IDisposable
             LastPayload = triggerPayload;
             return Task.FromResult(ExecutionId.From(Guid.NewGuid()));
         }
+
+        public Task<ExecutionId> StartAsync(Guid workflowDefinitionId, Workflow preloadedWorkflow, object? triggerPayload = null, CancellationToken cancellationToken = default)
+            => StartAsync(workflowDefinitionId, triggerPayload, cancellationToken);
     }
 
     private sealed class StubIdempotencyService : IExecutionIdempotencyService
@@ -459,6 +462,9 @@ public sealed class ExecutionServiceIdempotencyTests : IDisposable
             StartCount++;
             return Task.FromResult(ExecutionId.From(Guid.NewGuid()));
         }
+
+        public Task<ExecutionId> StartAsync(Guid workflowDefinitionId, Workflow preloadedWorkflow, object? triggerPayload = null, CancellationToken cancellationToken = default)
+            => StartAsync(workflowDefinitionId, triggerPayload, cancellationToken);
     }
 
     private sealed class StubResourceAuthorizationService : IResourceAuthorizationService

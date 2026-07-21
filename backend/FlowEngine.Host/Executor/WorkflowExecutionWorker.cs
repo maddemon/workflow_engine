@@ -1,4 +1,5 @@
 using FlowEngine.Core.Data;
+using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Runtime.Executor;
 using Microsoft.EntityFrameworkCore;
@@ -58,14 +59,26 @@ public sealed class WorkflowExecutionWorker : BackgroundService
                 var dbContext = executionScope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
                 var executor = executionScope.ServiceProvider.GetRequiredService<WorkflowExecutor>();
 
-                var workflow = await dbContext.Workflows
-                    .FirstOrDefaultAsync(w => w.Id == item.WorkflowDefinitionId, stoppingToken)
-                    .ConfigureAwait(false);
-
-                if (workflow is null)
+                Workflow workflow;
+                var preloaded = item.PreloadedWorkflow;
+                if (preloaded is not null && preloaded.Id == item.WorkflowDefinitionId)
                 {
-                    _logger.LogWarning("工作流 {WorkflowId} 不存在，跳过执行。", item.WorkflowDefinitionId);
-                    continue;
+                    // 复用调用方随工作项携带的已加载工作流，省去一次数据库查询。
+                    workflow = preloaded;
+                }
+                else
+                {
+                    var loaded = await dbContext.Workflows
+                        .FirstOrDefaultAsync(w => w.Id == item.WorkflowDefinitionId, stoppingToken)
+                        .ConfigureAwait(false);
+
+                    if (loaded is null)
+                    {
+                        _logger.LogWarning("工作流 {WorkflowId} 不存在，跳过执行。", item.WorkflowDefinitionId);
+                        continue;
+                    }
+
+                    workflow = loaded;
                 }
 
                 // 每执行一个独立的、与进程关闭令牌联动的取消源，并登记到注册表；
