@@ -199,19 +199,80 @@ public sealed class ExecutionService(
     }
 
     /// <summary>
-    /// 按工作流定义 ID 获取执行列表。
+    /// 按工作流定义 ID 分页获取执行列表（服务端分页，避免一次性物化全部记录）。
     /// </summary>
-    public async Task<IReadOnlyCollection<ExecutionSummaryDto>> GetByWorkflowAsync(
+    /// <param name="workflowId">工作流定义 ID。</param>
+    /// <param name="projectId">可选项目过滤。</param>
+    /// <param name="status">可选执行状态过滤。</param>
+    /// <param name="page">页码（从 1 开始，小于 1 时归正为 1）。</param>
+    /// <param name="pageSize">每页大小（1–200，越界时自动收敛）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>分页后的执行摘要集合。</returns>
+    public async Task<PagedResult<ExecutionSummaryDto>> GetByWorkflowAsync(
         Guid workflowId,
         Guid? projectId = null,
+        ExecutionStatus? status = null,
+        int page = 1,
+        int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
         // RBAC：查询工作流执行列表前校验工作流读权限。
         await authGuard.RequireAccessAsync(ResourceKind.Workflow, workflowId, Operation.Read, cancellationToken);
 
+        // 归正分页参数，避免负值或越界导致 Skip/Take 异常或过度拉取。
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 200);
+
         var query = dbContext.ExecutionRecords
             .AsNoTracking()
             .Where(e => e.WorkflowDefinitionId == workflowId);
+
+        if (projectId.HasValue)
+        {
+            query = query.Where(e => e.ProjectId == projectId.Value);
+        }
+
+        if (status.HasValue)
+        {
+            query = query.Where(e => e.Status == status.Value);
+        }
+
+        var totalCount = await query.CountAsync(cancellationToken).ConfigureAwait(false);
+
+        var records = await query
+            .OrderByDescending(e => e.StartedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return new PagedResult<ExecutionSummaryDto>
+        {
+            Items = records.Select(MapToSummary).ToList(),
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize,
+        };
+    }
+
+    /// <summary>
+    /// 获取指定工作流当前处于待执行/执行中状态的执行（供前端实时跟踪），仅返回少量活跃记录。
+    /// </summary>
+    /// <param name="workflowId">工作流定义 ID。</param>
+    /// <param name="projectId">可选项目过滤。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>活跃（Pending/Running）执行摘要集合。</returns>
+    public async Task<IReadOnlyCollection<ExecutionSummaryDto>> GetActiveAsync(
+        Guid workflowId,
+        Guid? projectId = null,
+        CancellationToken cancellationToken = default)
+    {
+        await authGuard.RequireAccessAsync(ResourceKind.Workflow, workflowId, Operation.Read, cancellationToken);
+
+        var query = dbContext.ExecutionRecords
+            .AsNoTracking()
+            .Where(e => e.WorkflowDefinitionId == workflowId
+                        && (e.Status == ExecutionStatus.Pending || e.Status == ExecutionStatus.Running));
 
         if (projectId.HasValue)
         {

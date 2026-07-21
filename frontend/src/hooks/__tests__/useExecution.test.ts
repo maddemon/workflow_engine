@@ -8,7 +8,7 @@ import type { ExecutionDto, NodeExecutionRecordDto, NodeDefinition, ExecutionSum
 
 vi.mock('../../services/api.ts', () => ({
   executeWorkflow: vi.fn(),
-  getWorkflowExecutions: vi.fn(),
+  getActiveExecutions: vi.fn(),
   getExecution: vi.fn(),
   cancelExecution: vi.fn(),
   dryRun: vi.fn(),
@@ -32,7 +32,7 @@ vi.mock('@mantine/notifications', () => ({
 }));
 
 const mockedExecuteWorkflow = vi.mocked(api.executeWorkflow);
-const mockedGetWorkflowExecutions = vi.mocked(api.getWorkflowExecutions);
+const mockedGetActiveExecutions = vi.mocked(api.getActiveExecutions);
 const mockedGetExecution = vi.mocked(api.getExecution);
 const mockedCancelExecution = vi.mocked(api.cancelExecution);
 const mockedDryRun = vi.mocked(api.dryRun);
@@ -88,7 +88,7 @@ describe('useExecution', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     useWorkflowStore.getState().newWorkflow();
     vi.clearAllMocks();
-    mockedGetWorkflowExecutions.mockResolvedValue([]);
+    mockedGetActiveExecutions.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -380,20 +380,20 @@ describe('useExecution', () => {
       startedAt: '2024-01-01T00:00:00Z',
       completedAt: null,
     };
-    mockedGetWorkflowExecutions.mockResolvedValue([summary]);
+    mockedGetActiveExecutions.mockResolvedValue([summary]);
     mockedGetExecution.mockResolvedValue(running);
     useWorkflowStore.setState({ workflowId: 'wf-1' });
 
     renderHook(() => useExecution());
 
-    await waitFor(() => expect(mockedGetWorkflowExecutions).toHaveBeenCalledWith('wf-1'));
+    await waitFor(() => expect(mockedGetActiveExecutions).toHaveBeenCalledWith('wf-1'));
     await waitFor(() => expect(mockedGetExecution).toHaveBeenCalledWith('exec-2'));
   });
 
   it('mount_noWorkflowId_doesNotCheck', async () => {
     renderHook(() => useExecution());
     vi.advanceTimersByTime(1000);
-    expect(mockedGetWorkflowExecutions).not.toHaveBeenCalled();
+    expect(mockedGetActiveExecutions).not.toHaveBeenCalled();
   });
 
   it('polling_reachesTerminalStatus_stopsAndUpdates', async () => {

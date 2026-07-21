@@ -263,6 +263,22 @@ export interface ExecutionSummaryDto {
   completedAt: string | null;
 }
 
+/**
+ * 分页结果，与后端 PagedResult&lt;T&gt;（camelCase 序列化）对应。
+ */
+export interface PagedResult<T> {
+  /** 当前页数据。 */
+  items: T[];
+  /** 总记录数。 */
+  totalCount: number;
+  /** 当前页码（从 1 开始）。 */
+  page: number;
+  /** 每页大小。 */
+  pageSize: number;
+  /** 总页数。 */
+  totalPages: number;
+}
+
 export interface CredentialDto {
   id: string;
   projectId: string | null;

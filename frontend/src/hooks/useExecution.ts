@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { notifications } from '@mantine/notifications';
-import { executeWorkflow, getWorkflowExecutions, getExecution, cancelExecution as apiCancelExecution, dryRun as apiDryRun } from '../services/api.ts';
+import { executeWorkflow, getActiveExecutions, getExecution, cancelExecution as apiCancelExecution, dryRun as apiDryRun } from '../services/api.ts';
 import { serializeWorkflow } from '../utils/workflowSerializer.ts';
 import { useWorkflowStore } from '../stores/workflowStore.ts';
 import { useWebSocketExecution } from './useWebSocketExecution.ts';
@@ -97,10 +97,10 @@ export function useExecution() {
 
     const checkRunningExecutions = async () => {
       try {
-        const executions = await getWorkflowExecutions(workflowId);
+        // 端点已仅返回活跃执行（Pending/Running），此处取第一条即为当前运行中的执行。
+        const executions = await getActiveExecutions(workflowId);
         if (cancelled) return;
 
-        // 找到正在运行的执行（Pending 或 Running 状态）
         const runningExecution = executions.find(
           (e) => e.status === 'Pending' || e.status === 'Running'
         );

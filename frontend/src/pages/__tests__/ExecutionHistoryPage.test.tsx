@@ -24,15 +24,33 @@ function makeSummary(id: string, status: ExecutionSummaryDto['status']): Executi
   };
 }
 
+// 模拟服务端数据集：mock 依据查询的 status 过滤，与页面服务端分页行为一致。
+let allExecutions: ExecutionSummaryDto[] = [];
+
+function buildPaged(items: ExecutionSummaryDto[], pageSize = 20) {
+  return {
+    items,
+    totalCount: items.length,
+    page: 1,
+    pageSize,
+    totalPages: Math.ceil(items.length / pageSize),
+  };
+}
+
 describe('ExecutionHistoryPage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    allExecutions = [];
     Element.prototype.scrollIntoView = vi.fn();
+    mockedGetWorkflowExecutions.mockImplementation((_id: string, query?: { status?: string; page?: number; pageSize?: number }) => {
+      const filtered = query?.status
+        ? allExecutions.filter((e) => e.status === query.status)
+        : allExecutions;
+      return Promise.resolve(buildPaged(filtered, query?.pageSize ?? 20));
+    });
   });
 
   it('renders empty state when no executions', async () => {
-    mockedGetWorkflowExecutions.mockResolvedValue([]);
-
     renderWithProvider(
       <MemoryRouter initialEntries={['/workflows/wf-1/executions']}>
         <Routes>
@@ -42,16 +60,16 @@ describe('ExecutionHistoryPage', () => {
     );
 
     await waitFor(() => {
-      expect(mockedGetWorkflowExecutions).toHaveBeenCalledWith('wf-1');
+      expect(mockedGetWorkflowExecutions).toHaveBeenCalledWith('wf-1', expect.objectContaining({ page: 1, pageSize: 20 }));
     });
     expect(screen.getByText(/no executions found/i)).toBeDefined();
   });
 
-  it('renders execution list and filters by status', async () => {
-    mockedGetWorkflowExecutions.mockResolvedValue([
+  it('renders execution list and filters by status (server-side)', async () => {
+    allExecutions = [
       makeSummary('ex-1', 'Completed'),
       makeSummary('ex-2', 'Failed'),
-    ]);
+    ];
 
     renderWithProvider(
       <MemoryRouter initialEntries={['/workflows/wf-1/executions']}>
@@ -72,13 +90,16 @@ describe('ExecutionHistoryPage', () => {
     fireEvent.click(completedOption!);
 
     await waitFor(() => {
+      expect(mockedGetWorkflowExecutions).toHaveBeenCalledWith('wf-1', expect.objectContaining({ status: 'Completed' }));
+    });
+    await waitFor(() => {
       const rows = screen.getAllByRole('row');
       expect(rows.length).toBe(2);
     });
   });
 
   it('opens execution details modal', async () => {
-    mockedGetWorkflowExecutions.mockResolvedValue([makeSummary('ex-1', 'Completed')]);
+    allExecutions = [makeSummary('ex-1', 'Completed')];
     const detail: ExecutionDto = {
       id: 'ex-1',
       workflowDefinitionId: 'wf-1',

@@ -297,12 +297,20 @@ describe('api service', () => {
       expect(mockedCreate.get).toHaveBeenCalledWith('/executions/e1');
     });
 
-    it('getWorkflowExecutions returns executions', async () => {
+    it('getWorkflowExecutions returns paged executions', async () => {
+      const paged = { items: [], totalCount: 0, page: 1, pageSize: 20, totalPages: 0 };
+      mockedCreate.get.mockResolvedValue({ data: paged });
+      const result = await api.getWorkflowExecutions('1');
+      expect(result).toBe(paged);
+      expect(mockedCreate.get).toHaveBeenCalledWith('/workflows/1/executions', { params: {} });
+    });
+
+    it('getActiveExecutions returns active executions', async () => {
       const items: ExecutionSummaryDto[] = [];
       mockedCreate.get.mockResolvedValue({ data: items });
-      const result = await api.getWorkflowExecutions('1');
+      const result = await api.getActiveExecutions('1');
       expect(result).toBe(items);
-      expect(mockedCreate.get).toHaveBeenCalledWith('/workflows/1/executions');
+      expect(mockedCreate.get).toHaveBeenCalledWith('/workflows/1/executions/active');
     });
 
     it('cancelExecution posts cancel endpoint', async () => {

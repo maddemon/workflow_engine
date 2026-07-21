@@ -30,6 +30,7 @@ import type {
   ExportBatchRequest,
   ValidateWorkflowResult,
   CreateApiKeyResult,
+  PagedResult,
 } from '../types/workflow.ts';
 
 const api = axios.create({
@@ -142,8 +143,27 @@ export async function getExecution(executionId: string): Promise<ExecutionDto> {
   return res.data;
 }
 
-export async function getWorkflowExecutions(workflowId: string): Promise<ExecutionSummaryDto[]> {
-  const res = await api.get<ExecutionSummaryDto[]>(`/workflows/${workflowId}/executions`);
+/** 执行列表查询参数。 */
+export interface ExecutionQuery {
+  /** 状态过滤（字符串值，如 'Completed'/'Running'）。 */
+  status?: string;
+  /** 页码，从 1 开始。 */
+  page?: number;
+  /** 每页大小。 */
+  pageSize?: number;
+}
+
+export async function getWorkflowExecutions(
+  workflowId: string,
+  query: ExecutionQuery = {},
+): Promise<PagedResult<ExecutionSummaryDto>> {
+  const res = await api.get<PagedResult<ExecutionSummaryDto>>(`/workflows/${workflowId}/executions`, { params: query });
+  return res.data;
+}
+
+/** 获取指定工作流当前运行中的执行（待执行/执行中），供前端实时跟踪。 */
+export async function getActiveExecutions(workflowId: string): Promise<ExecutionSummaryDto[]> {
+  const res = await api.get<ExecutionSummaryDto[]>(`/workflows/${workflowId}/executions/active`);
   return res.data;
 }
 

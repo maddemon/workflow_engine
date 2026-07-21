@@ -207,12 +207,13 @@ public sealed class WorkflowEndToEndTests : IDisposable
         var workflow = await _workflowService.CreateAsync(dto, ct);
         await _executionService.ExecuteAsync(workflow.Id, idempotencyKey: null, ct);
 
-        var executions = await _executionService.GetByWorkflowAsync(workflow.Id, cancellationToken: ct);
+        var result = await _executionService.GetByWorkflowAsync(workflow.Id, cancellationToken: ct);
 
-        Assert.NotEmpty(executions);
-        var summary = executions.First();
+        Assert.NotEmpty(result.Items);
+        var summary = result.Items.First();
         Assert.Equal(workflow.Id, summary.WorkflowDefinitionId);
         Assert.Equal("Completed", summary.Status);
+        Assert.Equal(1, result.TotalCount);
     }
 
     private sealed class StubEngine : IEngine
