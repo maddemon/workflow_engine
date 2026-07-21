@@ -124,7 +124,7 @@ public sealed class ParameterResolver
             return element.ValueKind switch
             {
                 JsonValueKind.String => await ResolveValueAsync(element.GetString() ?? string.Empty, jsEngine, cancellationToken).ConfigureAwait(false),
-                JsonValueKind.Number => element.TryGetInt32(out var i) ? i : element.GetDouble(),
+                JsonValueKind.Number => ResolveNumber(element),
                 JsonValueKind.True => true,
                 JsonValueKind.False => false,
                 JsonValueKind.Null or JsonValueKind.Undefined => null!,
@@ -155,6 +155,26 @@ public sealed class ParameterResolver
         }
 
         return value!;
+    }
+
+    /// <summary>
+    /// 将 JSON 数值解析为不丢失精度的 CLR 类型。
+    /// 整数优先以 <see cref="long"/> 保留大整数精度（如 9007199254740993 超出 double 53 位尾数），
+    /// 其次以 <see cref="decimal"/> 保留金额精度，<see cref="double"/> 仅作为最后兜底。
+    /// </summary>
+    private static object ResolveNumber(JsonElement element)
+    {
+        if (element.TryGetInt64(out var l))
+        {
+            return l;
+        }
+
+        if (element.TryGetDecimal(out var d))
+        {
+            return d;
+        }
+
+        return element.GetDouble();
     }
 
     private async Task<object> EvaluateExpressionAsync(string expression, JsEngine jsEngine, CancellationToken cancellationToken)

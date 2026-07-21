@@ -67,4 +67,18 @@ public class SsrfGuardConnectCallbackTests
         Assert.DoesNotContain("内部/保留地址", ex.Message);
         Assert.DoesNotContain("DNS 解析失败", ex.Message);
     }
+
+    [Fact]
+    public async Task CreateConnectCallback_HostnameResolvingToLoopback_BlockedAtConnectTime()
+    {
+        // 预解析（IsInternalTarget）可能将主机名判为安全，但 ConnectCallback 在连接瞬间
+        // 对实际解析出的 IP 做校验：localhost 解析到回环地址，必须被拦截（防 DNS 重绑定）。
+        var callback = SsrfGuard.CreateConnectCallback();
+        var context = BuildContext("localhost", 80);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => callback(context, CancellationToken.None).AsTask());
+
+        Assert.Contains("内部/保留地址", ex.Message);
+    }
 }

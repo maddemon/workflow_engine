@@ -197,4 +197,27 @@ public class WaitingAreaTests
         Assert.True(area.IsReady(execB, "n2", new[] { "in" }));
         Assert.False(area.IsEmpty);
     }
+
+    [Fact]
+    public void Receive_ConcurrentMerges_NoItemsLost()
+    {
+        // 高并发下对同一端口多次 Receive，应无丢失、SourceIndex 连续。
+        var area = new WaitingAreaType();
+        var executionId = Guid.NewGuid();
+        const int iterations = 100;
+
+        Parallel.For(0, iterations, _ =>
+        {
+            area.Receive(executionId, "n1", "in", Batch(1));
+        });
+
+        Assert.True(area.TryTake(executionId, "n1", out var inputs));
+        var items = inputs["in"].Items;
+
+        Assert.Equal(iterations, items.Count);
+        for (var i = 0; i < items.Count; i++)
+        {
+            Assert.Equal(i, items[i].SourceIndex);
+        }
+    }
 }

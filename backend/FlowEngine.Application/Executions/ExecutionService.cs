@@ -48,34 +48,51 @@ public sealed class ExecutionService(
 
         await authGuard.RequireAccessAsync(ResourceKind.Workflow, workflowId, Operation.Execute, cancellationToken);
 
-        // 幂等检查：如果提供了幂等键，检查是否已存在
+        // 幂等检查：先查询真实执行，避免用临时 ExecutionId 预注册导致的竞态与「假成功」。
         if (!string.IsNullOrEmpty(idempotencyKey))
         {
-            var tempExecutionId = Guid.NewGuid();
-            var existingExecutionId = await idempotencyService.TryGetOrRegisterAsync(
-                idempotencyKey, tempExecutionId, TimeSpan.FromSeconds(3600), cancellationToken).ConfigureAwait(false);
+            var existingExecutionId = await idempotencyService.TryGetExistingAsync(
+                idempotencyKey, cancellationToken).ConfigureAwait(false);
             if (existingExecutionId.HasValue)
             {
-                // 返回已存在的执行记录
+                // 真实执行已存在：返回其真实结果（非合成成功）。
                 var existingRecord = await dbContext.ExecutionRecords
                     .AsNoTracking()
                     .FirstOrDefaultAsync(e => e.Id == existingExecutionId.Value, cancellationToken)
                     .ConfigureAwait(false);
-                return existingRecord is not null ? ExecutionMapper.MapToDto(existingRecord) : new ExecutionDto
+                if (existingRecord is not null)
                 {
-                    Id = existingExecutionId.Value,
-                    WorkflowDefinitionId = workflowId,
-                    Status = "Idempotent",
-                    StartedAt = DateTime.UtcNow
-                };
+                    return ExecutionMapper.MapToDto(existingRecord);
+                }
+
+                // 幂等键命中但真实执行记录缺失（注册竞态/落库失败）：不返回合成成功，
+                // 视为「尚未完成」，继续向下触发一次真实执行（下方以真实 ExecutionId 接管幂等键）。
             }
         }
 
         var executionId = await engine.StartAsync(workflowId, inputs, cancellationToken).ConfigureAwait(false);
 
-        // 更新幂等记录的 ExecutionId 为实际值
+        // 用真实 ExecutionId 接管幂等键：保证幂等键始终指向真实执行，避免指向临时/缺失记录。
         if (!string.IsNullOrEmpty(idempotencyKey))
         {
+            var registeredId = await idempotencyService.TryGetOrRegisterAsync(
+                idempotencyKey, executionId.Value, TimeSpan.FromSeconds(3600), cancellationToken).ConfigureAwait(false);
+            if (registeredId.HasValue && registeredId.Value != executionId.Value)
+            {
+                // 并发请求抢先注册：以并发胜者的真实执行为准。
+                var winnerRecord = await dbContext.ExecutionRecords
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(e => e.Id == registeredId.Value, cancellationToken)
+                    .ConfigureAwait(false);
+                if (winnerRecord is not null)
+                {
+                    return ExecutionMapper.MapToDto(winnerRecord);
+                }
+
+                // 并发胜者的执行记录也缺失（极端竞态）：继续以本次真实执行接管幂等键（下方更新）。
+            }
+
+            // 确保幂等键指向真实执行（落库或并发接管）。
             var dedupRecord = await dbContext.ExecutionDedups
                 .FirstOrDefaultAsync(e => e.IdempotencyKey == idempotencyKey, cancellationToken)
                 .ConfigureAwait(false);

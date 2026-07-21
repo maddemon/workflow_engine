@@ -58,7 +58,8 @@ public class ParameterResolverExceptionsTests
 
         var result = await _resolver.ResolveAsync(raw, js);
 
-        Assert.Equal(3.5, result["num"]);
+        Assert.IsType<decimal>(result["num"]);
+        Assert.Equal(3.5m, (decimal)result["num"]);
         Assert.Equal(true, result["t"]);
         Assert.Equal(false, result["f"]);
         Assert.Null(result["nul"]);

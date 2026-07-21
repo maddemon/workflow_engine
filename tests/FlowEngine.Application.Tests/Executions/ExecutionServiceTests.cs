@@ -14,6 +14,7 @@ using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.ValueObjects;
 using FlowEngine.Runtime.Executor;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FlowEngine.Application.Tests.Executions;
 
@@ -329,5 +330,151 @@ public sealed class ExecutionServiceTests : IDisposable
                 _ => false,
             };
         }
+    }
+}
+
+/// <summary>
+/// 幂等「假成功」回归测试（Phase 3 #10）：使用真实 <see cref="ExecutionIdempotencyService"/> 验证
+/// 幂等键命中但真实执行记录缺失时不会返回合成的成功结果。
+/// </summary>
+public sealed class ExecutionServiceIdempotencyTests : IDisposable
+{
+    private readonly FlowEngineDbContext _dbContext;
+    private readonly FakeUserContext _userContext;
+    private readonly CountingEngine _engine;
+    private readonly RecordingEventBus _eventBus;
+    private readonly ExecutionCancellationRegistry _cancellationRegistry;
+    private readonly ExecutionService _service;
+
+    public ExecutionServiceIdempotencyTests()
+    {
+        var options = new DbContextOptionsBuilder<FlowEngineDbContext>()
+            .UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString())
+            .Options;
+        _dbContext = new FlowEngineDbContext(options);
+        _userContext = new FakeUserContext();
+        _userContext.Roles = [RoleConstants.Admin];
+        _engine = new CountingEngine();
+        _eventBus = new RecordingEventBus();
+        var auditFactory = new AuditEventFactory(_userContext);
+        var resourceAuthorization = new StubResourceAuthorizationService();
+        var idempotencyService = new ExecutionIdempotencyService(_dbContext, NullLogger<ExecutionIdempotencyService>.Instance);
+        _cancellationRegistry = new ExecutionCancellationRegistry();
+        _service = new ExecutionService(
+            _engine,
+            _dbContext,
+            idempotencyService,
+            AuthorizationGuardFactory.Create(_userContext, resourceAuthorization),
+            _eventBus,
+            auditFactory,
+            _cancellationRegistry);
+    }
+
+    public void Dispose() => _dbContext.Dispose();
+
+    [Fact]
+    public async Task ExecuteAsync_IdempotencyKeyHit_WithRealRecord_ReturnsExisting_WithoutStartingNewExecution()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var workflow = CreateTestWorkflow();
+        _dbContext.Workflows.Add(workflow);
+
+        var realExecutionId = Guid.NewGuid();
+        _dbContext.ExecutionRecords.Add(new ExecutionRecord
+        {
+            Id = realExecutionId,
+            WorkflowDefinitionId = workflow.Id,
+            Status = ExecutionStatus.Completed,
+            StartedAt = DateTime.UtcNow.AddMinutes(-1),
+            CompletedAt = DateTime.UtcNow,
+            NodeRecords = [],
+        });
+        _dbContext.ExecutionDedups.Add(new ExecutionDedup
+        {
+            IdempotencyKey = "real-key",
+            ExecutionId = realExecutionId,
+            CreatedAt = DateTime.UtcNow,
+        });
+        await _dbContext.SaveChangesAsync(ct);
+
+        var result = await _service.ExecuteAsync(workflow.Id, idempotencyKey: "real-key", ct);
+
+        Assert.NotNull(result);
+        Assert.Equal(realExecutionId, result.Id);
+        Assert.Equal(nameof(ExecutionStatus.Completed), result.Status);
+        // 真实执行已存在：不应重复触发新执行。
+        Assert.Equal(0, _engine.StartCount);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_IdempotencyKeyHit_ButNoExecutionRecord_Retriggers_NotFalseSuccess()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var workflow = CreateTestWorkflow();
+        _dbContext.Workflows.Add(workflow);
+
+        // 幂等键命中，但指向的执行记录缺失（注册竞态/落库失败）。
+        _dbContext.ExecutionDedups.Add(new ExecutionDedup
+        {
+            IdempotencyKey = "stale-key",
+            ExecutionId = Guid.NewGuid(),
+            CreatedAt = DateTime.UtcNow,
+        });
+        await _dbContext.SaveChangesAsync(ct);
+
+        var result = await _service.ExecuteAsync(workflow.Id, idempotencyKey: "stale-key", ct);
+
+        Assert.NotNull(result);
+        // 关键：不得返回合成的「Idempotent」假成功。
+        Assert.NotEqual("Idempotent", result.Status);
+        // 应重新触发一次真实执行（非重复触发多次）。
+        Assert.Equal(1, _engine.StartCount);
+        // 幂等键已被本次真实执行接管：指向真实执行的 Id，而非缺失的旧 Id。
+        var dedup = await _dbContext.ExecutionDedups
+            .FirstAsync(d => d.IdempotencyKey == "stale-key", ct);
+        Assert.Equal(result.Id, dedup.ExecutionId);
+    }
+
+    private static Workflow CreateTestWorkflow()
+    {
+        return new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "Test Workflow",
+            ProjectId = Guid.NewGuid(),
+            Nodes = [],
+            Connections = [],
+            CreatedBy = "test",
+            Version = 1,
+            IsActive = true,
+        };
+    }
+
+    private sealed class CountingEngine : IEngine
+    {
+        public int StartCount { get; private set; }
+
+        public Task<ExecutionId> StartAsync(Guid workflowDefinitionId, object? triggerPayload = null, CancellationToken cancellationToken = default)
+        {
+            StartCount++;
+            return Task.FromResult(ExecutionId.From(Guid.NewGuid()));
+        }
+    }
+
+    private sealed class StubResourceAuthorizationService : IResourceAuthorizationService
+    {
+        public Task<bool> CanAccessWorkflowAsync(Guid userId, Guid workflowId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public Task<bool> CanAccessCredentialAsync(Guid userId, Guid credentialId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public Task<bool> CanAccessExecutionAsync(Guid userId, Guid executionId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public Task<bool> CanAccessTriggerAsync(Guid userId, Guid triggerId, Operation operation, CancellationToken ct = default)
+            => Task.FromResult(true);
+
+        public bool ShouldMaskCredentialValues(IReadOnlyList<string> roles) => false;
     }
 }

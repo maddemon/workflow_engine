@@ -13,8 +13,10 @@ namespace FlowEngine.Core.Http;
 public static class SsrfGuard
 {
     /// <summary>
-    /// 检查给定 URL 是否指向被禁止的内部/保留地址。
+    /// 同步预检给定 URL 是否指向被禁止的内部/保留地址（字面量 IP 直接判定；主机名做一次性 DNS 解析）。
     /// 解析失败时按「不安全」处理（返回 true）。
+    /// 注意：本方法是「尽力而为」的同步预检，不防 DNS 重绑定；经 HTTP 客户端发出的请求应以
+    /// <see cref="CreateConnectCallback"/> 在连接瞬间对实际解析 IP 做的校验作为权威防护。
     /// </summary>
     public static bool IsInternalTarget(string? url)
     {
@@ -93,6 +95,7 @@ public static class SsrfGuard
                 throw new InvalidOperationException($"SSRF 防护：未解析到地址 {host}");
             }
 
+            // 在连接瞬间逐一校验解析出的实际 IP（防 DNS 重绑定：预解析结果与此处可能不同）。
             foreach (var address in addresses)
             {
                 if (IsInternalAddress(address))
@@ -101,11 +104,17 @@ public static class SsrfGuard
                 }
             }
 
-            // pin 第一个非内部 IP 建立 TCP 连接
+            // pin 第一个非内部 IP 建立 TCP 连接；连接前再次校验该实际 IP，确保不被绕过。
+            var connectAddress = addresses[0];
+            if (IsInternalAddress(connectAddress))
+            {
+                throw new InvalidOperationException($"SSRF 防护：目标地址 {connectAddress} 为内部/保留地址，已被拦截");
+            }
+
             var socket = new Socket(SocketType.Stream, ProtocolType.Tcp) { NoDelay = true };
             try
             {
-                await socket.ConnectAsync(new IPEndPoint(addresses[0], port), cancellationToken).ConfigureAwait(false);
+                await socket.ConnectAsync(new IPEndPoint(connectAddress, port), cancellationToken).ConfigureAwait(false);
                 return new NetworkStream(socket, ownsSocket: true);
             }
             catch
