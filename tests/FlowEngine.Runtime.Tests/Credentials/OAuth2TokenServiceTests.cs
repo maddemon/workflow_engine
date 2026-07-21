@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
+using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Exceptions;
 using FlowEngine.Runtime.Credentials;
 
@@ -12,8 +13,8 @@ public sealed class OAuth2TokenServiceTests
     public async Task GetOrRefreshTokenAsync_FirstCall_FetchesToken_And_SecondCall_UsesCache()
     {
         var handler = new FakeTokenHandler();
-        var factory = new StubHttpClientFactory(handler);
-        var service = new OAuth2TokenService(factory);
+        var pool = new StubHttpClientPool(handler);
+        var service = new OAuth2TokenService(pool);
 
         var request = CreateRequest();
         var cacheKey = OAuth2TokenService.ComputeCacheKey("cred", request.TokenUrl, request.ClientId, request.Scope, request.GrantType);
@@ -30,8 +31,8 @@ public sealed class OAuth2TokenServiceTests
     public async Task GetOrRefreshTokenAsync_DifferentClientIds_DoNotShareCache()
     {
         var handler = new FakeTokenHandler();
-        var factory = new StubHttpClientFactory(handler);
-        var service = new OAuth2TokenService(factory);
+        var pool = new StubHttpClientPool(handler);
+        var service = new OAuth2TokenService(pool);
 
         var requestA = CreateRequest();
         var requestB = new OAuth2TokenRequest
@@ -57,8 +58,8 @@ public sealed class OAuth2TokenServiceTests
     public async Task GetOrRefreshTokenAsync_NearExpiry_TriggersRefresh()
     {
         var handler = new FakeTokenHandler();
-        var factory = new StubHttpClientFactory(handler);
-        var service = new OAuth2TokenService(factory)
+        var pool = new StubHttpClientPool(handler);
+        var service = new OAuth2TokenService(pool)
         {
             RefreshBufferSeconds = 5
         };
@@ -83,8 +84,8 @@ public sealed class OAuth2TokenServiceTests
     {
         var handler = new FakeTokenHandler();
         handler.FailuresBeforeSuccess = 3;
-        var factory = new StubHttpClientFactory(handler);
-        var service = new OAuth2TokenService(factory)
+        var pool = new StubHttpClientPool(handler);
+        var service = new OAuth2TokenService(pool)
         {
             MaxRetries = 3,
             RetryBaseDelayMs = 1 // 测试用极短延迟，避免墙钟时间 flaky
@@ -109,8 +110,8 @@ public sealed class OAuth2TokenServiceTests
         {
             ResponseShape = ResponseShape.Nested
         };
-        var factory = new StubHttpClientFactory(handler);
-        var service = new OAuth2TokenService(factory);
+        var pool = new StubHttpClientPool(handler);
+        var service = new OAuth2TokenService(pool);
 
         var request = CreateRequest();
         request.TokenPath = "result.access_token";
@@ -127,8 +128,8 @@ public sealed class OAuth2TokenServiceTests
         {
             ResponseShape = ResponseShape.Unauthorized
         };
-        var factory = new StubHttpClientFactory(handler);
-        var service = new OAuth2TokenService(factory);
+        var pool = new StubHttpClientPool(handler);
+        var service = new OAuth2TokenService(pool);
 
         var request = CreateRequest();
 
@@ -142,8 +143,8 @@ public sealed class OAuth2TokenServiceTests
     {
         // 阶段零 0.1：钉钉 provider 内置策略 —— GET + query appkey/appsecret + errcode==0 判定
         var handler = new DingtalkTokenHandler();
-        var factory = new StubHttpClientFactory(handler);
-        var service = new OAuth2TokenService(factory);
+        var pool = new StubHttpClientPool(handler);
+        var service = new OAuth2TokenService(pool);
 
         var request = new OAuth2TokenRequest
         {
@@ -166,8 +167,8 @@ public sealed class OAuth2TokenServiceTests
     {
         // 钉钉 errcode != 0 但 HTTP 200 时，应判定为业务失败
         var handler = new DingtalkTokenHandler(errcode: 88);
-        var factory = new StubHttpClientFactory(handler);
-        var service = new OAuth2TokenService(factory);
+        var pool = new StubHttpClientPool(handler);
+        var service = new OAuth2TokenService(pool);
 
         var request = new OAuth2TokenRequest
         {
@@ -186,8 +187,8 @@ public sealed class OAuth2TokenServiceTests
     {
         // 标准 client_credentials 行为不受影响（POST + form client_id/client_secret）
         var handler = new FakeTokenHandler();
-        var factory = new StubHttpClientFactory(handler);
-        var service = new OAuth2TokenService(factory);
+        var pool = new StubHttpClientPool(handler);
+        var service = new OAuth2TokenService(pool);
 
         var request = CreateRequest();
         OAuth2ProviderTemplates.Apply(request, "standard");
@@ -196,6 +197,27 @@ public sealed class OAuth2TokenServiceTests
 
         Assert.Equal("tok-1", response.AccessToken);
         Assert.Equal("POST", handler.LastMethod);
+    }
+
+    [Fact]
+    public async Task GetTokenAsync_UsesSsrfSafeHttpClientPool()
+    {
+        // 令牌获取必须经由 IHttpClientPool.GetClient() 取得客户端，而非裸 IHttpClientFactory，
+        // 否则将绕过 SsrfGuard.CreateConnectCallback() 的连接时 DNS 重绑定防护。
+        // 连接时拦截的有效性在 tests/FlowEngine.Core.Tests/SsrfGuardConnectCallbackTests.cs
+        // 的 CreateConnectCallback_HostnameResolvingToLoopback_BlockedAtConnectTime 中已证明。
+        var handler = new FakeTokenHandler();
+        var pool = new StubHttpClientPool(handler);
+        var service = new OAuth2TokenService(pool);
+
+        var request = CreateRequest();
+
+        var response = await service.GetTokenAsync(request);
+
+        Assert.Equal("tok-1", response.AccessToken);
+        // 请求确实通过注入的 pool 取得客户端（GetClient 被调用且请求抵达 fake handler）。
+        Assert.Equal(1, pool.GetClientCallCount);
+        Assert.Equal(1, handler.CallCount);
     }
 
     private static OAuth2TokenRequest CreateRequest()
@@ -296,17 +318,19 @@ public sealed class OAuth2TokenServiceTests
         }
     }
 
-    private sealed class StubHttpClientFactory : IHttpClientFactory
+    private sealed class StubHttpClientPool : IHttpClientPool
     {
         private readonly HttpMessageHandler _handler;
+        public int GetClientCallCount { get; private set; }
 
-        public StubHttpClientFactory(HttpMessageHandler handler)
+        public StubHttpClientPool(HttpMessageHandler handler)
         {
             _handler = handler;
         }
 
-        public HttpClient CreateClient(string name)
+        public HttpClient GetClient(string? name = null)
         {
+            GetClientCallCount++;
             return new HttpClient(_handler, disposeHandler: false);
         }
     }
