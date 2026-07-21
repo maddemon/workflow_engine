@@ -57,7 +57,7 @@ public class CredentialsController(
     /// <summary>
     /// 幂等创建或更新凭据。
     /// </summary>
-    [HttpPost("ensure")]
+    [HttpPut("ensure")]
     [AuthorizePermission(Scope.Credential, Operation.Write)]
     public async Task<ActionResult<CredentialDto>> Ensure(
         [FromBody] CreateCredentialDto dto,

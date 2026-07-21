@@ -39,10 +39,11 @@ public class AuthController(
     [ApiExplorerSettings(IgnoreApi = true)]
     public ActionResult Register([FromBody] RegisterRequest request)
     {
-        return StatusCode(StatusCodes.Status403Forbidden, new
+        // 自助注册已永久关闭（内部私有化部署），用 410 Gone 表达资源不复存在，比 403 更准确。
+        return StatusCode(StatusCodes.Status410Gone, new
         {
             success = false,
-            errorCode = "Forbidden",
+            errorCode = "RegistrationDisabled",
             message = localizer["RegistrationDisabled"],
         });
     }

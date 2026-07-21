@@ -105,7 +105,7 @@ public class CredentialsControllerTests : HostIntegrationTestBase
             Fields = new Dictionary<string, string> { ["apiKey"] = "secret-key" },
         };
 
-        var response = await client.PostAsJsonAsync("/api/v1/credentials/ensure", dto, ct);
+        var response = await client.PutAsJsonAsync("/api/v1/credentials/ensure", dto, ct);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var result = await response.Content.ReadFromJsonAsync<CredentialDto>(TestJsonOptions, ct);
@@ -128,7 +128,7 @@ public class CredentialsControllerTests : HostIntegrationTestBase
             Fields = new Dictionary<string, string> { ["apiKey"] = "updated-key" },
         };
 
-        var response = await client.PostAsJsonAsync("/api/v1/credentials/ensure", dto, ct);
+        var response = await client.PutAsJsonAsync("/api/v1/credentials/ensure", dto, ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var result = await response.Content.ReadFromJsonAsync<CredentialDto>(TestJsonOptions, ct);
