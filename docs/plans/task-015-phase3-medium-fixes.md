@@ -37,12 +37,12 @@
 
 ### 批次 C（高风险、需迁移/大改）—— 已确认方案，开始实施
 - [x] #27 `WorkflowExecutionWorker` scope（与 #20 合并，已在 B2 第一部分完成）
-- [ ] #1 执行器每节点 JSON 写放大 —— **已确认：批量化（不迁表）**。节点记录仍存 `NodeRecords` JSON 列，仅在终态或每约 25 个节点 flush 一次 `SaveChangesAsync`，写库由 O(N²) 降到约 O(N)；`PersistFailedStateAsync` 与内核调用传播真实 `CancellationToken`（修正 `CancellationToken.None`）。无 EF 迁移、低风险。
-- [ ] #3 `FindReferencingCredentialAsync` 全表加载 —— **已确认：归一化关联表**。新建 `workflow_credential_usages` 表 + `credential_id` 索引，在 `DbContext.SaveChangesAsync` 中集中维护（覆盖创建/更新/导入/删除），按 `credential_id` 在 SQL 内查询；需一次迁移回填。可移植、符合规则。
-- [ ] #8 `SubWorkflowExecutor` 多输入丢数据 —— **已确认：进程内合并 + Core 预求值**。抽 Core 级 `Merge`/`ScriptParameterPreEvaluator` 助手，子流程执行器合并多入边输入（所有必需输入就绪才执行）、执行前预求值 `Script` 参数，保持进程内执行（轻量）。不引用 Runtime。
-- [ ] #9 凭据解密忽略 `KeyVersion` —— **低风险**：扩展 `ICryptoKeyProvider` 增加按版本取密钥 `GetKey(string keyVersion)` 与 `CurrentVersion`，两处解密（`CredentialService.DecryptFields`、`CredentialAccessor.DecryptCredential`）改用 `GetKey(credential.KeyVersion)`；空/`v1` 回退当前密钥（向后兼容）。无需完整密钥轮转。
-- [ ] #11 前端重渲染与状态管理 —— **已确认：抽 `canvasStore`（治本）**。新建 Canvas 模块 store 承载 nodes/edges/positions/选中/执行覆盖层等高频状态，全局 `workflowStore` 仅留元数据（符合 frontend-code-rules §5.1）。改动较大但有测试保障。
-- [ ] #12 前后端契约补充 —— **低风险类型对齐**：`ExecutionStatus` 前端联合类型补齐 9 个枚举值；`executeWorkflow` 支持传入 `inputs` 与 `idempotencyKey`（POST body）；前端 `ExecutionDto.error` 为死字段（后端无此字段、错误经 WS 下发），删除之；`PortInstance` 保持前端权威（后端仅 Name/Direction/Type）。
+- [x] #1 执行器每节点 JSON 写放大 —— **已确认：批量化（不迁表）**。commit `80f105c`。节点记录仍存 `NodeRecords` JSON 列，仅在终态或每约 25 个节点 flush 一次 `SaveChangesAsync`，写库由 O(N²) 降到约 O(N)；`PersistFailedStateAsync` 与内核调用传播真实 `CancellationToken`（修正 `CancellationToken.None`）。无 EF 迁移、低风险。
+- [x] #3 `FindReferencingCredentialAsync` 全表加载 —— **已确认：归一化关联表**。commit `147035f`。新建 `workflow_credential_usages` 表 + `credential_id` 索引，在 `DbContext.SaveChangesAsync` 中集中维护（覆盖创建/更新/导入/删除），按 `credential_id` 在 SQL 内查询；需一次迁移回填。可移植、符合规则。
+- [x] #8 `SubWorkflowExecutor` 多输入丢数据 —— **已确认：进程内合并 + Core 预求值**。commit `dab86a4`。抽 Core 级 `Merge`/`ScriptParameterPreEvaluator` 助手，子流程执行器合并多入边输入（所有必需输入就绪才执行）、执行前预求值 `Script` 参数，保持进程内执行（轻量）。不引用 Runtime。
+- [x] #9 凭据解密忽略 `KeyVersion` —— **低风险**。commit `eee81b4`。
+- [x] #11 前端重渲染与状态管理 —— **已确认：抽 `canvasStore`（治本）**。commit `ab96d7a`。新建 Canvas 模块 store 承载 nodes/edges/positions/选中/执行覆盖层等高频状态，全局 `workflowStore` 仅留元数据（符合 frontend-code-rules §5.1）；`CustomNode` 移除每节点 O(N×E) 的 `edges.filter`，改由 `WorkflowCanvas` 一次性 O(E) 计算 `nodeId→Set<handleId>` 经 `ConnectedHandlesContext` 下发；`ExecutionPanel` 用 `useShallow` 稳定派生 id→name 映射。改动较大但有新增单测保障。
+- [x] #12 前后端契约补充 —— **低风险类型对齐**。commit `64dfbe1`。`ExecutionStatus` 前端联合类型补齐 9 个枚举值；`executeWorkflow` 支持传入 `inputs` 与 `idempotencyKey`（POST body）；前端 `ExecutionDto.error` 为死字段（后端无此字段、错误经 WS 下发），删除之；`PortInstance` 保持前端权威（后端仅 Name/Direction/Type）。后端 `ExecutionsController.Execute` 已消费 `dto?.Inputs` 与 `dto?.IdempotencyKey`，端到端契约对齐。
 
 ## 完成标准
 - 每批次 items 修复，先写失败测试（TDD）再实现
@@ -55,7 +55,7 @@
 - [x] 批次 A（8/8）
 - [x] 批次 B（6/11，剩余 5 项归入批次 B2）
 - [x] 批次 B2（第一部分 4/4 完成，第二部分 #4/#6 完成）
-- [ ] 批次 C（实施中：#1/#8 → #3/#9 → #11/#12）
+- [x] 批次 C（12/12：#27/#1/#8/#3/#9/#11/#12 全部完成）
 
 ## 主要修改记录
 - 批次 A（8 项）全部完成，遵循 TDD：先写/调整失败测试再实现。commit `9d72754`。
@@ -72,3 +72,11 @@
 - 批次 B2 第二部分（#6 重复加载透传、#4 执行列表分页）完成，遵循 TDD：
   - **#6 单次执行重复加载同一工作流**：单次执行请求此前对 `Workflow` 实体读取 3 次（`ExecutionService` 鉴权读、`WorkflowExecutor.StartAsync` 重载读、`WorkflowExecutionWorker` 后台读）。新增 `IEngine.StartAsync(Guid, Workflow, object?, CancellationToken)` 重载与 `WorkflowExecutionWorkItem.PreloadedWorkflow` 字段（4 参带默认值，旧 3 参调用与 Moq 测试均不受影响），将 `ExecutionService` 已加载的 `Workflow` 透传至 `StartAsync`→队列→`Worker`，消除后两次 DB 往返；两者在 `Id` 不匹配时回退内部加载。队列为内存 `System.Threading.Channels`，按引用持有工作项，携带实体引用安全。新增测试 `WorkflowExecutorTests.StartAsync_WithPreloadedWorkflow_EnqueuesItemCarryingWorkflow`（含 `Id` 不匹配回退用例）、`WorkflowExecutionWorkerScopeTests.Execute_WithPreloadedWorkflow_ReusesInstanceWithoutRequery`。
   - **#4 执行列表分页 + 独立运行中端点**：`ExecutionService.GetByWorkflowAsync` 改为服务端分页，返回 `PagedResult<ExecutionSummaryDto>`，支持 `status`/`page`/`pageSize`（`page≥1`、`pageSize` 收敛 1–200，`AsNoTracking`）；新增 `GetActiveAsync` 仅返回 `Pending`/`Running` 活跃执行。`ExecutionsController` 对应更新 `GetByWorkflow` 查询参数并新增 `GetActive` 端点（`workflows/{id}/executions/active`，无路由冲突）。前端 `getWorkflowExecutions` 改为接受 `ExecutionQuery` 并返回 `PagedResult`，新增 `getActiveExecutions`；`ExecutionHistoryPage` 由客户端分页切换为服务端分页（`useRequest` + `refreshDeps:[id,page,statusFilter]`，移除客户端过滤/`slice` memo）；`useExecution` 实时跟踪改用 `getActiveExecutions`。补充 `ExecutionServicePagingTests`（分页数、TotalPages、次页、状态过滤、GetActiveAsync）。验证：`dotnet build FlowEngine.sln` 0 警告 0 错误；`FlowEngine.Application.Tests` 465、`FlowEngine.Host.Tests` 322 全绿；前端 `typecheck`/`build` 成功、`vitest run` 440 全绿。偏差：用户经 AskUserQuestion 选择「全分页+独立运行中端点」方案，故未采用「后端封顶不改契约」的简化方案。
+- 批次 C（#27/#1/#8/#3/#9/#11/#12）完成，遵循 TDD（先写失败测试再实现），方案经 AskUserQuestion 全部确认采用推荐低风险的治本路线：
+  - **#1 执行器每节点 JSON 写放大**：commit `80f105c`。节点记录仍存 `NodeRecords` JSON 列（不迁表），引入 `ExecutorSideEffects._pendingNodeWrites` 计数器与 `NodeFlushThreshold=25`；`PersistNodeRecordAsync` 仅当计数每约 25 个或终态才真正 `SaveChangesAsync`，写库由 O(N²) 降到约 O(N)；终态 flush 保证不丢数据。`PersistFailedStateAsync` 与内核调用传播真实 `CancellationToken`。重要修正：终态 113/115 处的 `SaveChangesAsync` 必须保持 `CancellationToken.None`——到彼时执行令牌已被取消，若传真实令牌会抛异常导致 `Cancelled` 终态丢失（实现者发现并修正了原 spec 的 `CancellationToken.None`→真实令牌的错误建议，避免回归两例取消测试）。`FlowEngineDbContext` 改为可继承以便 Spy 测试。
+  - **#8 `SubWorkflowExecutor` 多输入丢数据**：commit `dab86a4`。抽 Core 级 `DataBatch.Merge`（重索引 `SourceIndex`）+ `ScriptParameterPreEvaluatorCore.PreEvaluateAsync`（仅 Core 引用，供 Plugin 安全调用），`WaitingArea.PortState.Merge` 改为复用 `DataBatch.Merge`（去重约 33 行）。子流程执行器为入边建 `pendingInputs` 字典、按端口 `Merge` 多入边批次，所有必需输入就绪才执行（`continue` 而非加入 `executed`，确保第二父节点可再次合并而非被跳过）；执行前经 `ScriptParameterPreEvaluatorCore` 预求值 `Script` 参数。保持进程内执行（轻量）。新增 `SubWorkflowExecutorTests`（多入边合并、缺参挂起、预求值）。
+  - **#3 `FindReferencingCredentialAsync` 全表加载**：commit `147035f`。新建 `workflow_credential_usages` 表（`[Table("flow.workflow_credential_usages")]`、复合主键 `(WorkflowId,CredentialId,NodeId)`、`CredentialId` 索引），在 `FlowEngineDbContext.SaveChangesAsync` 中集中维护——变更 `Workflow`（增/改/删）前收集 ID，删除旧行并依 `CredentialReferenceScanner.Scan` 重插，单事务原子。`WorkflowRepository.FindReferencingCredentialAsync` 改为 `WorkflowCredentialUsages.AsNoTracking().Where(u=>u.CredentialId==id).Select(WorkflowName).Distinct()`（SQL `WHERE`，不再物化 `Workflows`）。新增启动 `WorkflowCredentialUsageBackfillHostedService` 幂等回填存量。已通过 `dotnet ef migrations add AddWorkflowCredentialUsage` 生成迁移。偏差：`NodeId` 用非可空 `string`（默认 `""`）而非 `string?`——可空列参与复合主键会触发模型校验告警、破坏 0 警告构建规则（实现者修正）。
+  - **#9 凭据解密忽略 `KeyVersion`**：commit `eee81b4`。`ICryptoKeyProvider` 增 `CurrentVersion` 与 `GetKey(string keyVersion)`（空/当前→当前密钥；未知版本→`CryptographicException`），`CryptoKeyProvider` 以 `v1` 为当前版、保留旧版回退；`CredentialService` 与 `CredentialAccessor` 解密均改传 `credential.KeyVersion`。`GetKey()` 旧签名保留兼容。新增 `CryptoKeyProviderTests`（版本解析、未知版本抛异常、旧版回退）。
+  - **#11 前端重渲染与状态管理**：commit `ab96d7a`。见批次 C 列表 #11 条目。新增 `canvasStore.test.ts`（322 行）覆盖节点/连线/选区/撤销重做/自动布局动作。验证：`npm run typecheck` 0 错误、`npm run build` 成功、`npx vitest run` 443 全绿。偏差：经核实 `workflowStore` 由全局收为纯元数据，load/save/new 经 canvasStore 编排；为避免循环导入在模块求值期绑定，`useWorkflowStore.setState` 经闭包运行时访问标记脏。
+  - **#12 前后端契约补充**：commit `64dfbe1`。见批次 C 列表 #12 条目。前端 `ExecutionStatus` 联合类型补 9 枚举值、`ExecutionDto.error` 死字段删除、`executeWorkflow` POST `{inputs,idempotencyKey}`；后端 `ExecutionsController.Execute` 已消费 `dto?.Inputs` 与 `dto?.IdempotencyKey`，端到端对齐。新增 `executionStatus.contract.test.ts` 锁定前后端值一致。
+  - **合并态验证（全部 C 提交合入后）**：`dotnet build FlowEngine.sln -c Debug` 0 警告 0 错误；前端 `npm run typecheck` 0 错误、`npm run build` 成功（仅既有 chunk 体积提示）、`npx vitest run` 443 全绿。后端各套件此前各自全绿（Core 651 / Runtime 632 / Application 471 / Infrastructure 98 / Host 322 ≈ 2174）。
