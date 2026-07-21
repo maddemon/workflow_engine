@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using FlowEngine.Core.Abstractions;
 
 namespace FlowEngine.Infrastructure.Security;
@@ -7,10 +8,18 @@ namespace FlowEngine.Infrastructure.Security;
 /// 优先从环境变量读取（生产环境），否则从本地文件读取或自动生成。
 /// 密钥首次调用 <see cref="GetKey"/> 时延迟加载/生成，构造函数无 I/O 副作用。
 /// </summary>
+/// <remarks>
+/// 支持按版本解析密钥：<see cref="GetKey(string)"/> 根据凭据存储的 <see cref="Credential.KeyVersion"/>
+/// 返回对应密钥；空/空串/当前版本回退到当前密钥（兼容未带版本的遗留数据）。
+/// 当前仅注册 v1 一把密钥，多版本密钥轮换时再向 <c>_versionedKeys</c> 登记。
+/// </remarks>
 public sealed class CryptoKeyProvider : ICryptoKeyProvider
 {
+    private const string CurrentKeyVersion = "v1";
+
     private readonly Lazy<byte[]> _key;
     private readonly string _keyFilePath;
+    private readonly Dictionary<string, byte[]> _versionedKeys = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// 初始化密钥提供者。不含 I/O 操作。
@@ -92,8 +101,44 @@ public sealed class CryptoKeyProvider : ICryptoKeyProvider
     }
 
     /// <summary>
+    /// 当前密钥版本号。
+    /// </summary>
+    public string CurrentVersion => CurrentKeyVersion;
+
+    /// <summary>
     /// 获取加密密钥。首次调用时延迟加载/生成密钥。
     /// </summary>
     /// <returns>32 字节密钥的防御性副本。</returns>
     public byte[] GetKey() => _key.Value.ToArray();
+
+    /// <summary>
+    /// 获取指定版本的密钥。空/空串/当前版本回退到当前密钥（兼容遗留数据）；
+    /// 未知版本抛出 <see cref="CryptographicException"/>。
+    /// </summary>
+    /// <param name="keyVersion">密钥版本号。</param>
+    /// <returns>32 字节密钥的防御性副本。</returns>
+    /// <exception cref="CryptographicException">当指定版本不存在对应密钥时抛出。</exception>
+    public byte[] GetKey(string keyVersion)
+    {
+        if (string.IsNullOrEmpty(keyVersion)
+            || string.Equals(keyVersion, CurrentKeyVersion, StringComparison.OrdinalIgnoreCase))
+        {
+            return _key.Value.ToArray();
+        }
+
+        // 延迟将当前密钥登记到版本字典，确保 v1 始终可解析且密钥来源唯一。
+        if (!_versionedKeys.ContainsKey(CurrentKeyVersion))
+        {
+            _versionedKeys[CurrentKeyVersion] = _key.Value;
+        }
+
+        if (_versionedKeys.TryGetValue(keyVersion, out var key))
+        {
+            return key.ToArray();
+        }
+
+        throw new CryptographicException(
+            $"未找到密钥版本 '{keyVersion}' 对应的密钥。当前版本为 {CurrentKeyVersion}，" +
+            "仅支持已注册的密钥版本。");
+    }
 }

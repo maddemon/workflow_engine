@@ -285,7 +285,7 @@ public sealed class CredentialService(
             return [];
         }
 
-        var key = keyProvider.GetKey();
+        var key = keyProvider.GetKey(credential.KeyVersion);
         var fields = new Dictionary<string, string>();
         foreach (var (fieldName, encryptedField) in credential.Data)
         {

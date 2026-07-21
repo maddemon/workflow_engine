@@ -325,7 +325,14 @@ public sealed class ProjectFilterTests : IDisposable
 
     private sealed class StubKeyProvider : ICryptoKeyProvider
     {
+        public string CurrentVersion => "v1";
+
         public byte[] GetKey() => new byte[32];
+
+        public byte[] GetKey(string keyVersion) =>
+            string.IsNullOrEmpty(keyVersion) || string.Equals(keyVersion, "v1", StringComparison.OrdinalIgnoreCase)
+                ? new byte[32]
+                : throw new System.Security.Cryptography.CryptographicException($"未知密钥版本 {keyVersion}");
     }
 
     private sealed class StubResourceAuthorizationService : IResourceAuthorizationService
