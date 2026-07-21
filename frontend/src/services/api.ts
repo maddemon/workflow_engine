@@ -133,8 +133,12 @@ export async function rejectDraft(id: string, reason: string): Promise<Workflow>
   return response.data;
 }
 
-export async function executeWorkflow(workflowId: string): Promise<ExecutionDto> {
-  const res = await api.post<ExecutionDto>(`/workflows/${workflowId}/execute`);
+export async function executeWorkflow(
+  workflowId: string,
+  inputs?: Record<string, unknown>,
+  idempotencyKey?: string,
+): Promise<ExecutionDto> {
+  const res = await api.post<ExecutionDto>(`/workflows/${workflowId}/execute`, { inputs, idempotencyKey });
   return res.data;
 }
 

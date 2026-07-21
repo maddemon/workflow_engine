@@ -209,7 +209,7 @@ describe('messageHandlers', () => {
     updateExecutionMeta.mockImplementation((updater) => {
       const updated = updater(execution);
       expect(updated?.status).toBe('Failed');
-      expect(updated?.error).toEqual({ code: 'ERR', message: 'workflow failed' });
+      expect(updated?.completedAt).toBe('2024-01-01T00:00:10Z');
     });
 
     messageHandlers.execution_failed(msg, ctx);

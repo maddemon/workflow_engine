@@ -144,7 +144,7 @@ export const messageHandlers: Record<string, (msg: WebSocketPushMessage, ctx: Me
     store.setIsExecuting(false);
     updateExecutionMeta((prev) =>
       prev
-        ? { ...prev, status: 'Failed', completedAt: msg.timestamp, error: msg.payload?.error ?? null }
+        ? { ...prev, status: 'Failed', completedAt: msg.timestamp }
         : prev,
     );
     notif.show({

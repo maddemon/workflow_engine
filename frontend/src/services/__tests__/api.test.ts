@@ -281,12 +281,20 @@ describe('api service', () => {
       expect(mockedCreate.post).toHaveBeenCalledWith('/workflows/1/reject', { reason: 'bad' });
     });
 
-    it('executeWorkflow posts execute endpoint', async () => {
+    it('executeWorkflow posts execute endpoint without body by default', async () => {
       const execution = { id: 'e1' } as unknown as ExecutionDto;
       mockedCreate.post.mockResolvedValue({ data: execution });
       const result = await api.executeWorkflow('1');
       expect(result).toBe(execution);
-      expect(mockedCreate.post).toHaveBeenCalledWith('/workflows/1/execute');
+      expect(mockedCreate.post).toHaveBeenCalledWith('/workflows/1/execute', { inputs: undefined, idempotencyKey: undefined });
+    });
+
+    it('executeWorkflow posts execute endpoint with inputs and idempotencyKey', async () => {
+      const execution = { id: 'e1' } as unknown as ExecutionDto;
+      mockedCreate.post.mockResolvedValue({ data: execution });
+      const result = await api.executeWorkflow('1', { foo: 'bar' }, 'key-1');
+      expect(result).toBe(execution);
+      expect(mockedCreate.post).toHaveBeenCalledWith('/workflows/1/execute', { inputs: { foo: 'bar' }, idempotencyKey: 'key-1' });
     });
 
     it('getExecution returns execution', async () => {
