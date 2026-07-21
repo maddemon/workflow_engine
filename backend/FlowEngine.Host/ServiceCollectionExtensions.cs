@@ -16,6 +16,7 @@ using FlowEngine.Core.Events;
 using FlowEngine.Host.Executor;
 using FlowEngine.Host.Authentication;
 using FlowEngine.Host.Middlewares;
+using FlowEngine.Host.Options;
 using FlowEngine.Host.Scheduling;
 using FlowEngine.Host.Services;
 using FlowEngine.Host.Webhooks;
@@ -145,6 +146,9 @@ public static class ServiceCollectionExtensions
         // ── Engine Defaults ────────────────────────────────────────
         services.Configure<EngineDefaultsOptions>(configuration.GetSection(EngineDefaultsOptions.SectionName));
         services.AddFlowEngineCoreScripting();
+
+        // ── Webhook ─────────────────────────────────────────────────
+        services.Configure<WebhookOptions>(configuration.GetSection(WebhookOptions.SectionName));
 
         // ── Database ────────────────────────────────────────────────
         AddDbContext(services, configuration);

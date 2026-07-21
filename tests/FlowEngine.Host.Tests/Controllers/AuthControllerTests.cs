@@ -22,7 +22,7 @@ public class AuthControllerTests : HostIntegrationTestBase
     }
 
     [Fact]
-    public async Task Register_ReturnsForbidden()
+    public async Task Register_ReturnsGone()
     {
         var ct = TestContext.Current.CancellationToken;
         var client = _factory.CreateClient();
@@ -32,7 +32,8 @@ public class AuthControllerTests : HostIntegrationTestBase
             new RegisterRequest { Email = "register@example.com", Password = "P@ssw0rd" },
             ct);
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        // 自助注册永久关闭，返回 410 Gone 而非 403 Forbidden。
+        Assert.Equal(HttpStatusCode.Gone, response.StatusCode);
     }
 
     [Fact]
@@ -172,7 +173,7 @@ public class AuthControllerTests : HostIntegrationTestBase
     }
 
     [Fact]
-    public async Task Register_DuplicateEmail_ReturnsForbidden()
+    public async Task Register_DuplicateEmail_ReturnsGone()
     {
         var ct = TestContext.Current.CancellationToken;
         var email = "duplicate-register@example.com";
@@ -184,7 +185,8 @@ public class AuthControllerTests : HostIntegrationTestBase
             new RegisterRequest { Email = email, Password = "AnotherP@ss1" },
             ct);
 
-        Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
+        // 自助注册永久关闭，返回 410 Gone 而非 403 Forbidden。
+        Assert.Equal(HttpStatusCode.Gone, response.StatusCode);
     }
 
 }

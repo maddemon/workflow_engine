@@ -41,7 +41,7 @@ public class CredentialEnsureTests : HostIntegrationTestBase
             Fields = new Dictionary<string, string> { ["apiKey"] = "sk-create" },
         };
 
-        var response = await client.PostAsJsonAsync("/api/v1/credentials/ensure", dto, ct);
+        var response = await client.PutAsJsonAsync("/api/v1/credentials/ensure", dto, ct);
 
         Assert.Equal(HttpStatusCode.Created, response.StatusCode);
         var result = await response.Content.ReadFromJsonAsync<CredentialDto>(TestJsonOptions, ct);
@@ -81,7 +81,7 @@ public class CredentialEnsureTests : HostIntegrationTestBase
             Fields = new Dictionary<string, string> { ["apiKey"] = "sk-new" },
         };
 
-        var response = await client.PostAsJsonAsync("/api/v1/credentials/ensure", dto, ct);
+        var response = await client.PutAsJsonAsync("/api/v1/credentials/ensure", dto, ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var result = await response.Content.ReadFromJsonAsync<CredentialDto>(TestJsonOptions, ct);
@@ -103,7 +103,7 @@ public class CredentialEnsureTests : HostIntegrationTestBase
             Fields = [],
         };
 
-        var response = await client.PostAsJsonAsync("/api/v1/credentials/ensure", dto, ct);
+        var response = await client.PutAsJsonAsync("/api/v1/credentials/ensure", dto, ct);
 
         Assert.Equal(HttpStatusCode.Forbidden, response.StatusCode);
     }
@@ -121,7 +121,7 @@ public class CredentialEnsureTests : HostIntegrationTestBase
             Fields = [],
         };
 
-        var response = await client.PostAsJsonAsync("/api/v1/credentials/ensure", dto, ct);
+        var response = await client.PutAsJsonAsync("/api/v1/credentials/ensure", dto, ct);
 
         Assert.Equal(HttpStatusCode.Unauthorized, response.StatusCode);
     }

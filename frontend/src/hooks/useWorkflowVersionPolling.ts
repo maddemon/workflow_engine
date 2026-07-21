@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { getWorkflow } from '../services/api.ts';
 import { useWorkflowStore } from '../stores/workflowStore.ts';
 import { useCanvasStore } from '../components/Canvas/stores/canvasStore.ts';
@@ -54,10 +54,10 @@ export function useWorkflowVersionPolling(workflowId: string | null): UseWorkflo
     };
   }, [workflowId, reviewMode, isExecuting]);
 
-  const dismiss = () => {
+  const dismiss = useCallback(() => {
     setChanged(false);
     setNewVersion(null);
-  };
+  }, []);
 
   return { changed, newVersion, dismiss };
 }

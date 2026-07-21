@@ -15,7 +15,6 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using Moq;
 using Quartz;
 
@@ -58,7 +57,7 @@ public sealed class PollTriggerJobExecutionTests : IDisposable
                 Ports = [],
             });
 
-        var jsOptions = Options.Create(new JsEngineOptions());
+        var jsOptions = Microsoft.Extensions.Options.Options.Create(new JsEngineOptions());
         var contextFactory = new NodeExecutionContextFactory(
             _nodeRegistryMock.Object,
             new ScriptCache(jsOptions),
