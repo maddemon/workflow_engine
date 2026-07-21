@@ -35,14 +35,14 @@
 - [x] #23 统计/授权批量查询优化（防 N+1）
 - [x] #26 前端其他类型/选择器优化（与 C #11/#12 前端部分合并）
 
-### 批次 C（高风险、需迁移/大改）
-- [ ] #1 执行器每节点 JSON 写放大（子表/批量持久化）
-- [ ] #3 `FindReferencingCredentialAsync` 全表加载（归一化关联表）
-- [ ] #8 `SubWorkflowExecutor` 多输入丢数据（复用 `WaitingArea`）
-- [ ] #9 凭据解密忽略 `KeyVersion`（密钥环）
-- [ ] #11 前端重渲染与状态管理（画布状态抽 `canvasStore` 等）
-- [ ] #12 前后端契约补充（`ExecutionStatus`/`PortInstance`/`error`/`inputs`/`幂等键`）
-- [ ] #27 `WorkflowExecutionWorker` scope（与 #20 合并）
+### 批次 C（高风险、需迁移/大改）—— 已确认方案，开始实施
+- [x] #27 `WorkflowExecutionWorker` scope（与 #20 合并，已在 B2 第一部分完成）
+- [ ] #1 执行器每节点 JSON 写放大 —— **已确认：批量化（不迁表）**。节点记录仍存 `NodeRecords` JSON 列，仅在终态或每约 25 个节点 flush 一次 `SaveChangesAsync`，写库由 O(N²) 降到约 O(N)；`PersistFailedStateAsync` 与内核调用传播真实 `CancellationToken`（修正 `CancellationToken.None`）。无 EF 迁移、低风险。
+- [ ] #3 `FindReferencingCredentialAsync` 全表加载 —— **已确认：归一化关联表**。新建 `workflow_credential_usages` 表 + `credential_id` 索引，在 `DbContext.SaveChangesAsync` 中集中维护（覆盖创建/更新/导入/删除），按 `credential_id` 在 SQL 内查询；需一次迁移回填。可移植、符合规则。
+- [ ] #8 `SubWorkflowExecutor` 多输入丢数据 —— **已确认：进程内合并 + Core 预求值**。抽 Core 级 `Merge`/`ScriptParameterPreEvaluator` 助手，子流程执行器合并多入边输入（所有必需输入就绪才执行）、执行前预求值 `Script` 参数，保持进程内执行（轻量）。不引用 Runtime。
+- [ ] #9 凭据解密忽略 `KeyVersion` —— **低风险**：扩展 `ICryptoKeyProvider` 增加按版本取密钥 `GetKey(string keyVersion)` 与 `CurrentVersion`，两处解密（`CredentialService.DecryptFields`、`CredentialAccessor.DecryptCredential`）改用 `GetKey(credential.KeyVersion)`；空/`v1` 回退当前密钥（向后兼容）。无需完整密钥轮转。
+- [ ] #11 前端重渲染与状态管理 —— **已确认：抽 `canvasStore`（治本）**。新建 Canvas 模块 store 承载 nodes/edges/positions/选中/执行覆盖层等高频状态，全局 `workflowStore` 仅留元数据（符合 frontend-code-rules §5.1）。改动较大但有测试保障。
+- [ ] #12 前后端契约补充 —— **低风险类型对齐**：`ExecutionStatus` 前端联合类型补齐 9 个枚举值；`executeWorkflow` 支持传入 `inputs` 与 `idempotencyKey`（POST body）；前端 `ExecutionDto.error` 为死字段（后端无此字段、错误经 WS 下发），删除之；`PortInstance` 保持前端权威（后端仅 Name/Direction/Type）。
 
 ## 完成标准
 - 每批次 items 修复，先写失败测试（TDD）再实现
@@ -55,7 +55,7 @@
 - [x] 批次 A（8/8）
 - [x] 批次 B（6/11，剩余 5 项归入批次 B2）
 - [x] 批次 B2（第一部分 4/4 完成，第二部分 #4/#6 完成）
-- [ ] 批次 C
+- [ ] 批次 C（实施中：#1/#8 → #3/#9 → #11/#12）
 
 ## 主要修改记录
 - 批次 A（8 项）全部完成，遵循 TDD：先写/调整失败测试再实现。commit `9d72754`。
