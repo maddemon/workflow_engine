@@ -22,18 +22,18 @@
 - [x] #21 SSRF 防护增强：`SsrfGuard.CreateConnectCallback` 在连接瞬间再次校验实际 IP（防 DNS 重绑定），`IsInternalTarget` 降为尽力预检
 - [x] #24 `TriggerService` 事务补充：关系型路径下 `CreateAsync` 显式事务；`RemoveTriggersByWorkflowIdAsync` 改 `ExecuteDeleteAsync` 且不开启嵌套事务
 - [x] #25 `WaitingArea` 锁粒度：`PortState` 改 `ConcurrentDictionary` + `AddOrUpdate` 纯函数 `Merge`，移除手动 `lock`
-- [ ] #2 热查询列补索引（`FlowEngineDbContext`）—— 待批次 B2（需迁移）
-- [ ] #4 / #6 单次执行重复加载同一工作流（透传 Workflow/编译定义）—— 待批次 B2
-- [ ] #20 `WorkflowExecutionWorker` scope 优化（per-item scope 解析 `WorkflowExecutor`）—— 待批次 B2（与 #27 合并）
-- [ ] #23 统计/授权批量查询优化（防 N+1）—— 待批次 B2
-- [ ] #26 前端其他类型/选择器优化 —— 待批次 B2（与批次 C #11/#12 前端部分合并）
+- [x] #2 热查询列补索引（`FlowEngineDbContext`），已生成 EF 迁移 `AddHotQueryIndexes` —— 批次 B2 第一部分完成
+- [ ] #4 / #6 单次执行重复加载同一工作流（透传 Workflow/编译定义）—— 待批次 B2 第二部分
+- [x] #20 `WorkflowExecutionWorker` scope 优化（per-item scope 解析 `WorkflowExecutor`）—— 批次 B2 第一部分完成
+- [x] #23 统计/授权批量查询优化（防 N+1）—— 批次 B2 第一部分完成（经核实已批量，仅补锁定测试）
+- [x] #26 前端其他类型/选择器优化 —— 批次 B2 第一部分完成（经核实类型已对齐，仅 `ParameterPanel` 选择器/回调稳定性优化）
 
-### 批次 B2（剩余中等项，待派发）
-- [ ] #2 热查询列补索引（EF 迁移）
+### 批次 B2（剩余中等项，已派发第一部分）
+- [x] #2 热查询列补索引（EF 迁移 `AddHotQueryIndexes`）
 - [ ] #4 / #6 单次执行重复加载同一工作流（透传）
-- [ ] #20 `WorkflowExecutionWorker` scope 优化（与 #27 合并）
-- [ ] #23 统计/授权批量查询优化（防 N+1）
-- [ ] #26 前端其他类型/选择器优化（与 C #11/#12 合并）
+- [x] #20 `WorkflowExecutionWorker` scope 优化（与 #27 合并）
+- [x] #23 统计/授权批量查询优化（防 N+1）
+- [x] #26 前端其他类型/选择器优化（与 C #11/#12 前端部分合并）
 
 ### 批次 C（高风险、需迁移/大改）
 - [ ] #1 执行器每节点 JSON 写放大（子表/批量持久化）
@@ -54,7 +54,7 @@
 ## 完成状态
 - [x] 批次 A（8/8）
 - [x] 批次 B（6/11，剩余 5 项归入批次 B2）
-- [ ] 批次 B2（待派发）
+- [ ] 批次 B2（第一部分 4/4 完成，第二部分 #4/#6 待派发）
 - [ ] 批次 C
 
 ## 主要修改记录
@@ -63,3 +63,9 @@
 - 实现差异说明：#13 包络 `details` 取 `null`（与计划一致，区别于全局异常的 `traceId` 对象）；#19 因 `JsonNode.FromElement` 非 STJ 公共 API，改用等价的 `JsonNode.Parse(GetRawText())`；#22 的 `s_guidRegex`/`s_functionCallRegex` 此前已是静态只读，本次将 `TryExtractMissingName` 内两处 `Regex.Match` 字面量也提取为静态字段。
 - 批次 B（6 项）全部完成，遵循 TDD：先写失败测试再实现。`ExecutionIdempotencyService` 已有 `TryGetExistingAsync`/`TryGetOrRegisterAsync` 可直接复用。验证：`dotnet build` 0 警告 0 错误；`FlowEngine.Core.Tests` 647、`FlowEngine.Runtime.Tests` 626、`FlowEngine.Application.Tests` 460，全部通过、0 失败。差异说明：#5/#24 的删除/清理在 InMemory 提供程序下退化为按 ID 加载后删除（仅测试路径），关系型下用 `ExecuteDeleteAsync`；#21 `IsInternalTarget` 保留为尽力预检，权威防护移至 `CreateConnectCallback` 连接瞬间校验。
 - B1（#10 幂等并发重复执行窗口）按评审修复：原 P3 为修「假成功」移除抢占，引入并发重复执行窗口。现于 `StartAsync` 前用 `TryGetOrRegisterAsync` 以唯一约束抢占幂等键（夺胜者启动并把键更新为真实执行 id；落败者不启动，经 `WaitForRealExecutionAsync` 轮询复用胜者真实结果，绝不返回合成对象）。并补关系型并发测试（`ExecutionServiceConcurrencyTests`：文件型 SQLite + 真实 `ExecutionIdempotencyService` + 引擎侧信号解耦抢占/启动两阶段，断言 `engine.StartAsync` 恰好 1 次且两请求返回同一真实结果；另含 InMemory 控制流锁定测试）。修复中发现并修正 `ExecutionIdempotencyService.TryGetExistingAsync` 缺少 `AsNoTracking` 导致落败者上下文被旧 tracked 实体遮蔽、无法观察到胜者将键更新为真实执行 id 而误判超时重复启动，已加 `AsNoTracking`。验证：`dotnet build` 0 警告 0 错误；`FlowEngine.Application.Tests` 462 全绿（含新增 2 例）。
+- 批次 B2 第一部分（#23、#26、#2、#20）完成，遵循 TDD：先写/调整失败测试再实现。详情：
+  - **#23 统计/授权批量查询防 N+1**：经核实 `WorkflowService.GetAllAsync` 已通过 `WorkflowStatisticsLoader.LoadAsync(workflowIds)` 批量 `Where(e => workflowIds.Contains(e.WorkflowDefinitionId)).GroupBy(...)` 加载，`ResourceAuthorizationService` 仅 `ResolveProjectAsync`（单资源，无 N+1 批量入口），即原计划引用的 `ResolveProjectsAsync` 并不存在。结论：代码无需改动，仅补锁定测试 `WorkflowServiceCrudTests.GetAllAsync_BatchesStatistics_PopulatesPerWorkflowStats` 断言每工作流的触发数/末次执行时间/下次触发时间正确。
+  - **#26 前端类型/选择器优化**：经核实 `NodeDefinition.retryPolicy/timeout`、`ProjectDto.createdBy` 已与后端对齐（`Project.CreatedBy` 为 `string` 非 `Guid`），`LayoutContext` 仅 `{navbar, aside}` 无需改造。实际改动：移除 `ParameterPanel` 中对 `selectedNodeId` 的冗余订阅，将 `handleParameterChange` 改为从 `useWorkflowStore.getState()` 读取最新 `selectedNodeId/nodes/updateNodeParameters`，配 `useCallback([],)`，引用稳定，避免 `selectedNode` 每次渲染变化导致的非必要重渲染。验证：`npm run typecheck` 0 错误、`npm run build` 成功。
+  - **#2 热查询列补索引**：为 `ExecutionRecord` 增加 `[Index(nameof(WorkflowDefinitionId))]`、`[Index(nameof(ProjectId))]`、`[Index(nameof(Status), nameof(CompletedAt))]`（复合），为 `Workflow` 增加 `[Index(nameof(ProjectId))]`；均用 Data Annotations（符合规则）。已通过 `dotnet ef migrations add AddHotQueryIndexes` 生成迁移（命名空间 `FlowEngine.Migrations.Migrations.Sqlite`，与既有布局一致），无需 fallback 任务文档注记。
+  - **#20 `WorkflowExecutionWorker` scope 优化**：将 `WorkflowExecutor` 与 `FlowEngineDbContext` 的解析从外层长生命周期 scope 移入每个执行项内部的 `using var executionScope = _scopeFactory.CreateScope()`，使其 scoped `DbContext` 随 scope 释放，避免长生命周期 scope 捕获 `DbContext` 导致跨执行数据污染。新增回归测试 `WorkflowExecutionWorkerScopeTests.Execute_SequentialItems_ResolveIndependentScopedDbContexts`，断言两个连续执行项各自解析出独立 `DbContext` 实例（非同一引用）。运行路径行为不变。
+  - 验证：`dotnet build FlowEngine.Host` 0 警告 0 错误；`dotnet test FlowEngine.Application.Tests` 463 通过、`dotnet test FlowEngine.Host.Tests` 321 通过（均 0 失败）；前端 `typecheck`/`build` 通过。偏差：#23、#26 经核实无需按原计划改代码（已对齐/已批量），仅以测试锁定现状与做一处安全的渲染稳定性优化，未扩大范围。
