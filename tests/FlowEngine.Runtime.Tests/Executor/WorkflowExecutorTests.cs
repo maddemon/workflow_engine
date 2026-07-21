@@ -577,12 +577,134 @@ public class WorkflowExecutorTests
             => Task.FromResult(new CredentialValue());
     }
 
+    private SpyDbContext CreateSpyDbContext()
+    {
+        var options = new DbContextOptionsBuilder<FlowEngineDbContext>()
+            .UseInMemoryDatabase(databaseName: _dbName)
+            .Options;
+        return new SpyDbContext(options);
+    }
+
+    private sealed class SpyDbContext : FlowEngineDbContext
+    {
+        public int SaveChangesAsyncCount { get; private set; }
+
+        public SpyDbContext(DbContextOptions<FlowEngineDbContext> options) : base(options)
+        {
+        }
+
+        public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            SaveChangesAsyncCount++;
+            return base.SaveChangesAsync(cancellationToken);
+        }
+    }
+
     private FlowEngineDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<FlowEngineDbContext>()
             .UseInMemoryDatabase(databaseName: _dbName)
             .Options;
         return new FlowEngineDbContext(options);
+    }
+
+    /// <summary>
+    /// 验证节点记录持久化的写放大已修复：随着节点数 N 增长，SaveChangesAsync 调用次数应保持有界
+    /// （约 ceil(N/25)+1），而非常规的 O(N)。同时验证终态刷新保证了全部节点记录不丢。
+    /// </summary>
+    [Fact]
+    public async Task Linear_Chain_Of_ManyNodes_BatchesSaves_BoundedCount()
+    {
+        const int nodeCount = 100;
+        var nodes = new List<NodeDefinition>();
+        for (var i = 0; i < nodeCount; i++)
+        {
+            nodes.Add(CreateNode($"n{i}", "passThrough", isEntry: i == 0));
+        }
+
+        var connections = new List<Connection>();
+        for (var i = 1; i < nodeCount; i++)
+        {
+            connections.Add(new Connection
+            {
+                Id = Guid.NewGuid(),
+                SourceNodeId = $"n{i - 1}",
+                SourcePortName = FlowConstants.PortNames.Output,
+                TargetNodeId = $"n{i}",
+                TargetPortName = FlowConstants.PortNames.Input
+            });
+        }
+
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "longChain",
+            CreatedBy = "test",
+            Nodes = nodes,
+            Connections = connections
+        };
+
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var executionRecord = new ExecutionRecord
+        {
+            Id = Guid.NewGuid(),
+            WorkflowDefinitionId = workflow.Id,
+            StartedAt = DateTime.UtcNow,
+            Status = ExecutionStatus.Pending,
+            NodeRecords = []
+        };
+        _dbContext.ExecutionRecords.Add(executionRecord);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        using var spy = CreateSpyDbContext();
+        await _executor.ExecuteLoopAsync(workflow, executionRecord.Id, null, spy, CancellationToken.None);
+
+        using var readCtx = CreateDbContext();
+        var reloaded = await readCtx.ExecutionRecords
+            .AsNoTracking()
+            .FirstAsync(e => e.Id == executionRecord.Id, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExecutionStatus.Completed, reloaded.Status);
+        Assert.Equal(nodeCount, reloaded.NodeRecords.Count);
+
+        // Pending→Running(1) + 周期性刷新(floor(N/25)) + 终态(1) ≈ N/25 + 2，留足余量断言有界且不随 N 线性增长。
+        Assert.True(
+            spy.SaveChangesAsyncCount <= nodeCount / 25 + 4,
+            $"SaveChangesAsync 次数 {spy.SaveChangesAsyncCount} 应远小于节点数 {nodeCount}（写放大已修复）。");
+        Assert.True(
+            spy.SaveChangesAsyncCount < nodeCount,
+            $"SaveChangesAsync 次数 {spy.SaveChangesAsyncCount} 不应随节点数线性增长。");
+    }
+
+    /// <summary>
+    /// 验证失败态经 PersistFailedStateAsync 立即落库（不再使用 CancellationToken.None），
+    /// 确保失败节点自身的执行记录不丢失。
+    /// </summary>
+    [Fact]
+    public async Task Failing_Workflow_PersistsNodeRecord_ViaFailedStateFlush()
+    {
+        var nodeA = CreateNode("a", "failing", isEntry: true);
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "failingFlush",
+            CreatedBy = "test",
+            Nodes = [nodeA],
+            Connections = []
+        };
+
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var executionId = await _executor.StartAsync(workflow.Id, cancellationToken: TestContext.Current.CancellationToken);
+        var record = await WaitForExecutionAsync(executionId.Value, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExecutionStatus.Failed, record.Status);
+        // 批量刷新后，失败节点记录必须仍由失败态刷新落库。
+        Assert.Single(record.NodeRecords);
+        Assert.Equal("a", record.NodeRecords[0].NodeDefinitionId);
     }
 
     [Fact]

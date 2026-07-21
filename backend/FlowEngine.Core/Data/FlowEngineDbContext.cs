@@ -13,7 +13,7 @@ namespace FlowEngine.Core.Data;
 /// <summary>
 /// FlowEngine 数据库上下文。
 /// </summary>
-public sealed class FlowEngineDbContext : DbContext
+public class FlowEngineDbContext : DbContext
 {
     public DbSet<Workflow> Workflows => Set<Workflow>();
 

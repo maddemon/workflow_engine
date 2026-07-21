@@ -110,6 +110,9 @@ public sealed class WorkflowSchedulerKernel(
             session.Execution.CompletedAt = DateTime.UtcNow;
         }
 
+        // 终态持久化与事件发布必须在取消后仍完成（保存 Cancelled/Completed 终态），
+        // 故使用 CancellationToken.None：此时 cancellationToken 可能已取消，若传入会导致 SaveChangesAsync
+        // 抛出而终态丢失。真实的取消传播已由逐节点的 PersistNodeRecordAsync 与失败态 PersistFailedStateAsync 承担。
         await sideEffects.PersistExecutionAsync(CancellationToken.None).ConfigureAwait(false);
 
         await sideEffects.PublishCompletedAsync(session.StateMachine.Status, CancellationToken.None).ConfigureAwait(false);
@@ -275,7 +278,7 @@ public sealed class WorkflowSchedulerKernel(
 
                 session.Execution.Status = ExecutionStatus.Failed;
                 session.Execution.CompletedAt = DateTime.UtcNow;
-                await sideEffects.PersistFailedStateAsync(CancellationToken.None).ConfigureAwait(false);
+                await sideEffects.PersistFailedStateAsync(cancellationToken).ConfigureAwait(false);
                 session.WaitingArea.CleanupExecution(session.Execution.Id);
                 return true;
             }
@@ -581,7 +584,7 @@ public sealed class WorkflowSchedulerKernel(
             {
                 session.Execution.Status = ExecutionStatus.Failed;
                 session.Execution.CompletedAt = DateTime.UtcNow;
-                await sideEffects.PersistFailedStateAsync(CancellationToken.None).ConfigureAwait(false);
+                await sideEffects.PersistFailedStateAsync(cancellationToken).ConfigureAwait(false);
                 session.WaitingArea.CleanupExecution(session.Execution.Id);
                 return;
             }

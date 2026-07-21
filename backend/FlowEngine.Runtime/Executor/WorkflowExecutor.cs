@@ -186,6 +186,13 @@ public sealed class WorkflowExecutor : IEngine
         private readonly IEventBus? _eventBus;
         private readonly ILogger<WorkflowExecutor> _logger;
 
+        // 节点记录已加入内存中的 Execution.NodeRecords。为避免每节点整体重写 JSON 列造成的写放大，
+        // 仅每累计 NodeFlushThreshold 条才真正落库一次，将 SaveChangesAsync 调用从 O(N) 降为约 O(N/25)+1。
+        // 终态 PersistExecutionAsync 与失败态 PersistFailedStateAsync 会兜底刷新尾部记录，保证不丢数据。
+        private int _pendingNodeWrites;
+
+        private const int NodeFlushThreshold = 25;
+
         public ExecutorSideEffects(FlowEngineDbContext store, ExecutionRecord execution, IEventBus? eventBus, ILogger<WorkflowExecutor> logger)
         {
             _store = store;
@@ -196,6 +203,13 @@ public sealed class WorkflowExecutor : IEngine
 
         public async Task PersistNodeRecordAsync(NodeExecutionRecord record, CancellationToken cancellationToken)
         {
+            _pendingNodeWrites++;
+            if (_pendingNodeWrites % NodeFlushThreshold != 0)
+            {
+                // 阈值内不落库：记录已在内存的 Execution.NodeRecords 中，交由周期性刷新或终态刷新持久化。
+                return;
+            }
+
             _store.Entry(_execution).Property(e => e.NodeRecords).IsModified = true;
             try
             {
@@ -203,17 +217,21 @@ public sealed class WorkflowExecutor : IEngine
             }
             catch (OperationCanceledException)
             {
-                _logger.LogWarning("节点 {NodeId} 执行记录保存被取消。", record.NodeDefinitionId);
+                _logger.LogWarning("节点 {NodeId} 执行记录批量保存被取消。", record.NodeDefinitionId);
             }
         }
 
         public Task PersistFailedStateAsync(CancellationToken cancellationToken)
         {
-            return _store.SaveChangesAsync(CancellationToken.None);
+            // 失败立即落库：标记节点记录为已修改并保存，确保已收集的记录（含失败节点本身）全部持久化。
+            _store.Entry(_execution).Property(e => e.NodeRecords).IsModified = true;
+            return _store.SaveChangesAsync(cancellationToken);
         }
 
         public Task PersistExecutionAsync(CancellationToken cancellationToken)
         {
+            // 终态落库：刷新阈值边界之外尚未刷盘的尾部记录，保证无数据丢失。
+            _store.Entry(_execution).Property(e => e.NodeRecords).IsModified = true;
             return _store.SaveChangesAsync(cancellationToken);
         }
 
