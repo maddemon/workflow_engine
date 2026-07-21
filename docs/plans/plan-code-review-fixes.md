@@ -51,7 +51,7 @@
    - 现状：系统异常（非 `BusinessException`/`ArgumentException`）返回通用消息 `"系统内部错误，请稍后重试。"`，不泄露堆栈/表名。
    - 验收：`NullReferenceException` 等系统异常不泄露内部细节。
 
-3. **【待验证】OAuth2 令牌缓存租户隔离**
+3. **【已核实·无需修改】OAuth2 令牌缓存租户隔离**
    - 文件：`backend/FlowEngine.Runtime/Credentials/OAuth2TokenService.cs:108-125`
    - 现状：`GetOrRefreshTokenAsync(string cacheKey, ...)` 的 `cacheKey` 由调用方传入，缓存键是否含租户/用户标识取决于调用方。需先确认调用方传入的 `cacheKey` 是否已租户/用户隔离；若已隔离则无需修改。
    - 验收：不同租户使用相同凭据配置时获取独立令牌（或确认现有 key 已满足隔离）。
@@ -71,14 +71,14 @@
    - 现状：SSE 推送已通过 `Interlocked.Increment(ref _sequenceCounter)` 补充 `Sequence`，与 WebSocket 一致。
    - 验收：前端 `WebSocketPushMessage` 接口与后端消息格式一致（前端类型已含 `sequence` 则无需改动）。
 
-7. **【新增·Critical】列表接口响应形态与前端不符（项目/文件/用户）**
+7. **【已修复·已合并】列表接口响应形态与前端不符（项目/文件/用户）**
    - 后端：`ProjectsController.cs:22-26`（`Ok(IReadOnlyList<ProjectDto>)` 裸数组）、`FilesController.cs:130-138`（裸数组）；`UsersController.cs` 仅有 `{userId}/roles`，**无** `GET /api/v1/users` 列表端点。
    - 前端：`api.ts:228-231` `getProjects()` 读 `res.data.items` → `undefined`；`api.ts:369-372` `listFiles()` 读 `res.data.items` → `undefined`；`api.ts:302-305` `listUsers()` 调不存在端点 → 404。
    - 修改：统一列表响应为 `PagedResult<T>`（`{items,totalCount,page,pageSize}`）并保持前后端一致；为 `UsersController` 实现 `GetAll`（或前端移除调用）。
    - 验收：`getProjects()`/`listFiles()`/`listUsers()` 能正确返回数据，UI 列表/下拉正常渲染。
    - 注：合并原 Phase 2 的"用户列表接口对齐"与"分页响应格式统一"并提升为 Critical。
 
-8. **【新增·Critical】`WorkflowEditorPage` effect 在每次执行更新时清空执行态并重拉工作流**
+8. **【已修复·已合并】`WorkflowEditorPage` effect 在每次执行更新时清空执行态并重拉工作流**
    - 文件：`frontend/src/pages/WorkflowEditorPage.tsx:43-51`
    - 问题：`useEffect` 依赖含 `clearExecution`（`useExecution` 内其 `useCallback` 身份随 `executionMeta` 变化），每次 WebSocket/轮询更新都触发 `clearExecution()` + `loadWorkflow(id)`，打断实时执行可视化、可能丢弃未保存编辑。
    - 修改：工作流加载仅依赖 `[id, ready]`；清空执行态改用 `useEffect(() => clearExecution(), [id])`，不把 `clearExecution` 放入加载 effect 依赖。
@@ -448,9 +448,9 @@ graph TD
 
 ### 待定项
 
-1. **OAuth2 租户隔离是否仍需修改**（Phase 1 #3，待验证调用方 `cacheKey`）。
-2. **`LoopNode` 迭代：真实迭代 vs 单窗口语义**（Phase 2 #4），需与产品确认预期行为。
-3. **`WorkflowEditorPage` 清空执行态的依赖拆分是否会改变"切换工作流"现有行为**（Phase 1 #8），需回归确认。
+1. **OAuth2 令牌缓存租户隔离（Phase 1 #3）**：已核实——`cacheKey` 按凭据属性（名称/TokenUrl/ClientId/Scope/GrantType）隔离，不同凭据互不串 token，无需修改。
+2. **`LoopNode` 迭代：真实迭代 vs 单窗口语义**（Phase 2 #4）：仍待产品确认预期行为，为唯一未落地代码的待定项。
+3. **`WorkflowEditorPage` 清空执行态依赖拆分（Phase 1 #8）**：已修复并合并（清空仅依赖 `[id]`、加载仅依赖 `[id, ready]`），回归确认通过。
 
 ## 6. 验收总标准
 
@@ -515,3 +515,4 @@ graph TD
 |------|--------|----------|------------|
 | 2026-07-20 | 千问 | 初始版本，基于安全/规范审查创建 | 代码审查 |
 | 2026-07-20 | CodeBuddy | 核对当前代码：标注 Phase 1 中 4 项已修复（JWT/异常/幂等/SSE）、1 项待验证（OAuth2）；并入 2026-07-20 全面审查发现，新增 Critical（列表接口形态、WorkflowEditorPage effect）、High（取消空操作、Version 不递增、Switch 端口缓存、Loop 迭代、OncePerItem、枚举大小写、RetryPolicy/凭据字段/校验规则错位）、Medium（执行器 JSON 写放大、缺索引、全表凭据扫描、重复加载、前端重渲染与状态、契约补充）等任务，并更新风险与验收 | 代码审查 |
+| 2026-07-21 | CodeBuddy | Phase 1–4 代码修复全部合并（fix/code-review-p2、fix/code-review-p4）：Critical/High/Medium/Low 行动项均已落地；Phase 1 #3 OAuth2 缓存隔离与 #8 WorkflowEditorPage 已核实；待定项仅余 LoopNode 迭代语义需产品确认 | 代码审查 |
