@@ -27,7 +27,6 @@ public class NodeTypesController(
     [HttpGet]
     public ActionResult<IReadOnlyCollection<NodeTypeDescriptor>> GetAll(string? category = null)
     {
-        ArgumentNullException.ThrowIfNull(nodeRegistry);
         var descriptors = nodeRegistry.GetDescriptors();
 
         if (!string.IsNullOrWhiteSpace(category))

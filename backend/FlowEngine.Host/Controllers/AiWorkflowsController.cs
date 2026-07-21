@@ -40,15 +40,10 @@ public class AiWorkflowsController(
                 .ConfigureAwait(false);
             return CreatedAtAction("Get", "Workflows", new { id = result.DraftId }, result);
         }
-        catch (BusinessException ex)
-        {
-            return BadRequest(new
+            catch (BusinessException ex)
             {
-                success = false,
-                errorCode = "AssembleFailed",
-                message = localizer["AssembleFailed", ex.Message],
-            });
-        }
+                return this.BadRequestError("AssembleFailed", localizer["AssembleFailed", ex.Message]);
+            }
     }
 
     /// <summary>
@@ -67,15 +62,10 @@ public class AiWorkflowsController(
                 .ConfigureAwait(false);
             return Ok(result);
         }
-        catch (BusinessException ex)
-        {
-            return BadRequest(new
+            catch (BusinessException ex)
             {
-                success = false,
-                errorCode = "ModifyFailed",
-                message = localizer["ModifyFailed", ex.Message],
-            });
-        }
+                return this.BadRequestError("ModifyFailed", localizer["ModifyFailed", ex.Message]);
+            }
     }
 
     /// <summary>
