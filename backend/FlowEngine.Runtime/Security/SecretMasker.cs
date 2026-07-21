@@ -11,7 +11,16 @@ namespace FlowEngine.Runtime.Security;
 /// </summary>
 public sealed class SecretMasker
 {
-    public DataBatch MaskDataBatch(DataBatch batch, IReadOnlySet<string> sensitiveValues)
+    /// <summary>
+    /// 对数据批次脱敏。
+    /// </summary>
+    /// <param name="batch">待脱敏的数据批次。</param>
+    /// <param name="sensitiveValues">敏感字面量集合。</param>
+    /// <param name="deepCopy">
+    /// 是否先深拷贝再脱敏。<c>true</c>（默认）不修改原数据；<c>false</c> 原地脱敏以省去拷贝开销，
+    /// 调用方需确保此后不再使用原始批次。
+    /// </param>
+    public DataBatch MaskDataBatch(DataBatch batch, IReadOnlySet<string> sensitiveValues, bool deepCopy = true)
     {
         ArgumentNullException.ThrowIfNull(batch);
 
@@ -20,9 +29,15 @@ public sealed class SecretMasker
         var sanitized = new DataBatch { Items = [] };
         foreach (var item in batch.Items)
         {
+            var node = item.Data;
+            if (deepCopy && node is not null)
+            {
+                node = node.DeepClone();
+            }
+
             sanitized.Items.Add(new DataItem
             {
-                Data = item.Data is null ? null : MaskJsonNode(item.Data.DeepClone(), sensitiveValues),
+                Data = node is null ? null : MaskJsonNode(node, sensitiveValues),
                 Success = item.Success,
                 Error = item.Error,
                 SourceIndex = item.SourceIndex,
