@@ -104,12 +104,13 @@ public sealed class LocalFileStorage : IFileStorage
 
     private static string SanitizeFileName(string fileName)
     {
-        var invalid = Path.GetInvalidFileNameChars();
+        // 跨平台一致：使用硬编码集合，避免 Path.GetInvalidFileNameChars() 在 Linux/macOS 上遗漏 <>:" 等字符。
+        const string invalidChars = "<>:\"/\\|?*\0";
         var sanitized = new char[fileName.Length];
 
         for (var i = 0; i < fileName.Length; i++)
         {
-            sanitized[i] = Array.IndexOf(invalid, fileName[i]) >= 0 ? '_' : fileName[i];
+            sanitized[i] = invalidChars.Contains(fileName[i]) ? '_' : fileName[i];
         }
 
         return new string(sanitized);
