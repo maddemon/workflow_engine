@@ -124,38 +124,6 @@ public sealed class WaitingArea
             new Dictionary<string, DataBatch>(_inputs, StringComparer.OrdinalIgnoreCase);
 
         private static DataBatch Merge(DataBatch existing, DataBatch data)
-        {
-            var merged = new DataBatch();
-
-            // 复制已有项（创建副本，不修改原 item 的 SourceIndex）。
-            for (var i = 0; i < existing.Items.Count; i++)
-            {
-                var item = existing.Items[i];
-                merged.Items.Add(new DataItem
-                {
-                    Data = item.Data,
-                    Success = item.Success,
-                    Error = item.Error,
-                    SourceIndex = i,
-                    AttachmentId = item.AttachmentId,
-                });
-            }
-
-            // 追加新项（创建副本）。
-            for (var i = 0; i < data.Items.Count; i++)
-            {
-                var item = data.Items[i];
-                merged.Items.Add(new DataItem
-                {
-                    Data = item.Data,
-                    Success = item.Success,
-                    Error = item.Error,
-                    SourceIndex = existing.Items.Count + i,
-                    AttachmentId = item.AttachmentId,
-                });
-            }
-
-            return merged;
-        }
+            => DataBatch.Merge(existing, data);
     }
 }

@@ -6,106 +6,22 @@ using FlowEngine.Core.Scripting;
 namespace FlowEngine.Runtime.Executor;
 
 /// <summary>
-/// 对 Script 类型参数执行预求值。
-/// Expression 脚本在 Hydrate 前完成求值并写入 ResolvedValue。
+/// 对 Script 类型参数执行预求值（运行时门面）。实际逻辑已下沉到
+/// <see cref="ScriptParameterPreEvaluatorCore"/>，以便仅依赖 Core 的调用方（如 SubWorkflowExecutor 插件）复用。
+/// Expression 脚本在 Hydrate 前完成求值并写入 <see cref="Script.ResolvedValue"/>。
 /// </summary>
 internal static class ScriptParameterPreEvaluator
 {
     /// <summary>
     /// 对 Script 类型参数执行预求值：Expression 脚本直接求值并写入 ResolvedValue，
-    /// Script/CodeEditor 脚本保持原样；递归处理 Dictionary&lt;string, Script&gt;。
+    /// Script/CodeEditor 脚本保持原样；递归处理 <see cref="Dictionary{TKey,TValue}"/> 形式的列映射（string → Script）。
     /// </summary>
-    public static async Task PreEvaluateAsync(
+    public static Task PreEvaluateAsync(
         Dictionary<string, object> rawParameters,
         NodeTypeDescriptor descriptor,
         ScriptContext scriptContext,
         JsEngine js,
         ScriptCache scriptCache,
         CancellationToken cancellationToken)
-    {
-        foreach (var (name, value) in rawParameters.ToList())
-        {
-            var definition = descriptor.Parameters.FirstOrDefault(
-                p => p.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
-
-            if (value is Script script)
-            {
-                if (definition?.Hint == PresentationHint.Expression)
-                {
-                    var expressionResult = await EvaluateScriptAsync(script, scriptContext, js, scriptCache, cancellationToken)
-                        .ConfigureAwait(false);
-                    if (!expressionResult.Success)
-                    {
-                        throw new ScriptErrorException(script, $"参数表达式预求值失败: {expressionResult.Error?.Reason}", expressionResult.Error);
-                    }
-
-                    rawParameters[name] = script.WithResolvedValue(expressionResult.ToJson());
-                }
-
-                continue;
-            }
-
-            if (definition?.Type != ParameterType.Script
-                && ScriptValueConverter.TryGetScriptDictionary(value, out var dict) && dict is not null)
-            {
-                if (definition?.Hint == PresentationHint.Expression)
-                {
-                    var evaluated = new Dictionary<string, Script>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var (key, itemScript) in dict)
-                    {
-                        var itemResult = await EvaluateScriptAsync(itemScript, scriptContext, js, scriptCache, cancellationToken)
-                            .ConfigureAwait(false);
-                        if (!itemResult.Success)
-                        {
-                            throw new ScriptErrorException(itemScript, $"列映射表达式预求值失败: {itemResult.Error?.Reason}", itemResult.Error);
-                        }
-
-                        evaluated[key] = itemScript.WithResolvedValue(itemResult.ToJson());
-                    }
-
-                    rawParameters[name] = evaluated;
-                }
-                else
-                {
-                    rawParameters[name] = dict;
-                }
-
-                continue;
-            }
-
-            if (definition?.Type == ParameterType.Script)
-            {
-                var converted = ScriptValueConverter.ToScript(value);
-                if (converted is null)
-                {
-                    continue;
-                }
-
-                if (definition.Hint == PresentationHint.Expression)
-                {
-                    var expressionResult = await EvaluateScriptAsync(converted, scriptContext, js, scriptCache, cancellationToken)
-                        .ConfigureAwait(false);
-                    if (!expressionResult.Success)
-                    {
-                        throw new ScriptErrorException(converted, $"参数表达式预求值失败: {expressionResult.Error?.Reason}", expressionResult.Error);
-                    }
-
-                    converted = converted.WithResolvedValue(expressionResult.ToJson());
-                }
-
-                rawParameters[name] = converted;
-            }
-        }
-    }
-
-    private static async Task<ScriptResult> EvaluateScriptAsync(
-        Script script,
-        ScriptContext context,
-        JsEngine js,
-        ScriptCache scriptCache,
-        CancellationToken cancellationToken)
-    {
-        var prepared = scriptCache.GetOrPrepare(script);
-        return await prepared.RunAsync(context, js, cancellationToken).ConfigureAwait(false);
-    }
+        => ScriptParameterPreEvaluatorCore.PreEvaluateAsync(rawParameters, descriptor, scriptContext, js, scriptCache, cancellationToken);
 }
