@@ -164,7 +164,10 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
       : computeOutputWidth(outputPorts.length)
   const nodeHeight = circular ? 56 : 64
 
-  const layouts = computePortLayouts(inputPorts, outputPorts, layoutDirection, configurable, config, tool)
+  const layouts = useMemo(
+    () => computePortLayouts(inputPorts, outputPorts, layoutDirection, configurable, config, tool),
+    [inputPorts, outputPorts, layoutDirection, configurable, config, tool],
+  )
 
   const visibleInputPorts = tool ? [] : inputPorts
   const visibleOutputPorts = tool ? outputPorts.filter((p) => p.type === "AgentTool") : outputPorts
