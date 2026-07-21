@@ -11,6 +11,10 @@ namespace FlowEngine.Core.Entities;
 /// </summary>
 [Table("execution_records", Schema = "flow")]
 [Comment("执行记录")]
+// P3 #2：热查询列补索引，避免执行列表/清理/按工作流查询全表扫描。
+[Index(nameof(WorkflowDefinitionId))]
+[Index(nameof(ProjectId))]
+[Index(nameof(Status), nameof(CompletedAt))]
 public class ExecutionRecord : Entity
 {
     /// <summary>
