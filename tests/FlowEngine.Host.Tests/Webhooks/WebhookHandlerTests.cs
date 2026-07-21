@@ -32,7 +32,7 @@ public class WebhookHandlerTests
     private AuditEventFactory AuditFactory => new(_userContext.Object);
 
     private WebhookHandler CreateHandler(FlowEngineDbContext db)
-        => new(db, _engine.Object, _eventBus.Object, AuditFactory, _idempotency.Object, _logger.Object);
+        => new(db, _engine.Object, _eventBus.Object, AuditFactory, _idempotency.Object, _logger.Object, Microsoft.Extensions.Options.Options.Create(new FlowEngine.Host.Options.WebhookOptions()));
 
     private static string SignBody(string secret, string body)
     {

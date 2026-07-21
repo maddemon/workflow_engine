@@ -10,9 +10,11 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.ValueObjects;
+using FlowEngine.Host.Options;
 using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Host.Webhooks;
 
@@ -27,6 +29,7 @@ public sealed class WebhookHandler : IWebhookHandler
     private readonly AuditEventFactory _auditFactory;
     private readonly IExecutionIdempotencyService _idempotencyService;
     private readonly ILogger<WebhookHandler> _logger;
+    private readonly WebhookOptions _options;
 
     /// <summary>
     /// 初始化 Webhook 处理器。
@@ -37,7 +40,8 @@ public sealed class WebhookHandler : IWebhookHandler
         IEventBus eventBus,
         AuditEventFactory auditFactory,
         IExecutionIdempotencyService idempotencyService,
-        ILogger<WebhookHandler> logger)
+        ILogger<WebhookHandler> logger,
+        IOptions<WebhookOptions> options)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
@@ -45,6 +49,7 @@ public sealed class WebhookHandler : IWebhookHandler
         _auditFactory = auditFactory;
         _idempotencyService = idempotencyService;
         _logger = logger;
+        _options = options.Value;
     }
 
     /// <summary>
@@ -178,7 +183,7 @@ public sealed class WebhookHandler : IWebhookHandler
                         return;
                     }
 
-                    await Task.Delay(100, context.RequestAborted).ConfigureAwait(false);
+                    await Task.Delay(_options.PollingIntervalMs, context.RequestAborted).ConfigureAwait(false);
                 }
 
                 context.Response.StatusCode = StatusCodes.Status202Accepted;
