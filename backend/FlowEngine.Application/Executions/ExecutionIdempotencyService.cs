@@ -87,8 +87,11 @@ public sealed class ExecutionIdempotencyService(
     {
         var now = DateTime.UtcNow;
 
+        // AsNoTracking：并发落败者上下文中该幂等行可能已被跟踪为「抢占 claimId」，
+        // 若合并本地跟踪的旧值，将无法观察到胜者将其更新为真实执行 id，导致重复执行。
         var existing = await dbContext.ExecutionDedups
             .Where(e => e.IdempotencyKey == idempotencyKey && (e.ExpiresAt == null || e.ExpiresAt > now))
+            .AsNoTracking()
             .FirstOrDefaultAsync(ct)
             .ConfigureAwait(false);
 
