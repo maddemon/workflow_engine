@@ -31,7 +31,6 @@ function groupParameters(
 
 export function ParameterPanel() {
   const { t } = useTranslation(['parameterPanel', 'common']);
-  const selectedNodeId = useWorkflowStore((s) => s.selectedNodeId);
   const selectedNode = useWorkflowStore(
     useShallow((s) => {
       if (!s.selectedNodeId) return null;
@@ -42,7 +41,6 @@ export function ParameterPanel() {
   );
   const isExecuting = useWorkflowStore((s) => s.isExecuting);
   const reviewMode = useWorkflowStore((s) => s.reviewMode);
-  const updateNodeParameters = useWorkflowStore((s) => s.updateNodeParameters);
   const updateNodeName = useWorkflowStore((s) => s.updateNodeName);
   const updateNodeSettings = useWorkflowStore((s) => s.updateNodeSettings);
   const validationErrors = useWorkflowStore((s) => s.validationErrors);
@@ -67,12 +65,16 @@ export function ParameterPanel() {
     setStyleSettings({ ...styleSettings, layoutDirection: (value as 'vertical' | 'horizontal') ?? 'vertical' });
   };
 
+  // P3 #26：从 store 读取最新状态，使回调引用稳定，避免 selectedNode 每次渲染变化导致的非必要重渲染。
   const handleParameterChange = useCallback(
     (name: string, value: unknown) => {
-      if (!selectedNodeId || !selectedNode) return;
-      updateNodeParameters(selectedNodeId, { ...selectedNode.data.parameters, [name]: value });
+      const { selectedNodeId, nodes, updateNodeParameters } = useWorkflowStore.getState();
+      if (!selectedNodeId) return;
+      const node = nodes.find((n) => n.id === selectedNodeId);
+      if (!node) return;
+      updateNodeParameters(selectedNodeId, { ...node.data.parameters, [name]: value });
     },
-    [selectedNodeId, selectedNode, updateNodeParameters],
+    [],
   );
 
   if (!selectedNode) {
