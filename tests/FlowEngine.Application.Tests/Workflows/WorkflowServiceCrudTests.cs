@@ -174,6 +174,72 @@ public sealed class WorkflowServiceCrudTests : IDisposable
         Assert.Equal(1, page.TotalCount);
     }
 
+    // P3 #23：统计加载应一次性批量查询并按工作流聚合，而非逐行 N+1。
+    // 本测试锁定批量聚合行为：每个工作流的 LastExecutionAt/TriggerCount/NextTriggerAt 均正确。
+    [Fact]
+    public async Task GetAllAsync_BatchesStatistics_PopulatesPerWorkflowStats()
+    {
+        _userContext.Roles = [RoleConstants.Viewer];
+        var w1 = SeedWorkflow("W1", Guid.NewGuid());
+        var w2 = SeedWorkflow("W2", Guid.NewGuid());
+
+        // w1：两次已完成执行 + 一个触发器
+        _dbContext.ExecutionRecords.Add(new ExecutionRecord
+        {
+            WorkflowDefinitionId = w1.Id,
+            ProjectId = w1.ProjectId,
+            Status = ExecutionStatus.Completed,
+            StartedAt = DateTime.UtcNow,
+            CompletedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc),
+            NodeRecords = [],
+        });
+        _dbContext.ExecutionRecords.Add(new ExecutionRecord
+        {
+            WorkflowDefinitionId = w1.Id,
+            ProjectId = w1.ProjectId,
+            Status = ExecutionStatus.Completed,
+            StartedAt = DateTime.UtcNow,
+            CompletedAt = new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc),
+            NodeRecords = [],
+        });
+        _dbContext.Triggers.Add(new Trigger
+        {
+            Name = "t1",
+            WorkflowDefinitionId = w1.Id,
+            ProjectId = w1.ProjectId,
+            Type = TriggerType.Webhook,
+            Settings = new TriggerSettings(),
+            NextTriggerAt = new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc),
+        });
+
+        // w2：一次已完成执行，无触发器
+        _dbContext.ExecutionRecords.Add(new ExecutionRecord
+        {
+            WorkflowDefinitionId = w2.Id,
+            ProjectId = w2.ProjectId,
+            Status = ExecutionStatus.Completed,
+            StartedAt = DateTime.UtcNow,
+            CompletedAt = new DateTime(2026, 2, 1, 0, 0, 0, DateTimeKind.Utc),
+            NodeRecords = [],
+        });
+
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var page = await _service.GetAllAsync(cancellationToken: TestContext.Current.CancellationToken);
+
+        var s1 = page.Items.Single(i => i.Id == w1.Id);
+        var s2 = page.Items.Single(i => i.Id == w2.Id);
+
+        // 批量聚合：每个工作流统计独立正确（最后执行时间取最大 CompletedAt，触发器计数，下次触发取最小）。
+        Assert.Equal(1, s1.TriggerCount);
+        Assert.Equal(new DateTime(2026, 3, 1, 0, 0, 0, DateTimeKind.Utc), s1.LastExecutionAt);
+        Assert.Equal(new DateTime(2026, 5, 1, 0, 0, 0, DateTimeKind.Utc), s1.NextTriggerAt);
+
+        Assert.Equal(0, s2.TriggerCount);
+        Assert.Equal(new DateTime(2026, 2, 1, 0, 0, 0, DateTimeKind.Utc), s2.LastExecutionAt);
+        Assert.Null(s2.NextTriggerAt);
+    }
+
     // ── UpdateAsync ────────────────────────────────────────────
 
     [Fact]
@@ -212,6 +278,50 @@ public sealed class WorkflowServiceCrudTests : IDisposable
         var result = await _service.UpdateAsync(Guid.NewGuid(), dto, TestContext.Current.CancellationToken);
 
         Assert.Null(result);
+    }
+
+    // 修复：更新内容真正变更时 Version 应递增。
+    [Fact]
+    public async Task UpdateAsync_WithContentChange_IncrementsVersion()
+    {
+        _userContext.Roles = [RoleConstants.Editor];
+        var workflow = SeedWorkflow("Original", Guid.NewGuid());
+        var before = workflow.Version;
+        var dto = new UpdateWorkflowDto
+        {
+            Name = "Renamed",
+            IsActive = true,
+            Nodes = [new NodeDefinitionDto { Id = "n1", TypeName = "fetch", Name = "Fetch", ErrorStrategy = ErrorStrategy.Terminate }],
+            Connections = [],
+        };
+
+        var result = await _service.UpdateAsync(workflow.Id, dto, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(result);
+        Assert.Equal(before + 1, result.Version);
+        var persisted = await _dbContext.Workflows.FindAsync([workflow.Id], TestContext.Current.CancellationToken);
+        Assert.Equal(before + 1, persisted!.Version);
+    }
+
+    // 边界：未变更内容时 Version 不应递增（避免无意义的版本膨胀）。
+    [Fact]
+    public async Task UpdateAsync_WithoutContentChange_KeepsVersion()
+    {
+        _userContext.Roles = [RoleConstants.Editor];
+        var workflow = SeedWorkflow("Original", Guid.NewGuid());
+        var before = workflow.Version;
+        var dto = new UpdateWorkflowDto
+        {
+            Name = "Original",
+            IsActive = true,
+            Nodes = [new NodeDefinitionDto { Id = "n1", TypeName = "fetch", Name = "Fetch", ErrorStrategy = ErrorStrategy.Terminate }],
+            Connections = [],
+        };
+
+        var result = await _service.UpdateAsync(workflow.Id, dto, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(result);
+        Assert.Equal(before, result.Version);
     }
 
     // ── DeleteAsync ────────────────────────────────────────────

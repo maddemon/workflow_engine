@@ -70,6 +70,52 @@ public class ParameterResolverTests
     }
 
     [Fact]
+    public async Task Resolve_JsonElement_LargeLong_PreservesIntegerPrecision()
+    {
+        // 超出 double 53 位尾数的大整数：若走 double 会丢失精度，必须保留为 long。
+        using var js = CreateJsEngine();
+        var raw = new Dictionary<string, object>
+        {
+            ["big"] = JsonSerializer.SerializeToElement(9007199254740993L),
+        };
+
+        var result = await _resolver.ResolveAsync(raw, js);
+
+        var resolved = Assert.IsType<long>(result["big"]);
+        Assert.Equal(9007199254740993L, resolved);
+    }
+
+    [Fact]
+    public async Task Resolve_JsonElement_Decimal_PreservesMonetaryPrecision()
+    {
+        // 金额类数值必须保留为 decimal，避免 double 二进制浮点误差。
+        using var js = CreateJsEngine();
+        var raw = new Dictionary<string, object>
+        {
+            ["amount"] = JsonSerializer.SerializeToElement(123456.789m),
+        };
+
+        var result = await _resolver.ResolveAsync(raw, js);
+
+        var resolved = Assert.IsType<decimal>(result["amount"]);
+        Assert.Equal(123456.789m, resolved);
+    }
+
+    [Fact]
+    public async Task Resolve_JsonElement_Int32_StaysIntegral_WithoutPrecisionLoss()
+    {
+        using var js = CreateJsEngine();
+        var raw = new Dictionary<string, object>
+        {
+            ["count"] = JsonSerializer.SerializeToElement(42),
+        };
+
+        var result = await _resolver.ResolveAsync(raw, js);
+
+        Assert.Equal(42L, result["count"]);
+    }
+
+    [Fact]
     public async Task Resolve_Empty_String_Returns_Empty()
     {
         using var js = CreateJsEngine();
@@ -82,6 +128,20 @@ public class ParameterResolverTests
         var result = await _resolver.ResolveAsync(rawAsObjects, js);
 
         Assert.Equal("", result["url"]);
+    }
+
+    [Fact]
+    public async Task Resolve_RepeatedCalls_ReturnsConsistentResult()
+    {
+        // 多次解析同一表达式（含函数调用/缺失字段路径，触发缓存的正则分支）应得到稳定结果。
+        using var js = CreateJsEngine(new JsonObject { ["statusCode"] = 200 });
+        var raw = new Dictionary<string, object> { ["condition"] = "input.statusCode === 200" };
+
+        for (var i = 0; i < 50; i++)
+        {
+            var result = await _resolver.ResolveAsync(raw, js);
+            Assert.Equal(true, result["condition"]);
+        }
     }
 
     [Fact]

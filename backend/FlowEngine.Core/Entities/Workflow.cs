@@ -11,6 +11,8 @@ namespace FlowEngine.Core.Entities;
 /// </summary>
 [Table("workflows", Schema = "flow")]
 [Comment("工作流定义")]
+// P3 #2：按项目隔离查询热路径补索引。
+[Index(nameof(ProjectId))]
 public class Workflow : Entity
 {
     /// <summary>

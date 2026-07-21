@@ -12,6 +12,7 @@ using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.ValueObjects;
+using FlowEngine.Runtime.Executor;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Tests.Executions;
@@ -36,7 +37,7 @@ public sealed class ExecutionServiceAuthorizationTests : IDisposable
         var idempotencyService = new StubIdempotencyService();
         _eventBus = new RecordingEventBus();
         var auditFactory = new AuditEventFactory(_userContext);
-        _service = new ExecutionService(engine, _dbContext, idempotencyService, AuthorizationGuardFactory.Create(_userContext, resourceAuthorization, _eventBus), _eventBus, auditFactory);
+        _service = new ExecutionService(engine, _dbContext, idempotencyService, AuthorizationGuardFactory.Create(_userContext, resourceAuthorization, _eventBus), _eventBus, auditFactory, new ExecutionCancellationRegistry());
     }
 
     public void Dispose()
@@ -198,6 +199,9 @@ public sealed class ExecutionServiceAuthorizationTests : IDisposable
     {
         public Task<ExecutionId> StartAsync(Guid workflowDefinitionId, object? triggerPayload = null, CancellationToken cancellationToken = default)
             => Task.FromResult(ExecutionId.From(Guid.NewGuid()));
+
+        public Task<ExecutionId> StartAsync(Guid workflowDefinitionId, Workflow preloadedWorkflow, object? triggerPayload = null, CancellationToken cancellationToken = default)
+            => StartAsync(workflowDefinitionId, triggerPayload, cancellationToken);
     }
 
     private sealed class StubIdempotencyService : IExecutionIdempotencyService

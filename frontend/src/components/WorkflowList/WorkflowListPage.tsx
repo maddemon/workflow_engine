@@ -384,7 +384,7 @@ export function WorkflowListPage() {
                   >
                     {wf.isActive ? t('list.active') : t('list.inactive')}
                   </Badge>
-                  {wf.source === 'ai' && !wf.isActive && wf.draftStatus === 'pending' && (
+                  {wf.source === 'Ai' && !wf.isActive && wf.draftStatus === 'Pending' && (
                     <Badge size="sm" variant="light" color="blue" ml={4}>{t('list.aiDraftPending')}</Badge>
                   )}
                 </Table.Td>

@@ -154,7 +154,14 @@ public class CredentialEnsureTests : HostIntegrationTestBase
 
     private sealed class TestCryptoKeyProvider : ICryptoKeyProvider
     {
+        public string CurrentVersion => "v1";
+
         public byte[] GetKey() =>
             Convert.FromHexString("000102030405060708090A0B0C0D0E0F101112131415161718191A1B1C1D1E1F");
+
+        public byte[] GetKey(string keyVersion) =>
+            string.IsNullOrEmpty(keyVersion) || string.Equals(keyVersion, "v1", StringComparison.OrdinalIgnoreCase)
+                ? GetKey()
+                : throw new System.Security.Cryptography.CryptographicException($"未知密钥版本 {keyVersion}");
     }
 }

@@ -6,11 +6,17 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Scripting;
+using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
 /// 轻量级子工作流执行器，在当前上下文内按拓扑顺序执行节点。
+/// <list type="bullet">
+///   <item>多入边节点会合并所有父节点的输入（仅当全部必需输入端口就绪才执行），避免第二条入边被跳过而丢数据。</item>
+///   <item>节点执行前对 Script/Expression 类型参数做预求值（复用 Core 级 <see cref="ScriptParameterPreEvaluatorCore"/>），
+///   无需依赖 Runtime 层。</item>
+/// </list>
 /// </summary>
 internal sealed class SubWorkflowExecutor
 {
@@ -36,11 +42,11 @@ internal sealed class SubWorkflowExecutor
         var nodeMap = workflow.Nodes.ToDictionary(n => n.Id);
         var connectionsBySource = workflow.Connections
             .ToLookup(c => (c.SourceNodeId, c.SourcePortName ?? string.Empty));
-        var hasInputConnections = workflow.Connections
-            .Select(c => c.TargetNodeId)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var inboundConnectionsByTarget = workflow.Connections
+            .Where(c => !string.IsNullOrEmpty(c.TargetNodeId))
+            .ToLookup(c => c.TargetNodeId, StringComparer.OrdinalIgnoreCase);
 
-        var entryNodes = ResolveEntryNodes(workflow, hasInputConnections);
+        var entryNodes = ResolveEntryNodes(workflow, inboundConnectionsByTarget);
         if (entryNodes.Count == 0)
         {
             return CreateErrorResult("NoEntryNode", "No entry node found in the sub-workflow.");
@@ -48,8 +54,15 @@ internal sealed class SubWorkflowExecutor
 
         var nodeOutputs = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase);
         var executed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        // 待合并输入：nodeId -> (port -> 已合并批次)。尚未就绪的节点不加入 executed，
+        // 等待后续父节点入队时再合并执行，避免第二条入边被跳过而丢数据。
+        var pendingInputs = new Dictionary<string, Dictionary<string, DataBatch>>(StringComparer.OrdinalIgnoreCase);
         var queue = new Queue<string>(entryNodes.Select(n => n.Id));
         NodeExecutionResult? lastResult = null;
+
+        // 子工作流内复用单个 JS 引擎与脚本缓存，供 Expression 参数预求值（与运行时同生命周期）。
+        using var js = JsEngine.Create();
+        var scriptCache = new ScriptCache(Options.Create(new JsEngineOptions()));
 
         while (queue.Count > 0)
         {
@@ -60,30 +73,71 @@ internal sealed class SubWorkflowExecutor
             }
 
             var nodeType = _nodeRegistry.CreateInstance(node.TypeName);
-            var inputs = CollectInputs(node, workflow, nodeMap, nodeOutputs, entryNodes, triggerPayload);
-            var context = BuildNodeContext(workflow, node, inputs, cancellationToken, _nestingDepth);
 
-            NodeExecutionResult result;
-            try
+            // 入口节点（无入边）：直接用触发负载构造输入并立即执行。
+            if (!inboundConnectionsByTarget.Contains(nodeId))
             {
-                HydrateParameters(nodeType, node.Parameters);
-                result = await nodeType.ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                result = CreateExceptionResult(ex, node.Id);
+                var entryInputs = CollectEntryInputs(node, triggerPayload);
+                var entryResult = await ExecuteNodeAsync(workflow, node, nodeType, entryInputs, js, scriptCache, cancellationToken)
+                    .ConfigureAwait(false);
+                lastResult = entryResult;
+                if (entryResult.Success)
+                {
+                    nodeOutputs[node.Id] = entryResult.Output;
+                }
+
+                executed.Add(nodeId);
+                EnqueueOutgoing(node, nodeType, entryResult, connectionsBySource, nodeMap, executed, queue);
+                if (!entryResult.Success)
+                {
+                    break;
+                }
+
+                continue;
             }
 
-            executed.Add(nodeId);
+            // 有入边：将当前可用的父节点输出合并进 pending，并判断是否全部必需端口就绪。
+            var requiredPorts = ResolveRequiredInputPorts(node, nodeType, inboundConnectionsByTarget);
+            var allReady = true;
+            foreach (var conn in inboundConnectionsByTarget[node.Id])
+            {
+                if (nodeMap.TryGetValue(conn.SourceNodeId, out var sourceNode)
+                    && nodeOutputs.TryGetValue(sourceNode.Id, out var batch))
+                {
+                    var resolvedPort = conn.TargetPortName ?? ResolveDefaultInputPort(nodeType);
+                    if (!pendingInputs.TryGetValue(nodeId, out var portMap))
+                    {
+                        portMap = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase);
+                        pendingInputs[nodeId] = portMap;
+                    }
+
+                    // 合并当前端口已累积的批次与新到达的父节点输出，重排 SourceIndex。
+                    var accumulated = portMap.TryGetValue(resolvedPort, out var current) ? current : new DataBatch();
+                    portMap[resolvedPort] = DataBatch.Merge(accumulated, batch);
+                }
+                else
+                {
+                    // 仍有父节点尚未产出输出：暂不执行（不加入 executed），待后续父节点入队时再合并执行。
+                    allReady = false;
+                }
+            }
+
+            if (!allReady)
+            {
+                continue;
+            }
+
+            var inputs = pendingInputs[nodeId];
+            var result = await ExecuteNodeAsync(workflow, node, nodeType, inputs, js, scriptCache, cancellationToken)
+                .ConfigureAwait(false);
             lastResult = result;
-
             if (result.Success)
             {
                 nodeOutputs[node.Id] = result.Output;
             }
 
+            executed.Add(nodeId);
             EnqueueOutgoing(node, nodeType, result, connectionsBySource, nodeMap, executed, queue);
-
             if (!result.Success)
             {
                 break;
@@ -93,40 +147,51 @@ internal sealed class SubWorkflowExecutor
         return lastResult ?? CreateErrorResult("NoResult", "Sub-workflow produced no result.");
     }
 
-    private static List<NodeDefinition> ResolveEntryNodes(Workflow workflow, HashSet<string> hasInputConnections)
+    private async Task<NodeExecutionResult> ExecuteNodeAsync(
+        Workflow workflow,
+        NodeDefinition node,
+        INodeType nodeType,
+        Dictionary<string, DataBatch> inputs,
+        JsEngine js,
+        ScriptCache scriptCache,
+        CancellationToken cancellationToken)
+    {
+        var context = BuildNodeContext(workflow, node, inputs, cancellationToken, _nestingDepth);
+
+        // 执行前对 Script/Expression 参数做预求值（复用 Core 级实现，插件仅依赖 Core）。
+        var rawParameters = new Dictionary<string, object>(node.Parameters, StringComparer.OrdinalIgnoreCase);
+        if (_nodeRegistry is not null)
+        {
+            var descriptor = _nodeRegistry.GetDescriptor(node.TypeName);
+            var preEvalContext = new ScriptContext(context, context.GlobalVariables);
+            await ScriptParameterPreEvaluatorCore.PreEvaluateAsync(rawParameters, descriptor, preEvalContext, js, scriptCache, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        try
+        {
+            HydrateParameters(nodeType, rawParameters);
+            context.RawParameters = rawParameters;
+            context.ResolvedParameters = rawParameters;
+            return await nodeType.ExecuteAsync(context, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            return CreateExceptionResult(ex, node.Id);
+        }
+    }
+
+    private static List<NodeDefinition> ResolveEntryNodes(Workflow workflow, ILookup<string, Connection> inboundConnectionsByTarget)
     {
         return workflow.Nodes
-            .Where(n => n.IsEntry || !hasInputConnections.Contains(n.Id))
+            .Where(n => n.IsEntry || !inboundConnectionsByTarget.Contains(n.Id))
             .ToList();
     }
 
-    private static Dictionary<string, DataBatch> CollectInputs(
-        NodeDefinition node,
-        Workflow workflow,
-        Dictionary<string, NodeDefinition> nodeMap,
-        Dictionary<string, DataBatch> nodeOutputs,
-        List<NodeDefinition> entryNodes,
-        JsonNode? triggerPayload)
+    private static Dictionary<string, DataBatch> CollectEntryInputs(NodeDefinition node, JsonNode? triggerPayload)
     {
         var inputs = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase);
-
-        var incomingConnections = workflow.Connections
-            .Where(c => c.TargetNodeId == node.Id)
-            .ToList();
-
-        if (incomingConnections.Count > 0)
-        {
-            foreach (var conn in incomingConnections)
-            {
-                if (nodeMap.TryGetValue(conn.SourceNodeId, out var sourceNode)
-                    && nodeOutputs.TryGetValue(sourceNode.Id, out var batch))
-                {
-                    var resolvedPort = conn.TargetPortName ?? FlowConstants.PortNames.Input;
-                    inputs[resolvedPort] = batch;
-                }
-            }
-        }
-        else if (entryNodes.Any(n => n.Id == node.Id) && triggerPayload is not null)
+        if (triggerPayload is not null)
         {
             inputs[FlowConstants.PortNames.Input] = new DataBatch
             {
@@ -143,6 +208,32 @@ internal sealed class SubWorkflowExecutor
         }
 
         return inputs;
+    }
+
+    private static IReadOnlyList<string> ResolveRequiredInputPorts(
+        NodeDefinition node,
+        INodeType nodeType,
+        ILookup<string, Connection> inboundConnectionsByTarget)
+    {
+        var ports = new List<string>();
+        foreach (var conn in inboundConnectionsByTarget[node.Id])
+        {
+            var resolved = conn.TargetPortName ?? ResolveDefaultInputPort(nodeType);
+            if (!ports.Contains(resolved, StringComparer.OrdinalIgnoreCase))
+            {
+                ports.Add(resolved);
+            }
+        }
+
+        return ports;
+    }
+
+    private static string ResolveDefaultInputPort(INodeType nodeType)
+    {
+        var inputPorts = nodeType.Ports
+            .Where(p => p.Direction == PortDirection.Input)
+            .ToList();
+        return inputPorts.Count > 0 ? inputPorts[0].Name : FlowConstants.PortNames.Input;
     }
 
     private static NodeExecutionContext BuildNodeContext(

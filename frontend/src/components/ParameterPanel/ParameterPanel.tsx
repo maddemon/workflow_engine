@@ -4,10 +4,12 @@ import { ChevronRight, ChevronDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/shallow';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
+import { useCanvasStore } from '../Canvas/stores/canvasStore.ts';
 import { useDisplayRule } from '../../hooks/useDisplayRule.ts';
 import { FieldResolver } from './FieldResolver.tsx';
 import { TriggerConfig } from './TriggerConfig.tsx';
 import { InfoTooltip } from './fields/InfoTooltip.tsx';
+import { toRetryPolicyDto, fromRetryPolicyDto, DEFAULT_RETRY_POLICY_UI } from '../../utils/retryPolicy.ts';
 import type { ParameterDefinition } from '../../types/workflow.ts';
 
 function groupParameters(
@@ -30,8 +32,7 @@ function groupParameters(
 
 export function ParameterPanel() {
   const { t } = useTranslation(['parameterPanel', 'common']);
-  const selectedNodeId = useWorkflowStore((s) => s.selectedNodeId);
-  const selectedNode = useWorkflowStore(
+  const selectedNode = useCanvasStore(
     useShallow((s) => {
       if (!s.selectedNodeId) return null;
       const node = s.nodes.find((n) => n.id === s.selectedNodeId);
@@ -39,18 +40,17 @@ export function ParameterPanel() {
       return { id: node.id, data: node.data };
     }),
   );
-  const isExecuting = useWorkflowStore((s) => s.isExecuting);
-  const reviewMode = useWorkflowStore((s) => s.reviewMode);
-  const updateNodeParameters = useWorkflowStore((s) => s.updateNodeParameters);
-  const updateNodeName = useWorkflowStore((s) => s.updateNodeName);
-  const updateNodeSettings = useWorkflowStore((s) => s.updateNodeSettings);
-  const validationErrors = useWorkflowStore((s) => s.validationErrors);
+  const isExecuting = useCanvasStore((s) => s.isExecuting);
+  const reviewMode = useCanvasStore((s) => s.reviewMode);
+  const updateNodeName = useCanvasStore((s) => s.updateNodeName);
+  const updateNodeSettings = useCanvasStore((s) => s.updateNodeSettings);
+  const validationErrors = useCanvasStore((s) => s.validationErrors);
   const isActive = useWorkflowStore((s) => s.isActive);
   const setIsActive = useWorkflowStore((s) => s.setIsActive);
-  const styleSettings = useWorkflowStore((s) => s.styleSettings);
-  const setStyleSettings = useWorkflowStore((s) => s.setStyleSettings);
-  const edgeCount = useWorkflowStore((s) => s.edges.length);
-  const nodeCount = useWorkflowStore((s) => s.nodes.length);
+  const styleSettings = useCanvasStore((s) => s.styleSettings);
+  const setStyleSettings = useCanvasStore((s) => s.setStyleSettings);
+  const edgeCount = useCanvasStore((s) => s.edges.length);
+  const nodeCount = useCanvasStore((s) => s.nodes.length);
   const workflowName = useWorkflowStore((s) => s.workflowName);
   const setWorkflowName = useWorkflowStore((s) => s.setWorkflowName);
   const isDirty = useWorkflowStore((s) => s.isDirty);
@@ -66,12 +66,16 @@ export function ParameterPanel() {
     setStyleSettings({ ...styleSettings, layoutDirection: (value as 'vertical' | 'horizontal') ?? 'vertical' });
   };
 
+  // P3 #26：从 store 读取最新状态，使回调引用稳定，避免 selectedNode 每次渲染变化导致的非必要重渲染。
   const handleParameterChange = useCallback(
     (name: string, value: unknown) => {
-      if (!selectedNodeId || !selectedNode) return;
-      updateNodeParameters(selectedNodeId, { ...selectedNode.data.parameters, [name]: value });
+      const { selectedNodeId, nodes, updateNodeParameters } = useCanvasStore.getState();
+      if (!selectedNodeId) return;
+      const node = nodes.find((n) => n.id === selectedNodeId);
+      if (!node) return;
+      updateNodeParameters(selectedNodeId, { ...node.data.parameters, [name]: value });
     },
-    [selectedNodeId, selectedNode, updateNodeParameters],
+    [],
   );
 
   if (!selectedNode) {
@@ -241,7 +245,7 @@ export function ParameterPanel() {
                   if (selectedNode.data.retryPolicy !== null) {
                     updateNodeSettings(selectedNode.id, { retryPolicy: null });
                   } else {
-                    updateNodeSettings(selectedNode.id, { retryPolicy: JSON.stringify({ maxRetries: 2, baseDelayMs: 1000 }) });
+                    updateNodeSettings(selectedNode.id, { retryPolicy: toRetryPolicyDto(DEFAULT_RETRY_POLICY_UI) });
                   }
                 }}
                 style={{ cursor: 'pointer' }}
@@ -251,7 +255,7 @@ export function ParameterPanel() {
                   checked={selectedNode.data.retryPolicy !== null}
                   onChange={(e) => {
                     if (e.currentTarget.checked) {
-                      updateNodeSettings(selectedNode.id, { retryPolicy: JSON.stringify({ maxRetries: 2, baseDelayMs: 1000 }) });
+                      updateNodeSettings(selectedNode.id, { retryPolicy: toRetryPolicyDto(DEFAULT_RETRY_POLICY_UI) });
                     } else {
                       updateNodeSettings(selectedNode.id, { retryPolicy: null });
                     }
@@ -266,16 +270,13 @@ export function ParameterPanel() {
               </Group>
 
               {selectedNode.data.retryPolicy !== null && (() => {
-                const policy = (() => {
-                  try { return JSON.parse(selectedNode.data.retryPolicy!) as { maxRetries: number; baseDelayMs: number }; }
-                  catch { return { maxRetries: 2, baseDelayMs: 1000 }; }
-                })();
+                const policy = fromRetryPolicyDto(selectedNode.data.retryPolicy!);
                 return (
                   <Stack gap="sm" ml="md">
                     <Select
                       label={t('nodeSettings.maxRetries')}
                       value={String(policy.maxRetries)}
-                      onChange={(v) => updateNodeSettings(selectedNode.id, { retryPolicy: JSON.stringify({ ...policy, maxRetries: v != null ? Number(v) : 2 }) })}
+                      onChange={(v) => updateNodeSettings(selectedNode.id, { retryPolicy: toRetryPolicyDto({ ...policy, maxRetries: v != null ? Number(v) : 2 }) })}
                       data={[
                         { label: '2', value: '2' },
                         { label: '3', value: '3' },
@@ -286,7 +287,7 @@ export function ParameterPanel() {
                     <Select
                       label={t('nodeSettings.delayBetweenRetries')}
                       value={String(policy.baseDelayMs)}
-                      onChange={(v) => updateNodeSettings(selectedNode.id, { retryPolicy: JSON.stringify({ ...policy, baseDelayMs: v != null ? Number(v) : 1000 }) })}
+                      onChange={(v) => updateNodeSettings(selectedNode.id, { retryPolicy: toRetryPolicyDto({ ...policy, baseDelayMs: v != null ? Number(v) : 1000 }) })}
                       data={[
                         { label: '500', value: '500' },
                         { label: '1000', value: '1000' },

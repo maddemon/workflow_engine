@@ -168,6 +168,12 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("WorkflowDefinitionId");
+
+                    b.HasIndex("Status", "CompletedAt");
+
                     b.ToTable("execution_records", "flow", t =>
                         {
                             t.HasComment("执行记录");
@@ -522,9 +528,41 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ProjectId");
+
                     b.ToTable("workflows", "flow", t =>
                         {
                             t.HasComment("工作流定义");
+                        });
+                });
+
+            modelBuilder.Entity("FlowEngine.Core.Entities.WorkflowCredentialUsage", b =>
+                {
+                    b.Property<Guid>("WorkflowId")
+                        .HasColumnType("TEXT")
+                        .HasComment("所属工作流 ID");
+
+                    b.Property<Guid>("CredentialId")
+                        .HasColumnType("TEXT")
+                        .HasComment("被引用凭据 ID");
+
+                    b.Property<string>("NodeId")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT")
+                        .HasComment("引用该凭据的节点 ID（工作流级引用时为空字符串）");
+
+                    b.Property<string>("WorkflowName")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasComment("所属工作流名称（冗余存储，便于删除凭据时直接展示引用方，无需回查工作流表）");
+
+                    b.HasKey("WorkflowId", "CredentialId", "NodeId");
+
+                    b.HasIndex("CredentialId");
+
+                    b.ToTable("workflow_credential_usages", "flow", t =>
+                        {
+                            t.HasComment("工作流→凭据引用关系（归一化关联表），用于删除凭据时快速定位引用方");
                         });
                 });
 

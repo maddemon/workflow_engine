@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
+using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Exceptions;
 using FlowEngine.Runtime.Credentials;
 
@@ -14,7 +15,7 @@ public sealed class OAuth2TokenServiceExtraTests
     [Fact]
     public async Task GetTokenAsync_EmptyTokenUrl_ThrowsBusinessException()
     {
-        var service = new OAuth2TokenService(new StubHttpClientFactory(new JsonTokenHandler()));
+        var service = new OAuth2TokenService(new StubHttpClientPool(new JsonTokenHandler()));
 
         var ex = await Assert.ThrowsAsync<BusinessException>(() => service.GetTokenAsync(new OAuth2TokenRequest
         {
@@ -29,7 +30,7 @@ public sealed class OAuth2TokenServiceExtraTests
     [Fact]
     public async Task GetTokenAsync_EmptyClientId_ThrowsBusinessException()
     {
-        var service = new OAuth2TokenService(new StubHttpClientFactory(new JsonTokenHandler()));
+        var service = new OAuth2TokenService(new StubHttpClientPool(new JsonTokenHandler()));
 
         var ex = await Assert.ThrowsAsync<BusinessException>(() => service.GetTokenAsync(new OAuth2TokenRequest
         {
@@ -44,7 +45,7 @@ public sealed class OAuth2TokenServiceExtraTests
     [Fact]
     public async Task GetTokenAsync_EmptyClientSecret_ThrowsBusinessException()
     {
-        var service = new OAuth2TokenService(new StubHttpClientFactory(new JsonTokenHandler()));
+        var service = new OAuth2TokenService(new StubHttpClientPool(new JsonTokenHandler()));
 
         var ex = await Assert.ThrowsAsync<BusinessException>(() => service.GetTokenAsync(new OAuth2TokenRequest
         {
@@ -61,7 +62,7 @@ public sealed class OAuth2TokenServiceExtraTests
     {
         // 127.0.0.1 为内网地址，应被 SSRF 防护拦截，且不实际发出请求。
         var handler = new JsonTokenHandler();
-        var service = new OAuth2TokenService(new StubHttpClientFactory(handler));
+        var service = new OAuth2TokenService(new StubHttpClientPool(handler));
 
         var ex = await Assert.ThrowsAsync<BusinessException>(() => service.GetTokenAsync(new OAuth2TokenRequest
         {
@@ -78,7 +79,7 @@ public sealed class OAuth2TokenServiceExtraTests
     public async Task GetTokenAsync_NonJsonResponse_ThrowsBusinessException()
     {
         var handler = new FixedTextHandler("not-json");
-        var service = new OAuth2TokenService(new StubHttpClientFactory(handler));
+        var service = new OAuth2TokenService(new StubHttpClientPool(handler));
 
         var ex = await Assert.ThrowsAsync<BusinessException>(() => service.GetTokenAsync(new OAuth2TokenRequest
         {
@@ -100,7 +101,7 @@ public sealed class OAuth2TokenServiceExtraTests
             ["access_token"] = "ok-tok"
         };
         var handler = new JsonTokenHandler(body);
-        var service = new OAuth2TokenService(new StubHttpClientFactory(handler));
+        var service = new OAuth2TokenService(new StubHttpClientPool(handler));
 
         var request = new OAuth2TokenRequest
         {
@@ -125,7 +126,7 @@ public sealed class OAuth2TokenServiceExtraTests
             ["access_token"] = new JsonObject { ["kid"] = "abc" }
         };
         var handler = new JsonTokenHandler(body);
-        var service = new OAuth2TokenService(new StubHttpClientFactory(handler));
+        var service = new OAuth2TokenService(new StubHttpClientPool(handler));
 
         var response = await service.GetTokenAsync(new OAuth2TokenRequest
         {
@@ -141,7 +142,7 @@ public sealed class OAuth2TokenServiceExtraTests
     public async Task Dispose_ClearsCache_ForcesRefetchOnNextCall()
     {
         var handler = new JsonTokenHandler();
-        var service = new OAuth2TokenService(new StubHttpClientFactory(handler));
+        var service = new OAuth2TokenService(new StubHttpClientPool(handler));
 
         var request = new OAuth2TokenRequest
         {
@@ -205,10 +206,10 @@ public sealed class OAuth2TokenServiceExtraTests
             });
     }
 
-    private sealed class StubHttpClientFactory : IHttpClientFactory
+    private sealed class StubHttpClientPool : IHttpClientPool
     {
         private readonly HttpMessageHandler _handler;
-        public StubHttpClientFactory(HttpMessageHandler handler) => _handler = handler;
-        public HttpClient CreateClient(string name) => new(_handler, disposeHandler: false);
+        public StubHttpClientPool(HttpMessageHandler handler) => _handler = handler;
+        public HttpClient GetClient(string? name = null) => new(_handler, disposeHandler: false);
     }
 }

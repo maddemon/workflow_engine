@@ -3,6 +3,7 @@ using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Triggers;
 using Mapster;
+using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
@@ -12,6 +13,7 @@ using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Text.Json;
 
 namespace FlowEngine.Application.Workflows;
 
@@ -155,6 +157,9 @@ public sealed class WorkflowService(
         var previousIsActive = existing.IsActive;
         var (nodes, connections) = ConvertFromDtos(dto.Nodes, dto.Connections);
 
+        // 内容真正变更时才递增版本号，避免无意义的版本膨胀（修复：UpdateAsync 从不递增 Version）。
+        var contentChanged = HasContentChanged(existing, dto, nodes, connections);
+
         await using var tx = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         try
@@ -171,6 +176,11 @@ public sealed class WorkflowService(
             existing.Nodes = nodes;
             existing.Connections = connections;
             existing.UpdatedAt = DateTime.UtcNow;
+
+            if (contentChanged)
+            {
+                existing.Version += 1;
+            }
 
             ValidateOrThrow(existing);
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
@@ -400,5 +410,50 @@ public sealed class WorkflowService(
             // TODO(i18n): 将 BusinessException 消息改为注入 IStringLocalizer 后本地化
             throw new BusinessException("Workflow validation failed: " + string.Join("; ", result.Errors));
         }
+    }
+
+    /// <summary>
+    /// 判断更新后的内容是否与现有工作流存在实质差异，从而决定是否需要递增版本号。
+    /// 比较名称、激活状态、样式设置与节点/连接集合（序列化为 JSON 做结构性比较）。
+    /// </summary>
+    private static bool HasContentChanged(
+        Workflow existing,
+        UpdateWorkflowDto dto,
+        List<NodeDefinition> nodes,
+        List<Connection> connections)
+    {
+        if (!string.Equals(existing.Name, dto.Name, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
+        if (existing.IsActive != dto.IsActive)
+        {
+            return true;
+        }
+
+        if (!JsonEquals(existing.StyleSettings, dto.StyleSettings))
+        {
+            return true;
+        }
+
+        if (!JsonEquals(existing.Nodes, nodes))
+        {
+            return true;
+        }
+
+        if (!JsonEquals(existing.Connections, connections))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    private static bool JsonEquals<T>(T left, T right)
+    {
+        var leftJson = JsonSerializer.Serialize(left, JsonDefaults.Options);
+        var rightJson = JsonSerializer.Serialize(right, JsonDefaults.Options);
+        return leftJson == rightJson;
     }
 }

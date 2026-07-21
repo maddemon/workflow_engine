@@ -60,6 +60,23 @@ public sealed class ExecutionIdempotencyService(
             {
                 return concurrent.ExecutionId;
             }
+
+            // 极端情况：并发插入的记录已过期或被清理，重试插入当前记录。
+            // 注意：EF Core 在 SaveChanges 失败后实体仍被追踪为 Added 状态，
+            // 直接再次调用 SaveChangesAsync 即可重试，无需再次调用 Add。
+            try
+            {
+                await dbContext.SaveChangesAsync(ct).ConfigureAwait(false);
+            }
+            catch (DbUpdateException)
+            {
+                // 最终兜底：再次查询，确保获取到已存在的记录
+                var fallback = await dbContext.ExecutionDedups
+                    .Where(e => e.IdempotencyKey == idempotencyKey)
+                    .FirstOrDefaultAsync(ct)
+                    .ConfigureAwait(false);
+                return fallback?.ExecutionId;
+            }
         }
 
         return null;
@@ -70,8 +87,11 @@ public sealed class ExecutionIdempotencyService(
     {
         var now = DateTime.UtcNow;
 
+        // AsNoTracking：并发落败者上下文中该幂等行可能已被跟踪为「抢占 claimId」，
+        // 若合并本地跟踪的旧值，将无法观察到胜者将其更新为真实执行 id，导致重复执行。
         var existing = await dbContext.ExecutionDedups
             .Where(e => e.IdempotencyKey == idempotencyKey && (e.ExpiresAt == null || e.ExpiresAt > now))
+            .AsNoTracking()
             .FirstOrDefaultAsync(ct)
             .ConfigureAwait(false);
 

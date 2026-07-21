@@ -2,6 +2,7 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Resources;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Localization;
 
@@ -11,6 +12,7 @@ namespace FlowEngine.Host.Controllers;
 /// 节点类型 API。
 /// </summary>
 [ApiController]
+[Authorize]
 [Route("api/v1/node-types")]
 public class NodeTypesController(
     INodeRegistry nodeRegistry,

@@ -42,10 +42,11 @@ public class GlobalExceptionHandlerMiddleware(
             logger.LogWarning(exception, "业务异常 {Status}: {Message}", status, exception.Message);
         }
 
-        // 透传异常原始消息，帮助开发者定位问题
+        // 业务异常和参数异常透传原始消息，帮助开发者定位问题；
+        // 系统异常返回通用提示，避免泄露数据库表名、连接字符串等敏感信息。
         var message = exception is BusinessException or ArgumentException
             ? exception.Message
-            : exception.Message;
+            : "系统内部错误，请稍后重试。";
 
         context.Response.StatusCode = status;
         context.Response.ContentType = "application/json; charset=utf-8";
@@ -59,7 +60,7 @@ public class GlobalExceptionHandlerMiddleware(
         };
 
         await context.Response.WriteAsync(
-            JsonSerializer.Serialize(payload, JsonOptions));
+            JsonSerializer.Serialize(payload, JsonOptions)).ConfigureAwait(false);
     }
 
     private static (int status, string errorCode) MapException(Exception exception)

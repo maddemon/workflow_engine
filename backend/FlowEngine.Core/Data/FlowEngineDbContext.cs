@@ -13,7 +13,7 @@ namespace FlowEngine.Core.Data;
 /// <summary>
 /// FlowEngine 数据库上下文。
 /// </summary>
-public sealed class FlowEngineDbContext : DbContext
+public class FlowEngineDbContext : DbContext
 {
     public DbSet<Workflow> Workflows => Set<Workflow>();
 
@@ -37,9 +37,61 @@ public sealed class FlowEngineDbContext : DbContext
 
     public DbSet<ExecutionDedup> ExecutionDedups => Set<ExecutionDedup>();
 
+    public DbSet<WorkflowCredentialUsage> WorkflowCredentialUsages => Set<WorkflowCredentialUsage>();
+
     public FlowEngineDbContext(DbContextOptions<FlowEngineDbContext> options)
         : base(options)
     {
+    }
+
+    /// <summary>
+    /// 集中维护 <see cref="WorkflowCredentialUsage"/> 关联表：在工作流新增/修改/删除时，
+    /// 删除该工作流的旧引用行，并为新增/修改的工作流按节点参数重新计算写入引用行。
+    /// 删除+写入在 <see cref="base.SaveChangesAsync"/> 的同一事务内原子提交。
+    /// </summary>
+    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        var changedWorkflows = ChangeTracker.Entries<Workflow>()
+            .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+            .ToList();
+
+        if (changedWorkflows.Count > 0)
+        {
+            await MaintainWorkflowCredentialUsagesAsync(changedWorkflows, cancellationToken).ConfigureAwait(false);
+        }
+
+        return await base.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task MaintainWorkflowCredentialUsagesAsync(
+        IReadOnlyList<Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<Workflow>> changedWorkflows,
+        CancellationToken cancellationToken)
+    {
+        var workflowIds = changedWorkflows.Select(e => e.Entity.Id).ToList();
+
+        // 先删除这些工作流的全部旧引用行（新增/修改会随后重写；删除则仅清理孤儿行）。
+        var existing = await WorkflowCredentialUsages
+            .Where(u => workflowIds.Contains(u.WorkflowId))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        if (existing.Count > 0)
+        {
+            WorkflowCredentialUsages.RemoveRange(existing);
+        }
+
+        // 仅为仍存在的（新增/修改）工作流重新计算并写入引用行。
+        foreach (var entry in changedWorkflows)
+        {
+            if (entry.State == EntityState.Deleted)
+            {
+                continue;
+            }
+
+            foreach (var usage in CredentialReferenceScanner.Scan(entry.Entity))
+            {
+                WorkflowCredentialUsages.Add(usage);
+            }
+        }
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)

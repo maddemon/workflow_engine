@@ -8,6 +8,7 @@ import { InfoTooltip } from './InfoTooltip.tsx';
 import { useParameterName } from '../useParameterName.ts';
 import { getCredentials, createCredential, getCredentialTypes } from '../../../services/api.ts';
 import { useWorkflowStore } from '../../../stores/workflowStore.ts';
+import { useCanvasStore } from '../../Canvas/stores/canvasStore.ts';
 import type { ParameterDefinition, CredentialTypeDefinition } from '../../../types/workflow.ts';
 
 interface CredentialFieldProps {
@@ -20,7 +21,7 @@ interface CredentialFieldProps {
 export function CredentialField({ definition, value, onChange, error }: CredentialFieldProps) {
   const { t } = useTranslation('parameterPanel');
   const paramName = useParameterName();
-  const nodeId = useWorkflowStore((s) => s.selectedNodeId);
+  const nodeId = useCanvasStore((s) => s.selectedNodeId);
   const label = paramName(definition.name, definition.displayName);
   const credentialRevision = useWorkflowStore((s) => s.credentialRevision);
   const bumpCredentialRevision = useWorkflowStore((s) => s.bumpCredentialRevision);
@@ -143,11 +144,11 @@ export function CredentialField({ definition, value, onChange, error }: Credenti
                 <Group gap={4} wrap="nowrap">
                   <Text size="sm" fw={500}>
                     {paramName(field.name, field.displayName)}
-                    {field.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
+                    {field.isRequired && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
                   </Text>
                   {field.hint && <InfoTooltip label={field.hint} />}
                 </Group>
-                {field.sensitive ? (
+                {field.secret ? (
                   <PasswordInput
                     placeholder={field.name}
                     value={formValues[field.name] ?? ''}

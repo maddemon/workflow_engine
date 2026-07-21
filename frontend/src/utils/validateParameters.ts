@@ -1,4 +1,4 @@
-import type { ParameterDefinition } from '../types/workflow.ts';
+import type { ParameterDefinition, ValidationRuleDto } from '../types/workflow.ts';
 
 export interface ValidationError {
   name: string;
@@ -26,50 +26,63 @@ export function validateParameters(
     if (value === undefined || value === null || value === '') continue;
 
     for (const rule of def.validationRules) {
-      const ruleLower = rule.toLowerCase();
-
-      if (ruleLower.startsWith('minlength:')) {
-        const min = parseInt(rule.split(':')[1], 10);
-        if (Number.isNaN(min)) continue;
-        if (typeof value === 'string' && value.length < min) {
-          errors[def.name] = `${def.displayName} must be at least ${min} characters`;
-        }
-      } else if (ruleLower.startsWith('maxlength:')) {
-        const max = parseInt(rule.split(':')[1], 10);
-        if (Number.isNaN(max)) continue;
-        if (typeof value === 'string' && value.length > max) {
-          errors[def.name] = `${def.displayName} must be at most ${max} characters`;
-        }
-      } else if (ruleLower.startsWith('min:')) {
-        const min = parseFloat(rule.split(':')[1]);
-        if (Number.isNaN(min)) continue;
-        if (typeof value === 'number' && value < min) {
-          errors[def.name] = `${def.displayName} must be at least ${min}`;
-        }
-      } else if (ruleLower.startsWith('max:')) {
-        const max = parseFloat(rule.split(':')[1]);
-        if (Number.isNaN(max)) continue;
-        if (typeof value === 'number' && value > max) {
-          errors[def.name] = `${def.displayName} must be at most ${max}`;
-        }
-      } else if (ruleLower.startsWith('pattern:')) {
-        const pattern = rule.split(':').slice(1).join(':');
-        // 空正则或非法正则直接跳过，避免校验失效或抛异常（R11）。
-        if (!pattern) continue;
-        let regex: RegExp;
-        try {
-          regex = new RegExp(pattern);
-        } catch {
-          continue;
-        }
-        if (typeof value === 'string' && !regex.test(value)) {
-          errors[def.name] = `${def.displayName} format is invalid`;
-        }
-      }
+      applyRule(def, rule, value, errors);
     }
   }
 
   return errors;
+}
+
+/**
+ * 按对象规则校验单个值。rule.type 大小写不敏感；
+ * rule.errorMessage 存在时优先作为错误提示，否则按类型生成默认提示。
+ */
+function applyRule(
+  def: ParameterDefinition,
+  rule: ValidationRuleDto,
+  value: unknown,
+  errors: Record<string, string>,
+): void {
+  const type = rule.type.toLowerCase();
+
+  if (type === 'minlength') {
+    const min = Number(rule.value);
+    if (Number.isNaN(min)) return;
+    if (typeof value === 'string' && value.length < min) {
+      errors[def.name] = rule.errorMessage ?? `${def.displayName} must be at least ${min} characters`;
+    }
+  } else if (type === 'maxlength') {
+    const max = Number(rule.value);
+    if (Number.isNaN(max)) return;
+    if (typeof value === 'string' && value.length > max) {
+      errors[def.name] = rule.errorMessage ?? `${def.displayName} must be at most ${max} characters`;
+    }
+  } else if (type === 'min') {
+    const min = Number(rule.value);
+    if (Number.isNaN(min)) return;
+    if (typeof value === 'number' && value < min) {
+      errors[def.name] = rule.errorMessage ?? `${def.displayName} must be at least ${min}`;
+    }
+  } else if (type === 'max') {
+    const max = Number(rule.value);
+    if (Number.isNaN(max)) return;
+    if (typeof value === 'number' && value > max) {
+      errors[def.name] = rule.errorMessage ?? `${def.displayName} must be at most ${max}`;
+    }
+  } else if (type === 'pattern') {
+    const pattern = String(rule.value);
+    // 空正则或非法正则直接跳过，避免校验失效或抛异常（R11）。
+    if (!pattern) return;
+    let regex: RegExp;
+    try {
+      regex = new RegExp(pattern);
+    } catch {
+      return;
+    }
+    if (typeof value === 'string' && !regex.test(value)) {
+      errors[def.name] = rule.errorMessage ?? `${def.displayName} format is invalid`;
+    }
+  }
 }
 
 /**

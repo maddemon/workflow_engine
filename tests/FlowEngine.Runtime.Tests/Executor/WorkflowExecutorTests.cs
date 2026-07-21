@@ -315,11 +315,59 @@ public class WorkflowExecutorTests
             .FirstOrDefaultAsync(e => e.Id == executionRecord.Id, TestContext.Current.CancellationToken);
 
         Assert.NotNull(reloaded);
-        Assert.True(
-            reloaded.Status is ExecutionStatus.Cancelled or ExecutionStatus.Failed,
-            $"Expected cancelled or failed, but was {reloaded.Status}.");
+        // 取消应经状态机转为 Cancelled 终态（而非被误判为 Failed）。
+        Assert.Equal(ExecutionStatus.Cancelled, reloaded.Status);
         Assert.True(sw.Elapsed < TimeSpan.FromSeconds(5),
             $"Execution took {sw.Elapsed.TotalSeconds:F1}s, expected cancellation within 5s.");
+    }
+
+    [Fact]
+    public async Task CancelAsync_ViaRegistry_TransitionsRunningExecutionToCancelled()
+    {
+        var nodeA = CreateNode("a", "slow", isEntry: true);
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "cancel_registry",
+            CreatedBy = "test",
+            Nodes = [nodeA],
+            Connections = []
+        };
+
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var executionRecord = new ExecutionRecord
+        {
+            Id = Guid.NewGuid(),
+            WorkflowDefinitionId = workflow.Id,
+            StartedAt = DateTime.UtcNow,
+            Status = ExecutionStatus.Pending,
+            NodeRecords = []
+        };
+        _dbContext.ExecutionRecords.Add(executionRecord);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // 模拟后台 worker：登记每执行取消令牌源，并将其令牌传入执行循环。
+        var registry = new ExecutionCancellationRegistry();
+        using var cts = new CancellationTokenSource();
+        registry.Register(executionRecord.Id, cts);
+
+        var execTask = _executor.ExecuteLoopAsync(
+            workflow, executionRecord.Id, null, _dbContext, cts.Token);
+
+        // 执行进行中经注册表触发取消（对应 ExecutionService.CancelAsync 的行为）。
+        await Task.Delay(TimeSpan.FromMilliseconds(200), TestContext.Current.CancellationToken);
+        registry.TryCancel(executionRecord.Id);
+
+        await execTask;
+
+        var reloaded = await _dbContext.ExecutionRecords
+            .FirstOrDefaultAsync(e => e.Id == executionRecord.Id, TestContext.Current.CancellationToken);
+
+        Assert.NotNull(reloaded);
+        Assert.Equal(ExecutionStatus.Cancelled, reloaded!.Status);
+        Assert.NotNull(reloaded.CompletedAt);
     }
 
     [Fact]
@@ -411,6 +459,68 @@ public class WorkflowExecutorTests
         Assert.Equal("Timeout", record.NodeRecords[0].Output.Error?.Code);
     }
 
+    [Fact]
+    public async Task StartAsync_WithPreloadedWorkflow_EnqueuesItemCarryingWorkflow()
+    {
+        var nodeA = CreateNode("a", "passThrough", isEntry: true);
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "preloaded",
+            CreatedBy = "test",
+            Nodes = [nodeA],
+            Connections = []
+        };
+
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // 复用调用方已加载的工作流，触发透传路径（绕过引擎内部第二次查询）。
+        var executionId = await _executor.StartAsync(workflow.Id, workflow, null, TestContext.Current.CancellationToken);
+
+        // 出队工作项，断言携带了同一工作流实例引用（证明第 2 次 DB 加载被消除）。
+        var item = await _executionQueue.DequeueAsync(TestContext.Current.CancellationToken);
+        Assert.NotNull(item.PreloadedWorkflow);
+        Assert.Equal(workflow.Id, item.PreloadedWorkflow.Id);
+        Assert.Same(workflow, item.PreloadedWorkflow);
+
+        // 放回队列，交由 DrainAndExecuteAsync 实际执行，验证运行路径仍正常落库。
+        await _executionQueue.EnqueueAsync(item, TestContext.Current.CancellationToken);
+        var record = await WaitForExecutionAsync(executionId.Value, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(ExecutionStatus.Completed, record.Status);
+        Assert.Single(record.NodeRecords);
+    }
+
+    [Fact]
+    public async Task StartAsync_PreloadedWorkflowIdMismatch_FallsBackToInternalLoad()
+    {
+        var nodeA = CreateNode("a", "passThrough", isEntry: true);
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "preloaded-mismatch",
+            CreatedBy = "test",
+            Nodes = [nodeA],
+            Connections = []
+        };
+
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        // 传入 Id 不匹配的预加载工作流：应回退内部加载，不抛异常且正确启动。
+        var other = new Workflow { Id = Guid.NewGuid(), Name = "other", CreatedBy = "test", Nodes = [], Connections = [] };
+        var executionId = await _executor.StartAsync(workflow.Id, other, null, TestContext.Current.CancellationToken);
+
+        var item = await _executionQueue.DequeueAsync(TestContext.Current.CancellationToken);
+        // 回退路径下，预加载工作流被丢弃（改为引擎内部加载并携带实际工作流实例）。
+        Assert.NotNull(item.PreloadedWorkflow);
+        Assert.Equal(workflow.Id, item.PreloadedWorkflow.Id);
+
+        await _executionQueue.EnqueueAsync(item, TestContext.Current.CancellationToken);
+        var record = await WaitForExecutionAsync(executionId.Value, cancellationToken: TestContext.Current.CancellationToken);
+        Assert.Equal(ExecutionStatus.Completed, record.Status);
+    }
+
     private static NodeDefinition CreateNode(
         string name,
         string typeName,
@@ -467,12 +577,134 @@ public class WorkflowExecutorTests
             => Task.FromResult(new CredentialValue());
     }
 
+    private SpyDbContext CreateSpyDbContext()
+    {
+        var options = new DbContextOptionsBuilder<FlowEngineDbContext>()
+            .UseInMemoryDatabase(databaseName: _dbName)
+            .Options;
+        return new SpyDbContext(options);
+    }
+
+    private sealed class SpyDbContext : FlowEngineDbContext
+    {
+        public int SaveChangesAsyncCount { get; private set; }
+
+        public SpyDbContext(DbContextOptions<FlowEngineDbContext> options) : base(options)
+        {
+        }
+
+        public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        {
+            SaveChangesAsyncCount++;
+            return base.SaveChangesAsync(cancellationToken);
+        }
+    }
+
     private FlowEngineDbContext CreateDbContext()
     {
         var options = new DbContextOptionsBuilder<FlowEngineDbContext>()
             .UseInMemoryDatabase(databaseName: _dbName)
             .Options;
         return new FlowEngineDbContext(options);
+    }
+
+    /// <summary>
+    /// 验证节点记录持久化的写放大已修复：随着节点数 N 增长，SaveChangesAsync 调用次数应保持有界
+    /// （约 ceil(N/25)+1），而非常规的 O(N)。同时验证终态刷新保证了全部节点记录不丢。
+    /// </summary>
+    [Fact]
+    public async Task Linear_Chain_Of_ManyNodes_BatchesSaves_BoundedCount()
+    {
+        const int nodeCount = 100;
+        var nodes = new List<NodeDefinition>();
+        for (var i = 0; i < nodeCount; i++)
+        {
+            nodes.Add(CreateNode($"n{i}", "passThrough", isEntry: i == 0));
+        }
+
+        var connections = new List<Connection>();
+        for (var i = 1; i < nodeCount; i++)
+        {
+            connections.Add(new Connection
+            {
+                Id = Guid.NewGuid(),
+                SourceNodeId = $"n{i - 1}",
+                SourcePortName = FlowConstants.PortNames.Output,
+                TargetNodeId = $"n{i}",
+                TargetPortName = FlowConstants.PortNames.Input
+            });
+        }
+
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "longChain",
+            CreatedBy = "test",
+            Nodes = nodes,
+            Connections = connections
+        };
+
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var executionRecord = new ExecutionRecord
+        {
+            Id = Guid.NewGuid(),
+            WorkflowDefinitionId = workflow.Id,
+            StartedAt = DateTime.UtcNow,
+            Status = ExecutionStatus.Pending,
+            NodeRecords = []
+        };
+        _dbContext.ExecutionRecords.Add(executionRecord);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        using var spy = CreateSpyDbContext();
+        await _executor.ExecuteLoopAsync(workflow, executionRecord.Id, null, spy, CancellationToken.None);
+
+        using var readCtx = CreateDbContext();
+        var reloaded = await readCtx.ExecutionRecords
+            .AsNoTracking()
+            .FirstAsync(e => e.Id == executionRecord.Id, TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExecutionStatus.Completed, reloaded.Status);
+        Assert.Equal(nodeCount, reloaded.NodeRecords.Count);
+
+        // Pending→Running(1) + 周期性刷新(floor(N/25)) + 终态(1) ≈ N/25 + 2，留足余量断言有界且不随 N 线性增长。
+        Assert.True(
+            spy.SaveChangesAsyncCount <= nodeCount / 25 + 4,
+            $"SaveChangesAsync 次数 {spy.SaveChangesAsyncCount} 应远小于节点数 {nodeCount}（写放大已修复）。");
+        Assert.True(
+            spy.SaveChangesAsyncCount < nodeCount,
+            $"SaveChangesAsync 次数 {spy.SaveChangesAsyncCount} 不应随节点数线性增长。");
+    }
+
+    /// <summary>
+    /// 验证失败态经 PersistFailedStateAsync 立即落库（不再使用 CancellationToken.None），
+    /// 确保失败节点自身的执行记录不丢失。
+    /// </summary>
+    [Fact]
+    public async Task Failing_Workflow_PersistsNodeRecord_ViaFailedStateFlush()
+    {
+        var nodeA = CreateNode("a", "failing", isEntry: true);
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "failingFlush",
+            CreatedBy = "test",
+            Nodes = [nodeA],
+            Connections = []
+        };
+
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var executionId = await _executor.StartAsync(workflow.Id, cancellationToken: TestContext.Current.CancellationToken);
+        var record = await WaitForExecutionAsync(executionId.Value, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExecutionStatus.Failed, record.Status);
+        // 批量刷新后，失败节点记录必须仍由失败态刷新落库。
+        Assert.Single(record.NodeRecords);
+        Assert.Equal("a", record.NodeRecords[0].NodeDefinitionId);
     }
 
     [Fact]

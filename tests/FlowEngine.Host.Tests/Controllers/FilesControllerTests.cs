@@ -1,11 +1,13 @@
 using System.Net;
 using System.Net.Http.Json;
+using System.Reflection;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Identity;
+using FlowEngine.Host.Controllers;
 using FlowEngine.Host.Tests.Infrastructure;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.EntityFrameworkCore;
@@ -155,9 +157,46 @@ public class FilesControllerTests : HostIntegrationTestBase
         var response = await client.GetAsync($"/api/v1/files?projectId={file.ProjectId}", ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var result = await response.Content.ReadFromJsonAsync<IReadOnlyList<StoredFileDto>>(TestJsonOptions, ct);
+        var result = await response.Content.ReadFromJsonAsync<PagedResult<StoredFileDto>>(TestJsonOptions, ct);
         Assert.NotNull(result);
-        Assert.Contains(result, f => f.Id == file.Id);
+        Assert.Contains(result.Items, f => f.Id == file.Id);
+    }
+
+    [Fact]
+    public async Task GetAll_ByProject_ReturnsPagedShape_NotBareArray()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var email = "files-paged@example.com";
+        var client = await CreateAuthenticatedClientAsync(email, [RoleConstants.Admin], ct);
+        var file = await SeedFileAsync(email, ct);
+
+        var response = await client.GetAsync($"/api/v1/files?projectId={file.ProjectId}&page=1&pageSize=20", ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await response.Content.ReadFromJsonAsync<PagedResult<StoredFileDto>>(TestJsonOptions, ct);
+        Assert.NotNull(result);
+        // PagedResult 契约：必须包含 items / totalCount / page / pageSize，而非裸数组。
+        Assert.NotNull(result.Items);
+        Assert.Contains(result.Items, f => f.Id == file.Id);
+        Assert.Equal(1, result.Page);
+        Assert.Equal(20, result.PageSize);
+        Assert.True(result.TotalCount >= 1);
+    }
+
+    [Fact]
+    public void Delete_Endpoint_Requires_OperationDelete_Permission()
+    {
+        // 删除文件的授权粒度应与"删除"语义一致，而非复用的写入权限。
+        var method = typeof(FilesController).GetMethod(
+            nameof(FilesController.Delete),
+            BindingFlags.Public | BindingFlags.Instance,
+            [typeof(Guid), typeof(CancellationToken)]);
+        Assert.NotNull(method);
+
+        var attribute = method!.GetCustomAttribute<AuthorizePermissionAttribute>();
+        Assert.NotNull(attribute);
+        Assert.Equal(Scope.File, attribute!.Scope);
+        Assert.Equal(Operation.Delete, attribute.Operation);
     }
 
     private async Task<Guid> SeedProjectAsync(string email, CancellationToken ct)

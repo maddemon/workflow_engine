@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { screen, fireEvent, waitFor, within } from '@testing-library/react';
-import { MemoryRouter, Routes, Route } from 'react-router-dom';
+import { MemoryRouter, Routes, Route, useNavigate } from 'react-router-dom';
 import { renderWithProvider } from '../../test-utils.tsx';
 import { WorkflowEditorPage } from '../WorkflowEditorPage';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
+import { useCanvasStore } from '../../components/Canvas/stores/canvasStore.ts';
 import type { NodeTypeDescriptor } from '../../types/workflow.ts';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
 vi.mock('../../hooks/useNodeTypes.ts', () => ({
   useNodeTypes: vi.fn(),
@@ -59,12 +60,23 @@ const descriptor: NodeTypeDescriptor = {
   defaultIsEntry: false,
 };
 
-function TestWrapper({ path = '/workflows/wf-1/edit', onLayoutChange }: { path?: string; onLayoutChange?: (navbar: React.ReactNode, aside: React.ReactNode) => void }) {
+// Drives a real route param change from inside the Router (useNavigate must be
+// called within a Router context, so it lives in this inner component).
+function NavigateOnProp({ navigateTo }: { navigateTo?: string }) {
+  const navigate = useNavigate();
+  useEffect(() => {
+    if (navigateTo) navigate(navigateTo);
+  }, [navigateTo, navigate]);
+  return null;
+}
+
+function TestWrapper({ path = '/workflows/wf-1/edit', onLayoutChange, navigateTo }: { path?: string; onLayoutChange?: (navbar: React.ReactNode, aside: React.ReactNode) => void; navigateTo?: string }) {
   const [navbar, setNavbar] = useState<React.ReactNode>(null);
   const [aside, setAside] = useState<React.ReactNode>(null);
 
   return (
     <MemoryRouter initialEntries={[path]}>
+      <NavigateOnProp navigateTo={navigateTo} />
       <Routes>
         <Route
           path="/workflows/:id/edit"
@@ -89,6 +101,12 @@ function renderPage(path = '/workflows/wf-1/edit', onLayoutChange?: (navbar: Rea
   return renderWithProvider(<TestWrapper path={path} onLayoutChange={onLayoutChange} />);
 }
 
+// Harness keeps renderWithProvider's Mantine/i18n providers as the root node so
+// that rerendering with a new path does NOT drop the providers.
+function Harness({ path, navigateTo }: { path: string; navigateTo?: string }) {
+  return <TestWrapper path={path} navigateTo={navigateTo} />;
+}
+
 describe('WorkflowEditorPage', () => {
   const originalConfirm = window.confirm;
 
@@ -100,11 +118,11 @@ describe('WorkflowEditorPage', () => {
     vi.clearAllMocks();
     useWorkflowStore.getState().newWorkflow();
     useWorkflowStore.setState({
-      nodeTypes: [descriptor],
       workflowId: 'wf-1',
       workflowName: 'Test Workflow',
       workflowVersion: 1,
     });
+    useCanvasStore.setState({ nodeTypes: [descriptor] });
 
     mockedUseNodeTypes.mockReturnValue({ ready: true, nodeTypes: [descriptor] });
     mockedUseExecution.mockReturnValue({
@@ -193,9 +211,9 @@ describe('WorkflowEditorPage', () => {
 
   it('switches_toReviewModePanel', async () => {
     useWorkflowStore.setState({
-      reviewMode: true,
       structuredDiff: [{ op: 'add', nodeId: 'n1' }],
     });
+    useCanvasStore.setState({ reviewMode: true });
 
     renderPage('/workflows/wf-1/edit');
     expect(await screen.findByText('Review Mode')).toBeInTheDocument();
@@ -204,7 +222,7 @@ describe('WorkflowEditorPage', () => {
   });
 
   it('opens_validationModal_and_confirmsActivation', async () => {
-    useWorkflowStore.setState({ reviewMode: true });
+    useCanvasStore.setState({ reviewMode: true });
     mockedValidateWorkflow.mockResolvedValue({ valid: true, errors: [], canAutoFix: false });
     mockedConfirmWorkflow.mockResolvedValue({
       id: 'wf-1',
@@ -241,7 +259,7 @@ describe('WorkflowEditorPage', () => {
   });
 
   it('opens_rejectModal_and_submitsRejection', async () => {
-    useWorkflowStore.setState({ reviewMode: true });
+    useCanvasStore.setState({ reviewMode: true });
     mockedRejectDraft.mockResolvedValue({
       id: 'wf-1',
       projectId: null,
@@ -311,5 +329,95 @@ describe('WorkflowEditorPage', () => {
     await waitFor(() => {
       expect(onLayoutChange).toHaveBeenCalledWith(expect.anything(), expect.anything());
     });
+  });
+
+  // Regression test for P1: the load effect must NOT re-run (and must NOT clear
+  // execution) when only the live execution status changes. The real useExecution
+  // recreates `clearExecution` on every executionMeta update; if that identity is
+  // in the load effect's dependency array the effect re-runs on every status message.
+  it('does_not_reload_or_clear_execution_on_status_update', async () => {
+    const loadWorkflow = vi.spyOn(useWorkflowStore.getState(), 'loadWorkflow').mockResolvedValue(undefined);
+
+    // Initial render: no execution -> clearExecution identity "A"
+    const clearExecutionA = vi.fn();
+    mockedUseExecution.mockReturnValue({
+      execution: null,
+      status: 'idle',
+      error: null,
+      dryRunLoading: false,
+      execute: vi.fn(),
+      dryRun: vi.fn(),
+      cancelExecution: vi.fn(),
+      clearExecution: clearExecutionA,
+    });
+
+    const utils = renderWithProvider(<Harness path="/workflows/wf-1/edit" />);
+
+    // Workflow loads once on mount; prior execution state cleared once.
+    await waitFor(() => expect(loadWorkflow).toHaveBeenCalledTimes(1));
+    expect(clearExecutionA).toHaveBeenCalled();
+
+    // Simulate a live execution status update: a NEW clearExecution identity,
+    // exactly as the real hook produces whenever executionMeta changes.
+    const clearExecutionB = vi.fn();
+    mockedUseExecution.mockReturnValue({
+      execution: {
+        id: 'ex-1',
+        workflowDefinitionId: 'wf-1',
+        status: 'Running',
+        startedAt: '2024-01-01T00:00:00Z',
+        completedAt: null,
+        nodeRecords: [],
+      },
+      status: 'running',
+      error: null,
+      dryRunLoading: false,
+      execute: vi.fn(),
+      dryRun: vi.fn(),
+      cancelExecution: vi.fn(),
+      clearExecution: clearExecutionB,
+    });
+
+    utils.rerender(<Harness path="/workflows/wf-1/edit" />);
+
+    // Execution status update must NOT reload the workflow nor clear execution again.
+    expect(loadWorkflow).toHaveBeenCalledTimes(1);
+    expect(clearExecutionB).not.toHaveBeenCalled();
+  });
+
+  // Switching to a different workflow id must clear the prior execution state.
+  it('clears_execution_when_switching_workflow_id', async () => {
+    const clearExecutionA = vi.fn();
+    mockedUseExecution.mockReturnValue({
+      execution: null,
+      status: 'idle',
+      error: null,
+      dryRunLoading: false,
+      execute: vi.fn(),
+      dryRun: vi.fn(),
+      cancelExecution: vi.fn(),
+      clearExecution: clearExecutionA,
+    });
+
+    const utils = renderWithProvider(<Harness path="/workflows/wf-1/edit" />);
+    await waitFor(() => expect(clearExecutionA).toHaveBeenCalled());
+
+    // Switch to a different workflow id (real route param change, no remount)
+    // -> clearExecution must run again with the new identity.
+    const clearExecutionB = vi.fn();
+    mockedUseExecution.mockReturnValue({
+      execution: null,
+      status: 'idle',
+      error: null,
+      dryRunLoading: false,
+      execute: vi.fn(),
+      dryRun: vi.fn(),
+      cancelExecution: vi.fn(),
+      clearExecution: clearExecutionB,
+    });
+
+    utils.rerender(<Harness path="/workflows/wf-1/edit" navigateTo="/workflows/wf-2/edit" />);
+
+    await waitFor(() => expect(clearExecutionB).toHaveBeenCalledTimes(1));
   });
 });

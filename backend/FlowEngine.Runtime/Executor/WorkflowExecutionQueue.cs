@@ -1,4 +1,5 @@
 using System.Threading.Channels;
+using FlowEngine.Core.Entities;
 
 namespace FlowEngine.Runtime.Executor;
 
@@ -8,7 +9,12 @@ namespace FlowEngine.Runtime.Executor;
 public sealed record WorkflowExecutionWorkItem(
     Guid ExecutionRecordId,
     Guid WorkflowDefinitionId,
-    object? TriggerPayload);
+    object? TriggerPayload,
+    /// <summary>
+    /// 调用方随同携带的已加载工作流定义；非空时后台 worker 直接复用，省去一次数据库查询。
+    /// 队列仅驻留内存，工作项按引用持有，故携带实体引用安全。
+    /// </summary>
+    Workflow? PreloadedWorkflow = null);
 
 /// <summary>
 /// 跨进程共享的工作流执行队列（Singleton），解耦请求入口与后台执行。

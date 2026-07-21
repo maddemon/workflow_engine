@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Workflows;
@@ -34,8 +35,8 @@ public class WorkflowsController(
     [AuthorizePermission(Scope.Workflow, Operation.Read)]
     public async Task<ActionResult<PagedResult<WorkflowSummaryDto>>> GetAll(
         [FromQuery] Guid? projectId = null,
-        [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 20,
+        [FromQuery] [Range(1, int.MaxValue)] int page = 1,
+        [FromQuery] [Range(1, 200)] int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
         var result = await workflowService.GetAllAsync(projectId, page, pageSize, cancellationToken).ConfigureAwait(false);

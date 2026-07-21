@@ -54,13 +54,26 @@ export type ParameterType =
   | 'File'
   | 'Expression';
 
+/**
+ * 校验规则对象，与后端 Core/Entities/ValidationRule 对应。
+ * 后端 JSON 字段：type / value / errorMessage（camelCase）。
+ */
+export interface ValidationRuleDto {
+  /** 规则类型，如 minLength / maxLength / min / max / pattern（大小写不敏感）。 */
+  type: string;
+  /** 规则值（数值、字符串或布尔，按 type 解释）。 */
+  value: string | number | boolean;
+  /** 自定义错误提示；缺省时由前端按类型生成默认提示。 */
+  errorMessage?: string;
+}
+
 export interface ParameterDefinition {
   name: string;
   displayName: string;
   type: ParameterType;
   defaultValue: unknown;
   required: boolean;
-  validationRules: string[];
+  validationRules: ValidationRuleDto[];
   displayRule: DisplayRule | null;
   credentialType: string | null;
   options: Option[];
@@ -100,6 +113,19 @@ export interface NodeTypeDescriptor {
   displayTemplate?: string | null;
 }
 
+/**
+ * 重试策略对象，与后端 Core/Entities/RetryPolicy 对应（camelCase JSON）。
+ * baseDelay / maxDelay 为 TimeSpan，后端以字符串 "hh:mm:ss"（可带 ".fffffff"）绑定。
+ */
+export interface RetryPolicyDto {
+  maxRetries: number;
+  baseDelay: string;
+  maxDelay: string;
+  useJitter: boolean;
+  backoffStrategy: string;
+  retryableErrorCodes?: string[] | null;
+}
+
 export interface NodeDefinition {
   id: string;
   typeName: string;
@@ -111,7 +137,7 @@ export interface NodeDefinition {
   isEntry: boolean;
   disabled: boolean;
   errorStrategy: string;
-  retryPolicy: string | null;
+  retryPolicy: RetryPolicyDto | null;
   timeout: number | null;
 }
 
@@ -156,8 +182,8 @@ export interface Workflow {
   createdAt: string;
   updatedAt: string;
   isActive: boolean;
-  source?: 'ai' | 'human';
-  draftStatus?: 'pending' | 'rejected' | 'confirmed';
+  source?: 'Human' | 'Ai';
+  draftStatus?: 'Pending' | 'Rejected' | 'Confirmed';
   rejectionReason?: string | null;
   diff?: StructuredDiff[];
   styleSettings: WorkflowStyleSettings | null;
@@ -174,8 +200,8 @@ export interface WorkflowSummary {
   projectId: string | null;
   createdAt: string;
   updatedAt: string | null;
-  source?: 'ai' | 'human';
-  draftStatus?: 'pending' | 'rejected' | 'confirmed';
+  source?: 'Human' | 'Ai';
+  draftStatus?: 'Pending' | 'Rejected' | 'Confirmed';
   rejectionReason?: string | null;
   diff?: StructuredDiff[];
   /** 最近一次执行完成时间。 */
@@ -203,7 +229,16 @@ export interface UpdateWorkflowDto {
   connections: Connection[];
 }
 
-export type ExecutionStatus = 'Pending' | 'Running' | 'Completed' | 'Failed' | 'Cancelled' | 'DryRunCompleted';
+export type ExecutionStatus =
+  | 'Pending'
+  | 'Running'
+  | 'Completed'
+  | 'Failed'
+  | 'Cancelled'
+  | 'Compensating'
+  | 'Compensated'
+  | 'CompensationFailed'
+  | 'DryRunCompleted';
 
 export interface NodeExecutionRecordDto {
   id: string;
@@ -224,8 +259,6 @@ export interface ExecutionDto {
   status: ExecutionStatus;
   startedAt: string | null;
   completedAt: string | null;
-  /** 失败时的错误信息（仅 execution_failed 时填充）。 */
-  error?: { code: string; message: string } | null;
   nodeRecords: NodeExecutionRecordDto[];
 }
 
@@ -235,6 +268,22 @@ export interface ExecutionSummaryDto {
   status: ExecutionStatus;
   startedAt: string | null;
   completedAt: string | null;
+}
+
+/**
+ * 分页结果，与后端 PagedResult&lt;T&gt;（camelCase 序列化）对应。
+ */
+export interface PagedResult<T> {
+  /** 当前页数据。 */
+  items: T[];
+  /** 总记录数。 */
+  totalCount: number;
+  /** 当前页码（从 1 开始）。 */
+  page: number;
+  /** 每页大小。 */
+  pageSize: number;
+  /** 总页数。 */
+  totalPages: number;
 }
 
 export interface CredentialDto {
@@ -262,8 +311,8 @@ export interface UpdateCredentialDto {
 export interface CredentialFieldDefinition {
   name: string;
   displayName: string;
-  required: boolean;
-  sensitive: boolean;
+  isRequired: boolean;
+  secret: boolean;
   hint?: string;
 }
 

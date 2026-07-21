@@ -12,7 +12,9 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.Exceptions;
 using FlowEngine.Application.Tests.TestSupport.Fakes;
+using FlowEngine.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
+using System.Security.Cryptography;
 
 namespace FlowEngine.Application.Tests.Credentials;
 
@@ -514,6 +516,86 @@ public sealed class CredentialServiceTests : IDisposable
         var exception = await Assert.ThrowsAsync<BusinessException>(() => _service.EnsureAsync(dto, ct));
         Assert.Contains("缺少必填字段", exception.Message);
         Assert.Contains("password", exception.Message);
+    }
+
+    [Fact]
+    public async Task GetAsync_KeyVersioned_ResolvesPerVersion()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var keyProvider = new VersionedTestKeyProvider();
+        var encryption = new CredentialEncryptionService();
+        var service = BuildService(keyProvider, encryption);
+
+        // v1 加密、KeyVersion=v1 → 解密成功
+        var v1Data = new Dictionary<string, EncryptedField>
+        {
+            ["token"] = encryption.Encrypt("secret-v1", keyProvider.GetKey("v1")),
+        };
+        var credV1 = new Credential { Id = Guid.NewGuid(), Name = "c1", Type = "apiKey", Data = v1Data, KeyVersion = "v1" };
+        _dbContext.Credentials.Add(credV1);
+        await _dbContext.SaveChangesAsync(ct);
+
+        var r1 = (await service.GetAsync(credV1.Id, ct))!;
+        Assert.Equal("secret-v1", r1.Fields["token"]);
+
+        // v2 加密、KeyVersion=v2 → 解密成功
+        var v2Data = new Dictionary<string, EncryptedField>
+        {
+            ["token"] = encryption.Encrypt("secret-v2", keyProvider.GetKey("v2")),
+        };
+        var credV2 = new Credential { Id = Guid.NewGuid(), Name = "c2", Type = "apiKey", Data = v2Data, KeyVersion = "v2" };
+        _dbContext.Credentials.Add(credV2);
+        await _dbContext.SaveChangesAsync(ct);
+
+        var r2 = (await service.GetAsync(credV2.Id, ct))!;
+        Assert.Equal("secret-v2", r2.Fields["token"]);
+
+        // v2 数据但 KeyVersion=v1（版本错配）→ v1 密钥解密失败
+        var wrong = new Credential { Id = Guid.NewGuid(), Name = "c3", Type = "apiKey", Data = v2Data, KeyVersion = "v1" };
+        _dbContext.Credentials.Add(wrong);
+        await _dbContext.SaveChangesAsync(ct);
+        await Assert.ThrowsAnyAsync<CryptographicException>(() => service.GetAsync(wrong.Id, ct));
+    }
+
+    [Fact]
+    public async Task GetAsync_EmptyKeyVersion_FallsBackToCurrent()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var keyProvider = new VersionedTestKeyProvider();
+        var encryption = new CredentialEncryptionService();
+        var service = BuildService(keyProvider, encryption);
+
+        var data = new Dictionary<string, EncryptedField>
+        {
+            ["token"] = encryption.Encrypt("secret", keyProvider.GetKey("v1")),
+        };
+        // 空 KeyVersion 视为当前版本（兼容未带版本的遗留数据），解密不应抛异常。
+        var credEmpty = new Credential { Id = Guid.NewGuid(), Name = "c4", Type = "apiKey", Data = data, KeyVersion = string.Empty };
+        _dbContext.Credentials.Add(credEmpty);
+        await _dbContext.SaveChangesAsync(ct);
+
+        var rEmpty = (await service.GetAsync(credEmpty.Id, ct))!;
+        Assert.Equal("secret", rEmpty.Fields["token"]);
+    }
+
+    private CredentialService BuildService(ICryptoKeyProvider keyProvider, ICredentialEncryptionService encryption)
+    {
+        var auditFactory = new AuditEventFactory(_userContext);
+        var resourceAuthService = new StubResourceAuthorizationService();
+        var authGuard = AuthorizationGuardFactory.Create(_userContext, resourceAuthService);
+        var handler = new AuthorizedOperationHandler(authGuard, _eventBus, auditFactory);
+        return new CredentialService(
+            _dbContext,
+            encryption,
+            keyProvider,
+            _eventBus,
+            auditFactory,
+            resourceAuthService,
+            _userContext,
+            new WorkflowRepository(_dbContext),
+            authGuard,
+            new CredentialTypeRegistry(),
+            handler);
     }
 
     private static Credential CreateTestCredential(string? name = null, Guid? id = null, Guid? projectId = null, string type = "apiKey")

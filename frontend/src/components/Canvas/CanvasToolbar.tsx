@@ -5,6 +5,7 @@ import { Undo2, Redo2, ZoomIn, ZoomOut, Maximize, Save, Play, Square, Layout } f
 import { useReactFlow } from '@xyflow/react';
 import { useTranslation } from 'react-i18next';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
+import { useCanvasStore } from './stores/canvasStore.ts';
 import { validateParameters } from '../../utils/validateParameters.ts';
 
 interface ICanvasToolbarProps {
@@ -17,24 +18,24 @@ interface ICanvasToolbarProps {
 export const CanvasToolbar = memo(function CanvasToolbar({ onExecute, onCancel, onDryRun, dryRunLoading }: ICanvasToolbarProps) {
   const { t } = useTranslation(['workflow', 'common']);
   const { fitView, zoomIn, zoomOut } = useReactFlow();
-  const canUndo = useWorkflowStore((s) => s.canUndo);
-  const canRedo = useWorkflowStore((s) => s.canRedo);
-  const undo = useWorkflowStore((s) => s.undo);
-  const redo = useWorkflowStore((s) => s.redo);
+  const canUndo = useCanvasStore((s) => s.canUndo);
+  const canRedo = useCanvasStore((s) => s.canRedo);
+  const undo = useCanvasStore((s) => s.undo);
+  const redo = useCanvasStore((s) => s.redo);
   const saving = useWorkflowStore((s) => s.saving);
   const saveWorkflow = useWorkflowStore((s) => s.saveWorkflow);
   const workflowId = useWorkflowStore((s) => s.workflowId);
-  const nodeCount = useWorkflowStore((s) => s.nodes.length);
-  const isExecuting = useWorkflowStore((s) => s.isExecuting);
-  const autoLayout = useWorkflowStore((s) => s.autoLayout);
-  const reviewMode = useWorkflowStore((s) => s.reviewMode);
+  const nodeCount = useCanvasStore((s) => s.nodes.length);
+  const isExecuting = useCanvasStore((s) => s.isExecuting);
+  const autoLayout = useCanvasStore((s) => s.autoLayout);
+  const reviewMode = useCanvasStore((s) => s.reviewMode);
 
   const canExecute = workflowId && nodeCount > 0 && !isExecuting;
   const canDryRun = nodeCount > 0 && !isExecuting;
 
   const allValid = useMemo(() => {
     if (nodeCount === 0) return false;
-    const { nodes } = useWorkflowStore.getState();
+    const { nodes } = useCanvasStore.getState();
     for (const node of nodes) {
       const { descriptor, parameters } = node.data;
       const errors = validateParameters(parameters, descriptor.parameters);
@@ -64,7 +65,7 @@ export const CanvasToolbar = memo(function CanvasToolbar({ onExecute, onCancel, 
 
   const handleExecute = useCallback(() => {
     if (!workflowId) return;
-    const store = useWorkflowStore.getState();
+    const store = useCanvasStore.getState();
     const valid = store.validateAllNodes();
     if (!valid) {
       const errors = store.validationErrors;

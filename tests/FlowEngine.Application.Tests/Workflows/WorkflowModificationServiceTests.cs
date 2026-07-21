@@ -154,6 +154,64 @@ public sealed class WorkflowModificationServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task ModifyAsync_IncrementsVersion()
+    {
+        var workflowId = await SeedWorkflowAsync();
+        var before = (await _dbContext.Workflows.FindAsync(workflowId))!.Version;
+
+        var request = new ModifyWorkflowRequest
+        {
+            Operations =
+            [
+                new WorkflowOperation
+                {
+                    Op = "modify",
+                    Path = "/nodes/fetch/parameters/url",
+                    Value = "https://modified.example.com",
+                },
+            ],
+        };
+
+        var result = await _service.ModifyAsync(workflowId, request);
+
+        Assert.NotNull(result);
+        Assert.Equal(before + 1, result.Workflow.Version);
+
+        var persisted = await _dbContext.Workflows.FindAsync(workflowId);
+        Assert.Equal(before + 1, persisted!.Version);
+    }
+
+    [Fact]
+    public async Task ModifyAsync_NoContentChange_KeepsVersion()
+    {
+        var workflowId = await SeedWorkflowAsync();
+        // 读取落地后的版本号（避免依赖实体默认值语义）。
+        var before = (await _dbContext.Workflows.FindAsync(workflowId))!.Version;
+
+        // 将 url 设置为其当前值——内容无实质变化（no-op modify）。
+        var request = new ModifyWorkflowRequest
+        {
+            Operations =
+            [
+                new WorkflowOperation
+                {
+                    Op = "modify",
+                    Path = "/nodes/fetch/parameters/url",
+                    Value = "https://api.example.com", // 与已落库值相同
+                },
+            ],
+        };
+
+        var result = await _service.ModifyAsync(workflowId, request);
+
+        Assert.NotNull(result);
+        Assert.Equal(before, result.Workflow.Version);
+
+        var persisted = await _dbContext.Workflows.FindAsync(workflowId);
+        Assert.Equal(before, persisted!.Version);
+    }
+
+    [Fact]
     public async Task ModifyAsync_ModifyParameter_UpdatesValue()
     {
         var workflowId = await SeedWorkflowAsync();

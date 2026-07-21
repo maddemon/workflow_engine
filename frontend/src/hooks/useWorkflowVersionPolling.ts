@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { getWorkflow } from '../services/api.ts';
 import { useWorkflowStore } from '../stores/workflowStore.ts';
+import { useCanvasStore } from '../components/Canvas/stores/canvasStore.ts';
 
 interface UseWorkflowVersionPollingResult {
   changed: boolean;
@@ -10,8 +11,8 @@ interface UseWorkflowVersionPollingResult {
 
 export function useWorkflowVersionPolling(workflowId: string | null): UseWorkflowVersionPollingResult {
   const storeVersion = useWorkflowStore((s) => s.workflowVersion);
-  const isExecuting = useWorkflowStore((s) => s.isExecuting);
-  const reviewMode = useWorkflowStore((s) => s.reviewMode);
+  const isExecuting = useCanvasStore((s) => s.isExecuting);
+  const reviewMode = useCanvasStore((s) => s.reviewMode);
 
   const [changed, setChanged] = useState(false);
   const [newVersion, setNewVersion] = useState<number | null>(null);

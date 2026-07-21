@@ -47,6 +47,14 @@ public sealed class ParameterResolver
     // 函数调用形态：单词后接 "(" 并有配对的参数列表，如 Math.Max(1,2) / Now() / eval(x)
     private static readonly Regex s_functionCallRegex = new(@"\b[a-zA-Z_]\w*\s*\([^)]*\)", RegexOptions.Compiled);
 
+    // "xxx is not defined" 形式缺失标识符提取（Jint 抛错消息）。
+    private static readonly Regex s_notDefinedRegex =
+        new(@"^\s*([\w$]+)\s+is not defined", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
+    // "Cannot read properties of undefined (reading 'xxx')" 形式缺失属性提取。
+    private static readonly Regex s_readingPropertyRegex =
+        new(@"reading ['""]([\w$]+)['""]", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private readonly ILogger<ParameterResolver> _logger;
     private readonly ScriptCache _scriptCache;
 
@@ -116,7 +124,7 @@ public sealed class ParameterResolver
             return element.ValueKind switch
             {
                 JsonValueKind.String => await ResolveValueAsync(element.GetString() ?? string.Empty, jsEngine, cancellationToken).ConfigureAwait(false),
-                JsonValueKind.Number => element.TryGetInt32(out var i) ? i : element.GetDouble(),
+                JsonValueKind.Number => ResolveNumber(element),
                 JsonValueKind.True => true,
                 JsonValueKind.False => false,
                 JsonValueKind.Null or JsonValueKind.Undefined => null!,
@@ -147,6 +155,26 @@ public sealed class ParameterResolver
         }
 
         return value!;
+    }
+
+    /// <summary>
+    /// 将 JSON 数值解析为不丢失精度的 CLR 类型。
+    /// 整数优先以 <see cref="long"/> 保留大整数精度（如 9007199254740993 超出 double 53 位尾数），
+    /// 其次以 <see cref="decimal"/> 保留金额精度，<see cref="double"/> 仅作为最后兜底。
+    /// </summary>
+    private static object ResolveNumber(JsonElement element)
+    {
+        if (element.TryGetInt64(out var l))
+        {
+            return l;
+        }
+
+        if (element.TryGetDecimal(out var d))
+        {
+            return d;
+        }
+
+        return element.GetDouble();
     }
 
     private async Task<object> EvaluateExpressionAsync(string expression, JsEngine jsEngine, CancellationToken cancellationToken)
@@ -218,14 +246,14 @@ public sealed class ParameterResolver
     private static string? TryExtractMissingName(string message)
     {
         // Jint "xxx is not defined"
-        var match = Regex.Match(message, @"^\s*([\w$]+)\s+is not defined", RegexOptions.IgnoreCase);
+        var match = s_notDefinedRegex.Match(message);
         if (match.Success)
         {
             return match.Groups[1].Value;
         }
 
         // "Cannot read properties of undefined (reading 'xxx')"
-        match = Regex.Match(message, @"reading ['""]([\w$]+)['""]", RegexOptions.IgnoreCase);
+        match = s_readingPropertyRegex.Match(message);
         if (match.Success)
         {
             return match.Groups[1].Value;

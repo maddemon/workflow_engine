@@ -80,7 +80,7 @@ public sealed class WorkflowSchedulerKernelTests
             ]
         };
 
-        var (record, sideEffects) = await RunAsync(workflow, 5);
+        var (record, _, sideEffects) = await RunAsync(workflow, 5);
 
         Assert.Equal(ExecutionStatus.Completed, record.Status);
         Assert.Equal(2, record.NodeRecords.Count);
@@ -110,7 +110,7 @@ public sealed class WorkflowSchedulerKernelTests
             ]
         };
 
-        var (record, _) = await RunAsync(workflow, 5);
+        var (record, _, _) = await RunAsync(workflow, 5);
 
         Assert.Equal(ExecutionStatus.Completed, record.Status);
         Assert.Contains(record.NodeRecords, r => r.NodeDefinitionId == nodeC.Id);
@@ -130,7 +130,7 @@ public sealed class WorkflowSchedulerKernelTests
             Connections = []
         };
 
-        var (record, _) = await RunAsync(workflow);
+        var (record, _, _) = await RunAsync(workflow);
 
         Assert.Equal(ExecutionStatus.Failed, record.Status);
         Assert.Single(record.NodeRecords);
@@ -149,13 +149,39 @@ public sealed class WorkflowSchedulerKernelTests
             Connections = []
         };
 
-        var (record, _) = await RunAsync(workflow, new[] { 10, 20, 30 });
+        var (record, _, _) = await RunAsync(workflow, new[] { 10, 20, 30 });
 
         Assert.Equal(ExecutionStatus.Completed, record.Status);
         Assert.Equal(3, record.NodeRecords.Count);
         Assert.Equal(0, record.NodeRecords[0].RunIndex);
         Assert.Equal(1, record.NodeRecords[1].RunIndex);
         Assert.Equal(2, record.NodeRecords[2].RunIndex);
+    }
+
+    // Task 5：OncePerItem 多次运行应累积全部项输出到 session.SuccessfulOutputs，
+    // 下游 $node.<name> 才能拿到全部项，而非仅最后一项（修复覆盖式赋值）。
+    [Fact]
+    public async Task RunAsync_OncePerItem_AccumulatesAllItemOutputs()
+    {
+        var nodeA = CreateNode("a", "oncePerItem", isEntry: true);
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "oncePerItem",
+            CreatedBy = "test",
+            Nodes = [nodeA],
+            Connections = []
+        };
+
+        var (record, session, _) = await RunAsync(workflow, new[] { 10, 20, 30 });
+
+        Assert.Equal(ExecutionStatus.Completed, record.Status);
+        Assert.True(session.SuccessfulOutputs.TryGetValue("a", out var outputs));
+        // 3 个输入项各自运行一次，输出应被累积为 3 项，而非被覆盖为 1 项。
+        Assert.Equal(3, outputs.Items.Count);
+        Assert.Contains(outputs.Items, i => i.SourceIndex == 0);
+        Assert.Contains(outputs.Items, i => i.SourceIndex == 1);
+        Assert.Contains(outputs.Items, i => i.SourceIndex == 2);
     }
 
     // Task 5：预求值阶段 Script 编译失败应被内核捕获，记录带节点/参数信息的失败记录（而非裸奔/崩溃）。
@@ -173,7 +199,7 @@ public sealed class WorkflowSchedulerKernelTests
             Connections = []
         };
 
-        var (record, _) = await RunAsync(workflow);
+        var (record, _, _) = await RunAsync(workflow);
 
         // 内核捕获 ScriptErrorException 并写入结构性失败记录（含节点 ID 与错误码），不向上抛崩溃。
         var failed = Assert.Single(record.NodeRecords);
@@ -227,7 +253,7 @@ public sealed class WorkflowSchedulerKernelTests
         Assert.False(masked.ContainsKey("fields"));
     }
 
-    private async Task<(ExecutionRecord Record, CollectingSideEffects SideEffects)> RunAsync(
+    private async Task<(ExecutionRecord Record, ExecutionSession Session, CollectingSideEffects SideEffects)> RunAsync(
         Workflow workflow,
         object? triggerPayload = null)
     {
@@ -249,7 +275,7 @@ public sealed class WorkflowSchedulerKernelTests
         await _kernel.RunAsync(session, sideEffects, triggerPayload, TestContext.Current.CancellationToken)
             .ConfigureAwait(false);
 
-        return (executionRecord, sideEffects);
+        return (executionRecord, session, sideEffects);
     }
 
     private static NodeDefinition CreateNode(

@@ -2,13 +2,14 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { renderHook, waitFor, act } from '@testing-library/react';
 import { useExecution } from '../useExecution.ts';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
+import { useCanvasStore } from '../../components/Canvas/stores/canvasStore.ts';
 import * as api from '../../services/api.ts';
 import * as serializer from '../../utils/workflowSerializer.ts';
 import type { ExecutionDto, NodeExecutionRecordDto, NodeDefinition, ExecutionSummaryDto } from '../../types/workflow.ts';
 
 vi.mock('../../services/api.ts', () => ({
   executeWorkflow: vi.fn(),
-  getWorkflowExecutions: vi.fn(),
+  getActiveExecutions: vi.fn(),
   getExecution: vi.fn(),
   cancelExecution: vi.fn(),
   dryRun: vi.fn(),
@@ -32,7 +33,7 @@ vi.mock('@mantine/notifications', () => ({
 }));
 
 const mockedExecuteWorkflow = vi.mocked(api.executeWorkflow);
-const mockedGetWorkflowExecutions = vi.mocked(api.getWorkflowExecutions);
+const mockedGetActiveExecutions = vi.mocked(api.getActiveExecutions);
 const mockedGetExecution = vi.mocked(api.getExecution);
 const mockedCancelExecution = vi.mocked(api.cancelExecution);
 const mockedDryRun = vi.mocked(api.dryRun);
@@ -88,7 +89,7 @@ describe('useExecution', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     useWorkflowStore.getState().newWorkflow();
     vi.clearAllMocks();
-    mockedGetWorkflowExecutions.mockResolvedValue([]);
+    mockedGetActiveExecutions.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -113,7 +114,7 @@ describe('useExecution', () => {
     });
 
     expect(result.current.status).toBe('completed');
-    expect(useWorkflowStore.getState().isExecuting).toBe(false);
+    expect(useCanvasStore.getState().isExecuting).toBe(false);
   });
 
   it('execute_failed_setsStatusFailed', async () => {
@@ -126,7 +127,7 @@ describe('useExecution', () => {
     });
 
     expect(result.current.status).toBe('failed');
-    expect(useWorkflowStore.getState().isExecuting).toBe(false);
+    expect(useCanvasStore.getState().isExecuting).toBe(false);
   });
 
   it('execute_running_startsPolling', async () => {
@@ -165,8 +166,8 @@ describe('useExecution', () => {
   it('execute_withNodeRecords_appliesRecordsAndStatuses', async () => {
     const record = makeRecord('Completed', 'n1');
     mockedExecuteWorkflow.mockResolvedValue(makeExecution({ status: 'Completed', nodeRecords: [record] }));
-    useWorkflowStore.setState({
-      workflowId: 'wf-1',
+    useWorkflowStore.setState({ workflowId: 'wf-1' });
+    useCanvasStore.setState({
       nodes: [{
         id: 'n1',
         type: 'workflow',
@@ -198,8 +199,8 @@ describe('useExecution', () => {
       await result.current.execute('wf-1');
     });
 
-    expect(useWorkflowStore.getState().nodeExecutionRecords['n1']).toEqual(record);
-    expect(useWorkflowStore.getState().nodes[0].data.executionStatus).toBe('success');
+    expect(useCanvasStore.getState().nodeExecutionRecords['n1']).toEqual(record);
+    expect(useCanvasStore.getState().nodes[0].data.executionStatus).toBe('success');
   });
 
   it('clearExecution_resetsState', async () => {
@@ -217,7 +218,7 @@ describe('useExecution', () => {
 
     expect(result.current.status).toBe('idle');
     expect(result.current.execution).toBeNull();
-    expect(useWorkflowStore.getState().isExecuting).toBe(false);
+    expect(useCanvasStore.getState().isExecuting).toBe(false);
   });
 
   it('cancelExecution_success_setsStatusFailed', async () => {
@@ -235,7 +236,7 @@ describe('useExecution', () => {
     });
 
     expect(result.current.status).toBe('failed');
-    expect(useWorkflowStore.getState().isExecuting).toBe(false);
+    expect(useCanvasStore.getState().isExecuting).toBe(false);
   });
 
   it('cancelExecution_conflict409_fetchesLatestStatus', async () => {
@@ -290,7 +291,7 @@ describe('useExecution', () => {
   });
 
   it('dryRun_validationFails_setsError', async () => {
-    useWorkflowStore.setState({
+    useCanvasStore.setState({
       nodes: [{
         id: 'n1',
         type: 'workflow',
@@ -380,20 +381,20 @@ describe('useExecution', () => {
       startedAt: '2024-01-01T00:00:00Z',
       completedAt: null,
     };
-    mockedGetWorkflowExecutions.mockResolvedValue([summary]);
+    mockedGetActiveExecutions.mockResolvedValue([summary]);
     mockedGetExecution.mockResolvedValue(running);
     useWorkflowStore.setState({ workflowId: 'wf-1' });
 
     renderHook(() => useExecution());
 
-    await waitFor(() => expect(mockedGetWorkflowExecutions).toHaveBeenCalledWith('wf-1'));
+    await waitFor(() => expect(mockedGetActiveExecutions).toHaveBeenCalledWith('wf-1'));
     await waitFor(() => expect(mockedGetExecution).toHaveBeenCalledWith('exec-2'));
   });
 
   it('mount_noWorkflowId_doesNotCheck', async () => {
     renderHook(() => useExecution());
     vi.advanceTimersByTime(1000);
-    expect(mockedGetWorkflowExecutions).not.toHaveBeenCalled();
+    expect(mockedGetActiveExecutions).not.toHaveBeenCalled();
   });
 
   it('polling_reachesTerminalStatus_stopsAndUpdates', async () => {

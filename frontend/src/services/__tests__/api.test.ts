@@ -281,12 +281,20 @@ describe('api service', () => {
       expect(mockedCreate.post).toHaveBeenCalledWith('/workflows/1/reject', { reason: 'bad' });
     });
 
-    it('executeWorkflow posts execute endpoint', async () => {
+    it('executeWorkflow posts execute endpoint without body by default', async () => {
       const execution = { id: 'e1' } as unknown as ExecutionDto;
       mockedCreate.post.mockResolvedValue({ data: execution });
       const result = await api.executeWorkflow('1');
       expect(result).toBe(execution);
-      expect(mockedCreate.post).toHaveBeenCalledWith('/workflows/1/execute');
+      expect(mockedCreate.post).toHaveBeenCalledWith('/workflows/1/execute', { inputs: undefined, idempotencyKey: undefined });
+    });
+
+    it('executeWorkflow posts execute endpoint with inputs and idempotencyKey', async () => {
+      const execution = { id: 'e1' } as unknown as ExecutionDto;
+      mockedCreate.post.mockResolvedValue({ data: execution });
+      const result = await api.executeWorkflow('1', { foo: 'bar' }, 'key-1');
+      expect(result).toBe(execution);
+      expect(mockedCreate.post).toHaveBeenCalledWith('/workflows/1/execute', { inputs: { foo: 'bar' }, idempotencyKey: 'key-1' });
     });
 
     it('getExecution returns execution', async () => {
@@ -297,12 +305,20 @@ describe('api service', () => {
       expect(mockedCreate.get).toHaveBeenCalledWith('/executions/e1');
     });
 
-    it('getWorkflowExecutions returns executions', async () => {
+    it('getWorkflowExecutions returns paged executions', async () => {
+      const paged = { items: [], totalCount: 0, page: 1, pageSize: 20, totalPages: 0 };
+      mockedCreate.get.mockResolvedValue({ data: paged });
+      const result = await api.getWorkflowExecutions('1');
+      expect(result).toBe(paged);
+      expect(mockedCreate.get).toHaveBeenCalledWith('/workflows/1/executions', { params: {} });
+    });
+
+    it('getActiveExecutions returns active executions', async () => {
       const items: ExecutionSummaryDto[] = [];
       mockedCreate.get.mockResolvedValue({ data: items });
-      const result = await api.getWorkflowExecutions('1');
+      const result = await api.getActiveExecutions('1');
       expect(result).toBe(items);
-      expect(mockedCreate.get).toHaveBeenCalledWith('/workflows/1/executions');
+      expect(mockedCreate.get).toHaveBeenCalledWith('/workflows/1/executions/active');
     });
 
     it('cancelExecution posts cancel endpoint', async () => {
@@ -528,14 +544,6 @@ describe('api service', () => {
   });
 
   describe('users', () => {
-    it('listUsers returns items', async () => {
-      const items: UserDto[] = [];
-      mockedCreate.get.mockResolvedValue({ data: { items } });
-      const result = await api.listUsers();
-      expect(result).toBe(items);
-      expect(mockedCreate.get).toHaveBeenCalledWith('/users');
-    });
-
     it('getUserRoles returns roles', async () => {
       mockedCreate.get.mockResolvedValue({ data: ['Admin'] });
       const result = await api.getUserRoles('1');

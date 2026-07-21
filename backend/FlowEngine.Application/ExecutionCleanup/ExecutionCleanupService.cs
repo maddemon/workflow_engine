@@ -116,16 +116,9 @@ public sealed class ExecutionCleanupService(
                 break;
             }
 
-            var batch = await dbContext.ExecutionRecords
-                .Where(r => batchIds.Contains(r.Id))
-                .ToListAsync(cancellationToken)
-                .ConfigureAwait(false);
+            totalDeleted += await DeleteBatchByIdsAsync(batchIds, cancellationToken).ConfigureAwait(false);
 
-            dbContext.ExecutionRecords.RemoveRange(batch);
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            totalDeleted += batch.Count;
-
-            if (batch.Count < batchSize)
+            if (batchIds.Count < batchSize)
             {
                 break;
             }
@@ -169,16 +162,9 @@ public sealed class ExecutionCleanupService(
                 break;
             }
 
-            var batch = await dbContext.ExecutionRecords
-                .Where(r => batchIds.Contains(r.Id))
-                .ToListAsync(cancellationToken)
-                .ConfigureAwait(false);
+            totalDeleted += await DeleteBatchByIdsAsync(batchIds, cancellationToken).ConfigureAwait(false);
 
-            dbContext.ExecutionRecords.RemoveRange(batch);
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-            totalDeleted += batch.Count;
-
-            if (batch.Count < batchSize)
+            if (batchIds.Count < batchSize)
             {
                 break;
             }
@@ -190,6 +176,42 @@ public sealed class ExecutionCleanupService(
         }
 
         return totalDeleted;
+    }
+
+    /// <summary>
+    /// 批量删除指定 ID 的执行记录。
+    /// 关系型提供程序使用 <see cref="DbSet{T}.ExecuteDeleteAsync"/> 一次往返删除，避免物化整行实体；
+    /// InMemory 提供程序不支持批量删除，退化为按 ID 加载后删除（仅测试路径）。
+    /// </summary>
+    private async Task<int> DeleteBatchByIdsAsync(
+        List<Guid> batchIds, CancellationToken cancellationToken)
+    {
+        if (dbContext.Database.IsRelational())
+        {
+            await using var tx = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                var deleted = await dbContext.ExecutionRecords
+                    .Where(r => batchIds.Contains(r.Id))
+                    .ExecuteDeleteAsync(cancellationToken)
+                    .ConfigureAwait(false);
+                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+                return deleted;
+            }
+            catch
+            {
+                await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                throw;
+            }
+        }
+
+        var batch = await dbContext.ExecutionRecords
+            .Where(r => batchIds.Contains(r.Id))
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+        dbContext.ExecutionRecords.RemoveRange(batch);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        return batch.Count;
     }
 
     private async Task PublishCleanupEventAsync(int recordsDeleted, string reason, CancellationToken cancellationToken)

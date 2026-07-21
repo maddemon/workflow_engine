@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { notifications } from '@mantine/notifications';
-import { useWorkflowStore } from '../stores/workflowStore.ts';
+import { useCanvasStore } from '../components/Canvas/stores/canvasStore.ts';
 import type { ExecutionDto } from '../types/workflow.ts';
 import { messageHandlers, type WebSocketPushMessage, type WebSocketStatus } from './websocket/messageHandlers.ts';
 import { useWebSocketConnection } from './websocket/useWebSocketConnection.ts';
@@ -41,7 +41,7 @@ export function useWebSocketExecution(options: UseWebSocketExecutionOptions) {
   const processMessage = useCallback((message: WebSocketPushMessage) => {
     const handler = messageHandlers[message.type];
     handler?.(message, {
-      store: useWorkflowStore.getState(),
+      store: useCanvasStore.getState(),
       notifications,
       sendIfOpen,
       updateExecutionMeta,

@@ -1,6 +1,7 @@
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Executions;
 using FlowEngine.Core.Authorization;
+using FlowEngine.Core.Enums;
 using FlowEngine.Resources;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -45,7 +46,7 @@ public class ExecutionsController(
             });
         }
 
-        return Ok(execution);
+        return CreatedAtAction(nameof(Get), new { id = execution.Id }, execution);
     }
 
     /// <summary>
@@ -58,7 +59,12 @@ public class ExecutionsController(
         var (execution, conflict) = await executionService.CancelAsync(id, cancellationToken).ConfigureAwait(false);
         if (execution is null)
         {
-            return NotFound();
+            return NotFound(new
+            {
+                success = false,
+                errorCode = "ExecutionNotFound",
+                message = localizer["ExecutionNotFoundFormat", id],
+            });
         }
 
         if (conflict)
@@ -86,17 +92,35 @@ public class ExecutionsController(
     }
 
     /// <summary>
-    /// 按工作流定义 ID 获取执行列表。
+    /// 按工作流定义 ID 分页获取执行列表。
     /// </summary>
     [HttpGet("workflows/{workflowId:guid}/executions")]
     [AuthorizePermission(Scope.Execution, Operation.Read)]
-    public async Task<ActionResult<IReadOnlyCollection<ExecutionSummaryDto>>> GetByWorkflow(
+    public async Task<ActionResult<PagedResult<ExecutionSummaryDto>>> GetByWorkflow(
+        Guid workflowId,
+        [FromQuery] Guid? projectId = null,
+        [FromQuery] ExecutionStatus? status = null,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await executionService.GetByWorkflowAsync(workflowId, projectId, status, page, pageSize, cancellationToken)
+            .ConfigureAwait(false);
+        return Ok(result);
+    }
+
+    /// <summary>
+    /// 获取指定工作流当前运行中的执行（待执行/执行中），供前端实时跟踪。
+    /// </summary>
+    [HttpGet("workflows/{workflowId:guid}/executions/active")]
+    [AuthorizePermission(Scope.Execution, Operation.Read)]
+    public async Task<ActionResult<IReadOnlyCollection<ExecutionSummaryDto>>> GetActive(
         Guid workflowId,
         [FromQuery] Guid? projectId = null,
         CancellationToken cancellationToken = default)
     {
-        var executions = await executionService.GetByWorkflowAsync(workflowId, projectId, cancellationToken)
+        var result = await executionService.GetActiveAsync(workflowId, projectId, cancellationToken)
             .ConfigureAwait(false);
-        return Ok(executions);
+        return Ok(result);
     }
 }

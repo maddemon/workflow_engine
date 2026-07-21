@@ -1,8 +1,8 @@
 import type { EdgeProps } from "@xyflow/react"
 import { EdgeLabelRenderer, getBezierPath, getSmoothStepPath, Position, useReactFlow } from "@xyflow/react"
 import { memo, useState } from "react"
-import type { WorkflowNode } from "../../stores/workflowStore.ts"
-import { useWorkflowStore } from "../../stores/workflowStore.ts"
+import type { WorkflowNode } from "./stores/canvasStore.ts"
+import { useCanvasStore } from "./stores/canvasStore.ts"
 import { computeDynamicPorts } from "../../utils/computeDynamicPorts.ts"
 
 const HANDLE_SIZE = 20
@@ -36,7 +36,7 @@ function CustomEdgeComponent({
   const targetNode = getNode(target)
   const sourceData = sourceNode?.data as WorkflowNode["data"] | undefined
   const targetData = targetNode?.data as WorkflowNode["data"] | undefined
-  const styleSettings = useWorkflowStore((s) => s.styleSettings)
+  const styleSettings = useCanvasStore((s) => s.styleSettings)
   const isHorizontal = styleSettings.layoutDirection === "horizontal"
 
   const isAiEdge = isAiPortHandle(sourceData, sourceHandleId) || isAiPortHandle(targetData, targetHandleId)

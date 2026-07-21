@@ -4,8 +4,9 @@ import { ReactFlowProvider } from '@xyflow/react';
 import { renderWithProvider } from '../../../test-utils.tsx';
 import { WorkflowCanvas } from '../WorkflowCanvas.tsx';
 import { useWorkflowStore } from '../../../stores/workflowStore.ts';
+import { useCanvasStore } from '../stores/canvasStore.ts';
 import type { NodeTypeDescriptor, PortDefinition } from '../../../types/workflow.ts';
-import type { WorkflowNode } from '../../../stores/workflowStore.ts';
+import type { WorkflowNode } from '../stores/canvasStore.ts';
 
 vi.mock('@mantine/notifications', () => ({
   notifications: { show: vi.fn() },
@@ -67,7 +68,7 @@ describe('WorkflowCanvas', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     useWorkflowStore.getState().newWorkflow();
-    useWorkflowStore.setState({
+    useCanvasStore.setState({
       nodeTypes: [descriptor],
     });
   });
@@ -82,10 +83,8 @@ describe('WorkflowCanvas', () => {
     const onDryRun = vi.fn();
     const onCancel = vi.fn();
     const onExecute = vi.fn();
-    useWorkflowStore.setState({
-      workflowId: 'wf-1',
-      nodes: [makeNode('n1')],
-    });
+    useWorkflowStore.setState({ workflowId: 'wf-1' });
+    useCanvasStore.setState({ nodes: [makeNode('n1')] });
 
     renderCanvas({ onExecute, onCancel, onDryRun, dryRunLoading: false });
     fireEvent.click(await screen.findByText('Dry Run'));
@@ -97,7 +96,7 @@ describe('WorkflowCanvas', () => {
   });
 
   it('selects_node_onClick', async () => {
-    useWorkflowStore.setState({
+    useCanvasStore.setState({
       nodes: [makeNode('n1')],
     });
 
@@ -106,12 +105,12 @@ describe('WorkflowCanvas', () => {
     fireEvent.click(node);
 
     await waitFor(() => {
-      expect(useWorkflowStore.getState().selectedNodeId).toBe('n1');
+      expect(useCanvasStore.getState().selectedNodeId).toBe('n1');
     });
   });
 
   it('deselects_node_via_storeSetSelectedNode', async () => {
-    useWorkflowStore.setState({
+    useCanvasStore.setState({
       nodes: [makeNode('n1')],
       selectedNodeId: 'n1',
     });
@@ -120,15 +119,15 @@ describe('WorkflowCanvas', () => {
     // 验证 store 的 setSelectedNode(null) 能正确清除选择
     // （onPaneClick 回调绑定在 ReactFlow 内部 pane 元素上，
     // 直接测试 DOM 交互依赖 ReactFlow 内部结构，此处改为验证 store 行为）
-    useWorkflowStore.getState().setSelectedNode(null);
+    useCanvasStore.getState().setSelectedNode(null);
 
     await waitFor(() => {
-      expect(useWorkflowStore.getState().selectedNodeId).toBeNull();
+      expect(useCanvasStore.getState().selectedNodeId).toBeNull();
     });
   });
 
   it('does_not_addNode_onDrop_when_reviewMode', async () => {
-    useWorkflowStore.setState({ reviewMode: true });
+    useCanvasStore.setState({ reviewMode: true });
     renderCanvas();
 
     const canvas = screen.getByTestId('workflow-canvas');
@@ -140,11 +139,11 @@ describe('WorkflowCanvas', () => {
     Object.defineProperty(dropEvent, 'preventDefault', { value: vi.fn() });
     fireEvent(canvas, dropEvent);
 
-    expect(useWorkflowStore.getState().nodes).toHaveLength(0);
+    expect(useCanvasStore.getState().nodes).toHaveLength(0);
   });
 
   it('does_not_addNode_onDrop_when_executing', async () => {
-    useWorkflowStore.setState({ isExecuting: true });
+    useCanvasStore.setState({ isExecuting: true });
     renderCanvas();
 
     const canvas = screen.getByTestId('workflow-canvas');
@@ -156,11 +155,11 @@ describe('WorkflowCanvas', () => {
     Object.defineProperty(dropEvent, 'preventDefault', { value: vi.fn() });
     fireEvent(canvas, dropEvent);
 
-    expect(useWorkflowStore.getState().nodes).toHaveLength(0);
+    expect(useCanvasStore.getState().nodes).toHaveLength(0);
   });
 
   it('copies_and_pastes_selectedNode_via_keyboard', async () => {
-    useWorkflowStore.setState({
+    useCanvasStore.setState({
       nodes: [makeNode('n1')],
       selectedNodeId: 'n1',
     });
@@ -168,13 +167,12 @@ describe('WorkflowCanvas', () => {
     renderCanvas();
 
     fireEvent.keyDown(window, { key: 'c', ctrlKey: true });
-    expect(useWorkflowStore.getState().copiedNode).not.toBeNull();
+    expect(useCanvasStore.getState().copiedNode).not.toBeNull();
 
     fireEvent.keyDown(window, { key: 'v', ctrlKey: true });
     await waitFor(() => {
-      expect(useWorkflowStore.getState().nodes.length).toBe(2);
+      expect(useCanvasStore.getState().nodes.length).toBe(2);
     });
     expect(mockedNotifications.show).toHaveBeenCalled();
   });
-
 });

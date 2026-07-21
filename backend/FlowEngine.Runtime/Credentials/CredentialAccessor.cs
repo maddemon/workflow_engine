@@ -62,7 +62,7 @@ public sealed class CredentialAccessor : ICredentialAccessor
 
     private CredentialValue DecryptCredential(Core.Entities.Credential credential)
     {
-        var key = _keyProvider.GetKey();
+        var key = _keyProvider.GetKey(credential.KeyVersion);
         var fields = new Dictionary<string, string>();
         var binaryFields = new Dictionary<string, byte[]>();
 

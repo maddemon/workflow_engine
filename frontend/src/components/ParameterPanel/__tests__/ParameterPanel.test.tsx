@@ -3,8 +3,9 @@ import { screen, fireEvent, waitFor } from '@testing-library/react';
 import { renderWithProvider } from '../../../test-utils.tsx';
 import { ParameterPanel } from '../ParameterPanel.tsx';
 import { useWorkflowStore } from '../../../stores/workflowStore.ts';
+import { useCanvasStore } from '../../Canvas/stores/canvasStore.ts';
 import type { NodeTypeDescriptor, ParameterDefinition } from '../../../types/workflow.ts';
-import type { WorkflowNode } from '../../../stores/workflowStore.ts';
+import type { WorkflowNode } from '../../Canvas/stores/canvasStore.ts';
 
 vi.mock('../TriggerConfig.tsx', () => ({
   TriggerConfig: () => <div data-testid="trigger-config">TriggerConfig</div>,
@@ -54,8 +55,8 @@ function makeNode(id: string, params: Record<string, unknown> = {}): WorkflowNod
 describe('ParameterPanel', () => {
   beforeEach(() => {
     useWorkflowStore.getState().newWorkflow();
+    useCanvasStore.setState({ nodeTypes: [descriptor] });
     useWorkflowStore.setState({
-      nodeTypes: [descriptor],
       workflowName: 'Test Workflow',
       projectId: 'p1',
       workflowId: 'wf-1',
@@ -65,12 +66,12 @@ describe('ParameterPanel', () => {
   it('renders workflow settings when no node selected', () => {
     renderWithProvider(<ParameterPanel />);
     expect(screen.getByText(/workflow settings/i)).toBeDefined();
-    expect(screen.getByTestId('trigger-config')).toBeDefined();
+    expect(screen.getByTestId('trigger-config')).toBeInTheDocument();
   });
 
   it('renders node settings when a node is selected', () => {
     const node = makeNode('n1', { message: 'hello' });
-    useWorkflowStore.setState({ nodes: [node], selectedNodeId: 'n1' });
+    useCanvasStore.setState({ nodes: [node], selectedNodeId: 'n1' });
 
     renderWithProvider(<ParameterPanel />);
     expect(screen.getByText('Test Node')).toBeDefined();
@@ -79,13 +80,13 @@ describe('ParameterPanel', () => {
 
   it('updates node parameter value on change', () => {
     const node = makeNode('n1', { message: 'hello' });
-    useWorkflowStore.setState({ nodes: [node], selectedNodeId: 'n1' });
+    useCanvasStore.setState({ nodes: [node], selectedNodeId: 'n1' });
 
     renderWithProvider(<ParameterPanel />);
     const input = screen.getByDisplayValue('hello');
     fireEvent.change(input, { target: { value: 'world' } });
 
-    expect(useWorkflowStore.getState().nodes[0].data.parameters.message).toBe('world');
+    expect(useCanvasStore.getState().nodes[0].data.parameters.message).toBe('world');
   });
 
   it('updates workflow name and active state', () => {
@@ -98,7 +99,7 @@ describe('ParameterPanel', () => {
 
   it('toggles node retry policy settings', async () => {
     const node = makeNode('n1');
-    useWorkflowStore.setState({ nodes: [node], selectedNodeId: 'n1' });
+    useCanvasStore.setState({ nodes: [node], selectedNodeId: 'n1' });
 
     renderWithProvider(<ParameterPanel />);
     fireEvent.click(screen.getByText(/settings/i));
@@ -108,12 +109,12 @@ describe('ParameterPanel', () => {
 
     fireEvent.click(screen.getByText(/retry on fail/i));
 
-    expect(useWorkflowStore.getState().nodes[0].data.retryPolicy).not.toBeNull();
+    expect(useCanvasStore.getState().nodes[0].data.retryPolicy).not.toBeNull();
   });
 
   it('displays validation errors for the selected node', async () => {
     const node = makeNode('n1', { message: 'hello' });
-    useWorkflowStore.setState({
+    useCanvasStore.setState({
       nodes: [node],
       selectedNodeId: 'n1',
       validationErrors: { n1: { message: 'Message is required' } },
@@ -128,7 +129,7 @@ describe('ParameterPanel', () => {
 
   it('rejects negative timeout values', async () => {
     const node = makeNode('n1');
-    useWorkflowStore.setState({ nodes: [node], selectedNodeId: 'n1' });
+    useCanvasStore.setState({ nodes: [node], selectedNodeId: 'n1' });
 
     renderWithProvider(<ParameterPanel />);
     fireEvent.click(screen.getByText(/settings/i));
@@ -136,13 +137,13 @@ describe('ParameterPanel', () => {
     const timeoutInput = await screen.findByLabelText(/timeout/i);
     fireEvent.change(timeoutInput, { target: { value: '-10' } });
 
-    const updated = useWorkflowStore.getState().nodes[0].data.timeout;
+    const updated = useCanvasStore.getState().nodes[0].data.timeout;
     expect(updated === null || updated === undefined || updated >= 0).toBe(true);
   });
 
   it('allows zero timeout and treats it as no timeout', async () => {
     const node = makeNode('n1');
-    useWorkflowStore.setState({ nodes: [node], selectedNodeId: 'n1' });
+    useCanvasStore.setState({ nodes: [node], selectedNodeId: 'n1' });
 
     renderWithProvider(<ParameterPanel />);
     fireEvent.click(screen.getByText(/settings/i));
@@ -150,18 +151,18 @@ describe('ParameterPanel', () => {
     const timeoutInput = await screen.findByLabelText(/timeout/i);
     fireEvent.change(timeoutInput, { target: { value: '0' } });
 
-    expect(useWorkflowStore.getState().nodes[0].data.timeout).toBeNull();
+    expect(useCanvasStore.getState().nodes[0].data.timeout).toBeNull();
   });
 
   it('switches panel content when selected node changes', async () => {
     const nodeA = makeNode('n1', { message: 'first' });
     const nodeB = makeNode('n2', { message: 'second' });
-    useWorkflowStore.setState({ nodes: [nodeA, nodeB], selectedNodeId: 'n1' });
+    useCanvasStore.setState({ nodes: [nodeA, nodeB], selectedNodeId: 'n1' });
 
     renderWithProvider(<ParameterPanel />);
     expect(screen.getByDisplayValue('first')).toBeInTheDocument();
 
-    useWorkflowStore.setState({ selectedNodeId: 'n2' });
+    useCanvasStore.setState({ selectedNodeId: 'n2' });
 
     await waitFor(() => {
       expect(screen.getByDisplayValue('second')).toBeInTheDocument();

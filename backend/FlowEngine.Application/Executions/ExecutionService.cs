@@ -10,6 +10,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.Exceptions;
+using FlowEngine.Runtime.Executor;
 using Microsoft.EntityFrameworkCore;
 
 namespace FlowEngine.Application.Executions;
@@ -23,7 +24,8 @@ public sealed class ExecutionService(
     IExecutionIdempotencyService idempotencyService,
     IAuthorizationGuard authGuard,
     IEventBus eventBus,
-    AuditEventFactory auditFactory) : IExecutionService
+    AuditEventFactory auditFactory,
+    ExecutionCancellationRegistry cancellationRegistry) : IExecutionService
 {
 
     /// <summary>
@@ -46,32 +48,30 @@ public sealed class ExecutionService(
 
         await authGuard.RequireAccessAsync(ResourceKind.Workflow, workflowId, Operation.Execute, cancellationToken);
 
-        // 幂等检查：如果提供了幂等键，检查是否已存在
+        // 幂等：在启动真实执行前用唯一约束抢占幂等键，避免并发重复执行（至多一次）。
+        // 并发时只有一个请求能成功注册 claimId，落败者不启动而复用胜者的真实执行结果。
         if (!string.IsNullOrEmpty(idempotencyKey))
         {
-            var tempExecutionId = Guid.NewGuid();
-            var existingExecutionId = await idempotencyService.TryGetOrRegisterAsync(
-                idempotencyKey, tempExecutionId, TimeSpan.FromSeconds(3600), cancellationToken).ConfigureAwait(false);
-            if (existingExecutionId.HasValue)
+            var claimId = Guid.NewGuid();
+            var ownerId = await idempotencyService.TryGetOrRegisterAsync(
+                idempotencyKey, claimId, TimeSpan.FromSeconds(3600), cancellationToken).ConfigureAwait(false);
+
+            if (ownerId.HasValue && ownerId.Value != claimId)
             {
-                // 返回已存在的执行记录
-                var existingRecord = await dbContext.ExecutionRecords
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(e => e.Id == existingExecutionId.Value, cancellationToken)
-                    .ConfigureAwait(false);
-                return existingRecord is not null ? ExecutionMapper.MapToDto(existingRecord) : new ExecutionDto
+                // 另一请求已抢占该幂等键：不启动新执行，等待并复用其真实执行结果（非合成成功）。
+                var existingRecord = await WaitForRealExecutionAsync(idempotencyKey, cancellationToken).ConfigureAwait(false);
+                if (existingRecord is not null)
                 {
-                    Id = existingExecutionId.Value,
-                    WorkflowDefinitionId = workflowId,
-                    Status = "Idempotent",
-                    StartedAt = DateTime.UtcNow
-                };
+                    return ExecutionMapper.MapToDto(existingRecord);
+                }
+
+                // 极端情况：抢占者未能产生真实执行（启动失败）。继续以本请求兜底启动一次（至多一次尽力）。
             }
         }
 
-        var executionId = await engine.StartAsync(workflowId, inputs, cancellationToken).ConfigureAwait(false);
+        var executionId = await engine.StartAsync(workflowId, workflow, inputs, cancellationToken).ConfigureAwait(false);
 
-        // 更新幂等记录的 ExecutionId 为实际值
+        // 将幂等键从抢占用的 claimId 指向真实执行，保证后续请求返回真实结果。
         if (!string.IsNullOrEmpty(idempotencyKey))
         {
             var dedupRecord = await dbContext.ExecutionDedups
@@ -110,6 +110,38 @@ public sealed class ExecutionService(
     }
 
     /// <summary>
+    /// 等待并复用抢占幂等键的请求所产生的真实执行记录。
+    /// 抢占者启动后会将幂等键的 ExecutionId 更新为真实值；此处轮询读取当前键指向的记录，
+    /// 命中即返回，避免本请求重复启动执行。
+    /// </summary>
+    /// <param name="idempotencyKey">幂等键。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>真实 <see cref="ExecutionRecord"/>，若等待超时或抢占者未产生真实执行则返回 null。</returns>
+    private async Task<ExecutionRecord?> WaitForRealExecutionAsync(
+        string idempotencyKey, CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 10; attempt++)
+        {
+            var currentId = await idempotencyService.TryGetExistingAsync(idempotencyKey, cancellationToken).ConfigureAwait(false);
+            if (currentId.HasValue)
+            {
+                var record = await dbContext.ExecutionRecords
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(e => e.Id == currentId.Value, cancellationToken)
+                    .ConfigureAwait(false);
+                if (record is not null)
+                {
+                    return record;
+                }
+            }
+
+            await Task.Delay(TimeSpan.FromMilliseconds(100), cancellationToken).ConfigureAwait(false);
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// 取消执行。仅 Pending 或 Running 状态可取消；返回 null 表示执行不存在，Conflict 表示状态不可取消。
     /// </summary>
     public async Task<(ExecutionDto? Execution, bool Conflict)> CancelAsync(Guid executionId, CancellationToken cancellationToken = default)
@@ -129,9 +161,17 @@ public sealed class ExecutionService(
             return (ExecutionMapper.MapToDto(record), true);
         }
 
-        record.Status = ExecutionStatus.Cancelled;
-        record.CompletedAt = DateTime.UtcNow;
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        // 信号给后台 worker：若是运行中执行，worker 检测到取消后走 StateMachine.Cancel() 并落库 Cancelled；
+        // 若是尚未出队的 Pending 执行，则直接落库 Cancelled，避免 worker 后续覆写回 Running。
+        cancellationRegistry.TryCancel(executionId);
+
+        if (record.Status == ExecutionStatus.Pending)
+        {
+            // Pending 尚未被 worker 取出执行：直接落库 Cancelled（worker 取出时会跳过终态执行，不会覆写）。
+            record.Status = ExecutionStatus.Cancelled;
+            record.CompletedAt = DateTime.UtcNow;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
 
         var cancelledEvent = new WorkflowCancelledEvent(record.Id, record.WorkflowDefinitionId);
         await eventBus.PublishAsync(cancelledEvent, cancellationToken).ConfigureAwait(false);
@@ -159,19 +199,80 @@ public sealed class ExecutionService(
     }
 
     /// <summary>
-    /// 按工作流定义 ID 获取执行列表。
+    /// 按工作流定义 ID 分页获取执行列表（服务端分页，避免一次性物化全部记录）。
     /// </summary>
-    public async Task<IReadOnlyCollection<ExecutionSummaryDto>> GetByWorkflowAsync(
+    /// <param name="workflowId">工作流定义 ID。</param>
+    /// <param name="projectId">可选项目过滤。</param>
+    /// <param name="status">可选执行状态过滤。</param>
+    /// <param name="page">页码（从 1 开始，小于 1 时归正为 1）。</param>
+    /// <param name="pageSize">每页大小（1–200，越界时自动收敛）。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>分页后的执行摘要集合。</returns>
+    public async Task<PagedResult<ExecutionSummaryDto>> GetByWorkflowAsync(
         Guid workflowId,
         Guid? projectId = null,
+        ExecutionStatus? status = null,
+        int page = 1,
+        int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
         // RBAC：查询工作流执行列表前校验工作流读权限。
         await authGuard.RequireAccessAsync(ResourceKind.Workflow, workflowId, Operation.Read, cancellationToken);
 
+        // 归正分页参数，避免负值或越界导致 Skip/Take 异常或过度拉取。
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 200);
+
         var query = dbContext.ExecutionRecords
             .AsNoTracking()
             .Where(e => e.WorkflowDefinitionId == workflowId);
+
+        if (projectId.HasValue)
+        {
+            query = query.Where(e => e.ProjectId == projectId.Value);
+        }
+
+        if (status.HasValue)
+        {
+            query = query.Where(e => e.Status == status.Value);
+        }
+
+        var totalCount = await query.CountAsync(cancellationToken).ConfigureAwait(false);
+
+        var records = await query
+            .OrderByDescending(e => e.StartedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        return new PagedResult<ExecutionSummaryDto>
+        {
+            Items = records.Select(MapToSummary).ToList(),
+            TotalCount = totalCount,
+            Page = page,
+            PageSize = pageSize,
+        };
+    }
+
+    /// <summary>
+    /// 获取指定工作流当前处于待执行/执行中状态的执行（供前端实时跟踪），仅返回少量活跃记录。
+    /// </summary>
+    /// <param name="workflowId">工作流定义 ID。</param>
+    /// <param name="projectId">可选项目过滤。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    /// <returns>活跃（Pending/Running）执行摘要集合。</returns>
+    public async Task<IReadOnlyCollection<ExecutionSummaryDto>> GetActiveAsync(
+        Guid workflowId,
+        Guid? projectId = null,
+        CancellationToken cancellationToken = default)
+    {
+        await authGuard.RequireAccessAsync(ResourceKind.Workflow, workflowId, Operation.Read, cancellationToken);
+
+        var query = dbContext.ExecutionRecords
+            .AsNoTracking()
+            .Where(e => e.WorkflowDefinitionId == workflowId
+                        && (e.Status == ExecutionStatus.Pending || e.Status == ExecutionStatus.Running));
 
         if (projectId.HasValue)
         {

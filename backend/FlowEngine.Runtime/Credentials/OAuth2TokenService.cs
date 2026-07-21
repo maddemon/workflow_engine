@@ -3,6 +3,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
+using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Http;
 
@@ -13,7 +14,7 @@ namespace FlowEngine.Runtime.Credentials;
 /// </summary>
 public sealed class OAuth2TokenService : IOAuth2TokenService, IDisposable
 {
-    private readonly IHttpClientFactory _httpClientFactory;
+    private readonly IHttpClientPool _httpClientPool;
     private readonly ConcurrentDictionary<string, CacheEntry> _cache;
 
     /// <summary>
@@ -34,9 +35,9 @@ public sealed class OAuth2TokenService : IOAuth2TokenService, IDisposable
     /// <summary>
     /// 初始化令牌服务。
     /// </summary>
-    public OAuth2TokenService(IHttpClientFactory httpClientFactory)
+    public OAuth2TokenService(IHttpClientPool httpClientPool)
     {
-        _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
+        _httpClientPool = httpClientPool ?? throw new ArgumentNullException(nameof(httpClientPool));
         _cache = new ConcurrentDictionary<string, CacheEntry>();
     }
 
@@ -154,7 +155,10 @@ public sealed class OAuth2TokenService : IOAuth2TokenService, IDisposable
             httpRequest.Content = new FormUrlEncodedContent(requestParams!);
         }
 
-        var client = _httpClientFactory.CreateClient();
+        // 经 IHttpClientPool 取得的客户端底层为 SSRF 安全 SocketsHttpHandler
+        // （ConnectCallback = SsrfGuard.CreateConnectCallback()），在连接瞬间对实际解析 IP 做校验，
+        // 可防御 DNS 重绑定绕过上方 IsInternalTarget 预检（与 HttpClientPool 通用 HTTP 路径一致）。
+        var client = _httpClientPool.GetClient();
         using var response = await client.SendAsync(httpRequest, cancellationToken).ConfigureAwait(false);
 
         var responseBody = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);

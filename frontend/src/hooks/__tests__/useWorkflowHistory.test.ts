@@ -2,6 +2,7 @@ import { describe, it, expect, beforeEach } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import { useWorkflowHistory } from '../useWorkflowHistory.ts';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
+import { useCanvasStore } from '../../components/Canvas/stores/canvasStore.ts';
 import type { NodeTypeDescriptor } from '../../types/workflow.ts';
 
 const descriptor: NodeTypeDescriptor = {
@@ -48,25 +49,25 @@ describe('useWorkflowHistory', () => {
     const { result } = renderHook(() => useWorkflowHistory());
 
     act(() => {
-      useWorkflowStore.getState().setNodes([makeNode('n1')]);
+      useCanvasStore.getState().setNodes([makeNode('n1')]);
       result.current.pushSnapshot();
-      useWorkflowStore.getState().setNodes([makeNode('n1'), makeNode('n2')]);
+      useCanvasStore.getState().setNodes([makeNode('n1'), makeNode('n2')]);
     });
 
-    expect(useWorkflowStore.getState().nodes).toHaveLength(2);
+    expect(useCanvasStore.getState().nodes).toHaveLength(2);
     expect(result.current.canUndo).toBe(true);
 
     act(() => {
       result.current.undo();
     });
 
-    expect(useWorkflowStore.getState().nodes).toHaveLength(1);
+    expect(useCanvasStore.getState().nodes).toHaveLength(1);
     expect(result.current.canRedo).toBe(true);
 
     act(() => {
       result.current.redo();
     });
 
-    expect(useWorkflowStore.getState().nodes).toHaveLength(2);
+    expect(useCanvasStore.getState().nodes).toHaveLength(2);
   });
 });

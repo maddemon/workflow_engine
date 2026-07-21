@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment } from 'react';
+import { useState, Fragment } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Stack,
@@ -36,23 +36,19 @@ export function ExecutionHistoryPage() {
   const [page, setPage] = useState(1);
   const [expandedOutputs, setExpandedOutputs] = useState<Set<string>>(new Set());
 
-  const { data: executions = [], loading, error, refresh: refreshExecutions } = useRequest(
-    () => getWorkflowExecutions(id!),
-    { ready: !!id },
+  const { data, loading, error, refresh: refreshExecutions } = useRequest(
+    () => getWorkflowExecutions(id!, {
+      status: statusFilter === 'all' ? undefined : statusFilter,
+      page,
+      pageSize: PAGE_SIZE,
+    }),
+    { ready: !!id, refreshDeps: [id, page, statusFilter] },
   );
 
   const PAGE_SIZE = 20;
 
-  const filteredExecutions = useMemo(() => {
-    if (statusFilter === 'all') return executions;
-    return executions.filter((e) => e.status === statusFilter);
-  }, [executions, statusFilter]);
-
-  const totalPages = Math.ceil(filteredExecutions.length / PAGE_SIZE);
-  const paginatedExecutions = useMemo(() => {
-    const start = (page - 1) * PAGE_SIZE;
-    return filteredExecutions.slice(start, start + PAGE_SIZE);
-  }, [filteredExecutions, page]);
+  const executions = data?.items ?? [];
+  const totalPages = data?.totalPages ?? 0;
 
   const { loading: detailLoading, run: handleViewExecution } = useRequest(
     (execution: ExecutionSummaryDto) => getExecution(execution.id).then((detailed) => {
@@ -121,13 +117,13 @@ export function ExecutionHistoryPage() {
           </Text>
         )}
 
-        {!loading && !error && filteredExecutions.length === 0 && (
+        {!loading && !error && executions.length === 0 && (
           <Text c="dimmed" ta="center" py="xl">
             {t('history.noExecutionsFound')}
           </Text>
         )}
 
-        {!loading && !error && filteredExecutions.length > 0 && (
+        {!loading && !error && executions.length > 0 && (
           <>
             <Table striped highlightOnHover>
               <Table.Thead>
@@ -140,7 +136,7 @@ export function ExecutionHistoryPage() {
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
-                {paginatedExecutions.map((execution) => {
+                {executions.map((execution) => {
                   const statusInfo = statusConfig[execution.status] ?? statusConfig.Pending;
                   const duration = formatDuration(execution.startedAt, execution.completedAt);
                   return (

@@ -4,8 +4,9 @@ import { ReactFlowProvider } from '@xyflow/react';
 import { renderWithProvider } from '../../../test-utils.tsx';
 import { WorkflowCanvas } from '../WorkflowCanvas.tsx';
 import { useWorkflowStore } from '../../../stores/workflowStore.ts';
+import { useCanvasStore } from '../stores/canvasStore.ts';
 import type { NodeTypeDescriptor, PortDefinition } from '../../../types/workflow.ts';
-import type { WorkflowNode } from '../../../stores/workflowStore.ts';
+import type { WorkflowNode } from '../stores/canvasStore.ts';
 
 const descriptor: NodeTypeDescriptor = {
   typeName: 'custom',
@@ -38,7 +39,7 @@ function makeNode(id: string, ports: PortDefinition[], overrides: Partial<Workfl
 }
 
 function renderWithNodes(nodes: WorkflowNode[]) {
-  useWorkflowStore.setState({ nodes });
+  useCanvasStore.setState({ nodes });
   return renderWithProvider(
     <ReactFlowProvider>
       <WorkflowCanvas onExecute={vi.fn()} />

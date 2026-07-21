@@ -285,7 +285,7 @@ public sealed class CredentialService(
             return [];
         }
 
-        var key = keyProvider.GetKey();
+        var key = keyProvider.GetKey(credential.KeyVersion);
         var fields = new Dictionary<string, string>();
         foreach (var (fieldName, encryptedField) in credential.Data)
         {
@@ -296,14 +296,19 @@ public sealed class CredentialService(
 
     private CredentialDto MapToDto(Credential credential, bool maskValues)
     {
-        // custom mapping：凭据字段需解密/脱敏，无法由 Mapster 自动完成
-        var fields = DecryptFields(credential);
+        Dictionary<string, string> fields;
+        
         if (maskValues)
         {
-            foreach (var key in fields.Keys.ToList())
-            {
-                fields[key] = "***";
-            }
+            // 脱敏场景：直接返回占位符，无需解密
+            fields = credential.Data.ToDictionary(
+                kv => kv.Key, 
+                _ => "***");
+        }
+        else
+        {
+            // 非脱敏场景：执行解密
+            fields = DecryptFields(credential);
         }
 
         return credential.Adapt<CredentialDto>() with { Fields = fields };

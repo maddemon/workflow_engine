@@ -1,6 +1,7 @@
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Ai;
 using FlowEngine.Resources;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Localization;
 
@@ -10,6 +11,7 @@ namespace FlowEngine.Host.Controllers;
 /// AI 节点目录 API，供外部 AI 发现节点。
 /// </summary>
 [ApiController]
+[Authorize]
 [Route("api/v1/node-catalog")]
 public class NodeCatalogController(
     CatalogService catalogService,

@@ -63,7 +63,26 @@ public sealed class TriggerService(
         }
 
         dbContext.Triggers.Add(trigger);
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        // 触发器与其 Webhook 路由需原子落库（InMemory 不支持事务，仅关系型下开启）。
+        if (dbContext.Database.IsRelational())
+        {
+            await using var tx = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                throw;
+            }
+        }
+        else
+        {
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
 
         if (dto.Type == TriggerType.Poll)
         {
@@ -312,15 +331,27 @@ public sealed class TriggerService(
     {
         await UnregisterWorkflowSchedulesAsync(workflowDefinitionId, cancellationToken).ConfigureAwait(false);
 
-        var triggers = await dbContext.Triggers
-            .Where(t => t.WorkflowDefinitionId == workflowDefinitionId)
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-        dbContext.Triggers.RemoveRange(triggers);
-
+        // Webhook 路由与触发器同属一个工作流。本方法常被 WorkflowService.DeleteAsync 在既有事务内调用，
+        // 故不再开启嵌套事务（关系型提供程序不支持嵌套事务）；独立调用时 ExecuteDeleteAsync 自身为原子单语句。
         await webhookRouteService.RemoveRoutesByWorkflowIdAsync(workflowDefinitionId, cancellationToken).ConfigureAwait(false);
 
-        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        if (dbContext.Database.IsRelational())
+        {
+            // ExecuteDeleteAsync：一次往返删除，不物化整行触发器实体。
+            await dbContext.Triggers
+                .Where(t => t.WorkflowDefinitionId == workflowDefinitionId)
+                .ExecuteDeleteAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            var triggers = await dbContext.Triggers
+                .Where(t => t.WorkflowDefinitionId == workflowDefinitionId)
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            dbContext.Triggers.RemoveRange(triggers);
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <summary>

@@ -75,7 +75,14 @@ public class AuthController(
             Expires = DateTime.UtcNow.AddDays(7),
         });
 
-        return Ok(result);
+        // 安全加固：响应体不再包含 Token，避免 XSS 或第三方脚本从响应中提取 JWT。
+        return Ok(new
+        {
+            result.Success,
+            result.UserId,
+            result.User,
+            result.ErrorMessage,
+        });
     }
 
     /// <summary>

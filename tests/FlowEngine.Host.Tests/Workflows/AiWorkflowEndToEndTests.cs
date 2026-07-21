@@ -94,7 +94,7 @@ public class AiWorkflowEndToEndTests : HostIntegrationTestBase
 
         // ── 4. Execute：触发工作流执行 ──
         var executeResponse = await client.PostAsync($"/api/v1/workflows/{confirmedWorkflow.Id}/execute", null, ct);
-        Assert.Equal(HttpStatusCode.OK, executeResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, executeResponse.StatusCode);
         var execution = await executeResponse.Content.ReadFromJsonAsync<ExecutionDto>(TestJsonOptions, ct);
         Assert.NotNull(execution);
         Assert.Equal(confirmedWorkflow.Id, execution!.WorkflowDefinitionId);
@@ -229,7 +229,7 @@ public class AiWorkflowEndToEndTests : HostIntegrationTestBase
 
         // ── 7. Execute ──
         var executeResponse = await client.PostAsync($"/api/v1/workflows/{confirmedWorkflow.Id}/execute", null, ct);
-        Assert.Equal(HttpStatusCode.OK, executeResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, executeResponse.StatusCode);
         var execution = await executeResponse.Content.ReadFromJsonAsync<ExecutionDto>(TestJsonOptions, ct);
         Assert.NotNull(execution);
         Assert.Equal(confirmedWorkflow.Id, execution!.WorkflowDefinitionId);
@@ -354,7 +354,7 @@ public class AiWorkflowEndToEndTests : HostIntegrationTestBase
         // ── 5. Execute ──
         var executeResponse = await client.PostAsync(
             $"/api/v1/workflows/{modifiedWorkflow.Id}/execute", null, ct);
-        Assert.Equal(HttpStatusCode.OK, executeResponse.StatusCode);
+        Assert.Equal(HttpStatusCode.Created, executeResponse.StatusCode);
         var execution = await executeResponse.Content.ReadFromJsonAsync<ExecutionDto>(TestJsonOptions, ct);
         Assert.NotNull(execution);
         Assert.Equal(modifiedWorkflow.Id, execution!.WorkflowDefinitionId);

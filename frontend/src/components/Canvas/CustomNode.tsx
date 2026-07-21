@@ -2,14 +2,16 @@ import { Text } from "@mantine/core"
 import type { NodeProps } from "@xyflow/react"
 import { Handle, Position, useUpdateNodeInternals } from "@xyflow/react"
 import { Check, Loader, Play, X } from "lucide-react"
-import { memo, useLayoutEffect, useMemo } from "react"
-import type { WorkflowNode } from "../../stores/workflowStore.ts"
-import { useWorkflowStore } from "../../stores/workflowStore.ts"
-import { useShallow } from "zustand/shallow"
+import { memo, useContext, useLayoutEffect, useMemo } from "react"
+import type { WorkflowNode } from "./stores/canvasStore.ts"
+import { useCanvasStore } from "./stores/canvasStore.ts"
 import { getNodeCategoryColor } from "../../theme.ts"
 import type { PortDefinition } from "../../types/workflow.ts"
 import { computeDynamicPorts } from "../../utils/computeDynamicPorts.ts"
 import { NodeIcon } from "../common/NodeIcon.tsx"
+import { ConnectedHandlesContext } from "./connectedHandlesContext.ts"
+
+const EMPTY_HANDLES: Set<string> = new Set()
 
 const AI_PORT_TYPES = new Set(["AgentTool", "LLM", "Memory"])
 
@@ -146,8 +148,7 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
   const ports = useMemo(() => computeDynamicPorts(data), [data])
   const inputPorts = ports.filter((p) => p.direction === "Input")
   const outputPorts = ports.filter((p) => p.direction === "Output")
-  const styleSettings = useWorkflowStore((s) => s.styleSettings)
-  const edges = useWorkflowStore(useShallow((s) => s.edges.filter((e) => e.source === id || e.target === id)))
+  const styleSettings = useCanvasStore((s) => s.styleSettings)
   const layoutDirection = styleSettings.layoutDirection
 
   const config = isConfigNode(ports)
@@ -168,14 +169,7 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
   const visibleInputPorts = tool ? [] : inputPorts
   const visibleOutputPorts = tool ? outputPorts.filter((p) => p.type === "AgentTool") : outputPorts
 
-  const connectedHandles = useMemo(() => {
-    const connected = new Set<string>()
-    for (const edge of edges) {
-      if (edge.source === id && edge.sourceHandle) connected.add(edge.sourceHandle)
-      if (edge.target === id && edge.targetHandle) connected.add(edge.targetHandle)
-    }
-    return connected
-  }, [edges, id])
+  const connectedHandles = useContext(ConnectedHandlesContext)[id] ?? EMPTY_HANDLES
   const status = data.executionStatus
   const statusClass = status && status !== "idle" ? `status-${status}` : ""
   const categoryColor = getNodeCategoryColor(data.descriptor.category)

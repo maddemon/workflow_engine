@@ -52,6 +52,57 @@ public class WorkflowsControllerTests : HostIntegrationTestBase
     }
 
     [Fact]
+    public async Task GetAll_InvalidPageZero_ReturnsBadRequest()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = await CreateAuthenticatedClientAsync("workflows-page-zero@example.com", [RoleConstants.Admin], ct);
+
+        var response = await client.GetAsync("/api/v1/workflows?page=0", ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetAll_InvalidPageSizeZero_ReturnsBadRequest()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = await CreateAuthenticatedClientAsync("workflows-pagesize-zero@example.com", [RoleConstants.Admin], ct);
+
+        var response = await client.GetAsync("/api/v1/workflows?pageSize=0", ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetAll_InvalidPageSizeOverLimit_ReturnsBadRequest()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var client = await CreateAuthenticatedClientAsync("workflows-pagesize-over@example.com", [RoleConstants.Admin], ct);
+
+        var response = await client.GetAsync("/api/v1/workflows?pageSize=201", ct);
+
+        Assert.Equal(HttpStatusCode.BadRequest, response.StatusCode);
+    }
+
+    [Fact]
+    public async Task GetAll_ValidPagingBounds_ReturnsOk()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var email = "workflows-paging-valid@example.com";
+        var client = await CreateAuthenticatedClientAsync(email, [RoleConstants.Admin], ct);
+        var workflow = await SeedWorkflowAsync(email, ct);
+
+        var response = await client.GetAsync("/api/v1/workflows?page=1&pageSize=200", ct);
+
+        Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        var result = await response.Content.ReadFromJsonAsync<PagedResult<WorkflowSummaryDto>>(TestJsonOptions, ct);
+        Assert.NotNull(result);
+        Assert.Equal(1, result!.Page);
+        Assert.Equal(200, result.PageSize);
+        Assert.Contains(result.Items, w => w.Id == workflow.Id);
+    }
+
+    [Fact]
     public async Task Get_Existing_ReturnsOk()
     {
         var ct = TestContext.Current.CancellationToken;

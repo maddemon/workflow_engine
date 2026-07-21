@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
 import { useNodeTypes } from '../useNodeTypes.ts';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
+import { useCanvasStore } from '../../components/Canvas/stores/canvasStore.ts';
 import type { NodeTypeDescriptor } from '../../types/workflow.ts';
 
 vi.mock('../../services/api.ts', () => ({
@@ -24,7 +25,7 @@ const descriptor: NodeTypeDescriptor = {
 
 function resetStore() {
   useWorkflowStore.getState().newWorkflow();
-  useWorkflowStore.setState({ nodeTypes: [] });
+  useCanvasStore.setState({ nodeTypes: [] });
 }
 
 describe('useNodeTypes', () => {
@@ -43,11 +44,11 @@ describe('useNodeTypes', () => {
     });
 
     expect(result.current.nodeTypes).toEqual([descriptor]);
-    expect(useWorkflowStore.getState().nodeTypes).toEqual([descriptor]);
+    expect(useCanvasStore.getState().nodeTypes).toEqual([descriptor]);
   });
 
   it('ready is false while loading and when store already has types', async () => {
-    useWorkflowStore.setState({ nodeTypes: [descriptor] });
+    useCanvasStore.setState({ nodeTypes: [descriptor] });
     mockedGetNodeTypes.mockResolvedValue([descriptor]);
 
     const { result } = renderHook(() => useNodeTypes());

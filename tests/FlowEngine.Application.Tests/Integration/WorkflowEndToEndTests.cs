@@ -13,6 +13,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.ValueObjects;
+using FlowEngine.Runtime.Executor;
 using FlowEngine.Application.Tests.TestSupport.Fakes;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
@@ -50,7 +51,7 @@ public sealed class WorkflowEndToEndTests : IDisposable
         var triggerSync = new WorkflowTriggerSync(triggerService, handler);
         _workflowService = new WorkflowService(_dbContext, validator, eventBus, auditFactory, triggerService, authGuard, handler, statisticsLoader, triggerSync, NullLogger<WorkflowService>.Instance);
         _engine = new StubEngine(_dbContext);
-        _executionService = new ExecutionService(_engine, _dbContext, new StubIdempotencyService(), AuthorizationGuardFactory.Create(userContext, resourceAuthorization), eventBus, auditFactory);
+        _executionService = new ExecutionService(_engine, _dbContext, new StubIdempotencyService(), AuthorizationGuardFactory.Create(userContext, resourceAuthorization), eventBus, auditFactory, new ExecutionCancellationRegistry());
     }
 
     public void Dispose() => _dbContext.Dispose();
@@ -206,12 +207,13 @@ public sealed class WorkflowEndToEndTests : IDisposable
         var workflow = await _workflowService.CreateAsync(dto, ct);
         await _executionService.ExecuteAsync(workflow.Id, idempotencyKey: null, ct);
 
-        var executions = await _executionService.GetByWorkflowAsync(workflow.Id, cancellationToken: ct);
+        var result = await _executionService.GetByWorkflowAsync(workflow.Id, cancellationToken: ct);
 
-        Assert.NotEmpty(executions);
-        var summary = executions.First();
+        Assert.NotEmpty(result.Items);
+        var summary = result.Items.First();
         Assert.Equal(workflow.Id, summary.WorkflowDefinitionId);
         Assert.Equal("Completed", summary.Status);
+        Assert.Equal(1, result.TotalCount);
     }
 
     private sealed class StubEngine : IEngine
@@ -271,6 +273,9 @@ public sealed class WorkflowEndToEndTests : IDisposable
 
             return ExecutionId.From(record.Id);
         }
+
+        public Task<ExecutionId> StartAsync(Guid workflowDefinitionId, Workflow preloadedWorkflow, object? triggerPayload = null, CancellationToken cancellationToken = default)
+            => StartAsync(workflowDefinitionId, triggerPayload, cancellationToken);
     }
 
     private sealed class EmptyRegistry : INodeRegistry

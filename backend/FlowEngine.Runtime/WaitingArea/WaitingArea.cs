@@ -102,72 +102,28 @@ public sealed class WaitingArea
 
     private sealed class PortState
     {
-        private readonly Dictionary<string, DataBatch> _inputs = new(StringComparer.OrdinalIgnoreCase);
-        private readonly object _lock = new();
+        private readonly ConcurrentDictionary<string, DataBatch> _inputs = new(StringComparer.OrdinalIgnoreCase);
 
         public DateTime LastActivity { get; private set; } = DateTime.UtcNow;
 
         public void AddOrMerge(string portName, DataBatch data)
         {
-            lock (_lock)
-            {
-                LastActivity = DateTime.UtcNow;
+            LastActivity = DateTime.UtcNow;
 
-                if (_inputs.TryGetValue(portName, out var existing))
-                {
-                    var merged = new DataBatch();
-
-                    // 复制已有项（创建副本，不修改原 item 的 SourceIndex）。
-                    for (var i = 0; i < existing.Items.Count; i++)
-                    {
-                        var item = existing.Items[i];
-                        merged.Items.Add(new DataItem
-                        {
-                            Data = item.Data,
-                            Success = item.Success,
-                            Error = item.Error,
-                            SourceIndex = i,
-                            AttachmentId = item.AttachmentId,
-                        });
-                    }
-
-                    // 追加新项（创建副本）。
-                    for (var i = 0; i < data.Items.Count; i++)
-                    {
-                        var item = data.Items[i];
-                        merged.Items.Add(new DataItem
-                        {
-                            Data = item.Data,
-                            Success = item.Success,
-                            Error = item.Error,
-                            SourceIndex = existing.Items.Count + i,
-                            AttachmentId = item.AttachmentId,
-                        });
-                    }
-
-                    _inputs[portName] = merged;
-                }
-                else
-                {
-                    _inputs[portName] = data;
-                }
-            }
+            // 并发合并：AddOrUpdate 保证同一端口的「读取-合并-写入」原子完成，
+            // Merge 为纯函数（不修改入参），可安全被并发重试调用。
+            _inputs.AddOrUpdate(
+                portName,
+                data,
+                (_, existing) => Merge(existing, data));
         }
 
-        public bool HasData(string portName)
-        {
-            lock (_lock)
-            {
-                return _inputs.ContainsKey(portName);
-            }
-        }
+        public bool HasData(string portName) => _inputs.ContainsKey(portName);
 
-        public IReadOnlyDictionary<string, DataBatch> GetInputs()
-        {
-            lock (_lock)
-            {
-                return new Dictionary<string, DataBatch>(_inputs, StringComparer.OrdinalIgnoreCase);
-            }
-        }
+        public IReadOnlyDictionary<string, DataBatch> GetInputs() =>
+            new Dictionary<string, DataBatch>(_inputs, StringComparer.OrdinalIgnoreCase);
+
+        private static DataBatch Merge(DataBatch existing, DataBatch data)
+            => DataBatch.Merge(existing, data);
     }
 }

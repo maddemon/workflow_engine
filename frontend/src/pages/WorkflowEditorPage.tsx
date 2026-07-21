@@ -9,6 +9,7 @@ import { ParameterPanel } from "../components/ParameterPanel/ParameterPanel.tsx"
 import { useExecution } from "../hooks/useExecution.ts"
 import { useNodeTypes } from "../hooks/useNodeTypes.ts"
 import { useWorkflowStore } from "../stores/workflowStore.ts"
+import { useCanvasStore } from "../components/Canvas/stores/canvasStore.ts"
 import { DiffPanel } from "../components/ParameterPanel/DiffPanel.tsx"
 import { ValidationChecklistModal } from "../components/ParameterPanel/ValidationChecklistModal.tsx"
 import { Alert, Anchor, Stack, Text, Badge, Group, Button, Divider, Modal, Textarea } from "@mantine/core"
@@ -28,8 +29,8 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
   const { execution, clearExecution, execute, dryRun, dryRunLoading, cancelExecution, error } = useExecution()
   const loadWorkflow = useWorkflowStore((s) => s.loadWorkflow)
   const newWorkflow = useWorkflowStore((s) => s.newWorkflow)
-  const reviewMode = useWorkflowStore((s) => s.reviewMode)
-  const setReviewMode = useWorkflowStore((s) => s.setReviewMode)
+  const reviewMode = useCanvasStore((s) => s.reviewMode)
+  const setReviewMode = useCanvasStore((s) => s.setReviewMode)
   const structuredDiff = useWorkflowStore((s) => s.structuredDiff)
   const workflowId = useWorkflowStore((s) => s.workflowId)
   const workflowVersion = useWorkflowStore((s) => s.workflowVersion)
@@ -40,15 +41,24 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
   const [rejectReason, setRejectReason] = useState("")
   const { changed, newVersion, dismiss } = useWorkflowVersionPolling(workflowId)
 
+  // Clear prior execution state only when switching to a different workflow,
+  // NOT on every execution-status update (clearExecution's identity changes
+  // whenever executionMeta changes, which would otherwise re-trigger the load).
+  useEffect(() => {
+    clearExecution()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [id])
+
+  // Load the workflow keyed only on [id, ready]; do not depend on clearExecution/
+  // loadWorkflow/newWorkflow so live execution updates don't reload/reset it.
   useEffect(() => {
     if (!ready) return
-    clearExecution()
     if (id && id !== "new") {
       loadWorkflow(id)
     } else {
       newWorkflow()
     }
-  }, [id, ready, clearExecution, loadWorkflow, newWorkflow])
+  }, [id, ready, loadWorkflow, newWorkflow])
 
   const navbar = useMemo(() => <NodePanel />, [])
 

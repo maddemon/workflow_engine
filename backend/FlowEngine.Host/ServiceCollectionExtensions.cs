@@ -221,6 +221,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<ICredentialEncryptionService, CredentialEncryptionService>();
         services.AddScoped<CredentialService>();
         services.AddScoped<WorkflowRepository>();
+        // 迁移后补齐 workflow_credential_usages 引用行（按需、幂等）。
+        services.AddScoped<WorkflowCredentialUsageBackfill>();
+        services.AddHostedService<WorkflowCredentialUsageBackfillHostedService>();
         services.AddScoped<ICredentialAccessor, CredentialAccessor>();
         services.AddScoped<IOAuth2TokenService, OAuth2TokenService>();
         services.AddScoped<WorkflowValidator>();
@@ -245,6 +248,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IWebhookHandler, WebhookHandler>();
         services.AddScoped<ErrorStrategyHandler>();
         services.AddSingleton<WorkflowExecutionQueue>();
+        // 按 executionId 索引的执行取消令牌注册表（单例）：worker 登记每执行 CTS，CancelAsync 触发取消。
+        services.AddSingleton<ExecutionCancellationRegistry>();
 
         // ── File Storage ───────────────────────────────────────────
         services.AddSingleton<IFileStorage>(sp =>

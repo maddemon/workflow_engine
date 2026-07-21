@@ -29,6 +29,7 @@ public class FilesController(
     /// </summary>
     [HttpPost("upload")]
     [AuthorizePermission(Scope.File, Operation.Write)]
+    [RequestSizeLimit(104_857_600)] // 100 MB
     public async Task<ActionResult<UploadFileResult>> Upload(
         IFormFile file,
         [FromQuery] Guid projectId,
@@ -112,7 +113,7 @@ public class FilesController(
     /// 删除文件。
     /// </summary>
     [HttpDelete("{id:guid}")]
-    [AuthorizePermission(Scope.File, Operation.Write)]
+    [AuthorizePermission(Scope.File, Operation.Delete)]
     public async Task<IActionResult> Delete(Guid id, CancellationToken cancellationToken)
     {
         var deleted = await fileService.DeleteAsync(id, cancellationToken).ConfigureAwait(false);
@@ -129,11 +130,20 @@ public class FilesController(
     /// </summary>
     [HttpGet]
     [AuthorizePermission(Scope.File, Operation.Read)]
-    public async Task<ActionResult<IReadOnlyList<StoredFileDto>>> GetAll(
+    public async Task<ActionResult<PagedResult<StoredFileDto>>> GetAll(
         [FromQuery] Guid projectId,
-        CancellationToken cancellationToken)
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        CancellationToken cancellationToken = default)
     {
         var files = await fileService.GetAllByProjectAsync(projectId, cancellationToken).ConfigureAwait(false);
-        return Ok(files);
+        var result = new PagedResult<StoredFileDto>
+        {
+            Items = files,
+            TotalCount = files.Count,
+            Page = page,
+            PageSize = pageSize,
+        };
+        return Ok(result);
     }
 }

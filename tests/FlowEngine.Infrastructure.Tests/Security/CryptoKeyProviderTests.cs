@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using FlowEngine.Infrastructure.Security;
 using Xunit;
@@ -138,5 +139,42 @@ public sealed class CryptoKeyProviderTests : IDisposable
 
         Assert.NotSame(key1, key2);
         Assert.Equal(key1, key2);
+    }
+
+    [Fact]
+    public void CurrentVersion_IsV1()
+    {
+        Environment.SetEnvironmentVariable("FLOWENGINE_CRYPTO_KEY", Convert.ToHexString(new byte[32]));
+        var provider = new CryptoKeyProvider(_keyFilePath);
+
+        Assert.Equal("v1", provider.CurrentVersion);
+    }
+
+    [Theory]
+    [InlineData("v1")]
+    [InlineData("V1")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void GetKey_WithCurrentOrEmptyVersion_ReturnsCurrentKey(string? version)
+    {
+        var expectedKey = new byte[32];
+        Random.Shared.NextBytes(expectedKey);
+        Environment.SetEnvironmentVariable("FLOWENGINE_CRYPTO_KEY", Convert.ToHexString(expectedKey));
+        var provider = new CryptoKeyProvider(_keyFilePath);
+
+        var current = provider.GetKey();
+        var resolved = provider.GetKey(version!);
+
+        Assert.Equal(current, resolved);
+        Assert.NotSame(current, resolved);
+    }
+
+    [Fact]
+    public void GetKey_WithUnknownVersion_ThrowsCryptographicException()
+    {
+        Environment.SetEnvironmentVariable("FLOWENGINE_CRYPTO_KEY", Convert.ToHexString(new byte[32]));
+        var provider = new CryptoKeyProvider(_keyFilePath);
+
+        Assert.Throws<CryptographicException>(() => provider.GetKey("v2"));
     }
 }

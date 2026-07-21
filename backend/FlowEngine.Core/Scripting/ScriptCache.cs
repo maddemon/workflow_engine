@@ -24,7 +24,7 @@ public sealed class ScriptCache
     /// </summary>
     public const int DefaultMaxCapacity = 4096;
 
-    private readonly ConcurrentDictionary<string, JintPreparedScript> _cache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly ConcurrentDictionary<string, Lazy<JintPreparedScript>> _cache = new(StringComparer.OrdinalIgnoreCase);
     private readonly ConcurrentDictionary<string, ScriptErrorException> _compileErrors = new(StringComparer.OrdinalIgnoreCase);
 
     // 加入顺序跟踪：LinkedList 提供 O(1) 头尾增删，Dictionary 提供 O(1) 成员判定，避免 List.Contains 的 O(n) 扫描。
@@ -60,21 +60,32 @@ public sealed class ScriptCache
         JintPreparedScript? prepared = null;
         ScriptErrorException? compileError = null;
 
-        // 安全校验仅在首次编译（缓存未命中）时执行一次；命中缓存跳过（编译时校验语义）。
-        // 安全异常直接冒泡，不视为可缓存的编译错误。
-        if (!_cache.ContainsKey(key))
+        // 使用 Lazy<T> 模式确保编译只执行一次，避免竞态条件
+        var lazy = _cache.GetOrAdd(key, _ =>
         {
-            ValidateSecurity(script);
-        }
+            return new Lazy<JintPreparedScript>(() =>
+            {
+                // 安全校验仅在首次编译（缓存未命中）时执行一次
+                ValidateSecurity(script);
+                return ScriptCompiler.Compile(script);
+            });
+        });
 
         try
         {
-            prepared = _cache.GetOrAdd(key, _ => ScriptCompiler.Compile(script));
+            prepared = lazy.Value;
+        }
+        catch (ScriptSecurityException)
+        {
+            // 安全校验异常必须透传，绝不能被当作编译错误吞掉（否则沙箱校验失效）。
+            throw;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             compileError = new ScriptErrorException(script, ex.Message, ex);
             _compileErrors.GetOrAdd(key, compileError);
+            // 编译失败时从缓存移除，避免后续请求继续使用失败的 Lazy
+            _cache.TryRemove(key, out _);
         }
 
         if (prepared is not null)
