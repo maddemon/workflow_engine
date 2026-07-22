@@ -66,65 +66,21 @@ public sealed class LoopNode : INodeType
 
         var nodeContext = context.NodeContext;
 
-        // 首次调用（或新上游输入经内核清空上下文后）初始化迭代状态，缓存原始输入全集。
-        // 回环激活时内核不会清空上下文（见 WorkflowSchedulerKernel Task 9），故此处仅在未初始化时重新初始化；
+        // 首次调用（或新上游输入经内核清空上下文后）初始化迭代状态，缓存原始输入全集；
+        // 回环激活时内核不会清空上下文（见 WorkflowSchedulerKernel），故 EnsureInitialized 仅在未初始化时重新初始化。
         // 回环输入为下游节点输出，不据此重置 allItems。「重置迭代」开关已废弃（恒定 true 曾在回环中导致死循环）。
-        if (!nodeContext.ContainsKey("initialized"))
+        // 窗口切分与位置推进已抽至 BatchLoopHelper，Loop 与未来的 batchSplit 节点共用，避免逻辑重复。
+        if (!BatchLoopHelper.EnsureInitialized(nodeContext, context.GetInputBatch().Items))
         {
-            nodeContext["initialized"] = true;
-            nodeContext["allItems"] = context.GetInputBatch().Items.ToList();
-            nodeContext["position"] = 0;
-            nodeContext["processedItems"] = new List<DataItem>();
-
-            // 首次调用发出首批窗口；输入为原始全集，尚未经下游处理，故不累积。
-            return Task.FromResult(EmitNextWindow(nodeContext));
+            // 回环激活（下游处理完毕回流）：当前输入即下游的「已处理窗口」P，累积进 processedItems。
+            // 位置与 allItems 由持久化上下文保持，不重置。
+            var processed = nodeContext.Get<List<DataItem>>(BatchLoopHelper.KeyProcessedItems) ?? [];
+            processed.AddRange(context.GetInputBatch().Items);
+            nodeContext[BatchLoopHelper.KeyProcessedItems] = processed;
         }
 
-        // 回环激活（下游处理完毕回流）：当前输入即下游的「已处理窗口」P，
-        // 累积进 processedItems。位置与 allItems 由持久化上下文保持，不重置。
-        var processed = nodeContext.Get<List<DataItem>>("processedItems") ?? [];
-        processed.AddRange(context.GetInputBatch().Items);
-        nodeContext["processedItems"] = processed;
-
-        return Task.FromResult(EmitNextWindow(nodeContext));
-    }
-
-    /// <summary>
-    /// 依据 <c>position</c> 取当前窗口从 Loop 输出口发出；位置越过全集则从 Done 输出口发出累积结果。
-    /// 发出窗口时推进 <c>position</c>（推进步长取实际窗口大小，避免末批超调）。
-    /// <c>position</c> 读取兼容 double：节点 body 表达式（Jint）写回字典的值统一为 double，
-    /// 故 <c>$nodeContext.position = $nodeContext.position + 1</c> 这类写法需回退到 (int) 而非静默归零。
-    /// </summary>
-    private NodeExecutionResult EmitNextWindow(IDictionary<string, object?> nodeContext)
-    {
-        var position = nodeContext["position"] switch
-        {
-            int i => i,
-            double d => (int)d,
-            _ => 0
-        };
-        var storedItems = nodeContext.Get<List<DataItem>>("allItems")
-            ?? [];
-
-        // 全部处理完：走 Done 输出口，返回累积处理结果（下游处理过的窗口）。
-        if (position >= storedItems.Count)
-        {
-            return new NodeExecutionResult
-            {
-                Success = true,
-                Output = new DataBatch { Items = nodeContext.Get<List<DataItem>>("processedItems") ?? [] },
-                BranchIndex = 1 // done
-            };
-        }
-
-        var batchItems = storedItems.Skip(position).Take(BatchSize).ToList();
-        nodeContext["position"] = position + batchItems.Count;
-
-        return new NodeExecutionResult
-        {
-            Success = true,
-            Output = new DataBatch { Items = batchItems },
-            BranchIndex = 0 // loop
-        };
+        // Done 输出语义：为下游回流的「已处理窗口」累积（processedItems）；首次调用时为空批次。
+        var donePayload = new DataBatch { Items = nodeContext.Get<List<DataItem>>(BatchLoopHelper.KeyProcessedItems) ?? [] };
+        return Task.FromResult(BatchLoopHelper.EmitNextWindow(nodeContext, BatchSize, donePayload));
     }
 }

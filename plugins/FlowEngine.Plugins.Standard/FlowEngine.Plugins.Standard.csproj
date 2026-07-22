@@ -6,6 +6,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- 允许测试项目访问 internal 共享 helper（如 BatchLoopHelper），以便对抽出的批循环逻辑做单元测试。 -->
+    <InternalsVisibleTo Include="FlowEngine.Runtime.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\..\backend\FlowEngine.Core\FlowEngine.Core.csproj" />
   </ItemGroup>
 
