@@ -45,6 +45,21 @@ public sealed class DbExecutor : IAsyncDisposable
     }
 
     /// <summary>
+    /// 执行查询并返回 <see cref="DbDataReader"/>，供读节点逐行映射为 <see cref="DataItem"/>。
+    /// 调用方必须在释放 <see cref="DbExecutor"/> 前完整读取并释放返回的 reader。
+    /// </summary>
+    public async Task<DbDataReader> ExecuteReaderAsync(
+        string sql,
+        IReadOnlyList<object?>? parameters,
+        CancellationToken ct,
+        int? commandTimeout = null)
+    {
+        DynamicParameters? dynamicParams = parameters is { Count: > 0 } ? BuildParameters(parameters) : null;
+        return await _connection.ExecuteReaderAsync(new CommandDefinition(
+            sql, dynamicParams, _transaction, commandTimeout: commandTimeout, cancellationToken: ct)).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// 执行标量查询（如检查行是否存在）。
     /// </summary>
     /// <remarks>与原始 ADO.NET 行为一致：结果为数据库 NULL 时返回 <see cref="DBNull.Value"/>。</remarks>
