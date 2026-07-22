@@ -134,7 +134,10 @@ public sealed class WorkflowSchedulerKernel(
             var isExplicitEntry = node.IsEntry || nodeType.DefaultIsEntry;
             var isImplicitEntry = !hasInputConnections.Contains(node.Id);
 
-            if (!isExplicitEntry && !isImplicitEntry)
+            // 零端口节点（既无输入也无输出端口，如纯注释 note 节点）无实际执行意义，
+            // 直接跳过入队，避免徒增一条 NodeExecutionRecord。复用既有的端口名探测方法，不新增接口标志。
+            var isAnnotation = GetInputPortNames(nodeType).Count == 0 && GetOutputPortNames(nodeType).Count == 0;
+            if ((!isExplicitEntry && !isImplicitEntry) || isAnnotation)
             {
                 continue;
             }

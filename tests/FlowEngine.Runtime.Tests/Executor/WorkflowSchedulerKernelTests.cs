@@ -38,7 +38,8 @@ public sealed class WorkflowSchedulerKernelTests
                 new OncePerItemNode(),
                 new DelayedNode(),
                 new SlowNode(),
-                new BadScriptNode()
+                new BadScriptNode(),
+                new NoteNode()
             },
             NullLogger<NodeRegistry>.Instance);
 
@@ -207,6 +208,69 @@ public sealed class WorkflowSchedulerKernelTests
         Assert.False(failed.Output.Success);
         Assert.NotNull(failed.Output.Error);
         Assert.Equal("ScriptParameterPreEvaluationError", failed.Output.Error!.Code);
+    }
+
+    // Task ENG2：零端口（纯注释）节点既无输入也无输出端口，不应被入队/执行，
+    // 不产出任何 NodeExecutionRecord，且执行整体仍正常完成。
+    [Fact]
+    public async Task RunAsync_ZeroPortNode_IsSkipped_NoRecordProduced()
+    {
+        var note = CreateNode("note1", "note");
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "note-only",
+            CreatedBy = "test",
+            Nodes = [note],
+            Connections = []
+        };
+
+        var (record, session, _) = await RunAsync(workflow);
+
+        Assert.Equal(ExecutionStatus.Completed, record.Status);
+        Assert.Empty(record.NodeRecords);
+        Assert.False(session.SuccessfulOutputs.ContainsKey("note1"));
+    }
+
+    // Task ENG2：回归——无入口标记、无输入连接的普通节点仍按隐式入口入队执行。
+    [Fact]
+    public async Task RunAsync_NormalNodeWithoutEntryOrInput_StillEnqueuedAsImplicitEntry()
+    {
+        var node = CreateNode("plain", "passThrough");
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "implicit-entry",
+            CreatedBy = "test",
+            Nodes = [node],
+            Connections = []
+        };
+
+        var (record, _, _) = await RunAsync(workflow);
+
+        Assert.Equal(ExecutionStatus.Completed, record.Status);
+        Assert.Contains(record.NodeRecords, r => r.NodeDefinitionId == node.Id);
+    }
+
+    // Task ENG2：回归——带输出端口的触发器（DefaultIsEntry=true）仍作为入口执行。
+    [Fact]
+    public async Task RunAsync_TriggerWithOutputPorts_StillExecutes()
+    {
+        var trigger = CreateNode("trigger", "failing"); // FailingNode.DefaultIsEntry = true
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "trigger",
+            CreatedBy = "test",
+            Nodes = [trigger],
+            Connections = []
+        };
+
+        var (record, _, _) = await RunAsync(workflow);
+
+        // 触发器（failing）仍被入队并执行，记录存在且状态为 Failed。
+        Assert.Single(record.NodeRecords);
+        Assert.Equal(ExecutionStatus.Failed, record.Status);
     }
 
     [Fact]

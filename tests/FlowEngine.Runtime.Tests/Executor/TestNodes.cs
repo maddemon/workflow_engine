@@ -557,3 +557,35 @@ public sealed class BadScriptNode : INodeType
     public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
         => Task.FromResult(new NodeExecutionResult { Success = true, Output = new DataBatch() });
 }
+
+/// <summary>
+/// 零端口测试节点（纯注释节点）：既无输入端口也无输出端口，
+/// 用于验证 <see cref="WorkflowSchedulerKernel"/> 的零端口跳过守卫（Task ENG2）。
+/// </summary>
+public sealed class NoteNode : INodeType
+{
+    /// <inheritdoc />
+    public string TypeName => "note";
+
+    /// <inheritdoc />
+    public string DisplayName => "Note";
+
+    /// <inheritdoc />
+    public string Category => "Test";
+
+    /// <inheritdoc />
+    public string Icon => "test";
+
+    /// <inheritdoc />
+    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
+
+    /// <inheritdoc />
+    public IReadOnlyList<PortDefinition> Ports { get; } = [];
+
+    /// <inheritdoc />
+    public bool DefaultIsEntry => false;
+
+    /// <inheritdoc />
+    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+        => Task.FromResult(new NodeExecutionResult { Success = true, Output = new DataBatch() });
+}
