@@ -109,7 +109,137 @@ public sealed class CredentialTypeRegistryTests
         var types = _registry.GetAll();
 
         var names = types.Select(t => t.Name).OrderBy(n => n).ToList();
-        Assert.Equal(["apiKey", "basicAuth", "database", "oauth2"], names);
+        Assert.Equal(["apiKey", "basicAuth", "database", "mongo", "oauth2", "redis", "s3", "smtp"], names);
+    }
+
+    [Fact]
+    public void IsKnown_NewCredentialTypes_ReturnsTrue()
+    {
+        Assert.True(_registry.IsKnown("smtp"));
+        Assert.True(_registry.IsKnown("s3"));
+        Assert.True(_registry.IsKnown("redis"));
+        Assert.True(_registry.IsKnown("mongo"));
+    }
+
+    [Fact]
+    public void Get_Smtp_HasExpectedFieldsAndSecret()
+    {
+        var definition = _registry.Get("smtp");
+
+        Assert.NotNull(definition);
+        Assert.Equal("smtp", definition!.Name);
+        Assert.Equal("SMTP", definition.DisplayName);
+        Assert.Equal(["host", "port", "user", "password", "useSsl"], definition.Fields.Select(f => f.Name).ToList());
+        Assert.True(definition.Fields.Single(f => f.Name == "host").IsRequired);
+        Assert.False(definition.Fields.Single(f => f.Name == "port").IsRequired);
+        Assert.False(definition.Fields.Single(f => f.Name == "user").IsRequired);
+        Assert.True(definition.Fields.Single(f => f.Name == "password").IsRequired);
+        Assert.True(definition.Fields.Single(f => f.Name == "password").Secret);
+        Assert.False(definition.Fields.Single(f => f.Name == "useSsl").IsRequired);
+    }
+
+    [Fact]
+    public void Get_S3_HasExpectedFieldsAndSecret()
+    {
+        var definition = _registry.Get("s3");
+
+        Assert.NotNull(definition);
+        Assert.Equal("s3", definition!.Name);
+        Assert.Equal("S3 Compatible Object Storage", definition.DisplayName);
+        Assert.Equal(["endpoint", "accessKey", "secretKey", "bucket", "region"], definition.Fields.Select(f => f.Name).ToList());
+        Assert.True(definition.Fields.Single(f => f.Name == "endpoint").IsRequired);
+        Assert.True(definition.Fields.Single(f => f.Name == "accessKey").IsRequired);
+        Assert.True(definition.Fields.Single(f => f.Name == "secretKey").IsRequired);
+        Assert.True(definition.Fields.Single(f => f.Name == "secretKey").Secret);
+        Assert.True(definition.Fields.Single(f => f.Name == "bucket").IsRequired);
+        Assert.False(definition.Fields.Single(f => f.Name == "region").IsRequired);
+    }
+
+    [Fact]
+    public void Get_Redis_HasExpectedFieldsAndSecret()
+    {
+        var definition = _registry.Get("redis");
+
+        Assert.NotNull(definition);
+        Assert.Equal("redis", definition!.Name);
+        Assert.Equal("Redis", definition.DisplayName);
+        Assert.Equal(["host", "port", "password", "db"], definition.Fields.Select(f => f.Name).ToList());
+        Assert.True(definition.Fields.Single(f => f.Name == "host").IsRequired);
+        Assert.False(definition.Fields.Single(f => f.Name == "port").IsRequired);
+        Assert.False(definition.Fields.Single(f => f.Name == "password").IsRequired);
+        Assert.True(definition.Fields.Single(f => f.Name == "password").Secret);
+        Assert.False(definition.Fields.Single(f => f.Name == "db").IsRequired);
+    }
+
+    [Fact]
+    public void Get_Mongo_HasExpectedFieldsAndSecret()
+    {
+        var definition = _registry.Get("mongo");
+
+        Assert.NotNull(definition);
+        Assert.Equal("mongo", definition!.Name);
+        Assert.Equal("MongoDB", definition.DisplayName);
+        Assert.Equal(["connectionString", "database"], definition.Fields.Select(f => f.Name).ToList());
+        Assert.True(definition.Fields.Single(f => f.Name == "connectionString").IsRequired);
+        Assert.True(definition.Fields.Single(f => f.Name == "connectionString").Secret);
+        Assert.True(definition.Fields.Single(f => f.Name == "database").IsRequired);
+    }
+
+    [Fact]
+    public void Validate_SmtpWellFormed_ReturnsSuccess()
+    {
+        var fields = new Dictionary<string, string>
+        {
+            ["host"] = "smtp.example.com",
+            ["password"] = "secret",
+        };
+
+        var result = _registry.Validate("smtp", fields);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void Validate_S3WellFormed_ReturnsSuccess()
+    {
+        var fields = new Dictionary<string, string>
+        {
+            ["endpoint"] = "https://s3.example.com",
+            ["accessKey"] = "AKIA",
+            ["secretKey"] = "secret",
+            ["bucket"] = "my-bucket",
+        };
+
+        var result = _registry.Validate("s3", fields);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void Validate_RedisWellFormed_ReturnsSuccess()
+    {
+        var fields = new Dictionary<string, string>
+        {
+            ["host"] = "localhost",
+        };
+
+        var result = _registry.Validate("redis", fields);
+
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void Validate_MongoWellFormed_ReturnsSuccess()
+    {
+        var fields = new Dictionary<string, string>
+        {
+            ["connectionString"] = "mongodb://localhost:27017",
+            ["database"] = "my-db",
+        };
+
+        var result = _registry.Validate("mongo", fields);
+
+        Assert.True(result.IsValid);
     }
 
     [Fact]

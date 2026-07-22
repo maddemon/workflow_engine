@@ -118,5 +118,45 @@ public sealed class CredentialTypeRegistry
                 new CredentialFieldDefinition("tokenPath", "Token Path", isRequired: false, secret: false, hint: "默认 access_token"),
                 new CredentialFieldDefinition("provider", "Provider", isRequired: false, secret: false, hint: "standard | dingtalk（决定取 token 形态，默认 standard）"),
             ]);
+
+        yield return new CredentialTypeDefinition(
+            "smtp",
+            "SMTP",
+            [
+                new CredentialFieldDefinition("host", "Host", isRequired: true, secret: false),
+                new CredentialFieldDefinition("port", "Port", isRequired: false, secret: false),
+                new CredentialFieldDefinition("user", "User", isRequired: false, secret: false),
+                new CredentialFieldDefinition("password", "Password", isRequired: true, secret: true),
+                new CredentialFieldDefinition("useSsl", "Use SSL", isRequired: false, secret: false),
+            ]);
+
+        yield return new CredentialTypeDefinition(
+            "s3",
+            "S3 Compatible Object Storage",
+            [
+                new CredentialFieldDefinition("endpoint", "Endpoint", isRequired: true, secret: false),
+                new CredentialFieldDefinition("accessKey", "Access Key", isRequired: true, secret: false),
+                new CredentialFieldDefinition("secretKey", "Secret Key", isRequired: true, secret: true),
+                new CredentialFieldDefinition("bucket", "Bucket", isRequired: true, secret: false),
+                new CredentialFieldDefinition("region", "Region", isRequired: false, secret: false),
+            ]);
+
+        yield return new CredentialTypeDefinition(
+            "redis",
+            "Redis",
+            [
+                new CredentialFieldDefinition("host", "Host", isRequired: true, secret: false),
+                new CredentialFieldDefinition("port", "Port", isRequired: false, secret: false),
+                new CredentialFieldDefinition("password", "Password", isRequired: false, secret: true),
+                new CredentialFieldDefinition("db", "DB", isRequired: false, secret: false),
+            ]);
+
+        yield return new CredentialTypeDefinition(
+            "mongo",
+            "MongoDB",
+            [
+                new CredentialFieldDefinition("connectionString", "Connection String", isRequired: true, secret: true),
+                new CredentialFieldDefinition("database", "Database", isRequired: true, secret: false),
+            ]);
     }
 }
