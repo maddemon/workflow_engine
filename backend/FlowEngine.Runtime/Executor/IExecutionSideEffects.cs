@@ -48,7 +48,8 @@ public interface IExecutionSideEffects
     /// </summary>
     /// <param name="status">终态状态。</param>
     /// <param name="cancellationToken">取消令牌。</param>
-    Task PublishCompletedAsync(ExecutionStatus status, CancellationToken cancellationToken);
+    /// <param name="error">失败时的真实节点错误；非 Failed 终态或无法捕获时为 null。</param>
+    Task PublishCompletedAsync(ExecutionStatus status, CancellationToken cancellationToken, NodeError? error = null);
 
     /// <summary>
     /// 创建 LLM 流式回调，用于节点执行过程中的 token 推送。

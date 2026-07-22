@@ -50,7 +50,7 @@ public class DomainEventsMoreTests
         Assert.Equal(executionId, evt.ExecutionId);
         Assert.Equal("node-1", evt.NodeDefinitionId);
         Assert.Equal(2, evt.RunIndex);
-        Assert.Equal("E1", evt.Error.Code);
+        Assert.Equal("E1", evt.Error!.Code);
         Assert.Equal(AuditEventTypes.NodeError, evt.EventType);
     }
 
@@ -65,7 +65,7 @@ public class DomainEventsMoreTests
 
         Assert.Equal(executionId, evt.ExecutionId);
         Assert.Equal(workflowDefinitionId, evt.WorkflowDefinitionId);
-        Assert.Equal("E1", evt.Error.Code);
+        Assert.Equal("E1", evt.Error!.Code);
         Assert.Equal(AuditEventTypes.ExecutionFailed, evt.EventType);
     }
 

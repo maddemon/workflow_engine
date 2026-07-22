@@ -115,7 +115,21 @@ public sealed class WorkflowSchedulerKernel(
         // 抛出而终态丢失。真实的取消传播已由逐节点的 PersistNodeRecordAsync 与失败态 PersistFailedStateAsync 承担。
         await sideEffects.PersistExecutionAsync(CancellationToken.None).ConfigureAwait(false);
 
-        await sideEffects.PublishCompletedAsync(session.StateMachine.Status, CancellationToken.None).ConfigureAwait(false);
+        // Failed 终态：从节点执行记录中提取真实错误（最后一个失败节点的 Error），
+        // 供 WorkflowFailedEvent 携带真实失败原因（errorTrigger 等消费者依赖此错误）。
+        NodeError? failureError = null;
+        if (session.StateMachine.Status == ExecutionStatus.Failed)
+        {
+            foreach (var record in session.Execution.NodeRecords)
+            {
+                if (!record.Output.Success && record.Output.Error is not null)
+                {
+                    failureError = record.Output.Error;
+                }
+            }
+        }
+
+        await sideEffects.PublishCompletedAsync(session.StateMachine.Status, CancellationToken.None, failureError).ConfigureAwait(false);
     }
 
     private async Task EnqueueEntryNodesAsync(

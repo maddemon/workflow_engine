@@ -187,8 +187,8 @@ public class SseController(
                 workflowDefinitionId = evt.WorkflowDefinitionId,
                 error = new
                 {
-                    code = evt.Error.Code,
-                    message = evt.Error.Message,
+                    code = evt.Error?.Code ?? string.Empty,
+                    message = evt.Error?.Message ?? string.Empty,
                 },
                 eventType = evt.EventType,
             },

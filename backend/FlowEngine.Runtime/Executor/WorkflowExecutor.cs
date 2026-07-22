@@ -241,7 +241,7 @@ public sealed class WorkflowExecutor : IEngine
             await _eventBus.PublishAsync(new NodeStartedEvent(executionId, nodeId, runIndex), cancellationToken).ConfigureAwait(false);
         }
 
-        public async Task PublishCompletedAsync(ExecutionStatus status, CancellationToken cancellationToken)
+        public async Task PublishCompletedAsync(ExecutionStatus status, CancellationToken cancellationToken, NodeError? error = null)
         {
             if (_eventBus is null) return;
 
@@ -250,8 +250,7 @@ public sealed class WorkflowExecutor : IEngine
                 ExecutionStatus.Completed => new WorkflowCompletedEvent(
                     _execution.Id, _execution.WorkflowDefinitionId, ExecutionStatus.Completed),
                 ExecutionStatus.Failed => new WorkflowFailedEvent(
-                    _execution.Id, _execution.WorkflowDefinitionId,
-                    new NodeError { Code = "ExecutionFailed", Message = "工作流执行失败" }),
+                    _execution.Id, _execution.WorkflowDefinitionId, error),
                 ExecutionStatus.Cancelled => new WorkflowCancelledEvent(
                     _execution.Id, _execution.WorkflowDefinitionId),
                 _ => null

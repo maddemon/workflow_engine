@@ -19,6 +19,7 @@ using FlowEngine.Host.Middlewares;
 using FlowEngine.Host.Options;
 using FlowEngine.Host.Scheduling;
 using FlowEngine.Host.Services;
+using FlowEngine.Host.Triggers;
 using FlowEngine.Host.Webhooks;
 using FlowEngine.Host.RateLimiting;
 using FlowEngine.Host.WebSocketHandlers;
@@ -397,6 +398,9 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<INotificationHandler<NodeExecutedEvent>>(sp => sp.GetRequiredService<AuditEventNotificationHandler>());
         services.AddSingleton<INotificationHandler<NodeErrorEvent>>(sp => sp.GetRequiredService<AuditEventNotificationHandler>());
         services.AddSingleton<INotificationHandler<CredentialAccessedEvent>>(sp => sp.GetRequiredService<AuditEventNotificationHandler>());
+
+        // errorTrigger 事件消费者：失败事件 → 启动匹配的工作流（复用 IEngine.StartAsync 统一入口）。
+        services.AddSingleton<INotificationHandler<WorkflowFailedEvent>, ErrorTriggerEventConsumer>();
     }
 
     private static void AddAuthentication(IServiceCollection services, IConfiguration configuration)
