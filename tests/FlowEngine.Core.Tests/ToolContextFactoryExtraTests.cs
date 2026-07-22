@@ -83,7 +83,8 @@ public class ToolContextFactoryExtraTests
             int runIndex,
             CancellationToken cancellationToken,
             ICredentialAccessor? credentialAccessorOverride = null,
-            IReadOnlyDictionary<string, object?>? extraGlobals = null)
+            IReadOnlyDictionary<string, object?>? extraGlobals = null,
+            IDictionary<string, object?>? nodeContext = null)
         {
             WasCalled = true;
             ReceivedNodeInstance = nodeInstance;

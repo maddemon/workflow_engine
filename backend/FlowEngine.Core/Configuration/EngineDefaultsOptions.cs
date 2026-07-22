@@ -29,4 +29,11 @@ public class EngineDefaultsOptions
     /// 默认最大延迟（秒）。
     /// </summary>
     public int DefaultMaxDelaySeconds { get; set; } = 60;
+
+    /// <summary>
+    /// 单节点反馈边激活的累计上限（安全网）。超过则判定为环路失控，
+    /// 执行转 Failed（错误码 <c>CycleLimitExceeded</c>）。用于兜底基于节点上下文的潜在无限回环。
+    /// 0 或负值表示不限制（沿用既有行为，依赖节点自身终止条件）。
+    /// </summary>
+    public int MaxCycleIterations { get; set; } = 10000;
 }

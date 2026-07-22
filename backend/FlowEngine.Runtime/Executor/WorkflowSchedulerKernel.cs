@@ -169,6 +169,52 @@ public sealed class WorkflowSchedulerKernel(
             ? Math.Max(1, item.Inputs.Values.DefaultIfEmpty(new DataBatch()).Max(b => b.Items.Count))
             : 1;
 
+        // 节点上下文生命周期（节点级持久化上下文方案）：
+        // 非回边激活（新上游输入）→ 清空旧上下文，GetOrAdd 将创建全新状态；
+        // 回边激活（环路继续）→ 保留上下文，复用既有迭代状态（LoopNode 的正常循环依赖此路径）。
+        if (!item.IsFeedbackActivation)
+        {
+            session.NodeContexts.TryRemove(node.Id, out _);
+            // 新上游输入开启新一轮循环，重置反馈激活计数（见下方环路失控保护）。
+            session.FeedbackActivationCounts.TryRemove(node.Id, out _);
+        }
+        else
+        {
+            // 环路失控保护：反馈边激活累计超过上限 → 判定为无限回环，转 Failed。
+            // 仅依赖节点自身终止条件（如 LoopNode 的 position 单调递增）不足以防住基于 $nodeContext
+            // 的任意回环（计数器未达阈值等），故设全局安全网（MaxCycleIterations）。
+            var feedbackCount = session.FeedbackActivationCounts.AddOrUpdate(node.Id, 1, (_, v) => v + 1);
+            if (_defaults.MaxCycleIterations > 0 && feedbackCount > _defaults.MaxCycleIterations)
+            {
+                var limitError = new NodeError
+                {
+                    Code = "CycleLimitExceeded",
+                    Message = $"节点 {node.Name} ({node.Id}) 反馈边激活次数达 {feedbackCount}，超过上限 {_defaults.MaxCycleIterations}，判定为环路失控。",
+                    NodeDefinitionId = node.Id
+                };
+                var limitRecord = new NodeExecutionRecord
+                {
+                    Id = Guid.NewGuid(),
+                    NodeDefinitionId = node.Id,
+                    RunIndex = 0,
+                    StartedAt = DateTime.UtcNow,
+                    CompletedAt = DateTime.UtcNow,
+                    Output = new NodeExecutionResult { Success = false, Error = limitError }
+                };
+                session.Execution.NodeRecords.Add(limitRecord);
+                await sideEffects.PersistNodeRecordAsync(limitRecord, cancellationToken).ConfigureAwait(false);
+                session.Execution.Status = ExecutionStatus.Failed;
+                session.Execution.CompletedAt = DateTime.UtcNow;
+                await sideEffects.PersistFailedStateAsync(cancellationToken).ConfigureAwait(false);
+                session.WaitingArea.CleanupExecution(session.Execution.Id);
+                return true; // shouldStop
+            }
+        }
+
+        var nodeContext = session.NodeContexts.GetOrAdd(
+            node.Id,
+            _ => new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase));
+
         NodeExecutionResult? finalResult = null;
         // 累积本节点本次调用的各次成功运行输出（OncePerItem 会按批次多次运行同一节点），
         // 全部项都需进入 SuccessfulOutputs / LatestBatches，供下游 $node.<name> / $items(<name>) 读取。
@@ -190,7 +236,8 @@ public sealed class WorkflowSchedulerKernel(
                     session.LatestBatches,
                     runIndex,
                     cancellationToken,
-                    session.CredentialAccessor).ConfigureAwait(false);
+                    session.CredentialAccessor,
+                    nodeContext: nodeContext).ConfigureAwait(false);
             }
             catch (ScriptErrorException ex)
             {
@@ -302,6 +349,10 @@ public sealed class WorkflowSchedulerKernel(
             var cumulative = new DataBatch { Items = accumulatedItems.ToList() };
             session.LatestBatches[node.Name] = cumulative;
 
+            // 无条件写入 SuccessfulOutputs：节点每次成功运行的输出都作为该节点的成功结果累积，
+            // 供下游经 $node.<name> / $items(<name>) 读取。BranchIndex 仅标识输出端口，
+            // 不能据此丢弃输出——否则 IfNode 的 true 分支、SwitchNode 的 case 0 等 BranchIndex = 0 的
+            // 合法输出会被静默丢弃。先前基于「O(N²)」的 BranchIndex != 0 守卫为错误分析的产物，已移除。
             var priorItems = session.SuccessfulOutputs.TryGetValue(node.Name, out var prior) && prior.Items.Count > 0
                 ? prior.Items
                 : [];
@@ -317,16 +368,17 @@ public sealed class WorkflowSchedulerKernel(
         }
 
         // OncePerItem：下游边消费的是累积批（全部项）而非最后一次运行的单批，避免静默丢数据。
+        // finalResult 在上方 `if (finalResult is null) return false;` 后已确定非 null。
         var resultForRouting = accumulatedItems.Count > 0
             ? new NodeExecutionResult
             {
-                Success = finalResult.Success,
+                Success = finalResult!.Success,
                 Output = session.LatestBatches[node.Name],
-                BranchIndex = finalResult.BranchIndex,
-                Error = finalResult.Error,
-                ToolExecutionRecords = finalResult.ToolExecutionRecords,
+                BranchIndex = finalResult!.BranchIndex,
+                Error = finalResult!.Error,
+                ToolExecutionRecords = finalResult!.ToolExecutionRecords,
             }
-            : finalResult;
+            : finalResult!;
         await RouteOutputsAsync(node, nodeType, resultForRouting, session, cancellationToken).ConfigureAwait(false);
 
         return false;
@@ -514,6 +566,10 @@ public sealed class WorkflowSchedulerKernel(
                 resolvedTargetPort = targetInputPorts[0];
             }
 
+            // 标记该次激活是否来自环路回边（用于节点上下文重置判定，见 Task 9）。
+            var isFeedback = session.FeedbackEdgeKeys.Contains(
+                (connection.SourceNodeId, connection.SourcePortName, connection.TargetNodeId, connection.TargetPortName));
+
             if (targetInputPorts.Count <= 1)
             {
                 var inputs = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase)
@@ -522,7 +578,7 @@ public sealed class WorkflowSchedulerKernel(
                 };
 
                 await session.Queue.EnqueueAsync(
-                    new NodeWorkItem(session.Execution.Id, targetNode.Id, inputs),
+                    new NodeWorkItem(session.Execution.Id, targetNode.Id, inputs, IsFeedbackActivation: isFeedback),
                     cancellationToken).ConfigureAwait(false);
             }
             else
@@ -534,7 +590,7 @@ public sealed class WorkflowSchedulerKernel(
                     if (session.WaitingArea.TryTake(session.Execution.Id, targetNode.Id, out var readyInputs))
                     {
                         await session.Queue.EnqueueAsync(
-                            new NodeWorkItem(session.Execution.Id, targetNode.Id, readyInputs),
+                            new NodeWorkItem(session.Execution.Id, targetNode.Id, readyInputs, IsFeedbackActivation: isFeedback),
                             cancellationToken).ConfigureAwait(false);
                     }
                 }

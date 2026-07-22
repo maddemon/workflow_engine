@@ -37,6 +37,25 @@ public sealed class ExecutionSession
     public ConcurrentDictionary<string, JsonNode?> Memory { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
+    /// 节点级持久化上下文：键为节点实例 ID，值为该节点跨调用保持的状态字典。
+    /// 由 <see cref="WorkflowSchedulerKernel"/> 在每次处理节点时获取/复用。
+    /// </summary>
+    public ConcurrentDictionary<string, IDictionary<string, object?>> NodeContexts { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 单节点反馈边激活累计计数（用于环路失控保护，见 <see cref="EngineDefaultsOptions.MaxCycleIterations"/>）。
+    /// 键为节点实例 ID；非回边激活（新上游输入）时由内核清零，开启新一轮循环。
+    /// </summary>
+    public ConcurrentDictionary<string, long> FeedbackActivationCounts { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// 环路回边集合（连接四元组）。由 <see cref="CycleDetector"/> 在构造时基于连接图计算一次，
+    /// 供 <see cref="WorkflowSchedulerKernel"/> 区分「环路回边激活」与「新上游输入激活」，
+    /// 从而决定是否重置节点上下文（见节点级持久化上下文方案 Task 9）。
+    /// </summary>
+    public IReadOnlySet<(string SourceNodeId, string? SourcePortName, string TargetNodeId, string? TargetPortName)> FeedbackEdgeKeys { get; init; }
+
+    /// <summary>
     /// 凭据访问器覆写。为 null 时使用节点执行上下文工厂的默认访问器（普通执行）；
     /// Dry-Run 注入临时凭据访问器。
     /// </summary>
@@ -90,5 +109,7 @@ public sealed class ExecutionSession
         Queue = new ExecutionQueue();
         WaitingArea = new WaitingArea.WaitingArea();
         StateMachine = new ExecutionStateMachine(ExecutionStatus.Pending);
+
+        FeedbackEdgeKeys = CycleDetector.ComputeBackEdges(workflow.Connections);
     }
 }

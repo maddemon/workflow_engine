@@ -46,7 +46,8 @@ public sealed class NodeExecutionContextFactory(
         int runIndex,
         CancellationToken cancellationToken,
         ICredentialAccessor? credentialAccessorOverride = null,
-        IReadOnlyDictionary<string, object?>? extraGlobals = null)
+        IReadOnlyDictionary<string, object?>? extraGlobals = null,
+        IDictionary<string, object?>? nodeContext = null)
     {
         var nodeDefinition = node;
         var descriptor = registry.GetDescriptor(node.TypeName);
@@ -131,6 +132,14 @@ public sealed class NodeExecutionContextFactory(
             }
         }
 
+        // 节点级持久化上下文 $nodeContext 注入 JS 引擎（plan-node-level-context）。
+        // 提前到参数预求值之前注入，使参数脚本亦可引用 $nodeContext；body 表达式经
+        // ExecutionScope.ApplyGlobalVariables 读取 context.GlobalVariables 的同源实例。
+        if (nodeContext is not null)
+        {
+            js.SetValue("$nodeContext", nodeContext);
+        }
+
         // Script 类型参数预求值：Expression 脚本在 Hydrate 前完成求值并写入 ResolvedValue。
         var preEvalContext = new NodeExecutionContext
         {
@@ -159,6 +168,16 @@ public sealed class NodeExecutionContextFactory(
         var hydrator = new ParameterHydrator(credsAccessor, hydratorLogger);
         await hydrator.HydrateAsync(nodeInstance, resolvedParameters).ConfigureAwait(false);
 
+        // 节点级持久化上下文注入运行时全局变量 $nodeContext（节点 body 表达式经
+        // ExecutionScope.ApplyGlobalVariables 读取 context.GlobalVariables，与此处同源）。
+        // 注入 session.NodeContexts 中的同一实例：JS 写回即反映到 C# 侧。
+        var globalVariables = ExecutionContextGlobalsBuilder.BuildBase(
+            credentialsDict, workflow, execution.Id, rawParameters, environmentWhitelist);
+        if (nodeContext is not null)
+        {
+            globalVariables["$nodeContext"] = nodeContext;
+        }
+
         return new NodeExecutionContext
         {
             Workflow = workflow,
@@ -180,7 +199,8 @@ public sealed class NodeExecutionContextFactory(
             ScriptCache = scriptCache,
             EngineOptions = jsEngineOptions,
             EngineLogger = jsLogger,
-            GlobalVariables = ExecutionContextGlobalsBuilder.BuildBase(credentialsDict, workflow, execution.Id, rawParameters, environmentWhitelist),
+            GlobalVariables = globalVariables,
+            NodeContext = nodeContext ?? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase),
         };
     }
 

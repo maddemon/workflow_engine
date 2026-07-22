@@ -118,6 +118,13 @@ public class NodeExecutionContext
     public IDictionary<string, JsonNode?> Memory { get; set; } = new Dictionary<string, JsonNode?>(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
+    /// 节点级持久化上下文，跨多次调用保持状态（如 LoopNode 的迭代位置 / 游标）。
+    /// 由运行时注入（同一执行内同一节点共享 <see cref="ExecutionSession.NodeContexts"/> 中的同一实例），
+    /// 节点可读写任意键值对。表达式引擎中对应全局变量 <c>$nodeContext</c>。
+    /// </summary>
+    public IDictionary<string, object?> NodeContext { get; set; } = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
     /// 由工厂注入的全局变量字典（非逐项变量），供节点在逐项求值时复用。
     /// 包含 $credentials/$env/$workflow/$execution/$vars/$now/$today/$node/$ctx 等，
     /// 不含逐项变量 $json/$input/$itemIndex/$runIndex。

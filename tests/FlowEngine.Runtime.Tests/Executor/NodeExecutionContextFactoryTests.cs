@@ -337,6 +337,74 @@ public sealed class NodeExecutionContextFactoryTests
         Assert.Equal(2, rawDict["a"].ResolvedValue!.GetValue<int>());
     }
 
+    [Fact]
+    public async Task CreateAsync_InjectsNodeContext_IntoGlobalVariables()
+    {
+        // 关键修正（Task 8）：节点级持久化上下文须注入 context.GlobalVariables（与运行期引擎同源），
+        // 而非工厂临时 js/globals；且只要非 null 即注入（不要求非空）。
+        var ct = TestContext.Current.CancellationToken;
+        var workflow = new Workflow { Id = Guid.NewGuid(), Name = "Test" };
+        var execution = new ExecutionRecord { Id = Guid.NewGuid(), WorkflowDefinitionId = workflow.Id };
+        var node = new NodeDefinition { Id = "Node1_ctx", TypeName = "testNode", Name = "Node1" };
+        var nodeInstance = new TestNodeInstance();
+        var nodeContext = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["counter"] = 0
+        };
+
+        var context = await _factory.CreateAsync(
+            workflow, execution, node, nodeInstance,
+            new Dictionary<string, DataBatch>(),
+            new Dictionary<string, DataBatch>(),
+            new Dictionary<string, DataBatch>(),
+            0, ct, nodeContext: nodeContext);
+
+        Assert.NotNull(context.NodeContext);
+        // NodeContext 属性为同一实例引用。
+        Assert.Same(nodeContext, context.NodeContext);
+        Assert.NotNull(context.GlobalVariables);
+        // 运行期全局变量表含 $nodeContext，且为同一实例。
+        Assert.True(context.GlobalVariables.TryGetValue("$nodeContext", out var injected));
+        Assert.Same(nodeContext, injected);
+    }
+
+    [Fact]
+    public async Task BodyExpression_CanReadWrite_NodeContext_WithDoubleRoundTrip()
+    {
+        // 验证点（Task 8 验收 #4）：在节点 body 表达式中可通过 $nodeContext 读写节点上下文；
+        // 且 JS 写回数值为 double（Jint 数值约定）。
+        var ct = TestContext.Current.CancellationToken;
+        var workflow = new Workflow { Id = Guid.NewGuid(), Name = "Test" };
+        var execution = new ExecutionRecord { Id = Guid.NewGuid(), WorkflowDefinitionId = workflow.Id };
+        var node = new NodeDefinition { Id = "Node1_body", TypeName = "testNode", Name = "Node1" };
+        var nodeInstance = new TestNodeInstance();
+        var nodeContext = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["counter"] = 3
+        };
+
+        var context = await _factory.CreateAsync(
+            workflow, execution, node, nodeInstance,
+            new Dictionary<string, DataBatch>(),
+            new Dictionary<string, DataBatch>(),
+            new Dictionary<string, DataBatch>(),
+            0, ct, nodeContext: nodeContext);
+
+        // 通过运行期引擎执行引用 $nodeContext 的脚本（与节点 body 脚本同一作用域注入路径）。
+        var script = new Script
+        {
+            Source = "$nodeContext.counter = $nodeContext.counter + 1; return $nodeContext.counter;",
+            ReturnType = ScriptReturnType.Number
+        };
+
+        var result = await script.ExecuteAsync(context, ct);
+
+        Assert.True(result.Success, result.Error?.Message);
+        // JS 写回为 double：3 + 1 → 4.0（同一实例被原地修改，非副本）。
+        Assert.Equal(4.0, nodeContext["counter"]);
+        Assert.IsType<double>(nodeContext["counter"]);
+    }
+
     private sealed class TestNodeInstance : INodeType
     {
         public string TypeName => "testNode";
