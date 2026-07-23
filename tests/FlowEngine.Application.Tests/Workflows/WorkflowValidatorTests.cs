@@ -215,6 +215,64 @@ public sealed class WorkflowValidatorTests
     }
 
     [Fact]
+    public void Validate_ZeroPortAnnotationNode_NoOrphanError()
+    {
+        var registry = new StubNodeRegistry([
+            CreateDescriptor("trigger", category: "Trigger", ports:
+            [
+                new PortDefinition { Name = "output", Direction = PortDirection.Output, Type = PortType.Main },
+            ]),
+            CreateDescriptor("action", ports:
+            [
+                new PortDefinition { Name = "input", Direction = PortDirection.Input, Type = PortType.Main },
+            ]),
+            CreateDescriptor("note", ports: []),
+        ]);
+        var validator = new WorkflowValidator(registry);
+        var workflow = CreateWorkflow([
+            new NodeDefinition { Id = "trigger", TypeName = "trigger", Name = "Trigger" },
+            new NodeDefinition { Id = "action", TypeName = "action", Name = "Action" },
+            new NodeDefinition { Id = "note", TypeName = "note", Name = "Note" },
+        ], [
+            (n) => new Connection { Id = Guid.NewGuid(), SourceNodeId = "trigger", TargetNodeId = "action", SourcePortName = "output", TargetPortName = "input" },
+        ]);
+
+        var result = validator.Validate(workflow);
+
+        Assert.True(result.IsValid);
+        Assert.DoesNotContain(result.Errors, e => e.Contains("孤立节点"));
+    }
+
+    [Fact]
+    public void Validate_NodeWithPortsButDisconnected_StillOrphan()
+    {
+        var registry = new StubNodeRegistry([
+            CreateDescriptor("trigger", category: "Trigger", ports:
+            [
+                new PortDefinition { Name = "output", Direction = PortDirection.Output, Type = PortType.Main },
+            ]),
+            CreateDescriptor("action", ports:
+            [
+                new PortDefinition { Name = "input", Direction = PortDirection.Input, Type = PortType.Main },
+            ]),
+        ]);
+        var validator = new WorkflowValidator(registry);
+        var workflow = CreateWorkflow([
+            new NodeDefinition { Id = "trigger", TypeName = "trigger", Name = "Trigger" },
+            new NodeDefinition { Id = "action", TypeName = "action", Name = "Action" },
+            new NodeDefinition { Id = "orphan", TypeName = "action", Name = "Orphan" },
+        ], [
+            (n) => new Connection { Id = Guid.NewGuid(), SourceNodeId = "trigger", TargetNodeId = "action", SourcePortName = "output", TargetPortName = "input" },
+        ]);
+
+        var result = validator.Validate(workflow);
+
+        Assert.False(result.IsValid);
+        Assert.Contains(result.Errors, e => e.Contains("孤立节点") && e.Contains("Orphan"));
+        Assert.DoesNotContain(result.Errors, e => e.Contains("孤立节点") && e.Contains("Trigger"));
+    }
+
+    [Fact]
     public void Validate_TriggerNodeWithoutIncoming_NoOrphanError()
     {
         var registry = new StubNodeRegistry([

@@ -415,3 +415,4 @@ frontend/coverage/
 
 # Explicitly ignore test coverage output directories under tests/
 tests/**/TestResults/
+scripts/

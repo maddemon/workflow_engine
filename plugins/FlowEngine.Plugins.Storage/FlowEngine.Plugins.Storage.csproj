@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 允许测试项目访问 internal 共享 helper，以便对节点逻辑做单元测试。 -->
+    <InternalsVisibleTo Include="FlowEngine.Runtime.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\backend\FlowEngine.Core\FlowEngine.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- S3 兼容对象存储客户端（vendor-neutral，S3 协议）。 -->
+    <PackageReference Include="AWSSDK.S3" Version="4.*" />
+    <!-- Redis 客户端。 -->
+    <PackageReference Include="StackExchange.Redis" Version="2.*" />
+    <!-- MongoDB 驱动。 -->
+    <PackageReference Include="MongoDB.Driver" Version="3.*" />
+  </ItemGroup>
+
+</Project>

@@ -126,6 +126,10 @@ public sealed class WorkflowValidator(INodeRegistry registry)
         {
             if (node.IsEntry) continue;
             if (IsTriggerNode(node.TypeName)) continue;
+            // Zero-port nodes (e.g. the "note" annotation node) can never be connected,
+            // so they would always be flagged as orphan in any connected workflow.
+            // Exempt them (matches kernel ENG2 isAnnotation: no input and no output ports).
+            if (GetNodeDescriptor(node.TypeName)?.Ports.Count == 0) continue;
             if (hasIncoming.Contains(node.Id)) continue;
             if (hasOutgoing.Contains(node.Id)) continue;
 

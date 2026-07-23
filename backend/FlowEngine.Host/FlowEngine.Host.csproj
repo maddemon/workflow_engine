@@ -14,6 +14,7 @@
 
   <Target Name="BuildPlugins" BeforeTargets="BeforeBuild">
     <MSBuild Projects="..\..\plugins\FlowEngine.Plugins.Standard\FlowEngine.Plugins.Standard.csproj" Targets="Build" />
+    <MSBuild Projects="..\..\plugins\FlowEngine.Plugins.Storage\FlowEngine.Plugins.Storage.csproj" Targets="Build" />
     <!-- 仅将插件私有依赖同步到插件扫描目录（../../plugins）。
          宿主默认加载上下文已提供的共享程序集（FlowEngine.* / Jint / OpenAI / Microsoft.Extensions.* /
          System.ClientModel / IdentityModel / Newtonsoft.Json 等）一律排除，避免 plugins/ 中的旧版本与宿主版本
@@ -22,6 +23,8 @@
     <ItemGroup>
       <PluginOutputFiles Include="..\..\plugins\FlowEngine.Plugins.Standard\bin\$(Configuration)\$(TargetFramework)\*.dll" />
       <PluginOutputFiles Include="..\..\plugins\FlowEngine.Plugins.Standard\bin\$(Configuration)\$(TargetFramework)\*.pdb" />
+      <PluginOutputFiles Include="..\..\plugins\FlowEngine.Plugins.Storage\bin\$(Configuration)\$(TargetFramework)\*.dll" />
+      <PluginOutputFiles Include="..\..\plugins\FlowEngine.Plugins.Storage\bin\$(Configuration)\$(TargetFramework)\*.pdb" />
       <PluginOutputFiles Remove="@(PluginOutputFiles)"
         Condition="Exists('$(MSBuildThisFileDirectory)bin\$(Configuration)\$(TargetFramework)\%(Filename)%(Extension)')" />
     </ItemGroup>
@@ -31,6 +34,7 @@
   <Target Name="CopyPluginsOnPublish" AfterTargets="Publish">
     <ItemGroup>
       <PluginAssemblies Include="..\..\plugins\FlowEngine.Plugins.Standard\bin\$(Configuration)\$(TargetFramework)\*.dll" />
+      <PluginAssemblies Include="..\..\plugins\FlowEngine.Plugins.Storage\bin\$(Configuration)\$(TargetFramework)\*.dll" />
       <PluginAssemblies Remove="@(PluginAssemblies)"
         Condition="Exists('$(PublishDir)%(Filename)%(Extension)')" />
     </ItemGroup>

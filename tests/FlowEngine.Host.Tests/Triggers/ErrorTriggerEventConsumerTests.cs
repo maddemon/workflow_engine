@@ -54,6 +54,17 @@ public class ErrorTriggerEventConsumerTests
         };
     }
 
+    // 生产环境参数键由 ParameterDiscoverer 生成为 camelCase "workflowId"（见 ParameterDiscoverer.ToCamelCase）。
+    private static NodeDefinition ErrorTriggerNodeCamel(string workflowId)
+    {
+        return new NodeDefinition
+        {
+            Id = "err",
+            TypeName = "errorTrigger",
+            Parameters = new Dictionary<string, object> { ["workflowId"] = workflowId },
+        };
+    }
+
     private ErrorTriggerEventConsumer BuildConsumer(Mock<IEngine> engineMock, out ServiceProvider provider)
     {
         var services = new ServiceCollection();
@@ -231,5 +242,58 @@ public class ErrorTriggerEventConsumerTests
             ?? throw new InvalidOperationException("payload 缺少 errorMessage 属性");
         Assert.Equal(failedId, (Guid)workflowIdProp.GetValue(capturedPayload)!);
         Assert.Equal("boom", (string)errorMessageProp.GetValue(capturedPayload)!);
+    }
+
+    [Fact]
+    public async Task Handle_CamelCaseWorkflowIdParameter_Matches_ProductionPath()
+    {
+        var failedId = Guid.NewGuid();
+        var errorWfId = Guid.NewGuid();
+
+        using (var seed = CreateDb())
+        {
+            // 生产环境 NodeDefinition.Parameters 以 camelCase 键 "workflowId" 存储参数值，
+            // 旧的 PascalCase 读取会在生产路径下 miss。此用例验证修复后的大小写不敏感读取。
+            seed.Workflows.Add(MakeWorkflow(errorWfId, isActive: true, ErrorTriggerNodeCamel(failedId.ToString())));
+            await seed.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        var engineMock = new Mock<IEngine>();
+        engineMock
+            .Setup(e => e.StartAsync(It.IsAny<Guid>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ExecutionId.New());
+
+        var consumer = BuildConsumer(engineMock, out var provider);
+        await using (provider)
+        {
+            await consumer.Handle(FailedEvent(failedId, "boom"), TestContext.Current.CancellationToken);
+        }
+
+        engineMock.Verify(e => e.StartAsync(errorWfId, It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
+    }
+    [Fact]
+    public async Task Handle_EmptyWorkflowIdParameter_MatchesAny()
+    {
+        var failedId = Guid.NewGuid();
+        var errorWfId = Guid.NewGuid();
+
+        using (var seed = CreateDb())
+        {
+            seed.Workflows.Add(MakeWorkflow(errorWfId, isActive: true, ErrorTriggerNode("")));
+            await seed.SaveChangesAsync(TestContext.Current.CancellationToken);
+        }
+
+        var engineMock = new Mock<IEngine>();
+        engineMock
+            .Setup(e => e.StartAsync(It.IsAny<Guid>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(ExecutionId.New());
+
+        var consumer = BuildConsumer(engineMock, out var provider);
+        await using (provider)
+        {
+            await consumer.Handle(FailedEvent(failedId, "boom"), TestContext.Current.CancellationToken);
+        }
+
+        engineMock.Verify(e => e.StartAsync(errorWfId, It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Once);
     }
 }

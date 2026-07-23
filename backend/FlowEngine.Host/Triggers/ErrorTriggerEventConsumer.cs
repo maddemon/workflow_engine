@@ -98,7 +98,10 @@ public sealed class ErrorTriggerEventConsumer(
 
     private static string? GetStringParameter(NodeDefinition node, string key)
     {
-        if (!node.Parameters.TryGetValue(key, out var raw) || raw is null)
+        // NodeDefinition.Parameters 以参数描述符名（camelCase）为键，但调用方传入的 key 可能为
+        // PascalCase（如 "WorkflowId"）。生产环境参数值实际存于 "workflowId"（见 ParameterDiscoverer.ToCamelCase），
+        // 故此处做大小写不敏感查找，兼容两种写法，修复生产路径匹配失败。
+        if (!TryGetValueCaseInsensitive(node.Parameters, key, out var raw) || raw is null)
         {
             return null;
         }
@@ -109,5 +112,21 @@ public sealed class ErrorTriggerEventConsumer(
             JsonElement je => je.ValueKind == JsonValueKind.String ? je.GetString() : je.ToString(),
             _ => raw.ToString()
         };
+    }
+
+    private static bool TryGetValueCaseInsensitive(
+        IReadOnlyDictionary<string, object> parameters, string key, out object? value)
+    {
+        foreach (var kv in parameters)
+        {
+            if (string.Equals(kv.Key, key, StringComparison.OrdinalIgnoreCase))
+            {
+                value = kv.Value;
+                return true;
+            }
+        }
+
+        value = null;
+        return false;
     }
 }
