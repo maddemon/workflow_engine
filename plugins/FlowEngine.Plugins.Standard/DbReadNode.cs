@@ -203,8 +203,74 @@ public sealed class DbReadNode : INodeType
         var keyword = ExtractFirstKeyword(sql);
         if (keyword is null) return false;
 
-        return string.Equals(keyword, "SELECT", StringComparison.OrdinalIgnoreCase)
-            || string.Equals(keyword, "WITH", StringComparison.OrdinalIgnoreCase);
+        if (!string.Equals(keyword, "SELECT", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(keyword, "WITH", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        // Reject SELECT ... INTO (writes to a target table) and stacked statements
+        // separated by ';' (a second statement after the first).
+        if (ContainsKeyword(sql, "INTO")) return false;
+        if (HasTrailingStatement(sql)) return false;
+
+        return true;
+    }
+
+    private static bool ContainsKeyword(string sql, string keyword)
+    {
+        var upper = sql.ToUpperInvariant();
+        var target = keyword.ToUpperInvariant();
+        var idx = upper.IndexOf(target, StringComparison.Ordinal);
+        while (idx >= 0)
+        {
+            var before = idx == 0 || (!char.IsLetterOrDigit(upper[idx - 1]) && upper[idx - 1] != '_');
+            var end = idx + target.Length;
+            var after = end >= upper.Length || (!char.IsLetterOrDigit(upper[end]) && upper[end] != '_');
+            if (before && after) return true;
+            idx = upper.IndexOf(target, idx + target.Length, StringComparison.Ordinal);
+        }
+
+        return false;
+    }
+
+    private static bool HasTrailingStatement(string sql)
+    {
+        var length = sql.Length;
+        for (var i = 0; i < length; i++)
+        {
+            var c = sql[i];
+            if (c == '-' && i + 1 < length && sql[i + 1] == '-')
+            {
+                while (i < length && sql[i] != '\n') i++;
+                continue;
+            }
+
+            if (c == '/' && i + 1 < length && sql[i + 1] == '*')
+            {
+                i += 2;
+                while (i + 1 < length && (sql[i] != '*' || sql[i + 1] != '/')) i++;
+                i += 2;
+                continue;
+            }
+
+            if (c == '\'' || c == '"')
+            {
+                var quote = c;
+                i++;
+                while (i < length && sql[i] != quote)
+                {
+                    if (sql[i] == '\\' && quote == '"') i++;
+                    i++;
+                }
+
+                continue;
+            }
+
+            if (c == ';') return true;
+        }
+
+        return false;
     }
 
     private static string? ExtractFirstKeyword(string sql)

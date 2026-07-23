@@ -209,6 +209,35 @@ public sealed class DbReadNodeTests
         };
     }
 
+    [Fact]
+    public async Task ExecuteAsync_SelectInto_RejectedAsReadOnlyViolation()
+    {
+        const string connectionString = "Data Source=shared_read_into;Mode=Memory;Cache=Shared";
+        using var holder = CreateSharedMemoryConnection(connectionString);
+        await CreateUsersTableAsync(holder);
+
+        var node = CreateNode(connectionString, "SELECT \"id\" INTO other_table FROM users");
+
+        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal("ReadOnlyViolation", result.Error?.Code);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_StackedStatements_RejectedAsReadOnlyViolation()
+    {
+        const string connectionString = "Data Source=shared_read_stacked;Mode=Memory;Cache=Shared";
+        using var holder = CreateSharedMemoryConnection(connectionString);
+        await CreateUsersTableAsync(holder);
+
+        var node = CreateNode(connectionString, "SELECT 1; DROP TABLE users");
+
+        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal("ReadOnlyViolation", result.Error?.Code);
+    }
     private static NodeExecutionContext CreateContext(DataBatch input)
     {
         return new NodeExecutionContext

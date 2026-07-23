@@ -3,6 +3,7 @@ using System.IO;
 using System.Net.Http;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Security.Cryptography;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
@@ -90,7 +91,8 @@ public sealed class ReadFileNode : INodeType
                 return context.ErrorResult("FileNotFound", "Source is required.");
             }
 
-            byte[] bytes;
+            byte[]? bytes = null;
+            string? base64 = null;
             string? fileName = Path.GetFileName(source);
             string mime;
 
@@ -123,9 +125,23 @@ public sealed class ReadFileNode : INodeType
             else
             {
                 // 本地文件：异步读取，捕获缺文件/无权限/IO 异常统一转为 FileNotFound。
+                // Local file: stream read. Binary mode encodes via CryptoStream+ToBase64Transform
+                // incrementally to avoid holding the whole byte array in memory.
                 try
                 {
-                    bytes = await File.ReadAllBytesAsync(source, cancellationToken).ConfigureAwait(false);
+                    using var fileStream = File.OpenRead(source);
+                    if (TextMode)
+                    {
+                        using var buffer = new MemoryStream();
+                        await fileStream.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
+                        bytes = buffer.ToArray();
+                    }
+                    else
+                    {
+                        using var base64Stream = new CryptoStream(fileStream, new ToBase64Transform(), CryptoStreamMode.Read);
+                        using var base64Reader = new StreamReader(base64Stream, System.Text.Encoding.ASCII);
+                        base64 = await base64Reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+                    }
                 }
                 catch (FileNotFoundException)
                 {
@@ -162,11 +178,13 @@ public sealed class ReadFileNode : INodeType
                     return context.ErrorResult("InvalidEncoding", $"Invalid text encoding: '{Encoding}'.");
                 }
 
-                content = JsonValue.Create(enc.GetString(bytes));
+                content = JsonValue.Create(enc.GetString(bytes!));
             }
             else
             {
-                content = JsonValue.Create(Convert.ToBase64String(bytes));
+                content = base64 is not null
+                    ? JsonValue.Create(base64)
+                    : JsonValue.Create(Convert.ToBase64String(bytes!));
             }
 
             var obj = new JsonObject

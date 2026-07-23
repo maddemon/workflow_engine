@@ -9,6 +9,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Scripting;
+using FlowEngine.Core.Tools;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -264,29 +265,17 @@ public sealed class SendEmailNode : INodeType
 
         foreach (var fieldName in attachments!.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
         {
-            if (firstItem is null
-                || firstItem[fieldName] is not JsonValue jsonValue
-                || !jsonValue.TryGetValue<string>(out var base64)
-                || base64 is null)
+            // Read base64 from the attachment field and decode; missing or invalid base64 falls back to InvalidAttachment.
+            var status = NodeDataHelpers.TryGetBase64Field(firstItem, fieldName, out var bytes);
+            if (status is not NodeDataHelpers.Base64FieldResult.Success)
             {
-                return context.ErrorResult("InvalidAttachment", $"Attachment field '{fieldName}' is missing or not a base64 string.");
+                return context.ErrorResult("InvalidAttachment",
+                    status == NodeDataHelpers.Base64FieldResult.Invalid
+                        ? $"Attachment field '{fieldName}' is not valid base64."
+                        : $"Attachment field '{fieldName}' is missing or not a base64 string.");
             }
 
-            byte[] bytes;
-            try
-            {
-                bytes = Convert.FromBase64String(base64);
-            }
-            catch (FormatException)
-            {
-                return context.ErrorResult("InvalidAttachment", $"Attachment field '{fieldName}' is not valid base64.");
-            }
-            catch (ArgumentNullException)
-            {
-                return context.ErrorResult("InvalidAttachment", $"Attachment field '{fieldName}' is empty.");
-            }
-
-            // MemoryStream 由 Attachment 在其 Dispose（随 MailMessage Dispose）时释放。
+            // MemoryStream is released by Attachment on Dispose (together with MailMessage).
             message.Attachments.Add(new Attachment(new MemoryStream(bytes), fieldName));
         }
 

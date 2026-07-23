@@ -8,6 +8,7 @@ using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Tools;
 using MiniExcelLibs;
 
 namespace FlowEngine.Plugins.Standard;
@@ -145,39 +146,13 @@ public sealed class SpreadsheetNode : INodeType
             {
                 return context.ErrorResult("MissingInput", "No input item available to read base64 content from.");
             }
-
-            var fieldNode = item[InputField];
-            if (fieldNode is not JsonValue jsonValue)
+            // No FilePath: read base64 from the first input item's InputField and decode.
+            var status = NodeDataHelpers.TryGetBase64Field(item, InputField, out bytes);
+            if (status is not NodeDataHelpers.Base64FieldResult.Success)
             {
-                return context.ErrorResult("MissingInput", $"Input item is missing a string value at field '{InputField}'.");
-            }
-
-            string? base64;
-            try
-            {
-                base64 = jsonValue.GetValue<string?>();
-            }
-            catch (InvalidOperationException)
-            {
-                return context.ErrorResult("MissingInput", $"Input item is missing a string value at field '{InputField}'.");
-            }
-
-            if (base64 is null)
-            {
-                return context.ErrorResult("MissingInput", $"Input item is missing a string value at field '{InputField}'.");
-            }
-
-            try
-            {
-                bytes = Convert.FromBase64String(base64);
-            }
-            catch (FormatException)
-            {
-                return context.ErrorResult("MissingInput", $"Field '{InputField}' is not valid base64.");
-            }
-            catch (ArgumentException)
-            {
-                return context.ErrorResult("MissingInput", $"Field '{InputField}' is not valid base64.");
+                return status == NodeDataHelpers.Base64FieldResult.Invalid
+                    ? context.ErrorResult("MissingInput", $"Field '{InputField}' is not valid base64.")
+                    : context.ErrorResult("MissingInput", $"Input item is missing a string value at field '{InputField}'.");
             }
         }
 

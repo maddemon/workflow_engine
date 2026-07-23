@@ -151,7 +151,7 @@ public sealed class StructuredOutputNode : INodeType
         {
             // 仅记录非敏感信息，绝不输出原始文本（可能含敏感内容）。
             context.Logger?.LogError(ex, "structuredOutput 发生意外错误。");
-            return context.ErrorResult("UnexpectedError", $"意外错误：{ex.Message}");
+            return context.ErrorResult(FlowConstants.ErrorCodes.UnexpectedError, $"意外错误：{ex.Message}");
         }
     }
 

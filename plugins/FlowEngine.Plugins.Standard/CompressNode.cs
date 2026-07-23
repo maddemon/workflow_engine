@@ -6,6 +6,7 @@ using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Tools;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -78,41 +79,14 @@ public sealed class CompressNode : INodeType
             {
                 return context.ErrorResult("MissingInput", "No input item available to read base64 content from.");
             }
-
-            var fieldNode = item[InputField];
-            if (fieldNode is not JsonValue jsonValue)
-            {
-                return context.ErrorResult("MissingInput", $"Input item is missing a string value at field '{InputField}'.");
-            }
-
-            string? base64;
-            try
-            {
-                base64 = jsonValue.GetValue<string?>();
-            }
-            catch (InvalidOperationException)
-            {
-                return context.ErrorResult("MissingInput", $"Input item is missing a string value at field '{InputField}'.");
-            }
-
-            if (base64 is null)
-            {
-                return context.ErrorResult("MissingInput", $"Input item is missing a string value at field '{InputField}'.");
-            }
-
-            // 解码 base64；语法错误视为缺输入（与“损坏归档”区分）。
+            // Read base64 from the given field and decode; missing field or invalid base64 both fall back to MissingInput.
             byte[] bytes;
-            try
+            var status = NodeDataHelpers.TryGetBase64Field(item, InputField, out bytes);
+            if (status is not NodeDataHelpers.Base64FieldResult.Success)
             {
-                bytes = Convert.FromBase64String(base64);
-            }
-            catch (FormatException)
-            {
-                return context.ErrorResult("MissingInput", $"Field '{InputField}' is not valid base64.");
-            }
-            catch (ArgumentException)
-            {
-                return context.ErrorResult("MissingInput", $"Field '{InputField}' is not valid base64.");
+                return status == NodeDataHelpers.Base64FieldResult.Invalid
+                    ? context.ErrorResult("MissingInput", $"Field '{InputField}' is not valid base64.")
+                    : context.ErrorResult("MissingInput", $"Input item is missing a string value at field '{InputField}'.");
             }
 
             // 条目名：缺省回退 "content"（用于 zip/tar 单条目名称）。

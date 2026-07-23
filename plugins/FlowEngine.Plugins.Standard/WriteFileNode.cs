@@ -9,6 +9,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Scripting;
+using FlowEngine.Core.Tools;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -93,39 +94,13 @@ public sealed class WriteFileNode : INodeType
             }
 
             // 从指定字段取 base64 字符串；缺失或非字符串均视为缺内容。
-            var fieldNode = item[BinaryField];
-            if (fieldNode is not JsonValue jsonValue)
-            {
-                return context.ErrorResult("MissingBinaryField", $"Input item is missing a string value at field '{BinaryField}'.");
-            }
-
-            // 仅接受字符串值；非字符串（数字/对象/JSON null）一律视为缺内容。
-            string? base64;
-            try
-            {
-                base64 = jsonValue.GetValue<string?>();
-            }
-            catch (InvalidOperationException)
-            {
-                return context.ErrorResult("MissingBinaryField", $"Input item is missing a string value at field '{BinaryField}'.");
-            }
-
-            if (base64 is null)
-            {
-                return context.ErrorResult("MissingBinaryField", $"Input item is missing a string value at field '{BinaryField}'.");
-            }
             byte[] bytes;
-            try
+            var status = NodeDataHelpers.TryGetBase64Field(item, BinaryField, out bytes);
+            if (status is not NodeDataHelpers.Base64FieldResult.Success)
             {
-                bytes = Convert.FromBase64String(base64);
-            }
-            catch (FormatException)
-            {
-                return context.ErrorResult("InvalidBase64", "Field content is not valid base64.");
-            }
-            catch (ArgumentException)
-            {
-                return context.ErrorResult("InvalidBase64", "Field content is not valid base64.");
+                return status == NodeDataHelpers.Base64FieldResult.Invalid
+                    ? context.ErrorResult("InvalidBase64", "Field content is not valid base64.")
+                    : context.ErrorResult("MissingBinaryField", $"Input item is missing a string value at field '{BinaryField}'.");
             }
 
             // 解析目标路径：Path 非空时自动创建目录并按相对路径组合。
