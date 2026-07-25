@@ -126,4 +126,24 @@ public class GlobalExceptionHandlerMiddlewareTests
         var json = await reader.ReadToEndAsync();
         return JsonDocument.Parse(json).RootElement;
     }
-}
+
+    [Fact]
+    public async Task InvokeAsync_CustomDomainException_MapsTo400ByBaseType()
+    {
+        // EX-1：任何未单独列出的 DomainException 子类按基类映射为 400（验证中间件按基类映射，
+        // 新增领域异常无需逐一登记即可获得正确状态码）。
+        var context = new DefaultHttpContext();
+        context.Response.Body = new MemoryStream();
+        var middleware = new GlobalExceptionHandlerMiddleware(
+            _ => throw new CustomDomainException("domain rule violated"),
+            NullLogger<GlobalExceptionHandlerMiddleware>.Instance);
+
+        await middleware.InvokeAsync(context);
+
+        Assert.Equal(StatusCodes.Status400BadRequest, context.Response.StatusCode);
+        var payload = await ReadPayloadAsync(context.Response);
+        Assert.Equal("BadRequest", payload.GetProperty("errorCode").GetString());
+    }
+
+    private sealed class CustomDomainException(string message) : DomainException(message);}
+

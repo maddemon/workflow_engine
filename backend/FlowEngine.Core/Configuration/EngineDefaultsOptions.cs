@@ -36,4 +36,17 @@ public class EngineDefaultsOptions
     /// 0 或负值表示不限制（沿用既有行为，依赖节点自身终止条件）。
     /// </summary>
     public int MaxCycleIterations { get; set; } = 10000;
+
+    /// <summary>
+    /// 单个节点在 <c>SuccessfulOutputs</c> / <c>LatestBatches</c> 中保留的最大输出项数（CON-5）。
+    /// 超过后仅保留最新 N 项，以限制大批次（如大 OncePerItem 输入）常驻内存。
+    /// 0 或负值表示不限制（沿用既有行为，内存随批次大小线性增长）。
+    /// </summary>
+    public int MaxRetainedOutputItems { get; set; }
+
+    /// <summary>
+    /// 工作流执行后台服务并发消费队列的最大并行度（CON-2）。
+    /// 多个执行项可并行处理，互不阻塞；0 或负值回退为默认值 4。
+    /// </summary>
+    public int MaxWorkerConcurrency { get; set; } = 4;
 }

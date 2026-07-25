@@ -7,6 +7,7 @@ using FlowEngine.Core.Configuration;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
+using FlowEngine.Core.Events;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Scripting;
@@ -15,6 +16,7 @@ using FlowEngine.Runtime.Security;
 using FlowEngine.Runtime.WaitingArea;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.Threading;
 
 namespace FlowEngine.Runtime.Executor;
 
@@ -48,9 +50,13 @@ public sealed class WorkflowSchedulerKernel(
     {
         session.StateMachine.Start();
 
+        // OBS-2：发布工作流启动事件（闭合执行生命周期审计链）。
+        await sideEffects.PublishWorkflowStartedAsync(
+            session.Execution.Id, session.Execution.WorkflowDefinitionId, cancellationToken)
+            .ConfigureAwait(false);
+
         await EnqueueEntryNodesAsync(session, triggerPayload, cancellationToken).ConfigureAwait(false);
 
-        const int IdleDelayMilliseconds = 500;
         var cancelled = false;
 
         try
@@ -77,9 +83,28 @@ public sealed class WorkflowSchedulerKernel(
                     break;
                 }
 
+                // CON-6：事件驱动唤醒，取代固定 500ms 空轮询。
+                // 若队列已有可处理项（入队与脉冲之间存在竞态），直接进入下一轮 TryRead；
+                // 否则阻塞于 SchedulerWake 信号（每次入队后脉冲），同时按等待区剩余超时自适应等待，
+                // 保证超时节点仍能在不晚于该时长内被唤醒处理，消除无意义的忙等。
+                if (session.Queue.Reader.TryPeek(out _))
+                {
+                    continue;
+                }
+
+                var minTimeout = session.WaitingArea.GetMinRemainingTimeoutDelay();
                 try
                 {
-                    await Task.Delay(IdleDelayMilliseconds, cancellationToken).ConfigureAwait(false);
+                    if (minTimeout == Timeout.InfiniteTimeSpan)
+                    {
+                        await session.SchedulerWake.WaitAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        var wakeTask = session.SchedulerWake.WaitAsync(cancellationToken);
+                        var delayTask = Task.Delay(minTimeout, cancellationToken);
+                        await Task.WhenAny(wakeTask, delayTask).ConfigureAwait(false);
+                    }
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -163,10 +188,19 @@ public sealed class WorkflowSchedulerKernel(
                 inputs[inputPorts[0]] = triggerBatch;
             }
 
-            await session.Queue.EnqueueAsync(
-                new NodeWorkItem(session.Execution.Id, node.Id, inputs),
-                cancellationToken).ConfigureAwait(false);
+            await EnqueueWorkAsync(session, new NodeWorkItem(session.Execution.Id, node.Id, inputs), cancellationToken)
+                .ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// 入队节点工作项并脉冲调度唤醒信号（CON-6），使空闲的内核循环在入队瞬间被唤醒，
+    /// 无需等待固定 500ms 轮询。
+    /// </summary>
+    private static async Task EnqueueWorkAsync(ExecutionSession session, NodeWorkItem item, CancellationToken cancellationToken)
+    {
+        await session.Queue.EnqueueAsync(item, cancellationToken).ConfigureAwait(false);
+        session.PulseScheduler();
     }
 
     private async Task<bool> ProcessNodeAsync(
@@ -220,6 +254,7 @@ public sealed class WorkflowSchedulerKernel(
                 };
                 session.Execution.NodeRecords.Add(limitRecord);
                 await sideEffects.PersistNodeRecordAsync(limitRecord, cancellationToken).ConfigureAwait(false);
+            await sideEffects.PublishNodeErrorAsync(session.Execution.Id, node.Id, 0, SafeError(limitError), cancellationToken).ConfigureAwait(false);
                 session.Execution.Status = ExecutionStatus.Failed;
                 session.Execution.CompletedAt = DateTime.UtcNow;
                 await sideEffects.PersistFailedStateAsync(cancellationToken).ConfigureAwait(false);
@@ -261,12 +296,7 @@ public sealed class WorkflowSchedulerKernel(
                 var failureResult = new NodeExecutionResult
                 {
                     Success = false,
-                    Error = new NodeError
-                    {
-                        Code = "ScriptParameterPreEvaluationError",
-                        Message = ex.Message,
-                        NodeDefinitionId = node.Id.ToString(),
-                    },
+                    Error = NodeErrorFactory.Sanitize(ex, "ScriptParameterPreEvaluationError", node.Id.ToString())
                 };
 
                 var failedRecord = new NodeExecutionRecord
@@ -283,6 +313,7 @@ public sealed class WorkflowSchedulerKernel(
                 session.Execution.NodeRecords.Add(failedRecord);
                 await sideEffects.PublishNodeStartedAsync(session.Execution.Id, node.Id, runIndex, cancellationToken).ConfigureAwait(false);
                 await sideEffects.PersistNodeRecordAsync(failedRecord, cancellationToken).ConfigureAwait(false);
+                await sideEffects.PublishNodeErrorAsync(session.Execution.Id, node.Id, runIndex, SafeError(failureResult.Error), cancellationToken).ConfigureAwait(false);
 
                 finalResult = failureResult;
                 continue; // skip to next runIndex
@@ -323,6 +354,18 @@ public sealed class WorkflowSchedulerKernel(
             session.Execution.NodeRecords.Add(record);
             await sideEffects.PersistNodeRecordAsync(record, cancellationToken).ConfigureAwait(false);
 
+            // OBS-2：发布节点执行完成或错误事件（成功与失败均发布，供审计与实时推送消费）。
+            if (result.Success)
+            {
+                await sideEffects.PublishNodeExecutedAsync(
+                    session.Execution.Id, node.Id, runIndex, result, cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await sideEffects.PublishNodeErrorAsync(
+                    session.Execution.Id, node.Id, runIndex, SafeError(result.Error), cancellationToken).ConfigureAwait(false);
+            }
+
             finalResult = result;
 
             // 累积成功运行的输出项：OncePerItem 多次运行须全部保留，而非仅最后一次。
@@ -361,10 +404,15 @@ public sealed class WorkflowSchedulerKernel(
 
         // 累积本节点本次调用的全部成功运行输出（OncePerItem 按批次多次运行同一节点，
         // 覆盖式赋值会丢失其余项，导致下游 $node.<name> / $items(<name>) 只看到最后一项）。
+        // 本次要路由给下游的完整批（CON-5）：在限流前捕获完整累积批引用，
+        // 确保下游节点收到全量数据；限流仅作用于 SuccessfulOutputs / LatestBatches 中保留的历史快照，
+        // 不会截断本次已路由给下游的数据。
+        DataBatch routingBatch;
         if (accumulatedItems.Count > 0)
         {
             var cumulative = new DataBatch { Items = accumulatedItems.ToList() };
             session.LatestBatches[node.Name] = cumulative;
+            routingBatch = cumulative;
 
             // 无条件写入 SuccessfulOutputs：节点每次成功运行的输出都作为该节点的成功结果累积，
             // 供下游经 $node.<name> / $items(<name>) 读取。BranchIndex 仅标识输出端口，
@@ -382,6 +430,14 @@ public sealed class WorkflowSchedulerKernel(
         {
             // 无任何成功运行（全部失败等）：保留原有语义，仅刷新 LatestBatches 为最终批，不写入 SuccessfulOutputs。
             session.LatestBatches[node.Name] = finalResult.Output;
+            routingBatch = finalResult.Output;
+        }
+
+        // CON-5：限制单个节点在 SuccessfulOutputs / LatestBatches 中保留的输出项数，
+        // 避免大批次（如大 OncePerItem 输入）在整个运行期间无界常驻内存。
+        if (_defaults.MaxRetainedOutputItems > 0)
+        {
+            CapRetainedOutput(session, node.Name);
         }
 
         // OncePerItem：下游边消费的是累积批（全部项）而非最后一次运行的单批，避免静默丢数据。
@@ -390,7 +446,7 @@ public sealed class WorkflowSchedulerKernel(
             ? new NodeExecutionResult
             {
                 Success = finalResult!.Success,
-                Output = session.LatestBatches[node.Name],
+                Output = routingBatch,
                 BranchIndex = finalResult!.BranchIndex,
                 Error = finalResult!.Error,
                 ToolExecutionRecords = finalResult!.ToolExecutionRecords,
@@ -484,13 +540,8 @@ public sealed class WorkflowSchedulerKernel(
             catch (Exception ex)
             {
                 logger.LogError(ex, "节点 {NodeName} ({NodeId}) 执行时发生异常。", node.Name, node.Id);
-                var nodeError = new NodeError
-                {
-                    Code = "NodeExecutionFailed",
-                    Message = ex.Message,
-                    NodeDefinitionId = node.Id,
-                    StackTrace = ex.StackTrace
-                };
+                // EX-2：仅向客户端暴露安全错误码与脱敏消息，绝不泄露原始异常文本或堆栈。
+                var nodeError = NodeErrorFactory.Sanitize(ex, "NodeExecutionFailed", node.Id);
                 result = new NodeExecutionResult
                 {
                     Success = false,
@@ -594,7 +645,8 @@ public sealed class WorkflowSchedulerKernel(
                     [resolvedTargetPort ?? FlowConstants.PortNames.Input] = outputBatch
                 };
 
-                await session.Queue.EnqueueAsync(
+                await EnqueueWorkAsync(
+                    session,
                     new NodeWorkItem(session.Execution.Id, targetNode.Id, inputs, IsFeedbackActivation: isFeedback),
                     cancellationToken).ConfigureAwait(false);
             }
@@ -606,7 +658,8 @@ public sealed class WorkflowSchedulerKernel(
                 {
                     if (session.WaitingArea.TryTake(session.Execution.Id, targetNode.Id, out var readyInputs))
                     {
-                        await session.Queue.EnqueueAsync(
+                        await EnqueueWorkAsync(
+                            session,
                             new NodeWorkItem(session.Execution.Id, targetNode.Id, readyInputs, IsFeedbackActivation: isFeedback),
                             cancellationToken).ConfigureAwait(false);
                     }
@@ -652,6 +705,7 @@ public sealed class WorkflowSchedulerKernel(
 
             session.Execution.NodeRecords.Add(record);
             await sideEffects.PersistNodeRecordAsync(record, cancellationToken).ConfigureAwait(false);
+            await sideEffects.PublishNodeErrorAsync(session.Execution.Id, node.Id, 0, SafeError(timeoutResult.Error), cancellationToken).ConfigureAwait(false);
 
             if (node.ErrorStrategy != ErrorStrategy.Continue)
             {
@@ -783,6 +837,13 @@ public sealed class WorkflowSchedulerKernel(
         return delay;
     }
 
+    /// <summary>
+    /// 节点错误事件的安全包装：确保 <see cref="NodeErrorEvent"/> 始终携带非 null 的 <see cref="NodeError"/>，
+    /// 避免失败节点缺少错误信息时抛出 NullReferenceException 而中断执行链路。
+    /// </summary>
+    private static NodeError SafeError(NodeError? error) =>
+        error ?? new NodeError { Code = "NodeExecutionFailed", Message = "节点执行失败（无详细错误）" };
+
     // 端口名称直接从（已按当前节点参数水合的）INodeType 实例读取。
     // 注意：注册表返回的是按 TypeName 缓存的单例，执行器在处理每个节点时会用该节点的
     // 参数（含 SwitchNode.Cases）水合该单例，且节点按队列顺序串行执行+路由，因此此处读取到的
@@ -802,6 +863,26 @@ public sealed class WorkflowSchedulerKernel(
             .Where(p => p.Direction == PortDirection.Output)
             .Select(p => p.Name)
             .ToList();
+    }
+
+    private void CapRetainedOutput(ExecutionSession session, string nodeName)
+    {
+        var max = _defaults.MaxRetainedOutputItems;
+        if (session.SuccessfulOutputs.TryGetValue(nodeName, out var so) && so.Items.Count > max)
+        {
+            session.SuccessfulOutputs[nodeName] = Cap(so, max);
+        }
+
+        if (session.LatestBatches.TryGetValue(nodeName, out var lb) && lb.Items.Count > max)
+        {
+            session.LatestBatches[nodeName] = Cap(lb, max);
+        }
+    }
+
+    private static DataBatch Cap(DataBatch batch, int max)
+    {
+        // 保留最新 max 项（OncePerItem 按 SourceIndex 升序累积，末段即最近输出）。
+        return new DataBatch { Items = batch.Items.Skip(batch.Items.Count - max).ToList() };
     }
 
     private static ILlmClient? ResolveLlmClientForNode(

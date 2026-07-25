@@ -49,12 +49,68 @@ public sealed class JsEngine : IDisposable
             configure?.Invoke(o);
         });
 
+        // SEC-7：在注入任何辅助函数之前，先按白名单裁剪全局对象，从源头移除危险标识符
+        // （process/require/globalThis 等），即使借字符串拼接绕过黑名单也无法访问 CLR（未启用 AllowClr）。
+        ApplySandboxWhitelist(engine, opts);
+
         InjectConsole(engine, logger);
         InjectNow(engine);
         InjectJmespath(engine, logger);
         InjectWhitelistFunctions(engine);
 
         return new JsEngine(engine, logger);
+    }
+
+    /// <summary>
+    /// 沙箱白名单裁剪（SEC-7）：删除全局对象上所有<b>不在</b> <see cref="JsEngineOptions.AllowedGlobals"/>
+    /// 内的自有属性，并把 <see cref="JsEngineOptions.ForbiddenIdentifiers"/> 中的标识符再次显式删除（纵深防御）。
+    /// 黑名单仅作兜底，白名单才是防逃逸主防线。
+    /// </summary>
+    private static void ApplySandboxWhitelist(Engine engine, JsEngineOptions opts)
+    {
+        var allowed = opts.AllowedGlobals;
+        var forbidden = opts.ForbiddenIdentifiers;
+
+        var toDelete = new List<JsValue>();
+        foreach (var property in engine.Global.GetOwnProperties())
+        {
+            var name = property.Key.ToString();
+            if (!allowed.Contains(name) || forbidden.Contains(name))
+            {
+                toDelete.Add(property.Key);
+            }
+        }
+
+        foreach (var name in toDelete)
+        {
+            engine.Global.Delete(name);
+        }
+
+        // 纵深防御：确保黑名单标识符（即便经由原型链或其他方式暴露）均被移除。
+        foreach (var bad in forbidden)
+        {
+            engine.Global.Delete(JsValue.FromObject(engine, bad));
+        }
+
+        // SEC-7 关键加固：白名单仅删除全局对象的"自有"属性，而 <c>this['cons'+'tructor']</c>
+        // 之类逃逸经由<b>原型链</b>访问 <c>constructor</c>，从而拿到 CLR 类型并借 <c>.System</c> 泄露。
+        // 因此必须同时从全局对象的原型（即 Object.prototype）上移除 <c>constructor</c>，
+        // 彻底切断这条逃逸路径（沙箱内脚本无需依赖 constructor 属性）。
+        var proto = engine.Global.Prototype;
+        while (proto is not null && proto != JsValue.Null)
+        {
+            if (proto is JsObject protoObj)
+            {
+                protoObj.Delete("constructor");
+            }
+
+            if (ReferenceEquals(proto, proto.Prototype))
+            {
+                break;
+            }
+
+            proto = proto.Prototype;
+        }
     }
 
     /// <summary>

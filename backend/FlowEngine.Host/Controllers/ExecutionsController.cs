@@ -102,9 +102,10 @@ public class ExecutionsController(
         [FromQuery] ExecutionStatus? status = null,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 20,
+        [FromQuery] DateTime? beforeStartedAt = null,
         CancellationToken cancellationToken = default)
     {
-        var result = await executionService.GetByWorkflowAsync(workflowId, projectId, status, page, pageSize, cancellationToken)
+        var result = await executionService.GetByWorkflowAsync(workflowId, projectId, status, page, pageSize, beforeStartedAt, cancellationToken)
             .ConfigureAwait(false);
         return Ok(result);
     }

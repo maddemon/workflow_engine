@@ -2,14 +2,42 @@ namespace FlowEngine.Core.Credentials;
 
 /// <summary>
 /// 默认凭据类型注册表，内置常用凭据类型。
+/// 设计为可扩展：通过 <see cref="Register(CredentialTypeDefinition)"/> 在启动时注册自定义类型，
+/// 通过 <see cref="RegisterOAuth2Provider"/> 扩展 OAuth2 提供方，无需修改 Core 硬编码。
 /// </summary>
 public sealed class CredentialTypeRegistry
 {
     private readonly Dictionary<string, CredentialTypeDefinition> _types;
+    private readonly HashSet<string> _oauth2Providers;
 
     public CredentialTypeRegistry()
     {
         _types = CreateBuiltInTypes().ToDictionary(t => t.Name, StringComparer.OrdinalIgnoreCase);
+        _oauth2Providers = CreateBuiltInOAuth2Providers();
+    }
+
+    /// <summary>
+    /// 注册（或覆盖）一个凭据类型。应在应用启动时、接收请求前调用。
+    /// </summary>
+    /// <param name="definition">凭据类型定义。</param>
+    public void Register(CredentialTypeDefinition definition)
+    {
+        ArgumentNullException.ThrowIfNull(definition);
+        _types[definition.Name] = definition;
+    }
+
+    /// <summary>
+    /// 注册一个合法的 OAuth2 提供方值，使 <see cref="Validate"/> 接受该 provider。
+    /// </summary>
+    /// <param name="provider">提供方标识（大小写不敏感）。</param>
+    public void RegisterOAuth2Provider(string provider)
+    {
+        if (string.IsNullOrWhiteSpace(provider))
+        {
+            return;
+        }
+
+        _oauth2Providers.Add(provider);
     }
 
     public IReadOnlyCollection<CredentialTypeDefinition> GetAll() => _types.Values.ToList();
@@ -59,18 +87,22 @@ public sealed class CredentialTypeRegistry
         if (string.Equals(type, "oauth2", StringComparison.OrdinalIgnoreCase) &&
             fields.TryGetValue("provider", out var provider) &&
             !string.IsNullOrWhiteSpace(provider) &&
-            !IsKnownOAuth2Provider(provider))
+            !_oauth2Providers.Contains(provider))
         {
-            return ValidationResult.Failure($"凭据类型 'oauth2' 的 provider 值 '{provider}' 无效。可用值：standard, dingtalk");
+            var known = string.Join(", ", _oauth2Providers.OrderBy(p => p, StringComparer.OrdinalIgnoreCase));
+            return ValidationResult.Failure($"凭据类型 'oauth2' 的 provider 值 '{provider}' 无效。可用值：{known}");
         }
 
         return ValidationResult.Success();
     }
 
-    private static bool IsKnownOAuth2Provider(string provider)
+    private static HashSet<string> CreateBuiltInOAuth2Providers()
     {
-        return string.Equals(provider, "standard", StringComparison.OrdinalIgnoreCase) ||
-               string.Equals(provider, "dingtalk", StringComparison.OrdinalIgnoreCase);
+        return new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+        {
+            "standard",
+            "dingtalk",
+        };
     }
 
     private static IEnumerable<CredentialTypeDefinition> CreateBuiltInTypes()

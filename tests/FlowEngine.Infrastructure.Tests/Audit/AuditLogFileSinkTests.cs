@@ -1,3 +1,4 @@
+using System;
 using FlowEngine.Application.Audit;
 using FlowEngine.Core.Events;
 using FlowEngine.Infrastructure.Audit;
@@ -89,6 +90,57 @@ public sealed class AuditLogFileSinkTests : IDisposable
 
         Assert.Fail("审计事件在超时内未落盘。");
         return string.Empty;
+    }
+
+    private async Task<string> WaitForDeadLetterAsync(Guid eventId, CancellationToken ct)
+    {
+        var deadLetterDir = Path.Combine(_logDirectory, "deadletter");
+        var deadline = DateTime.UtcNow.AddMilliseconds(10000);
+        while (DateTime.UtcNow < deadline)
+        {
+            if (Directory.Exists(deadLetterDir))
+            {
+                foreach (var file in Directory.GetFiles(deadLetterDir, "audit-deadletter-*.ndjson"))
+                {
+                    var content = await File.ReadAllTextAsync(file, ct).ConfigureAwait(false);
+                    if (content.Contains(eventId.ToString(), StringComparison.Ordinal))
+                    {
+                        return file;
+                    }
+                }
+            }
+
+            await Task.Delay(50, ct).ConfigureAwait(false);
+        }
+
+        Assert.Fail("dead-letter file not generated within timeout.");
+        return string.Empty;
+    }
+
+    [Fact]
+    public async Task OnEventAsync_SerializationFailure_WritesDeadLetterInsteadOfSilentDrop()
+    {
+        // E-1: a serialization failure (simulated via an injected throwing serializer) must not
+        // be silently dropped; it is written to the dead-letter file and never reaches the main audit file.
+        static string? FailingSerializer(AuditEvent _) => throw new InvalidOperationException("serialize boom");
+        var sink = new AuditLogFileSink(_logDirectory, NullLogger<AuditLogFileSink>.Instance, FailingSerializer);
+        var e = new CredentialAccessedEvent(Guid.NewGuid(), Guid.NewGuid(), "node-def-1", "Resolve");
+
+        await sink.OnEventAsync(e, Ct);
+        var deadLetterPath = await WaitForDeadLetterAsync(e.EventId, Ct);
+        sink.Dispose();
+
+        var content = await File.ReadAllTextAsync(deadLetterPath, Ct);
+        Assert.Contains(e.EventType, content);
+        Assert.Contains(e.EventId.ToString(), content);
+
+        // 主审计文件（由 EnsureWriter 预创建，可能为空）不得包含该事件 ID：
+        // 事件已转入死信而非混入主日志或静默丢失。
+        foreach (var file in Directory.GetFiles(_logDirectory, "audit-*.ndjson"))
+        {
+            var mainContent = await File.ReadAllTextAsync(file, Ct);
+            Assert.DoesNotContain(e.EventId.ToString(), mainContent);
+        }
     }
 
     [Fact]

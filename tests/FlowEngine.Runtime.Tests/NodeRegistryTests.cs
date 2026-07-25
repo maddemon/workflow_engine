@@ -55,4 +55,29 @@ public class NodeRegistryTests
 
         Assert.Throws<InvalidOperationException>(() => registry.Get("unknown"));
     }
+
+    [Fact]
+    public void Get_ReturnsDistinctInstancesPerCall()
+    {
+        // CON-3：每次取用返回克隆实例，避免并行执行水合同一共享单例导致字段（如 SwitchNode.Cases）串扰。
+        var registry = new NodeRegistry([new TestNode()], NullLogger<NodeRegistry>.Instance);
+
+        var first = registry.Get("testNode");
+        var second = registry.Get("testNode");
+
+        Assert.NotSame(first, second);
+    }
+
+    [Fact]
+    public void TryGet_ReturnsDistinctInstancesPerCall()
+    {
+        var registry = new NodeRegistry([new TestNode()], NullLogger<NodeRegistry>.Instance);
+
+        Assert.True(registry.TryGet("testNode", out var first));
+        Assert.True(registry.TryGet("testNode", out var second));
+
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+        Assert.NotSame(first, second);
+    }
 }

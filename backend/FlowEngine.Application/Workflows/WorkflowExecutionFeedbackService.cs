@@ -33,6 +33,20 @@ public sealed class WorkflowExecutionFeedbackService(
             return null;
         }
 
+        // CQ-7：从工作流定义解析节点显示名与类型名（NodeExecutionRecord 本身不含 Name/TypeName）。
+        var nodeDefById = new Dictionary<string, NodeDefinition>(StringComparer.Ordinal);
+        var workflow = await dbContext.Workflows
+            .AsNoTracking()
+            .FirstOrDefaultAsync(w => w.Id == record.WorkflowDefinitionId, cancellationToken)
+            .ConfigureAwait(false);
+        if (workflow is not null)
+        {
+            foreach (var node in workflow.Nodes)
+            {
+                nodeDefById[node.Id] = node;
+            }
+        }
+
         var succeeded = record.Status == ExecutionStatus.Completed
                         || record.Status == ExecutionStatus.DryRunCompleted;
 
@@ -44,11 +58,15 @@ public sealed class WorkflowExecutionFeedbackService(
             foreach (var nodeRecord in record.NodeRecords)
             {
                 var isFailed = nodeRecord.Output?.Success == false;
+                nodeDefById.TryGetValue(nodeRecord.NodeDefinitionId, out var nodeDef);
                 var nodeFeedback = new ExecutionFeedbackNode
                 {
                     NodeId = nodeRecord.NodeDefinitionId,
-                    NodeName = nodeRecord.NodeDefinitionId, // TODO: resolve display name from workflow node definitions (NodeExecutionRecord lacks Name)
-                    TypeName = string.Empty,                 // TODO: resolve type name from execution context or workflow
+                    // 优先使用工作流定义中的节点显示名；找不到定义时回退为节点定义 ID。
+                    NodeName = nodeDef is not null && !string.IsNullOrEmpty(nodeDef.Name)
+                        ? nodeDef.Name
+                        : nodeRecord.NodeDefinitionId,
+                    TypeName = nodeDef?.TypeName ?? string.Empty,
                     Status = isFailed ? "Failed" : "Completed",
                     ErrorType = isFailed ? "ExecutionError" : null,
                     ErrorMessage = isFailed ? (nodeRecord.Output?.Error?.Message ?? "未知错误") : null,

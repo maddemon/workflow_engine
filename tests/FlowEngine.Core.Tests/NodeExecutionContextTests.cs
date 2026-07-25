@@ -333,6 +333,60 @@ public class NodeExecutionContextTests
     }
 
     [Fact]
+    public async Task NodeExecutionContext_CatchToResult_ScriptError_DoesNotLeakRawMessage()
+    {
+        const string sentinel = "SENTINEL-SCRIPT-LEAK-9F3A";
+        var ctx = new NodeExecutionContext { Node = new NodeDefinition { Id = "n" } };
+
+        var result = await ctx.CatchToResult(_ => throw new ScriptErrorException(new Script { Source = "x" }, sentinel), CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal(FlowConstants.ErrorCodes.ScriptError, result.Error?.Code);
+        Assert.DoesNotContain(sentinel, result.Error?.Message);
+        Assert.Equal("脚本执行出错。", result.Error?.Message);
+    }
+
+    [Fact]
+    public async Task NodeExecutionContext_CatchToResult_GenericException_DoesNotLeakRawMessage()
+    {
+        const string sentinel = "SENTINEL-GENERIC-LEAK-7B2C";
+        var ctx = new NodeExecutionContext { Node = new NodeDefinition { Id = "n" } };
+
+        var result = await ctx.CatchToResult(_ => throw new InvalidOperationException(sentinel), CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal(FlowConstants.ErrorCodes.UnexpectedError, result.Error?.Code);
+        Assert.DoesNotContain(sentinel, result.Error?.Message);
+    }
+
+    [Fact]
+    public void NodeExecutionContext_ToErrorResult_ScriptError_DoesNotLeakRawMessage()
+    {
+        const string sentinel = "SENTINEL-TOERROR-SCRIPT-1D4E";
+        var ctx = new NodeExecutionContext { Node = new NodeDefinition { Id = "n" } };
+
+        var result = ctx.ToErrorResult(new ScriptErrorException(new Script { Source = "x" }, sentinel));
+
+        Assert.Equal(FlowConstants.ErrorCodes.ScriptError, result.Code);
+        Assert.Equal("n", result.NodeDefinitionId);
+        Assert.DoesNotContain(sentinel, result.Message);
+        Assert.Equal("脚本执行出错。", result.Message);
+    }
+
+    [Fact]
+    public void NodeExecutionContext_ToErrorResult_GenericException_DoesNotLeakRawMessage()
+    {
+        const string sentinel = "SENTINEL-TOERROR-GENERIC-8A6F";
+        var ctx = new NodeExecutionContext { Node = new NodeDefinition { Id = "n" } };
+
+        var result = ctx.ToErrorResult(new InvalidOperationException(sentinel));
+
+        Assert.Equal(FlowConstants.ErrorCodes.UnexpectedError, result.Code);
+        Assert.Equal("n", result.NodeDefinitionId);
+        Assert.DoesNotContain(sentinel, result.Message);
+    }
+
+    [Fact]
     public void NodeExecutionContext_TryParseJson_Valid_ReturnsTrue()
     {
         var ctx = new NodeExecutionContext();

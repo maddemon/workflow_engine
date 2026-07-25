@@ -41,6 +41,9 @@ const api = axios.create({
 
 api.interceptors.request.use((config) => {
   config.headers.set('Accept-Language', i18n.resolvedLanguage ?? 'en');
+  // S-4：为同源 Cookie 认证请求附加防伪造头，满足后端 CsrfProtectionMiddleware 要求。
+  // Bearer/API Key 请求不携带 fe_auth Cookie，不受此头约束；跨站伪造请求无法设置自定义头。
+  config.headers.set('X-Requested-With', 'FlowEngine');
   return config;
 });
 
@@ -406,4 +409,20 @@ export function formatFileSize(bytes: number): string {
   const k = 1024;
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${parseFloat((bytes / Math.pow(k, i)).toFixed(1))} ${units[i]}`;
+}
+
+/**
+ * WebSocket 基础地址（同源，自动适配 https/wss）。
+ * CQ-3：集中管理 WebSocket/SSE 地址构造，避免散落在各 hook。
+ */
+export function getWebSocketUrl(): string {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}/ws/execution`;
+}
+
+/**
+ * 执行事件 SSE 流地址（与 api baseURL 同源）。
+ */
+export function getExecutionStreamUrl(executionId: string): string {
+  return `/api/v1/executions/${executionId}/stream`;
 }

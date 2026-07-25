@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { notifications } from '@mantine/notifications';
 import { useCanvasStore } from '../components/Canvas/stores/canvasStore.ts';
 import type { ExecutionDto } from '../types/workflow.ts';
+import { getExecutionStreamUrl as buildSseUrl, getWebSocketUrl as buildWsUrl } from '../services/api.ts';
 import { messageHandlers, type WebSocketPushMessage, type WebSocketStatus } from './websocket/messageHandlers.ts';
 import { useWebSocketConnection } from './websocket/useWebSocketConnection.ts';
 import { useSseFallback } from './websocket/useSseFallback.ts';
@@ -19,18 +20,17 @@ export function useWebSocketExecution(options: UseWebSocketExecutionOptions) {
   const subscribedExecutionsRef = useRef<Set<string>>(new Set());
 
   const getWebSocketUrl = useCallback(() => {
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    // H5：JWT 不再经 URL query 暴露；同源 WS 自动携带后端下发的 HttpOnly Cookie（fe_auth），
-    // 由后端 JwtBearer.OnMessageReceived 读取，无需在 URL 中拼接令牌。
-    return `${protocol}//${host}/ws/execution`;
+    // CQ-3：地址构造集中到 services/api.ts 的 getWebSocketUrl。
+    return buildWsUrl();
   }, []);
 
-  const getSseUrl = useCallback((executionId: string) => {
-    // H5：SSE 受 EventSource 限制无法自定义头；同源请求自动携带 HttpOnly Cookie（fe_auth），
-    // 由后端 JwtBearer.OnMessageReceived 读取，移除 query 方式暴露令牌。
-    return `/api/v1/executions/${executionId}/stream`;
-  }, []);
+  const getSseUrl = useCallback(
+    (executionId: string) => {
+      // CQ-3：SSE 流地址集中到 services/api.ts 的 getExecutionStreamUrl（同源 /api/v1）。
+      return buildSseUrl(executionId);
+    },
+    [],
+  );
 
   const sendIfOpen = useCallback((data: string) => {
     if (wsRef.current?.readyState === WebSocket.OPEN) {

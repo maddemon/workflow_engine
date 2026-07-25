@@ -109,10 +109,26 @@ public sealed class WorkflowService(
             : dbContext.Workflows.AsNoTracking().AsQueryable();
 
         var totalCount = await query.CountAsync(cancellationToken).ConfigureAwait(false);
+
+        // D-6：仅投影列表所需标量字段，避免物化 Nodes/Connections 等大 JSON 列。
         var workflows = await query
             .OrderBy(w => w.CreatedAt)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
+            .Select(w => new WorkflowSummaryDto
+            {
+                Id = w.Id,
+                Name = w.Name,
+                Version = w.Version,
+                IsActive = w.IsActive,
+                Source = w.Source,
+                DraftStatus = w.DraftStatus,
+                RejectionReason = w.RejectionReason,
+                Diff = w.Diff,
+                ProjectId = w.ProjectId,
+                CreatedAt = w.CreatedAt,
+                UpdatedAt = w.UpdatedAt,
+            })
             .ToListAsync(cancellationToken).ConfigureAwait(false);
 
         // BE-01: 批量查询关联数据，避免每行 N+1（统计逻辑下沉至 WorkflowStatisticsLoader）。
@@ -122,7 +138,7 @@ public sealed class WorkflowService(
         var items = workflows.ConvertAll(w =>
         {
             var stat = stats.GetValueOrDefault(w.Id);
-            return w.Adapt<WorkflowSummaryDto>() with
+            return w with
             {
                 LastExecutionAt = stat?.LastExecutionAt,
                 TriggerCount = stat?.TriggerCount ?? 0,
@@ -160,53 +176,59 @@ public sealed class WorkflowService(
         // 内容真正变更时才递增版本号，避免无意义的版本膨胀（修复：UpdateAsync 从不递增 Version）。
         var contentChanged = HasContentChanged(existing, dto, nodes, connections);
 
-        await using var tx = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-
-        try
+        // 关系型提供程序下开启事务包裹 SaveChanges（Quartz 调度为外部状态，置于事务外）；
+        // InMemory 不支持事务，仅关系型下开启（与 TriggerService 一致）。
+        if (dbContext.Database.IsRelational())
         {
-            // 先注销：如果从激活变为停用，先注销触发器调度。
-            if (previousIsActive && !dto.IsActive)
+            await using var tx = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await ApplyUpdateChangesAsync(existing, dto, nodes, connections, previousIsActive, contentChanged, cancellationToken).ConfigureAwait(false);
+                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch
+            {
+                await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                throw;
+            }
+        }
+        else
+        {
+            await ApplyUpdateChangesAsync(existing, dto, nodes, connections, previousIsActive, contentChanged, cancellationToken).ConfigureAwait(false);
+        }
+
+        // 注册新调度：事务已提交、行锁已释放后再调用外部调度器（事务不跨外部 await）。
+        if (!previousIsActive && dto.IsActive)
+        {
+            try
+            {
+                await triggerSync.RegisterTriggersAsync(id, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // EX-3 补偿：调度注册失败，将工作流回退为非激活并告警，避免“已激活但调度未注册”的静默失效。
+                logger.LogError(ex,
+                    "工作流 {WorkflowId} 激活后注册触发器调度失败，回退为未激活并告警，需人工重新激活。",
+                    id);
+                await CompensateActivationFailureAsync(existing, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        // 注销调度（D-10 + EX-3，与激活路径对称）：事务已提交、行锁已释放后再注销外部调度；
+        // 若注销失败，将工作流回退为激活并告警，使数据库状态与仍存活的调度一致，杜绝“停用但调度残留”。
+        else if (previousIsActive && !dto.IsActive)
+        {
+            try
             {
                 await triggerSync.UnregisterTriggersAsync(id, cancellationToken).ConfigureAwait(false);
             }
-
-            existing.Name = dto.Name;
-            existing.IsActive = dto.IsActive;
-            existing.StyleSettings = dto.StyleSettings;
-            existing.Nodes = nodes;
-            existing.Connections = connections;
-            existing.UpdatedAt = DateTime.UtcNow;
-
-            if (contentChanged)
+            catch (Exception ex)
             {
-                existing.Version += 1;
+                // EX-3 补偿：调度注销失败，将工作流回退为激活并告警，避免“已停用但调度仍触发”的残留失效。
+                logger.LogError(ex,
+                    "工作流 {WorkflowId} 停用后注销触发器调度失败，回退为激活并告警，需人工重新停用。",
+                    id);
+                await CompensateDeactivationFailureAsync(existing, cancellationToken).ConfigureAwait(false);
             }
-
-            ValidateOrThrow(existing);
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
-            // 注册新调度：如果从停用变为激活，尝试注册触发器。
-            if (!previousIsActive && dto.IsActive)
-            {
-                try
-                {
-                    await triggerSync.RegisterTriggersAsync(id, cancellationToken).ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    // 补偿日志：注册新调度失败，记录但不回滚数据库事务。
-                    logger.LogError(ex,
-                        "工作流 {WorkflowId} 激活后注册触发器调度失败，数据库已保存但调度未恢复，需人工补偿。",
-                        id);
-                }
-            }
-
-            await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
-        }
-        catch
-        {
-            await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            throw;
         }
 
         await handler.PublishAuditAsync(
@@ -217,6 +239,38 @@ public sealed class WorkflowService(
             cancellationToken).ConfigureAwait(false);
 
         return existing.Adapt<WorkflowDto>();
+    }
+
+    /// <summary>
+    /// 应用工作流更新：写入字段、校验并 <c>SaveChangesAsync</c>。外部调度副作用（注册/注销）
+    /// 不在此处执行，而是由 <c>UpdateAsync</c> 在数据库事务提交后调用（D-10：事务不跨外部 await）。
+    /// 提取为局部函数以便关系型（事务内）与 InMemory（无事务）两条路径复用同一段变更逻辑。
+    /// </summary>
+    private async Task ApplyUpdateChangesAsync(
+        Workflow existing,
+        UpdateWorkflowDto dto,
+        List<NodeDefinition> nodes,
+        List<Connection> connections,
+        bool previousIsActive,
+        bool contentChanged,
+        CancellationToken cancellationToken)
+    {
+        existing.Name = dto.Name;
+        existing.IsActive = dto.IsActive;
+        existing.StyleSettings = dto.StyleSettings;
+        existing.Nodes = nodes;
+        existing.Connections = connections;
+        existing.UpdatedAt = DateTime.UtcNow;
+
+        if (contentChanged)
+        {
+            existing.Version += 1;
+        }
+
+        ValidateOrThrow(existing);
+
+        // D-10：先提交数据库写入并释放行锁，外部调度在事务提交后调用（见 UpdateAsync）。
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -317,34 +371,26 @@ public sealed class WorkflowService(
             return false;
         }
 
-        await using var tx = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-
-        try
+        // 关系型提供程序下开启事务包裹删除（Quartz 调度为外部状态，置于事务外）；
+        // InMemory 不支持事务，仅关系型下开启（与 TriggerService 一致）。
+        if (dbContext.Database.IsRelational())
         {
-            // 先注销触发器调度（Quartz 外部状态，不在 DB 事务内）。
+            await using var tx = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+
             try
             {
-                await triggerSync.UnregisterTriggersAsync(id, cancellationToken).ConfigureAwait(false);
+                await ApplyDeleteChangesAsync(existing, id, cancellationToken).ConfigureAwait(false);
+                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception ex)
+            catch
             {
-                // 补偿日志：注销调度失败，继续删除数据库记录，但调度可能残留。
-                logger.LogError(ex,
-                    "工作流 {WorkflowId} 删除前注销触发器调度失败，数据库将删除但调度可能残留，需人工清理。",
-                    id);
+                await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
+                throw;
             }
-
-            dbContext.Workflows.Remove(existing);
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-
-            await _triggerService.DeleteByWorkflowDefinitionIdAsync(id, cancellationToken).ConfigureAwait(false);
-
-            await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch
+        else
         {
-            await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
-            throw;
+            await ApplyDeleteChangesAsync(existing, id, cancellationToken).ConfigureAwait(false);
         }
 
         await handler.PublishAuditAsync(
@@ -354,6 +400,35 @@ public sealed class WorkflowService(
             ct: cancellationToken).ConfigureAwait(false);
 
         return true;
+    }
+
+    /// <summary>
+    /// 应用工作流删除：先注销触发器调度（Quartz 外部状态，不在 DB 事务内），
+    /// 再移除工作流记录并级联删除其触发器。提取为局部函数以便关系型（事务内）与
+    /// InMemory（无事务）两条路径复用同一段删除逻辑。
+    /// </summary>
+    private async Task ApplyDeleteChangesAsync(
+        Workflow existing,
+        Guid id,
+        CancellationToken cancellationToken)
+    {
+        // 先注销触发器调度（Quartz 外部状态，不在 DB 事务内）。
+        try
+        {
+            await triggerSync.UnregisterTriggersAsync(id, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // 补偿日志：注销调度失败，继续删除数据库记录，但调度可能残留。
+            logger.LogError(ex,
+                "工作流 {WorkflowId} 删除前注销触发器调度失败，数据库将删除但调度可能残留，需人工清理。",
+                id);
+        }
+
+        dbContext.Workflows.Remove(existing);
+        await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+
+        await _triggerService.DeleteByWorkflowDefinitionIdAsync(id, cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -400,6 +475,42 @@ public sealed class WorkflowService(
         var nodes = nodeDtos.Select(n => n.Adapt<NodeDefinition>()).ToList();
         var connections = connectionDtos.Select(c => c.Adapt<Connection>()).ToList();
         return (nodes, connections);
+    }
+
+    /// <summary>
+    /// 激活后调度注册失败的补偿：将工作流回退为非激活，使数据库状态与调度器实际状态一致
+    /// （避免“已激活但调度未注册”的静默失效）。回退本身失败仅告警，不掩盖原始调度异常。
+    /// </summary>
+    private async Task CompensateActivationFailureAsync(Workflow existing, CancellationToken cancellationToken)
+    {
+        try
+        {
+            existing.IsActive = false;
+            existing.UpdatedAt = DateTime.UtcNow;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "工作流 {WorkflowId} 激活失败补偿（回退为非激活）失败，需人工干预。", existing.Id);
+        }
+    }
+
+    /// <summary>
+    /// 停用后调度注销失败的补偿：将工作流回退为激活，使数据库状态与仍存活的 Quartz 调度一致
+    /// （避免“已停用但调度仍触发”的残留失效）。回退本身失败仅告警，不掩盖原始调度异常。
+    /// </summary>
+    private async Task CompensateDeactivationFailureAsync(Workflow existing, CancellationToken cancellationToken)
+    {
+        try
+        {
+            existing.IsActive = true;
+            existing.UpdatedAt = DateTime.UtcNow;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "工作流 {WorkflowId} 停用失败补偿（回退为激活）失败，需人工干预。", existing.Id);
+        }
     }
 
     private void ValidateOrThrow(Workflow workflow)

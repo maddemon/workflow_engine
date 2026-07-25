@@ -107,6 +107,26 @@ public sealed class ShellToolNode : INodeType
             return context.ErrorResult(FlowConstants.ErrorCodes.MissingCommand, "Command is required.");
         }
 
+        // SEC-1：RunInShell=true 经 shell 解释器执行命令（命令注入高危路径）。
+        // 门禁：① 必须由非 LLM/Agent 调用；② 配置 Shell:AllowShellExecution 开启且当前用户具备允许角色。
+        // 任一项不满足即拒绝，避免 LLM 诱导执行任意 shell 或未授权命令注入。
+        if (RunInShell)
+        {
+            if (context.IsAgentInvocation)
+            {
+                return context.ErrorResult(
+                    "ShellExecutionDenied",
+                    "RunInShell is disabled for commands invoked by an Agent/LLM tool.");
+            }
+
+            if (!context.AllowShellExecution)
+            {
+                return context.ErrorResult(
+                    "ShellExecutionDenied",
+                    "RunInShell requires the Shell:AllowShellExecution feature to be enabled and an authorized (admin) role.");
+            }
+        }
+
         return await context.CatchToResult(async ct =>
         {
             var resolvedCommand = await Command.EvaluateAsync<string>(context, cancellationToken: ct);

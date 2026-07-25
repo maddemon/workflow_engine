@@ -18,41 +18,12 @@ export interface DisplayRule {
 
 /**
  * 参数渲染提示，与后端 PresentationHint 枚举对应。
+ * 单一来源见 `parameterEnums.ts`（由其推导，避免前后端漂移）。
  * 未指定时由前端 FieldResolver 按 type 自动推断。
  */
-export type PresentationHint =
-  | 'Default'
-  | 'ButtonGroup'
-  | 'Select'
-  | 'TextArea'
-  | 'CodeEditor'
-  | 'JsonEditor'
-  | 'KeyValueEditor'
-  | 'Toggle'
-  | 'Secret'
-  | 'CredentialSelect'
-  | 'ResourceSelect'
-  | 'FileUpload'
-  | 'Expression'
-  | 'Script'
-  | 'Array'
-  | 'DateTime';
+import type { PresentationHint, ParameterType } from './parameterEnums.ts';
 
-/**
- * 参数类型，与后端 ParameterType 枚举对应。
- */
-export type ParameterType =
-  | 'String'
-  | 'Number'
-  | 'Boolean'
-  | 'Options'
-  | 'Json'
-  | 'Code'
-  | 'Credential'
-  | 'Resource'
-  | 'Array'
-  | 'File'
-  | 'Expression';
+export type { PresentationHint, ParameterType };
 
 /**
  * 校验规则对象，与后端 Core/Entities/ValidationRule 对应。

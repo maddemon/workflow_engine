@@ -4,7 +4,10 @@ using FlowEngine.Core.Data;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Identity;
 using FlowEngine.Host.Middlewares;
+using FlowEngine.Host.Observability;
 using FlowEngine.Host.Webhooks;
+using Microsoft.AspNetCore.Diagnostics.HealthChecks;
+using Microsoft.Extensions.Diagnostics.HealthChecks;
 using Microsoft.AspNetCore.RateLimiting;
 using FlowEngine.Host.WebSocketHandlers;
 using FlowEngine.Infrastructure.Audit;
@@ -45,11 +48,14 @@ public static class ApplicationBuilderExtensions
         // 现有 REST/Controller 路由对注册顺序不敏感，但为统一处理并保持兼容性，统一前置。
         UseRoutes(app);
 
+        // ── Webhook Routes ──────────────────────────────────────────
+        // 必须在认证/授权中间件之前注册：Webhook 以 HMAC 签名鉴权，无用户身份，
+        // 若晚于 FallbackPolicy（RequireAuthenticatedUser）注册会被误判为匿名而拒绝。
+        // 该中间件对 Webhook POST 直接短路响应，非 Webhook 请求则透传至后续管道。
+        await UseWebhook(app);
+
         // ── Middleware ──────────────────────────────────────────────
         UseMiddlewares(app);
-
-        // ── Webhook Routes ──────────────────────────────────────────
-        await UseWebhook(app);
 
         // ── WebSocket ───────────────────────────────────────────────
         app.UseWebSockets(new WebSocketOptions
@@ -61,12 +67,13 @@ public static class ApplicationBuilderExtensions
         {
             var handler = context.RequestServices.GetRequiredService<ExecutionWebSocketHandler>();
             await handler.HandleAsync(context,  () => Task.CompletedTask);
-        });
+        }).AllowAnonymous();
 
         // SPA Fallback：除 API 路由组（RouteConstants.ApiPrefix）外，其余路径回退到 index.html。
+        // SEC-2：登录页等公共资源需匿名可访问，显式放行（全局 FallbackPolicy 默认要求认证）。
         app.MapFallbackToFile(
             $"{{*path:regex(^(?!{RouteConstants.ApiPrefix.TrimStart('/')}(?:/|$)).*$)}}",
-            "index.html");
+            "index.html").AllowAnonymous();
 
         return app;
     }
@@ -82,12 +89,6 @@ public static class ApplicationBuilderExtensions
 
     private static void UseRoutes(WebApplication app)
     {
-        app.MapGet(RouteConstants.HealthPrefix, () => Results.Ok(new { status = "healthy" }));
-        app.MapGet(RouteConstants.HealthReadyPath, () => Results.Ok(new { status = "ready" }));
-
-        var api = app.MapGroup($"{RouteConstants.ApiPrefix}/v1");
-        api.MapGet(RouteConstants.HealthPrefix, () => Results.Ok(new { status = "healthy" }));
-
         app.MapControllers();
 
         // ── MCP Streamable HTTP endpoint ────────────────────────────
@@ -98,8 +99,15 @@ public static class ApplicationBuilderExtensions
     {
         // 在读取客户端 IP 之前应用转发头（反向代理场景），防止 X-Forwarded-For 伪造绕过基于 IP 的限流（L2）。
         app.UseForwardedHeaders();
+        // E-4：请求访问日志（方法/路径/状态码/耗时），健康检查端点已在中间件内排除。
+        app.UseMiddleware<RequestLoggingMiddleware>();
         // 全局异常处理放在管道最外层，确保能捕获后续所有中间件与端点抛出的异常（GAP-26）
         app.UseMiddleware<GlobalExceptionHandlerMiddleware>();
+        // O-6：健康检查端点（liveness 存活探针 / readiness 就绪探针含数据库探测），
+        // 在路由与认证之前短路返回，避免被 FallbackPolicy 要求认证。
+        app.UseHealthChecks(RouteConstants.HealthPrefix, LiveHealthOptions);
+        app.UseHealthChecks(RouteConstants.HealthReadyPath, ReadyHealthOptions);
+        app.UseHealthChecks($"{RouteConstants.ApiPrefix}/v1{RouteConstants.HealthPrefix}", LiveHealthOptions);
         // 显式启用路由匹配，确保后续中间件可读取路由值（GAP-12）
         app.UseRouting();
         app.UseMiddleware<SecurityHeadersMiddleware>();
@@ -112,6 +120,9 @@ public static class ApplicationBuilderExtensions
         app.UseRateLimiter();
         app.UseCors();
         app.UseAuthentication();
+        // S-4：Cookie 认证 CSRF 防护。仅对携带 fe_auth Cookie 的变更请求要求自定义防伪造头，
+        // Bearer/API Key 与匿名请求不受影响。置于认证之后，确保 Cookie 已就绪。
+        app.UseMiddleware<CsrfProtectionMiddleware>();
         app.UseMiddleware<CurrentUserMiddleware>();
         app.UseAuthorization();
 
@@ -226,5 +237,29 @@ public static class ApplicationBuilderExtensions
         }
 
         return password;
+    }
+
+    // O-6：liveness 探针仅包含存活检查（不依赖数据库等外部依赖）。
+    private static readonly HealthCheckOptions LiveHealthOptions = new()
+    {
+        Predicate = registration => registration.Tags.Contains(ObservabilityExtensions.LivenessTag),
+        ResponseWriter = WriteHealthResponse,
+    };
+
+    // O-6：readiness 探针包含数据库连通性探测（tag "ready"）。
+    private static readonly HealthCheckOptions ReadyHealthOptions = new()
+    {
+        Predicate = registration => registration.Tags.Contains(ObservabilityExtensions.ReadinessTag),
+        ResponseWriter = WriteHealthResponse,
+    };
+
+    /// <summary>
+    /// 将健康报告序列化为统一 JSON 响应，保持 <c>{ "status": "healthy" | "unhealthy" }</c> 形状（兼容旧静态桩）。
+    /// </summary>
+    private static Task WriteHealthResponse(HttpContext context, HealthReport report)
+    {
+        context.Response.ContentType = "application/json";
+        var status = report.Status.ToString().ToLowerInvariant();
+        return context.Response.WriteAsJsonAsync(new { status });
     }
 }

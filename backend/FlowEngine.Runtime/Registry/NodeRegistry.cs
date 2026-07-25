@@ -71,17 +71,12 @@ public sealed class NodeRegistry : INodeRegistry
         ArgumentException.ThrowIfNullOrEmpty(typeName);
 
         var normalizedName = typeName.ToLowerInvariant();
-        if (_instances.TryGetValue(normalizedName, out var cached))
-        {
-            nodeType = cached;
-            return true;
-        }
-
-        // 兜底：按类型创建并缓存（极少数未预注册实例的场景）。
+        // CON-3：返回按类型克隆的全新实例（而非共享单例）。执行期 ParameterHydrator 会向该实例
+        // 水合当前节点的参数（如 SwitchNode.Cases/Ports），若返回共享单例，并行执行的不同节点/
+        // 执行会互相串改共享字段，导致路由错乱。克隆保证每次取用都是隔离的工作实例。
         if (_nodeTypes.TryGetValue(normalizedName, out var type))
         {
             nodeType = (INodeType?)Activator.CreateInstance(type);
-            if (nodeType is not null) _instances[normalizedName] = nodeType;
             return nodeType is not null;
         }
 

@@ -25,6 +25,10 @@ public sealed class NodeContextResetTests
     public async Task FeedbackActivation_ReusesSameNodeContextInstance()
     {
         // 自环节点：每次回环激活复用同一上下文，故累计计数持续，捕获的实例唯一。
+        // 注意：CON-3 后注册中心每次取用返回克隆实例，节点自身状态不跨克隆共享，
+        // 故通过 static 收集器捕获上下文引用（与执行实例身份无关）。
+        LoopObservingNode.Captured.Clear();
+        LoopObservingNode.FinalCallCount = 0;
         var obs = new LoopObservingNode();
         var registry = new NodeRegistry(new INodeType[] { obs }, NullLogger<NodeRegistry>.Instance);
 
@@ -34,15 +38,16 @@ public sealed class NodeContextResetTests
         // 3 次 Loop + 1 次 Done = 4 次激活。
         Assert.Equal(4, record.NodeRecords.Count(r => r.NodeDefinitionId == "obs"));
         // 回环激活均复用同一上下文实例。
-        Assert.Single(obs.Captured.Distinct());
+        Assert.Single(LoopObservingNode.Captured.Distinct());
         // 计数累积到 MaxLoops，证明上下文状态跨调用保持。
-        Assert.Equal(LoopObservingNode.MaxLoops, obs.FinalCallCount);
+        Assert.Equal(LoopObservingNode.MaxLoops, LoopObservingNode.FinalCallCount);
     }
 
     [Fact]
     public async Task NonFeedbackActivation_ResetsNodeContextInstance()
     {
         // 两个独立上游（A、B）各触发一次 obs，均为非回边激活 → 上下文分别重置（不同实例）。
+        ForkObservingNode.Captured.Clear();
         var obs = new ForkObservingNode();
         var registry = new NodeRegistry(new INodeType[] { new SourceNode(), obs }, NullLogger<NodeRegistry>.Instance);
 
@@ -51,7 +56,7 @@ public sealed class NodeContextResetTests
         Assert.Equal(ExecutionStatus.Completed, record.Status);
         Assert.Equal(2, record.NodeRecords.Count(r => r.NodeDefinitionId == "obs"));
         // 两次激活上下文实例不同（每次非回边均重置）。
-        Assert.True(obs.Captured.Distinct().Count() == 2, "expected two distinct contexts after non-feedback resets");
+        Assert.True(ForkObservingNode.Captured.Distinct().Count() == 2, $"expected two distinct contexts after non-feedback resets; Count={ForkObservingNode.Captured.Count} Distinct={ForkObservingNode.Captured.Distinct().Count()}");
     }
 
     private static Workflow BuildSelfLoopWorkflow()
@@ -139,8 +144,10 @@ public sealed class NodeContextResetTests
     {
         public const int MaxLoops = 3;
 
-        public List<IDictionary<string, object?>> Captured { get; } = [];
-        public int FinalCallCount { get; private set; }
+        // static：CON-3 后注册中心每次取用返回克隆实例，克隆不共享实例字段；
+        // 用 static 收集器捕获上下文引用，使测试能观察到实际执行实例的行为。
+        public static List<IDictionary<string, object?>> Captured { get; } = [];
+        public static int FinalCallCount { get; set; }
 
         public string TypeName => "obs";
         public string DisplayName => "Obs";
@@ -180,7 +187,7 @@ public sealed class NodeContextResetTests
     /// </summary>
     private sealed class ForkObservingNode : INodeType
     {
-        public List<IDictionary<string, object?>> Captured { get; } = [];
+        public static List<IDictionary<string, object?>> Captured { get; } = [];
 
         public string TypeName => "obs";
         public string DisplayName => "Obs";
@@ -233,6 +240,9 @@ public sealed class NodeContextResetTests
         public Task PersistExecutionAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task PublishNodeStartedAsync(Guid executionId, string nodeId, int runIndex, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task PublishCompletedAsync(ExecutionStatus status, CancellationToken cancellationToken, NodeError? error = null) => Task.CompletedTask;
+        public Task PublishWorkflowStartedAsync(Guid executionId, Guid workflowDefinitionId, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task PublishNodeExecutedAsync(Guid executionId, string nodeDefinitionId, int runIndex, NodeExecutionResult result, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task PublishNodeErrorAsync(Guid executionId, string nodeDefinitionId, int runIndex, NodeError error, CancellationToken cancellationToken) => Task.CompletedTask;
         public Func<LlmStreamChunk, CancellationToken, Task> CreateLlmStreamCallback(Guid executionId, string nodeId, int runIndex)
             => (_, _) => Task.CompletedTask;
     }

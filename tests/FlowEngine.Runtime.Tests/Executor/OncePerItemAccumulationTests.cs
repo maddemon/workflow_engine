@@ -1,5 +1,6 @@
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Configuration;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -93,7 +94,7 @@ public sealed class OncePerItemAccumulationTests
         Assert.Contains(downstreamOutputs.Items, i => i.SourceIndex == 2 && i.Data?.GetValue<int>() == 2);
     }
 
-    private async Task<(ExecutionRecord Record, ExecutionSession Session, CollectingSideEffects SideEffects)> RunOncePerItemWithEdgeAsync(int[] items)
+    private async Task<(ExecutionRecord Record, ExecutionSession Session, CollectingSideEffects SideEffects)> RunOncePerItemWithEdgeAsync(int[] items, WorkflowSchedulerKernel? kernel = null)
     {
         var nodeA = CreateNode("a", "oncePerItem", isEntry: true);
         var nodeB = CreateNode("b", "passThrough", isEntry: false);
@@ -128,12 +129,12 @@ public sealed class OncePerItemAccumulationTests
         };
 
         var sideEffects = new CollectingSideEffects();
-        await _kernel.RunAsync(session, sideEffects, items, TestContext.Current.CancellationToken);
+        await (kernel ?? _kernel).RunAsync(session, sideEffects, items, TestContext.Current.CancellationToken);
 
         return (executionRecord, session, sideEffects);
     }
 
-    private async Task<(ExecutionRecord Record, ExecutionSession Session, CollectingSideEffects SideEffects)> RunOncePerItemAsync(int[] items)
+    private async Task<(ExecutionRecord Record, ExecutionSession Session, CollectingSideEffects SideEffects)> RunOncePerItemAsync(int[] items, WorkflowSchedulerKernel? kernel = null)
     {
         var nodeA = CreateNode("a", "oncePerItem", isEntry: true);
         var workflow = new Workflow
@@ -160,9 +161,63 @@ public sealed class OncePerItemAccumulationTests
         };
 
         var sideEffects = new CollectingSideEffects();
-        await _kernel.RunAsync(session, sideEffects, items, TestContext.Current.CancellationToken);
+        await (kernel ?? _kernel).RunAsync(session, sideEffects, items, TestContext.Current.CancellationToken);
 
         return (executionRecord, session, sideEffects);
+    }
+
+    // CON-5：大批次（OncePerItem）输出经 MaxRetainedOutputItems 限流，仅保留最近 N 项，内存有上限。
+    [Fact]
+    public async Task RunAsync_OncePerItem_CapsRetainedOutputs_WhenLimitSet()
+    {
+        var cappedKernel = new WorkflowSchedulerKernel(
+            _nodeRegistry,
+            _contextFactory,
+            new ErrorStrategyHandler(),
+            new SecretMasker(),
+            NullLogger<WorkflowSchedulerKernel>.Instance,
+            Options.Create(new EngineDefaultsOptions { MaxRetainedOutputItems = 100 }));
+
+        var (record, session, _) = await RunOncePerItemWithEdgeAsync(Enumerable.Range(0, 500).ToArray(), cappedKernel);
+
+        Assert.Equal(ExecutionStatus.Completed, record.Status);
+
+        // 源节点 a 的输出被限流为最近 100 项（CON-5）。
+        Assert.True(session.SuccessfulOutputs.TryGetValue("a", out var source));
+        Assert.Equal(100, source.Items.Count);
+
+        // 下游 b 经路由确实收到完整 500 项（路由使用限流前的完整累积批，数据不丢）；
+        // 但 b 自身保留在 SuccessfulOutputs 的快照同样受 CON-5 限流为最近 100 项，以约束整树内存上限。
+        Assert.True(session.SuccessfulOutputs.TryGetValue("b", out var downstream));
+        Assert.Equal(100, downstream.Items.Count);
+
+        // CON-5 关键不变量：限流仅截断成功输出快照（SuccessfulOutputs），不得截断路由给下游的输入批。
+        // 节点 b 的执行记录 Inputs 即其被调用时实际收到的路由输入批，必须等于完整源批大小（500），而非限流的 100。
+        var downstreamRecord = session.Execution.NodeRecords.First(r => r.NodeDefinitionId == "b");
+        var receivedInputCount = downstreamRecord.Inputs.Values.Sum(batch => batch.Items.Count);
+        Assert.Equal(500, receivedInputCount);
+    }
+
+    // CON-3：两个执行并行运行同一内核（共享 NodeRegistry），各自克隆节点实例，
+    // 即便并行执行也不应相互干扰导致崩溃或状态串扰（隔离由 NodeRegistry 克隆保证）。
+    [Fact]
+    public async Task RunAsync_ParallelExecutions_AreIsolated()
+    {
+        var taskA = RunOncePerItemAsync([1, 2, 3]);
+        var taskB = RunOncePerItemAsync([4, 5, 6, 7]);
+        var results = await Task.WhenAll(taskA, taskB);
+
+        var (recordA, sessionA, _) = results[0];
+        var (recordB, sessionB, _) = results[1];
+
+        Assert.Equal(ExecutionStatus.Completed, recordA.Status);
+        Assert.Equal(ExecutionStatus.Completed, recordB.Status);
+
+        // 各自累积本执行的输入项数，互不被对方污染（a: 3 项，b: 4 项）。
+        Assert.True(sessionA.SuccessfulOutputs.TryGetValue("a", out var outA));
+        Assert.Equal(3, outA.Items.Count);
+        Assert.True(sessionB.SuccessfulOutputs.TryGetValue("a", out var outB));
+        Assert.Equal(4, outB.Items.Count);
     }
 
     private static NodeDefinition CreateNode(
@@ -196,6 +251,9 @@ public sealed class OncePerItemAccumulationTests
         public Task PersistExecutionAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task PublishNodeStartedAsync(Guid executionId, string nodeId, int runIndex, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task PublishCompletedAsync(ExecutionStatus status, CancellationToken cancellationToken, NodeError? error = null) => Task.CompletedTask;
+        public Task PublishWorkflowStartedAsync(Guid executionId, Guid workflowDefinitionId, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task PublishNodeExecutedAsync(Guid executionId, string nodeDefinitionId, int runIndex, NodeExecutionResult result, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task PublishNodeErrorAsync(Guid executionId, string nodeDefinitionId, int runIndex, NodeError error, CancellationToken cancellationToken) => Task.CompletedTask;
         public Func<LlmStreamChunk, CancellationToken, Task> CreateLlmStreamCallback(Guid executionId, string nodeId, int runIndex)
             => (_, _) => Task.CompletedTask;
     }

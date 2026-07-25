@@ -1,4 +1,4 @@
-using System.Text.Json;
+﻿using System.Text.Json;
 using FlowEngine.Application.Audit;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
@@ -65,28 +65,20 @@ public sealed class TriggerService(
         dbContext.Triggers.Add(trigger);
 
         // 触发器与其 Webhook 路由需原子落库（InMemory 不支持事务，仅关系型下开启）。
-        if (dbContext.Database.IsRelational())
-        {
-            await using var tx = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch
-            {
-                await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                throw;
-            }
-        }
-        else
-        {
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        }
+        // CQ-4：关系型下以事务包裹 SaveChanges，InMemory 直接保存（详见 SaveChangesInTransactionAsync）。
+        await SaveChangesInTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         if (dto.Type == TriggerType.Poll)
         {
-            await RegisterPollTriggerAsync(trigger, triggerSettings, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await RegisterPollTriggerAsync(trigger, triggerSettings, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // EX-3：注册失败后补偿（回退为非激活）+ 告警，杜绝“已激活但调度未注册”的静默失效。
+                await CompensateRegistrationFailureAsync(trigger, ex, cancellationToken).ConfigureAwait(false);
+            }
         }
 
         await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
@@ -201,24 +193,8 @@ public sealed class TriggerService(
 
         // 数据库事务包裹：仅包裹 SaveChanges（Quartz 调度为外部状态，置于事务外）。
         // InMemory 测试提供程序不支持事务，仅在关系型提供程序下开启。
-        if (dbContext.Database.IsRelational())
-        {
-            await using var tx = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch
-            {
-                await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                throw;
-            }
-        }
-        else
-        {
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        }
+        // CQ-4：关系型下以事务包裹 SaveChanges，InMemory 直接保存（详见 SaveChangesInTransactionAsync）。
+        await SaveChangesInTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         // 注册新调度：SaveChanges 成功后，尝试注册新调度（Quartz 外部状态，在事务外）。
         if (trigger.Type == TriggerType.Poll && trigger.IsActive)
@@ -229,10 +205,8 @@ public sealed class TriggerService(
             }
             catch (Exception ex)
             {
-                // 补偿日志：注册新调度失败，数据库已保存但调度未恢复，需人工补偿。
-                logger.LogError(ex,
-                    "触发器 {TriggerId} 更新后注册新调度失败，数据库已保存但调度未恢复，需人工补偿。",
-                    trigger.Id);
+                // EX-3：注册失败后补偿（回退为非激活）+ 告警，杜绝“已激活但调度未注册”的静默失效。
+                await CompensateRegistrationFailureAsync(trigger, ex, cancellationToken).ConfigureAwait(false);
             }
         }
 
@@ -290,24 +264,8 @@ public sealed class TriggerService(
 
         // 数据库事务包裹：仅包裹 SaveChanges（Quartz 调度为外部状态，置于事务外）。
         // InMemory 测试提供程序不支持事务，仅在关系型提供程序下开启。
-        if (dbContext.Database.IsRelational())
-        {
-            await using var tx = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
-            try
-            {
-                await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
-            }
-            catch
-            {
-                await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
-                throw;
-            }
-        }
-        else
-        {
-            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        }
+        // CQ-4：关系型下以事务包裹 SaveChanges，InMemory 直接保存（详见 SaveChangesInTransactionAsync）。
+        await SaveChangesInTransactionAsync(cancellationToken).ConfigureAwait(false);
 
         await eventBus.PublishAsync(auditFactory.Create<AuditLogEvent>(
             AuditEventTypes.TriggerDeleted,
@@ -338,7 +296,9 @@ public sealed class TriggerService(
         if (dbContext.Database.IsRelational())
         {
             // ExecuteDeleteAsync：一次往返删除，不物化整行触发器实体。
+            // IgnoreQueryFilters：删除工作流需清除其全部触发器（含被级联软删除的），不受全局软删除过滤影响。
             await dbContext.Triggers
+                .IgnoreQueryFilters()
                 .Where(t => t.WorkflowDefinitionId == workflowDefinitionId)
                 .ExecuteDeleteAsync(cancellationToken)
                 .ConfigureAwait(false);
@@ -346,6 +306,7 @@ public sealed class TriggerService(
         else
         {
             var triggers = await dbContext.Triggers
+                .IgnoreQueryFilters()
                 .Where(t => t.WorkflowDefinitionId == workflowDefinitionId)
                 .ToListAsync(cancellationToken)
                 .ConfigureAwait(false);
@@ -382,6 +343,33 @@ public sealed class TriggerService(
                         settings.EndAt,
                         cancellationToken).ConfigureAwait(false);
                 }
+            }
+        }
+    }
+
+    /// <summary>
+    /// 注销项目关联的所有调度与轮询触发器（用于项目级联软删前清理外部 Quartz 调度）。
+    /// 使用 <c>IgnoreQueryFilters</c> 以便清理已被级联软删（<c>Deleted=true</c>）的触发器，
+    /// 避免工作流被软删后调度残留、ExecutionService 加载为 null 而静默 no-op（GAP 1 / D-1 / EX-3）。
+    /// </summary>
+    public async Task UnregisterProjectSchedulesAsync(Guid projectId, CancellationToken cancellationToken = default)
+    {
+        var triggers = await dbContext.Triggers
+            .IgnoreQueryFilters()
+            .Where(t => t.ProjectId == projectId)
+            .AsNoTracking()
+            .ToListAsync(cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var trigger in triggers)
+        {
+            if (trigger.Type == TriggerType.Schedule)
+            {
+                await scheduleManager.UnregisterScheduleAsync(trigger.Id, cancellationToken).ConfigureAwait(false);
+            }
+            else if (trigger.Type == TriggerType.Poll)
+            {
+                await scheduleManager.UnregisterPollTriggerAsync(trigger.Id, cancellationToken).ConfigureAwait(false);
             }
         }
     }
@@ -437,6 +425,54 @@ public sealed class TriggerService(
         await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
     }
 
+    /// <summary>
+    /// 触发器调度注册失败后的补偿：将触发器回退为非激活并告警，使数据库状态与调度器实际状态一致
+    /// （避免“已激活但调度未注册”的静默失效）。回退本身失败仅告警，不掩盖原始调度异常。
+    /// </summary>
+    private async Task CompensateRegistrationFailureAsync(Trigger trigger, Exception ex, CancellationToken cancellationToken)
+    {
+        logger.LogError(ex,
+            "触发器 {TriggerId} 注册调度失败，回退为未激活并告警，需人工重新激活。",
+            trigger.Id);
+
+        try
+        {
+            trigger.IsActive = false;
+            trigger.UpdatedAt = DateTime.UtcNow;
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception saveEx)
+        {
+            logger.LogError(saveEx, "触发器 {TriggerId} 注册失败补偿（回退为非激活）失败，需人工干预。", trigger.Id);
+        }
+    }
+
+    /// <summary>
+    /// CQ-4：以事务包裹 <see cref="FlowEngineDbContext.SaveChangesAsync"/> 的通用模板。
+    /// 关系型提供程序下开启事务并提交，提交失败自动回滚并重新抛出；
+    /// InMemory 提供程序不支持事务，仅直接保存（触发器/Webhook 路由的原子性在关系型下由事务保证）。
+    /// </summary>
+    private async Task SaveChangesInTransactionAsync(CancellationToken cancellationToken)
+    {
+        if (!dbContext.Database.IsRelational())
+        {
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        await using var tx = await dbContext.Database.BeginTransactionAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+            await tx.CommitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            await tx.RollbackAsync(cancellationToken).ConfigureAwait(false);
+            throw;
+        }
+    }
+
     private async Task RegisterPollTriggerAsync(
         Trigger trigger,
         TriggerSettings settings,
@@ -463,4 +499,6 @@ public sealed class TriggerService(
     {
         await scheduleManager.UnregisterPollTriggerAsync(triggerId, cancellationToken).ConfigureAwait(false);
     }
+
+
 }

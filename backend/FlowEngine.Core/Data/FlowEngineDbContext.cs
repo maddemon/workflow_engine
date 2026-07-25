@@ -1,3 +1,4 @@
+using System.Linq.Expressions;
 using System.Reflection;
 using System.Text.Json;
 using FlowEngine.Core.Attributes;
@@ -69,14 +70,26 @@ public class FlowEngineDbContext : DbContext
     {
         var workflowIds = changedWorkflows.Select(e => e.Entity.Id).ToList();
 
-        // 先删除这些工作流的全部旧引用行（新增/修改会随后重写；删除则仅清理孤儿行）。
-        var existing = await WorkflowCredentialUsages
-            .Where(u => workflowIds.Contains(u.WorkflowId))
-            .ToListAsync(cancellationToken)
-            .ConfigureAwait(false);
-        if (existing.Count > 0)
+        // 仅针对本次变更的工作流维护凭据引用（增量，不触达未变更工作流，避免批量保存时放大为 N 次查询）。
+        // 关系型提供程序可直接用单语句批量删除旧行（避免把已删行物化回 ChangeTracker）；
+        // InMemory 提供程序不支持 ExecuteDelete，回退为加载后删除。
+        if (Database.IsRelational())
         {
-            WorkflowCredentialUsages.RemoveRange(existing);
+            await WorkflowCredentialUsages
+                .Where(u => workflowIds.Contains(u.WorkflowId))
+                .ExecuteDeleteAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            var existing = await WorkflowCredentialUsages
+                .Where(u => workflowIds.Contains(u.WorkflowId))
+                .ToListAsync(cancellationToken)
+                .ConfigureAwait(false);
+            if (existing.Count > 0)
+            {
+                WorkflowCredentialUsages.RemoveRange(existing);
+            }
         }
 
         // 仅为仍存在的（新增/修改）工作流重新计算并写入引用行。
@@ -98,14 +111,60 @@ public class FlowEngineDbContext : DbContext
     {
         base.OnModelCreating(modelBuilder);
 
+        // D-1：为所有派生自 Entity 的映射实体配置全局软删除过滤器 !e.Deleted，
+        // 软删除行默认不可见；需在查询已删数据处显式 IgnoreQueryFilters()。
+        ApplySoftDeleteQueryFilters(modelBuilder);
+
+        // D-2/D-3：触发器关联查询索引（按工作流定义 / 项目过滤）。
+        modelBuilder.Entity<Trigger>().HasIndex(t => t.WorkflowDefinitionId);
+        modelBuilder.Entity<Trigger>().HasIndex(t => t.ProjectId);
+
+        // D-4：存储文件按项目查询索引。
+        modelBuilder.Entity<StoredFile>().HasIndex(f => f.ProjectId);
+
+        // D-15：凭据唯一约束跨库一致——SQLite 与 PostgreSQL 对 (Name, NULL) 的语义分歧
+        // 通过两个过滤唯一索引统一：项目内唯一、全局（NULL）唯一；NULL 不再被多个库区别对待。
+        modelBuilder.Entity<Credential>()
+            .HasIndex(e => new { e.Name, e.ProjectId })
+            .IsUnique()
+            .HasFilter("\"project_id\" IS NOT NULL")
+            .HasDatabaseName("IX_credentials_name_project_id_notnull");
+        modelBuilder.Entity<Credential>()
+            .HasIndex(e => e.Name)
+            .IsUnique()
+            .HasFilter("\"project_id\" IS NULL")
+            .HasDatabaseName("IX_credentials_name_null_project");
+
         modelBuilder.Entity<ExecutionDedup>().HasIndex(e => e.IdempotencyKey).IsUnique();
-        modelBuilder.Entity<Credential>().HasIndex(e => new { e.Name, e.ProjectId }).IsUnique();
 
         // 必须在遍历 modelBuilder.Model 之前显式配置带 [JsonColumn] 的属性，
         // 否则 EF Core 会对 Dictionary<,>/List<> 等泛型 navigation 进行关联探测并抛出
         // "Unable to determine the relationship" 异常。下方法基于 CLR 反射调用
         // EntityTypeBuilder.Property(...).HasConversion(...) Fluent API，避免触发模型 finalization。
         ConfigureJsonColumns(modelBuilder);
+    }
+
+    /// <summary>
+    /// 为所有派生自 <see cref="Entity"/> 的映射实体类型配置全局软删除查询过滤器
+    /// <c>!e.Deleted</c>，使软删除行在常规查询中默认不可见。需要在查询已删除数据处
+    /// 显式调用 <see cref="EntityFrameworkQueryableExtensions.IgnoreQueryFilters{T}"/> 关闭过滤。
+    /// </summary>
+    private static void ApplySoftDeleteQueryFilters(ModelBuilder modelBuilder)
+    {
+        foreach (var entityType in modelBuilder.Model.GetEntityTypes())
+        {
+            var clrType = entityType.ClrType;
+            if (clrType == typeof(Entity) || !typeof(Entity).IsAssignableFrom(clrType))
+            {
+                continue;
+            }
+
+            var parameter = Expression.Parameter(clrType, "e");
+            var body = Expression.Not(Expression.Property(parameter, nameof(Entity.Deleted)));
+            var filter = Expression.Lambda(body, parameter);
+
+            modelBuilder.Entity(clrType).Metadata.SetQueryFilter(filter);
+        }
     }
 
     /// <summary>

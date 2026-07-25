@@ -40,8 +40,26 @@ public sealed class DbExecutor : IAsyncDisposable
     public async Task<int> ExecuteNonQueryAsync(string sql, IReadOnlyList<object?> parameters, CancellationToken ct)
     {
         var dynamicParams = BuildParameters(parameters);
-        return await _connection.ExecuteAsync(new CommandDefinition(
-            sql, dynamicParams, _transaction, cancellationToken: ct)).ConfigureAwait(false);
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var affected = await _connection.ExecuteAsync(new CommandDefinition(
+                sql, dynamicParams, _transaction, cancellationToken: ct)).ConfigureAwait(false);
+            stopwatch.Stop();
+            // OBS-3：记录脱敏 SQL、影响行数与耗时；参数值不随 SQL 记录（绑定参数，单独传递）。
+            _logger?.LogInformation(
+                "DB 执行完成（非查询）：影响行数={AffectedRows}，耗时={ElapsedMs}ms，SQL={Sql}",
+                affected, stopwatch.ElapsedMilliseconds, sql);
+            return affected;
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            // 失败时记录 SQL 文本（不含参数值），便于诊断。
+            _logger?.LogError(
+                ex, "DB 执行失败（非查询）：耗时={ElapsedMs}ms，SQL={Sql}", stopwatch.ElapsedMilliseconds, sql);
+            throw;
+        }
     }
 
     /// <summary>
@@ -55,8 +73,53 @@ public sealed class DbExecutor : IAsyncDisposable
         int? commandTimeout = null)
     {
         DynamicParameters? dynamicParams = parameters is { Count: > 0 } ? BuildParameters(parameters) : null;
-        return await _connection.ExecuteReaderAsync(new CommandDefinition(
-            sql, dynamicParams, _transaction, commandTimeout: commandTimeout, cancellationToken: ct)).ConfigureAwait(false);
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var reader = await _connection.ExecuteReaderAsync(new CommandDefinition(
+                sql, dynamicParams, _transaction, commandTimeout: commandTimeout, cancellationToken: ct)).ConfigureAwait(false);
+            stopwatch.Stop();
+            _logger?.LogInformation(
+                "DB 执行完成（查询 reader）：耗时={ElapsedMs}ms，SQL={Sql}", stopwatch.ElapsedMilliseconds, sql);
+            return reader;
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            _logger?.LogError(
+                ex, "DB 执行失败（查询 reader）：耗时={ElapsedMs}ms，SQL={Sql}", stopwatch.ElapsedMilliseconds, sql);
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// 执行查询并返回 <see cref="DbDataReader"/>，使用命名参数（<c>@name</c> 占位符）。
+    /// 供 dbRead 节点将上游数据以绑定参数形式传入，杜绝将上游值拼接入 SQL 文本导致的注入。
+    /// </summary>
+    public async Task<DbDataReader> ExecuteReaderAsync(
+        string sql,
+        IReadOnlyDictionary<string, object?>? parameters,
+        CancellationToken ct,
+        int? commandTimeout = null)
+    {
+        DynamicParameters? dynamicParams = parameters is { Count: > 0 } ? BuildNamedParameters(parameters) : null;
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var reader = await _connection.ExecuteReaderAsync(new CommandDefinition(
+                sql, dynamicParams, _transaction, commandTimeout: commandTimeout, cancellationToken: ct)).ConfigureAwait(false);
+            stopwatch.Stop();
+            _logger?.LogInformation(
+                "DB 执行完成（查询 reader/命名参数）：耗时={ElapsedMs}ms，SQL={Sql}", stopwatch.ElapsedMilliseconds, sql);
+            return reader;
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            _logger?.LogError(
+                ex, "DB 执行失败（查询 reader/命名参数）：耗时={ElapsedMs}ms，SQL={Sql}", stopwatch.ElapsedMilliseconds, sql);
+            throw;
+        }
     }
 
     /// <summary>
@@ -66,10 +129,24 @@ public sealed class DbExecutor : IAsyncDisposable
     public async Task<object?> ExecuteScalarAsync(string sql, IReadOnlyList<object?> parameters, CancellationToken ct)
     {
         var dynamicParams = BuildParameters(parameters);
-        var result = await _connection.ExecuteScalarAsync(new CommandDefinition(
-            sql, dynamicParams, _transaction, cancellationToken: ct)).ConfigureAwait(false);
-        // Dapper 会把 DBNull 转为 null，这里还原为原始 ADO.NET 契约。
-        return result ?? DBNull.Value;
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var result = await _connection.ExecuteScalarAsync(new CommandDefinition(
+                sql, dynamicParams, _transaction, cancellationToken: ct)).ConfigureAwait(false);
+            stopwatch.Stop();
+            _logger?.LogInformation(
+                "DB 执行完成（标量）：耗时={ElapsedMs}ms，SQL={Sql}", stopwatch.ElapsedMilliseconds, sql);
+            // Dapper 会把 DBNull 转为 null，这里还原为原始 ADO.NET 契约。
+            return result ?? DBNull.Value;
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            _logger?.LogError(
+                ex, "DB 执行失败（标量）：耗时={ElapsedMs}ms，SQL={Sql}", stopwatch.ElapsedMilliseconds, sql);
+            throw;
+        }
     }
 
     /// <summary>
@@ -79,9 +156,24 @@ public sealed class DbExecutor : IAsyncDisposable
     public async Task<IReadOnlyList<T>> QueryAsync<T>(string sql, IReadOnlyList<object?>? parameters, CancellationToken ct)
     {
         DynamicParameters? dynamicParams = parameters is { Count: > 0 } ? BuildParameters(parameters) : null;
-        var result = await _connection.QueryAsync<T>(new CommandDefinition(
-            sql, dynamicParams, _transaction, cancellationToken: ct)).ConfigureAwait(false);
-        return result.AsList();
+        var stopwatch = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var result = await _connection.QueryAsync<T>(new CommandDefinition(
+                sql, dynamicParams, _transaction, cancellationToken: ct)).ConfigureAwait(false);
+            stopwatch.Stop();
+            _logger?.LogInformation(
+                "DB 执行完成（查询映射）：行数={RowCount}，耗时={ElapsedMs}ms，SQL={Sql}",
+                result.AsList().Count, stopwatch.ElapsedMilliseconds, sql);
+            return result.AsList();
+        }
+        catch (Exception ex)
+        {
+            stopwatch.Stop();
+            _logger?.LogError(
+                ex, "DB 执行失败（查询映射）：耗时={ElapsedMs}ms，SQL={Sql}", stopwatch.ElapsedMilliseconds, sql);
+            throw;
+        }
     }
 
     /// <summary>
@@ -94,6 +186,21 @@ public sealed class DbExecutor : IAsyncDisposable
         for (var i = 0; i < parameters.Count; i++)
         {
             dynamicParams.Add($"@p{i}", parameters[i], null);
+        }
+        return dynamicParams;
+    }
+
+    /// <summary>
+    /// 将命名参数映射转换为 Dapper 命名参数（<c>@name</c>）。
+    /// 键可带或不带前导 <c>@</c>；空值由 Dapper 自动转换为 DBNull。
+    /// </summary>
+    private static DynamicParameters BuildNamedParameters(IReadOnlyDictionary<string, object?> parameters)
+    {
+        var dynamicParams = new DynamicParameters();
+        foreach (var (key, value) in parameters)
+        {
+            var paramName = key.StartsWith("@", StringComparison.Ordinal) ? key : $"@{key}";
+            dynamicParams.Add(paramName, value, null);
         }
         return dynamicParams;
     }

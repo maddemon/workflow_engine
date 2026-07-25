@@ -57,6 +57,42 @@ public sealed class WorkflowSchedulerKernelTests
             _nodeRegistry, _contextFactory, new ErrorStrategyHandler(), new SecretMasker(), NullLogger<WorkflowSchedulerKernel>.Instance);
     }
 
+    // CON-6：调度空闲循环由 SchedulerWake 信号事件驱动唤醒，取代固定 500ms 空轮询。
+    // 验证唤醒原语：PulseScheduler 释放信号（可唤醒阻塞的 WaitAsync），且信号计数不超过 1（防护无界增长）。
+    [Fact]
+    public void SchedulerWake_PulseScheduler_ReleasesAndIsBounded()
+    {
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "wake",
+            CreatedBy = "t",
+            Nodes = [],
+            Connections = []
+        };
+        var record = new ExecutionRecord
+        {
+            Id = Guid.NewGuid(),
+            WorkflowDefinitionId = workflow.Id,
+            StartedAt = DateTime.UtcNow,
+            Status = ExecutionStatus.Pending,
+            NodeRecords = []
+        };
+        var session = new ExecutionSession(workflow, record, record.Id);
+
+        Assert.Equal(0, session.SchedulerWake.CurrentCount);
+
+        // 入队后脉冲：信号被释放，阻塞的 WaitAsync 可立即完成（事件驱动唤醒，无 500ms 忙等）。
+        session.PulseScheduler();
+        Assert.Equal(1, session.SchedulerWake.CurrentCount);
+        Assert.True(session.SchedulerWake.WaitAsync(CancellationToken.None).IsCompletedSuccessfully);
+
+        // 连续脉冲不使计数超过 1：避免空闲期间信号无界累积。
+        session.PulseScheduler();
+        session.PulseScheduler();
+        Assert.Equal(1, session.SchedulerWake.CurrentCount);
+    }
+
     [Fact]
     public async Task RunAsync_LinearWorkflow_ProducesRecords_AndCompletes()
     {
@@ -208,6 +244,9 @@ public sealed class WorkflowSchedulerKernelTests
         Assert.False(failed.Output.Success);
         Assert.NotNull(failed.Output.Error);
         Assert.Equal("ScriptParameterPreEvaluationError", failed.Output.Error!.Code);
+        // EX-2：预求值脚本错误不得向客户端泄露原始异常文本或源码片段（如 "return ("）。
+        Assert.Equal(NodeErrorFactory.SafeMessage, failed.Output.Error!.Message);
+        Assert.DoesNotContain("return (", failed.Output.Error!.Message);
     }
 
     // Task ENG2：零端口（纯注释）节点既无输入也无输出端口，不应被入队/执行，
@@ -378,6 +417,9 @@ public sealed class WorkflowSchedulerKernelTests
         public Task PersistExecutionAsync(CancellationToken cancellationToken) => Task.CompletedTask;
         public Task PublishNodeStartedAsync(Guid executionId, string nodeId, int runIndex, CancellationToken cancellationToken) => Task.CompletedTask;
         public Task PublishCompletedAsync(ExecutionStatus status, CancellationToken cancellationToken, NodeError? error = null) => Task.CompletedTask;
+        public Task PublishWorkflowStartedAsync(Guid executionId, Guid workflowDefinitionId, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task PublishNodeExecutedAsync(Guid executionId, string nodeDefinitionId, int runIndex, NodeExecutionResult result, CancellationToken cancellationToken) => Task.CompletedTask;
+        public Task PublishNodeErrorAsync(Guid executionId, string nodeDefinitionId, int runIndex, NodeError error, CancellationToken cancellationToken) => Task.CompletedTask;
         public Func<LlmStreamChunk, CancellationToken, Task> CreateLlmStreamCallback(Guid executionId, string nodeId, int runIndex)
             => (_, _) => Task.CompletedTask;
     }

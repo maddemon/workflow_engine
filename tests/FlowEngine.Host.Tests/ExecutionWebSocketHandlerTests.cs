@@ -108,6 +108,42 @@ public class ExecutionWebSocketHandlerTests
             Times.Once);
     }
 
+    [Fact]
+    public async Task HandleAsync_LargeMessageWithMidClose_DoesNotThrow()
+    {
+        // CON-1：大消息中间收到 Close 时走提前 return 分支，buffer 由 finally 独占归还，
+        // 不再与 finally 中的 Return 形成双重归还。此处验证该路径不抛异常、连接最终被清理。
+        var userId = Guid.NewGuid();
+        var executionId = Guid.NewGuid();
+
+        var userContextMock = new Mock<IUserContext>();
+        userContextMock.Setup(u => u.IsAuthenticated).Returns(true);
+        userContextMock.Setup(u => u.UserId).Returns(userId);
+        _authzMock
+            .Setup(a => a.CanAccessExecutionAsync(userId, executionId, Operation.Read, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var subscribeJson = $"{{\"type\":\"subscribe\",\"executionId\":\"{executionId}\"}}";
+        var bytes = Encoding.UTF8.GetBytes(subscribeJson);
+        var webSocket = new SplitCloseWebSocket(bytes, bytes.Length / 2);
+
+        var handler = new ExecutionWebSocketHandler(
+            _connectionManager,
+            _replayService,
+            userContextMock.Object,
+            _authzMock.Object,
+            _loggerMock.Object);
+
+        var context = new DefaultHttpContext();
+        context.Features.Set<IHttpWebSocketFeature>(new TestWebSocketFeature(webSocket));
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+        context.RequestAborted = cts.Token;
+
+        await handler.HandleAsync(context, () => Task.CompletedTask);
+
+        Assert.Empty(_connectionManager.GetConnections(executionId));
+    }
+
     private static WebSocket CreateWebSocketForSubscribeThenClose(byte[] messageBytes)
     {
         return new FakeWebSocket(messageBytes);
@@ -181,6 +217,61 @@ public class ExecutionWebSocketHandlerTests
             }
 
             return Task.FromResult(_webSocket);
+        }
+    }
+
+    /// <summary>
+    /// 模拟大消息：首帧为非结束的文本片段，第二帧为 Close（命中提前 return 分支，CON-1）。
+    /// </summary>
+    private sealed class SplitCloseWebSocket : WebSocket
+    {
+        private readonly byte[] _bytes;
+        private readonly int _split;
+        private int _step;
+
+        public SplitCloseWebSocket(byte[] bytes, int split)
+        {
+            _bytes = bytes;
+            _split = split;
+            State = WebSocketState.Open;
+        }
+
+        public override WebSocketState State { get; }
+
+        public override WebSocketCloseStatus? CloseStatus => null;
+
+        public override string CloseStatusDescription => string.Empty;
+
+        public override string SubProtocol => string.Empty;
+
+        public override Task SendAsync(ArraySegment<byte> buffer, WebSocketMessageType messageType, bool endOfMessage, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+
+        public override Task<WebSocketReceiveResult> ReceiveAsync(ArraySegment<byte> buffer, CancellationToken cancellationToken)
+        {
+            if (_step == 0)
+            {
+                var count = Math.Min(_split, buffer.Count);
+                Array.Copy(_bytes, 0, buffer.Array!, buffer.Offset, count);
+                _step++;
+                return Task.FromResult(new WebSocketReceiveResult(count, WebSocketMessageType.Text, false));
+            }
+
+            return Task.FromResult(new WebSocketReceiveResult(0, WebSocketMessageType.Close, true));
+        }
+
+        public override Task CloseAsync(WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+
+        public override Task CloseOutputAsync(WebSocketCloseStatus closeStatus, string? statusDescription, CancellationToken cancellationToken)
+            => Task.CompletedTask;
+
+        public override void Abort()
+        {
+        }
+
+        public override void Dispose()
+        {
         }
     }
 }

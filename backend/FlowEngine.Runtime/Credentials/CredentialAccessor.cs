@@ -80,6 +80,7 @@ public sealed class CredentialAccessor : ICredentialAccessor
 
         return new CredentialValue
         {
+            Id = credential.Id,
             Name = credential.Name,
             Type = credential.Type,
             Fields = fields,

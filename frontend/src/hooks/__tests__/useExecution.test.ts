@@ -224,6 +224,8 @@ describe('useExecution', () => {
   it('cancelExecution_success_setsStatusFailed', async () => {
     mockedExecuteWorkflow.mockResolvedValue(makeExecution({ status: 'Running' }));
     mockedCancelExecution.mockResolvedValue(makeExecution({ status: 'Cancelled' }));
+    // cancelExecution 成功后从服务端刷新终态；此处模拟取消后的终态为非 Completed，应映射为 failed
+    mockedGetExecution.mockResolvedValue(makeExecution({ status: 'Cancelled' }));
     useWorkflowStore.setState({ workflowId: 'wf-1' });
 
     const { result } = renderHook(() => useExecution());

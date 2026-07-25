@@ -279,7 +279,9 @@ public class AgentNodeTests
 
         Assert.False(result.Success);
         Assert.Equal("LlmError", result.Error?.Code);
-        Assert.Contains("API error", result.Error!.Message);
+        // EX-2：客户端侧错误不得泄露原始异常文本（如 "API error"），仅保留安全脱敏消息。
+        Assert.Equal(NodeErrorFactory.SafeMessage, result.Error!.Message);
+        Assert.DoesNotContain("API error", result.Error!.Message);
     }
 
     [Fact]

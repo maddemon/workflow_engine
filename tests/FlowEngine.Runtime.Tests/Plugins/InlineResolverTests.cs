@@ -483,7 +483,10 @@ public class InlineResolverTests
 
         Assert.Equal(InlineResolverStopReason.Completed, result.StoppedReason);
         Assert.Equal("Failed", result.Iterations[0].ToolCalls[0].Status);
-        Assert.Contains("Tool execution error", result.Iterations[0].ToolCalls[0].Error);
+        // EX-2：向 Agent/LLM 暴露的错误不得包含原始异常文本（ThrowingTestNode 抛 "test exception"）。
+        var error = result.Iterations[0].ToolCalls[0].Error;
+        Assert.DoesNotContain("test exception", error);
+        Assert.Equal(NodeErrorFactory.SafeMessage, error);
     }
 
     [Fact]

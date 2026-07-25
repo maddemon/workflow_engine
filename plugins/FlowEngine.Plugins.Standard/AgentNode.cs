@@ -136,7 +136,7 @@ public sealed class AgentNode : INodeType
         }
         catch (Exception ex)
         {
-            return CreateLlmErrorResult($"LLM call failed: {ex.Message}", context);
+            return CreateLlmErrorResult(ex, context);
         }
     }
 
@@ -283,9 +283,10 @@ public sealed class AgentNode : INodeType
         return CreateAgentFailedResult(FlowConstants.ErrorCodes.Cancelled, "AgentTimeout", message, context);
     }
 
-    private static NodeExecutionResult CreateLlmErrorResult(string message, NodeExecutionContext context)
+    private static NodeExecutionResult CreateLlmErrorResult(Exception ex, NodeExecutionContext context)
     {
-        return CreateAgentFailedResult("Failed", "LlmError", message, context);
+        // EX-2：LLM 调用失败同样不可泄露原始异常文本或堆栈。
+        return CreateAgentFailedResult("Failed", "LlmError", NodeErrorFactory.SafeMessage, context);
     }
 
     private static NodeExecutionResult CreateAgentFailedResult(string status, string code, string message, NodeExecutionContext context)

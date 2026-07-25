@@ -1,5 +1,6 @@
 using System.Collections.Concurrent;
 using System.Text.Json.Nodes;
+using System.Threading;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
@@ -60,6 +61,25 @@ public sealed class ExecutionSession
     /// Dry-Run 注入临时凭据访问器。
     /// </summary>
     public ICredentialAccessor? CredentialAccessor { get; init; }
+
+    /// <summary>
+    /// 调度唤醒信号（CON-6）。内核空闲（队列空且等待区非空）时阻塞于该信号，
+    /// 任一工作项入队后由 <see cref="PulseScheduler"/> 释放，实现事件驱动唤醒，
+    /// 取代固定 500ms 空轮询。每个执行独立持有，避免并发执行互相唤醒。
+    /// </summary>
+    public SemaphoreSlim SchedulerWake { get; } = new SemaphoreSlim(0, 1);
+
+    /// <summary>
+    /// 脉冲调度唤醒信号（CON-6）。内部按类型队列 <see cref="ExecutionQueue.EnqueueAsync"/> 后调用，
+    /// 仅当当前无待消费信号时释放，确保计数不超过 1，避免无界增长。
+    /// </summary>
+    public void PulseScheduler()
+    {
+        if (SchedulerWake.CurrentCount == 0)
+        {
+            SchedulerWake.Release();
+        }
+    }
 
     /// <summary>
     /// 字面量敏感值集合（用于脱敏输出/参数中的字面凭据值）。

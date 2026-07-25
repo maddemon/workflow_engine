@@ -6,6 +6,11 @@ namespace FlowEngine.Core.Entities;
 public class CredentialValue
 {
     /// <summary>
+    /// 凭据 ID（运行时解析回填，用于审计追踪）。
+    /// </summary>
+    public Guid Id { get; set; }
+
+    /// <summary>
     /// 凭据名称。
     /// </summary>
     public string Name { get; set; } = string.Empty;

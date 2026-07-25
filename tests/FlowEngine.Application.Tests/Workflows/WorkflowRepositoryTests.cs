@@ -337,6 +337,39 @@ public sealed class WorkflowRepositoryTests : IDisposable
         Assert.Equal("Legacy", rows[0].WorkflowName);
     }
 
+    [Fact]
+    public async Task Backfill_ZeroReferenceWorkflow_TerminatesWithoutInfiniteLoop()
+    {
+        // 零引用工作流（不含任何凭据引用）不会产生 usage 行；
+        // 若 BackfillAsync 不在 added==0 时终止，会被反复选中导致死循环（Host 启动卡死）。
+        _dbContext.Workflows.Add(new Workflow
+        {
+            Name = "No Credential",
+            Nodes =
+            [
+                new NodeDefinition
+                {
+                    Id = "n1",
+                    TypeName = "fetch",
+                    Name = "Fetch",
+                    Parameters = new Dictionary<string, object> { ["other"] = "x" },
+                },
+            ],
+            Connections = [],
+        });
+        await _dbContext.SaveChangesAsync();
+
+        var backfill = new WorkflowCredentialUsageBackfill(_dbContext);
+        // 若回归到死循环，10s 后 CTS 触发抛 OperationCanceledException，测试失败。
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+
+        var count = await backfill.BackfillAsync(cts.Token);
+
+        // 零引用工作流无 usage 行可补，不计入已回填数量；关键断言是「已终止」。
+        Assert.Equal(0, count);
+        Assert.Empty(await _dbContext.WorkflowCredentialUsages.ToListAsync());
+    }
+
     /// <summary>
     /// 记录 EF 执行的 SQL 命令，用于断言 <see cref="WorkflowRepository.FindReferencingCredentialAsync"/>
     /// 不扫描 workflows 表。

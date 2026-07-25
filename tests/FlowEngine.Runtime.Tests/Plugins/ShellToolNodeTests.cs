@@ -100,4 +100,78 @@ public class ShellToolNodeTests
             CancellationToken = CancellationToken.None
         };
     }
+
+    [Fact]
+    public async Task Execute_RunInShellTrue_WithoutPermission_ReturnsDenied()
+    {
+        var node = new ShellToolNode
+        {
+            Command = (Script)"'echo hi'",
+            Shell = ShellType.Cmd,
+            RunInShell = true
+        };
+        var context = CreateContext(new JsonObject());
+        context.AllowShellExecution = false;
+        context.IsAgentInvocation = false;
+
+        var result = await node.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal("ShellExecutionDenied", result.Error?.Code);
+    }
+
+    [Fact]
+    public async Task Execute_RunInShellTrue_AgentInvocation_ReturnsDenied_EvenWithPermission()
+    {
+        var node = new ShellToolNode
+        {
+            Command = (Script)"'echo hi'",
+            Shell = ShellType.Cmd,
+            RunInShell = true
+        };
+        var context = CreateContext(new JsonObject());
+        context.AllowShellExecution = true;
+        context.IsAgentInvocation = true;
+
+        var result = await node.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal("ShellExecutionDenied", result.Error?.Code);
+    }
+
+    [Fact]
+    public async Task Execute_RunInShellTrue_WithPermission_Executes()
+    {
+        var node = new ShellToolNode
+        {
+            Command = (Script)"'echo SECURITY_OK'",
+            Shell = ShellType.Cmd,
+            RunInShell = true
+        };
+        var context = CreateContext(new JsonObject());
+        context.AllowShellExecution = true;
+        context.IsAgentInvocation = false;
+
+        var result = await node.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.True(result.Success, result.Error?.Message);
+        Assert.Contains("SECURITY_OK", result.Output.Items[0].Data?["stdout"]?.GetValue<string>() ?? string.Empty);
+    }
+
+    [Fact]
+    public async Task Execute_RunInShellFalse_NotGated()
+    {
+        var node = new ShellToolNode
+        {
+            Command = (Script)"'echo noglob'",
+            Shell = ShellType.Cmd,
+            RunInShell = false
+        };
+        var context = CreateContext(new JsonObject());
+        context.AllowShellExecution = false;
+
+        var result = await node.ExecuteAsync(context, CancellationToken.None);
+
+        Assert.True(result.Success, result.Error?.Message);
+    }
 }

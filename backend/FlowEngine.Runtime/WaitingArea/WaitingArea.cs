@@ -100,6 +100,32 @@ public sealed class WaitingArea
     /// </summary>
     public bool IsEmpty => _states.IsEmpty;
 
+    /// <summary>
+    /// 计算等待区中最早超时项的剩余等待时长（CON-6）。用于空闲轮询的自适应唤醒：
+    /// 下一次唤醒不晚于该时长，确保超时节点仍能被及时处理，同时避免无意义的固定 500ms 轮询。
+    /// 等待区为空时返回 <see cref="Timeout.InfiniteTimeSpan"/>。
+    /// </summary>
+    public TimeSpan GetMinRemainingTimeoutDelay()
+    {
+        if (_states.IsEmpty)
+        {
+            return Timeout.InfiniteTimeSpan;
+        }
+
+        var now = DateTime.UtcNow;
+        var min = _timeout;
+        foreach (var (_, state) in _states)
+        {
+            var remaining = _timeout - (now - state.LastActivity);
+            if (remaining < min)
+            {
+                min = remaining;
+            }
+        }
+
+        return min < TimeSpan.Zero ? TimeSpan.Zero : min;
+    }
+
     private sealed class PortState
     {
         private readonly ConcurrentDictionary<string, DataBatch> _inputs = new(StringComparer.OrdinalIgnoreCase);

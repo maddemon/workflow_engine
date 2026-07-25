@@ -30,10 +30,13 @@ public sealed class NodeExecutionContextFactory(
     IWorkflowLoader? workflowLoader = null,
     IHttpClientPool? httpClientPool = null,
     IOAuth2TokenService? tokenService = null,
-    ILlmClientFactory? llmClientFactory = null) : Core.Abstractions.INodeExecutionContextFactory
+    ILlmClientFactory? llmClientFactory = null,
+    Core.Abstractions.IShellExecutionGate? shellExecutionGate = null,
+    IEventBus? eventBus = null) : Core.Abstractions.INodeExecutionContextFactory
 {
     private readonly IOAuth2TokenService? _tokenService = tokenService;
     private readonly ILlmClientFactory? _llmClientFactory = llmClientFactory;
+    private readonly IEventBus? _eventBus = eventBus;
 
     public async Task<NodeExecutionContext> CreateAsync(
         Workflow workflow,
@@ -81,6 +84,14 @@ public sealed class NodeExecutionContextFactory(
         if (_tokenService is not null)
         {
             credsAccessor = new OAuth2CredentialAccessor(credsAccessor, _tokenService);
+        }
+
+        // OBS-1：真实执行路径（未提供覆盖访问器，即使用注入的运行时访问器）下，
+        // 用审计装饰器包裹凭据访问器，每次解析/解密凭据即发布 CredentialAccessedEvent。
+        // Dry-run 等使用覆盖访问器的路径不审计，避免污染真实审计日志。
+        if (_eventBus is not null && credentialAccessorOverride is null)
+        {
+            credsAccessor = new CredentialAuditAccessor(credsAccessor, _eventBus, execution.Id, node.Id);
         }
         var credentialsDict = await PreloadCredentialsAsync(rawParameters, credsAccessor, hydratorLogger, cancellationToken)
             .ConfigureAwait(false);
@@ -178,6 +189,11 @@ public sealed class NodeExecutionContextFactory(
             globalVariables["$nodeContext"] = nodeContext;
         }
 
+        // SEC-1：依据 Shell 执行门禁（配置开关 + 当前用户角色）计算是否允许 RunInShell。
+        // 门禁未注册时（如测试或精简宿主）一律视为禁止，遵循默认安全。
+        var allowShellExecution = shellExecutionGate is not null
+            && await shellExecutionGate.IsShellExecutionAllowedAsync(cancellationToken).ConfigureAwait(false);
+
         return new NodeExecutionContext
         {
             Workflow = workflow,
@@ -201,6 +217,7 @@ public sealed class NodeExecutionContextFactory(
             EngineLogger = jsLogger,
             GlobalVariables = globalVariables,
             NodeContext = nodeContext ?? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase),
+            AllowShellExecution = allowShellExecution,
         };
     }
 

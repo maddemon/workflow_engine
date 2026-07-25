@@ -1,5 +1,6 @@
 using FlowEngine.Plugins.Standard.Data;
 using Microsoft.Data.Sqlite;
+using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Runtime.Tests.Plugins;
 
@@ -144,6 +145,50 @@ public sealed class DbExecutorTests
         countCommand.CommandText = "SELECT COUNT(*) FROM users";
         var count = await countCommand.ExecuteScalarAsync();
         Assert.Equal(0L, count);
+    }
+
+    [Fact]
+    public async Task ExecuteNonQueryAsync_LogsSanitizedSqlWithoutParameterValues()
+    {
+        // OBS-3：DB 节点执行应记录 SQL 文本（含 @p{N} 占位符）与影响行数/耗时，
+        // 但绝不记录绑定参数值（凭据/令牌等敏感数据）。
+        var logger = new CaptureLogger();
+        var connectionString = UniqueConnectionString();
+        await using var executor = await DbExecutor.CreateAsync(DbDialect.SQLite, connectionString, CancellationToken.None, logger);
+        await CreateTableAsync(executor);
+
+        var secret = "s3cr3t-token-value";
+        await executor.ExecuteNonQueryAsync(
+            "INSERT INTO users (\"id\", \"name\", \"email\") VALUES (@p0, @p1, @p2)",
+            [1, "Alice", secret],
+            CancellationToken.None);
+        await executor.CommitAsync(CancellationToken.None);
+
+        // 参数明文值绝不得出现在任何日志中（凭据/令牌等敏感数据）。
+        Assert.DoesNotContain(secret, string.Join("\n", logger.Messages));
+
+        var sqlLog = logger.Messages.First(m => m.Contains("INSERT INTO users"));
+        Assert.Contains("INSERT INTO users", sqlLog);
+        // 脱敏后的 SQL 文本应保留参数占位符。
+        Assert.Contains("@p2", sqlLog);
+    }
+
+    private sealed class CaptureLogger : ILogger
+    {
+        public List<string> Messages { get; } = new();
+
+        public IDisposable BeginScope<TState>(TState state) where TState : notnull => NullScope.Instance;
+
+        public bool IsEnabled(LogLevel logLevel) => true;
+
+        public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter)
+            => Messages.Add(formatter(state, exception));
+
+        private sealed class NullScope : IDisposable
+        {
+            public static readonly NullScope Instance = new();
+            public void Dispose() { }
+        }
     }
 
     private sealed class UserRow

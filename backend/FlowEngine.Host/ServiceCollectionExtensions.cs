@@ -6,6 +6,7 @@ using FlowEngine.Application.Files;
 using FlowEngine.Application.Identity;
 using FlowEngine.Application.Projects;
 using FlowEngine.Application.RateLimiting;
+using FlowEngine.Application.Security;
 using FlowEngine.Application.Triggers;
 using FlowEngine.Application.Workflows;
 using FlowEngine.Core.Abstractions;
@@ -13,6 +14,7 @@ using FlowEngine.Core.Configuration;
 using FlowEngine.Core.Credentials;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Events;
+using FlowEngine.Core.Triggers;
 using FlowEngine.Host.Executor;
 using FlowEngine.Host.Authentication;
 using FlowEngine.Host.Middlewares;
@@ -50,8 +52,11 @@ using System.Text.Json.Serialization;
 using FlowEngine.Resources;
 using FlowEngine.Resources.Localization;
 using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Localization;
+
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("FlowEngine.Host.Tests")]
 
 namespace FlowEngine.Host;
 
@@ -61,12 +66,27 @@ namespace FlowEngine.Host;
 public static class ServiceCollectionExtensions
 {
     /// <summary>
-    /// 注册 FlowEngine 全部服务到 DI 容器。
+    /// 注册 FlowEngine 全部服务到 DI 容器。DEP-7：拆分为按模块组织的 AddFlowEngine* 子方法，
+    /// 降低单方法体量，使新增服务不必改动单一巨型方法。
     /// </summary>
     public static IServiceCollection AddFlowEngine(
         this IServiceCollection services,
         IConfiguration configuration,
         IWebHostEnvironment environment)
+    {
+        AddFlowEnginePresentation(services, configuration);
+        AddFlowEngineWebhooks(services, configuration);
+        AddFlowEngineSecurity(services, configuration);
+        AddFlowEngineInfrastructure(services, configuration);
+        AddFlowEngineBusiness(services, configuration);
+        AddFlowEngineExecution(services, configuration, environment);
+        return services;
+    }
+
+    /// <summary>
+    /// 表现层：本地化、控制器、MCP、转发头、限流、引擎默认值、CORS 等。
+    /// </summary>
+    private static void AddFlowEnginePresentation(IServiceCollection services, IConfiguration configuration)
     {
         // ── Localization (JSON-based, embedded resources) ─────────────
         services.AddSingleton<IStringLocalizerFactory>(sp =>
@@ -148,9 +168,66 @@ public static class ServiceCollectionExtensions
         services.Configure<EngineDefaultsOptions>(configuration.GetSection(EngineDefaultsOptions.SectionName));
         services.AddFlowEngineCoreScripting();
 
-        // ── Webhook ─────────────────────────────────────────────────
-        services.Configure<WebhookOptions>(configuration.GetSection(WebhookOptions.SectionName));
+        // ── CORS ────────────────────────────────────────────────────
+        services.AddCors(options =>
+        {
+            options.AddDefaultPolicy(policy =>
+            {
+                var origins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
+                if (origins.Length > 0)
+                {
+                    policy.WithOrigins(origins)
+                          .AllowAnyHeader()
+                          .AllowAnyMethod()
+                          .AllowCredentials();
+                }
+                else
+                {
+                    // 未配置允许的跨域源时，默认拒绝所有跨域请求（仅同源可访问），避免 CORS 全开放（H4）。
+                    policy.WithOrigins()
+                          .AllowAnyHeader()
+                          .AllowAnyMethod();
+                }
+            });
+        });
+    }
 
+    /// <summary>
+    /// Webhook 相关：重放保护、限流、同步完成通知（SEC-3 / EX-4）。
+    /// </summary>
+    private static void AddFlowEngineWebhooks(IServiceCollection services, IConfiguration configuration)
+    {
+        services.Configure<WebhookOptions>(configuration.GetSection(WebhookOptions.SectionName));
+        // SEC-3：Webhook 重放保护 + 按路由/IP 限流配置。
+        services.Configure<WebhookSecurityOptions>(configuration.GetSection(WebhookSecurityOptions.SectionName));
+        services.AddSingleton<WebhookReplayCache>();
+        services.AddSingleton<WebhookRateLimiter>();
+        // EX-4：同步 Webhook 事件驱动完成通知（单例桥接执行完成事件与等待中的请求）。
+        services.AddSingleton<IWebhookSyncCompletionService, WebhookSyncCompletionService>();
+        services.AddSingleton<INotificationHandler<WorkflowCompletedEvent>, WebhookCompletionNotifier>();
+    }
+
+    /// <summary>
+    /// 安全加固（SEC-2 / S-4 / SEC-1）：安全选项、Shell 门禁、认证与授权。
+    /// </summary>
+    private static void AddFlowEngineSecurity(IServiceCollection services, IConfiguration configuration)
+    {
+        // ── Security 加固（SEC-2 / S-4）─────────────────────────────
+        services.Configure<SecurityOptions>(configuration.GetSection(SecurityOptions.SectionName));
+
+        // ── Shell 执行门禁（SEC-1）─────────────────────────────────
+        services.Configure<ShellOptions>(configuration.GetSection(ShellOptions.SectionName));
+        services.AddScoped<Core.Abstractions.IShellExecutionGate, FlowEngine.Application.Security.ShellExecutionGate>();
+
+        // ── Authentication & Authorization ──────────────────────────
+        AddAuthentication(services, configuration);
+    }
+
+    /// <summary>
+    /// 基础设施：数据库、事件总线（MediatR）、审计 Sink 与事件通知处理器。
+    /// </summary>
+    private static void AddFlowEngineInfrastructure(IServiceCollection services, IConfiguration configuration)
+    {
         // ── Database ────────────────────────────────────────────────
         AddDbContext(services, configuration);
 
@@ -179,10 +256,13 @@ public static class ServiceCollectionExtensions
             var logPath = configuration["Audit:LogPath"] ?? "./storage/audit";
             return new AuditLogReader(logPath);
         });
+    }
 
-        // ── Authentication & Authorization ──────────────────────────
-        AddAuthentication(services, configuration);
-
+    /// <summary>
+    /// 业务服务：凭据、工作流、项目、触发器、Webhook 路由等。
+    /// </summary>
+    private static void AddFlowEngineBusiness(IServiceCollection services, IConfiguration configuration)
+    {
         // ── RBAC Authorization ──────────────────────────────────────
         services.AddScoped<FlowEngine.Application.Authorization.AuthorizationService>();
         services.AddScoped<FlowEngine.Application.Authorization.IResourceAuthorizationService,
@@ -222,6 +302,7 @@ public static class ServiceCollectionExtensions
 
         // ── Business ────────────────────────────────────────────────
         services.AddSingleton<CredentialTypeRegistry>();
+        services.AddSingleton<TriggerTypeRegistry>();
         services.AddSingleton<ICryptoKeyProvider, CryptoKeyProvider>();
         services.AddSingleton<ICredentialEncryptionService, CredentialEncryptionService>();
         services.AddScoped<CredentialService>();
@@ -255,7 +336,14 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<WorkflowExecutionQueue>();
         // 按 executionId 索引的执行取消令牌注册表（单例）：worker 登记每执行 CTS，CancelAsync 触发取消。
         services.AddSingleton<ExecutionCancellationRegistry>();
+    }
 
+    /// <summary>
+    /// 执行相关：文件存储、执行引擎、HTTP 池、调度、执行服务、WebSocket、LLM 工厂、插件注册。
+    /// </summary>
+    private static void AddFlowEngineExecution(
+        IServiceCollection services, IConfiguration configuration, IWebHostEnvironment environment)
+    {
         // ── File Storage ───────────────────────────────────────────
         services.AddSingleton<IFileStorage>(sp =>
         {
@@ -296,29 +384,6 @@ public static class ServiceCollectionExtensions
         // 使插件仅依赖 Core 抽象而不直接引用 Infrastructure 具体类型。
         services.AddSingleton<ILlmClientFactory, OpenAiLlmClientFactory>();
 
-        // ── CORS ────────────────────────────────────────────────────
-        services.AddCors(options =>
-        {
-            options.AddDefaultPolicy(policy =>
-            {
-                var origins = configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() ?? [];
-                if (origins.Length > 0)
-                {
-                    policy.WithOrigins(origins)
-                          .AllowAnyHeader()
-                          .AllowAnyMethod()
-                          .AllowCredentials();
-                }
-                else
-                {
-                    // 未配置允许的跨域源时，默认拒绝所有跨域请求（仅同源可访问），避免 CORS 全开放（H4）。
-                    policy.WithOrigins()
-                          .AllowAnyHeader()
-                          .AllowAnyMethod();
-                }
-            });
-        });
-
         // ── Plugins & Node Registry ─────────────────────────────────
         var pluginsPath = configuration.GetSection("Plugins")["Path"] ?? "../../plugins";
         if (!Path.IsPathRooted(pluginsPath))
@@ -342,14 +407,12 @@ public static class ServiceCollectionExtensions
 
             return registry;
         });
-
-        return services;
     }
 
     /// <summary>
     /// 注册节点执行上下文工厂，集中组合执行节点所需的依赖（A8）。
     /// </summary>
-    private static void AddNodeExecutionContextFactory(this IServiceCollection services, IConfiguration configuration)
+    internal static void AddNodeExecutionContextFactory(this IServiceCollection services, IConfiguration configuration)
     {
         services.AddScoped<NodeExecutionContextFactory>(provider =>
         {
@@ -366,7 +429,9 @@ public static class ServiceCollectionExtensions
                 workflowLoader: provider.GetService<IWorkflowLoader>(),
                 httpClientPool: provider.GetService<IHttpClientPool>(),
                 tokenService: provider.GetRequiredService<IOAuth2TokenService>(),
-                llmClientFactory: provider.GetRequiredService<ILlmClientFactory>());
+                llmClientFactory: provider.GetRequiredService<ILlmClientFactory>(),
+                shellExecutionGate: provider.GetService<Core.Abstractions.IShellExecutionGate>(),
+                eventBus: provider.GetService<IEventBus>());
         });
     }
 
@@ -490,8 +555,29 @@ public static class ServiceCollectionExtensions
                 };
             })
             .AddScheme<ApiKeyAuthenticationSchemeOptions, ApiKeyAuthenticationHandler>("ApiKey", _ => { });
-        services.AddAuthorization();
+        AddAuthorizationPolicies(services, configuration);
         services.AddHttpContextAccessor();
+    }
+
+    /// <summary>
+    /// SEC-2：注册全局鉴权兜底策略。默认对所有未显式标注 <c>[AllowAnonymous]</c> 的端点
+    /// 要求已认证用户，杜绝遗漏 <c>[Authorize]</c> 造成的匿名暴露。安全默认开启，
+    /// 可通过配置 <c>Security:RequireAuthenticatedUserByDefault</c> 关闭。
+    /// </summary>
+    private static void AddAuthorizationPolicies(IServiceCollection services, IConfiguration configuration)
+    {
+        var secSection = configuration.GetSection(SecurityOptions.SectionName);
+        var sec = secSection.Get<SecurityOptions>() ?? new SecurityOptions();
+
+        services.AddAuthorization(options =>
+        {
+            if (sec.RequireAuthenticatedUserByDefault)
+            {
+                options.FallbackPolicy = new AuthorizationPolicyBuilder()
+                    .RequireAuthenticatedUser()
+                    .Build();
+            }
+        });
     }
 
     private static void AddDbContext(IServiceCollection services, IConfiguration configuration)

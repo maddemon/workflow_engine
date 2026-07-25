@@ -38,12 +38,21 @@ public sealed class WorkflowCredentialUsageBackfill(FlowEngineDbContext dbContex
                 break;
             }
 
+            var added = 0;
             foreach (var w in batch)
             {
                 foreach (var usage in CredentialReferenceScanner.Scan(w.Id, w.Name, w.Nodes))
                 {
                     dbContext.WorkflowCredentialUsages.Add(usage);
+                    added++;
                 }
+            }
+
+            // 零引用工作流（不含任何凭据引用）本就无需引用行，扫描后 added==0。
+            // 若不在此终止，这些工作流因始终「无引用行」而在下一轮被反复选中，导致死循环。
+            if (added == 0)
+            {
+                break;
             }
 
             await dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);

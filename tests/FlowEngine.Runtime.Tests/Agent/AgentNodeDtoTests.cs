@@ -133,7 +133,9 @@ public class AgentNodeDtoTests
         var dto = JsonSerializer.Deserialize<AgentExecutionResultDto>(data.ToJsonString(), JsonDefaults.Options);
         Assert.NotNull(dto);
         Assert.Equal("Failed", dto.AgentInfo.Status);
-        Assert.Contains("API error", dto.AgentInfo.ErrorMessage);
+        // EX-2：客户端侧 DTO 错误不得泄露原始异常文本（如 "API error"），仅保留安全脱敏消息。
+        Assert.Equal(NodeErrorFactory.SafeMessage, dto.AgentInfo.ErrorMessage);
+        Assert.DoesNotContain("API error", dto.AgentInfo.ErrorMessage);
     }
 
     [Fact]

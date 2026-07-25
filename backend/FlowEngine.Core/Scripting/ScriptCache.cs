@@ -1,4 +1,4 @@
-using System.Collections.Concurrent;
+﻿using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Security.Cryptography;
 using System.Text;
@@ -143,10 +143,12 @@ public sealed class ScriptCache
     {
         if (maxItems <= 0)
         {
-            _cache.Clear();
-            _compileErrors.Clear();
+            // Q-7：所有集合的清空必须在同一把锁内完成，避免与 RecordAccess/EvictOldest 并发
+            // 导致 _order 与 _cache/_compileErrors 状态不一致（_cache 已清空但 _order 仍引用旧键）。
             lock (_trimLock)
             {
+                _cache.Clear();
+                _compileErrors.Clear();
                 _order.Clear();
                 _orderIndex.Clear();
             }
@@ -216,3 +218,5 @@ public sealed class ScriptCache
         }
     }
 }
+
+

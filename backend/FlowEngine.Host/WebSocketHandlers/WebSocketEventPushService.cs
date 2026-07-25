@@ -1,4 +1,5 @@
 using System.Text.Json;
+using FlowEngine.Core.Entities;
 using FlowEngine.Core.Events;
 using MediatR;
 
@@ -187,6 +188,7 @@ public sealed class WebSocketEventPushService(
 
     private async Task OnNodeErrorAsync(NodeErrorEvent evt, CancellationToken cancellationToken)
     {
+        var safeError = NodeErrorFactory.ToClientSafe(evt.Error);
         var message = new WebSocketPushMessage
         {
             Type = "node_error",
@@ -199,8 +201,8 @@ public sealed class WebSocketEventPushService(
                 runIndex = evt.RunIndex,
                 error = new
                 {
-                    code = evt.Error.Code,
-                    message = evt.Error.Message,
+                    code = safeError.Code,
+                    message = safeError.Message,
                 },
                 eventType = evt.EventType,
             },
@@ -228,6 +230,7 @@ public sealed class WebSocketEventPushService(
 
     private async Task OnWorkflowFailedAsync(WorkflowFailedEvent evt, CancellationToken cancellationToken)
     {
+        var safeError = NodeErrorFactory.ToClientSafe(evt.Error);
         var message = new WebSocketPushMessage
         {
             Type = "execution_failed",
@@ -239,8 +242,8 @@ public sealed class WebSocketEventPushService(
                 workflowDefinitionId = evt.WorkflowDefinitionId,
                 error = new
                 {
-                    code = evt.Error?.Code ?? string.Empty,
-                    message = evt.Error?.Message ?? string.Empty,
+                    code = safeError.Code,
+                    message = safeError.Message,
                 },
                 eventType = evt.EventType,
             },
@@ -331,17 +334,38 @@ public sealed class WebSocketEventPushService(
 
         var tasks = connections.Select(connection =>
             SendMessageSafeAsync(connection, message, cancellationToken));
-        await Task.WhenAll(tasks).ConfigureAwait(false);
+        var results = await Task.WhenAll(tasks).ConfigureAwait(false);
+
+        // OBS-7：结构化记录本次广播的成功/失败计数（不暴露任何连接或负载敏感数据）。
+        var success = results.Count(sent => sent);
+        var failure = results.Length - success;
+        if (failure > 0)
+        {
+            FlowEngine.Runtime.Diagnostics.FlowEngineMetrics.WebSocketBroadcastFailure.Add(failure);
+            _logger.LogWarning(
+                "WebSocket 广播部分失败：消息类型={MessageType}，执行={ExecutionId}，成功={Success}，失败={Failure}",
+                message.Type, executionId, success, failure);
+        }
+        else
+        {
+            FlowEngine.Runtime.Diagnostics.FlowEngineMetrics.WebSocketBroadcastSuccess.Add(success);
+            _logger.LogDebug(
+                "WebSocket 广播完成：消息类型={MessageType}，执行={ExecutionId}，成功={Success}",
+                message.Type, executionId, success);
+        }
     }
 
-    private async Task SendMessageSafeAsync(
+    /// <summary>
+    /// 向单个连接安全发送消息，返回是否成功（OBS-7：用于广播成功/失败计数）。
+    /// </summary>
+    private async Task<bool> SendMessageSafeAsync(
         WebSocketConnection connection,
         WebSocketPushMessage message,
         CancellationToken cancellationToken)
     {
         if (connection.WebSocket.State != System.Net.WebSockets.WebSocketState.Open)
         {
-            return;
+            return false;
         }
 
         try
@@ -353,12 +377,14 @@ public sealed class WebSocketEventPushService(
                 System.Net.WebSockets.WebSocketMessageType.Text,
                 true,
                 cancellationToken).ConfigureAwait(false);
+            return true;
         }
         catch (Exception ex)
         {
             _logger.LogWarning(ex,
                 "Failed to send message to connection {ConnectionId}",
                 connection.ConnectionId);
+            return false;
         }
     }
 

@@ -69,8 +69,15 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("IX_credentials_name_null_project")
+                        .HasFilter("\"project_id\" IS NULL");
+
                     b.HasIndex("Name", "ProjectId")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("IX_credentials_name_project_id_notnull")
+                        .HasFilter("\"project_id\" IS NOT NULL");
 
                     b.ToTable("credentials", "flow", t =>
                         {
@@ -170,9 +177,9 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
 
                     b.HasIndex("ProjectId");
 
-                    b.HasIndex("WorkflowDefinitionId");
-
                     b.HasIndex("Status", "CompletedAt");
+
+                    b.HasIndex("WorkflowDefinitionId", "StartedAt");
 
                     b.ToTable("execution_records", "flow", t =>
                         {
@@ -279,6 +286,8 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ProjectId");
+
                     b.ToTable("stored_files", "flow", t =>
                         {
                             t.HasComment("存储文件");
@@ -352,6 +361,10 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                         .HasComment("工作流版本号");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("WorkflowDefinitionId");
 
                     b.ToTable("triggers", t =>
                         {

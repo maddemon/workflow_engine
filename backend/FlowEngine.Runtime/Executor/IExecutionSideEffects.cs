@@ -52,6 +52,34 @@ public interface IExecutionSideEffects
     Task PublishCompletedAsync(ExecutionStatus status, CancellationToken cancellationToken, NodeError? error = null);
 
     /// <summary>
+    /// 发布工作流启动事件（OBS-2）。
+    /// </summary>
+    /// <param name="executionId">执行 ID。</param>
+    /// <param name="workflowDefinitionId">工作流定义 ID。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    Task PublishWorkflowStartedAsync(Guid executionId, Guid workflowDefinitionId, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// 发布节点执行完成事件（OBS-2）。成功或失败均发布，供审计与实时推送消费。
+    /// </summary>
+    /// <param name="executionId">执行 ID。</param>
+    /// <param name="nodeDefinitionId">节点定义 ID。</param>
+    /// <param name="runIndex">运行索引。</param>
+    /// <param name="result">节点执行结果。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    Task PublishNodeExecutedAsync(Guid executionId, string nodeDefinitionId, int runIndex, NodeExecutionResult result, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// 发布节点执行错误事件（OBS-2）。
+    /// </summary>
+    /// <param name="executionId">执行 ID。</param>
+    /// <param name="nodeDefinitionId">节点定义 ID。</param>
+    /// <param name="runIndex">运行索引。</param>
+    /// <param name="error">节点错误信息。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    Task PublishNodeErrorAsync(Guid executionId, string nodeDefinitionId, int runIndex, NodeError error, CancellationToken cancellationToken);
+
+    /// <summary>
     /// 创建 LLM 流式回调，用于节点执行过程中的 token 推送。
     /// </summary>
     /// <param name="executionId">执行 ID。</param>

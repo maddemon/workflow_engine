@@ -3,6 +3,8 @@ using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Application.Identity;
 using FlowEngine.Application.Projects;
+using FlowEngine.Application.Tests.TestSupport.Fakes;
+using FlowEngine.Application.Triggers;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
 using FlowEngine.Core.Data;
@@ -10,6 +12,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Core.Events;
 using FlowEngine.Core.Exceptions;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace FlowEngine.Application.Tests.Projects;
 
@@ -31,7 +34,8 @@ public sealed class ProjectServiceTests : IDisposable
         var auditFactory = new AuditEventFactory(_userContext);
         var authGuard = AuthorizationGuardFactory.Create(_userContext, new FakeResourceAuthorizationService(_dbContext, _userContext));
         var handler = new AuthorizedOperationHandler(authGuard, _eventBus, auditFactory);
-        var cascadeDeleter = new ProjectCascadeDeleter(_dbContext);
+        var triggerService = new TriggerService(_dbContext, _eventBus, auditFactory, new FakeScheduleManager(), authGuard, new WebhookRouteService(_dbContext), NullLogger<TriggerService>.Instance);
+        var cascadeDeleter = new ProjectCascadeDeleter(_dbContext, triggerService, NullLogger<ProjectCascadeDeleter>.Instance);
         _service = new ProjectService(_dbContext, _userContext, authGuard, _eventBus, auditFactory, handler, cascadeDeleter);
     }
 

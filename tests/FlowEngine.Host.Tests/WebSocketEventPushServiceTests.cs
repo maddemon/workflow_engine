@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Net.WebSockets;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -236,6 +237,64 @@ public class WebSocketEventPushServiceTests : IDisposable
                 true,
                 It.IsAny<CancellationToken>()),
             Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_ConcurrentBroadcasts_ToManyConnections_AllReceiveConsistently()
+    {
+        // CON-7：高并发广播下，每条已订阅的开放连接在迭代快照上各自完整收到全部消息，不丢不重。
+        var executionId = Guid.NewGuid();
+        var connections = new List<Mock<WebSocket>>();
+        for (var i = 0; i < 50; i++)
+        {
+            var ws = new Mock<WebSocket>();
+            ws.SetupGet(w => w.State).Returns(WebSocketState.Open);
+            _connectionManager.Subscribe(executionId, new WebSocketConnection(ws.Object));
+            connections.Add(ws);
+        }
+
+        var evt = new WorkflowStartedEvent(executionId, Guid.NewGuid());
+        var handler = (INotificationHandler<WorkflowStartedEvent>)_service;
+        var tasks = Enumerable.Range(0, 100)
+            .Select(_ => handler.Handle(evt, TestContext.Current.CancellationToken))
+            .ToArray();
+        await Task.WhenAll(tasks);
+
+        foreach (var ws in connections)
+        {
+            ws.Verify(
+                w => w.SendAsync(It.IsAny<ArraySegment<byte>>(), WebSocketMessageType.Text, true, It.IsAny<CancellationToken>()),
+                Times.Exactly(100));
+        }
+    }
+
+    [Fact]
+    public async Task Handle_ConcurrentSubscribeUnsubscribeDuringBroadcast_DoesNotThrow()
+    {
+        // CON-7：广播与订阅/取消订阅并发进行时，基于快照的迭代保证连接字典一致，不抛异常。
+        var executionId = Guid.NewGuid();
+        var ws = new Mock<WebSocket>();
+        ws.SetupGet(w => w.State).Returns(WebSocketState.Open);
+        var conn = new WebSocketConnection(ws.Object);
+        _connectionManager.Subscribe(executionId, conn);
+
+        var handler = (INotificationHandler<WorkflowStartedEvent>)_service;
+        var evt = new WorkflowStartedEvent(executionId, Guid.NewGuid());
+
+        var broadcastTasks = Enumerable.Range(0, 50)
+            .Select(_ => handler.Handle(evt, TestContext.Current.CancellationToken))
+            .ToArray();
+
+        var mutatingTasks = Enumerable.Range(0, 50).Select(_ =>
+        {
+            _connectionManager.Unsubscribe(executionId, conn);
+            _connectionManager.Subscribe(executionId, conn);
+            return Task.CompletedTask;
+        }).ToArray();
+
+        await Task.WhenAll(broadcastTasks.Concat(mutatingTasks));
+
+        Assert.NotEmpty(_connectionManager.GetConnections(executionId));
     }
 
     [Fact]

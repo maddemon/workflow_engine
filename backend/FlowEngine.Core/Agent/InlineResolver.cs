@@ -237,6 +237,10 @@ public sealed class InlineResolver(
         var (toolContext, toolNodeInstance) = await _contextFactory.CreateAsync(
             resolution, inputBatch, startedAt, cancellationToken).ConfigureAwait(false);
 
+        // SEC-1：工具节点由 Agent/LLM 驱动执行，标记后即便管理员开启 Shell 执行，
+        // LLM 可控命令默认仍禁止 RunInShell（防止 LLM 诱导执行任意 shell）。
+        toolContext.IsAgentInvocation = true;
+
         try
         {
             var result = await toolNodeInstance.ExecuteAsync(toolContext, cancellationToken)
@@ -247,19 +251,15 @@ public sealed class InlineResolver(
         }
         catch (Exception ex)
         {
+            // EX-2：向 Agent/LLM 暴露的错误同样不得包含原始异常文本或堆栈，避免内部信息泄露。
             var errorResult = new NodeExecutionResult
             {
                 Success = false,
-                Error = new NodeError
-                {
-                    Code = "UnexpectedError",
-                    Message = ex.Message ?? string.Empty,
-                    NodeDefinitionId = resolution.Node?.Id.ToString() ?? string.Empty
-                }
+                Error = NodeErrorFactory.Sanitize(ex, "UnexpectedError", resolution.Node?.Id.ToString() ?? string.Empty)
             };
             var record = _recorder.Record(resolution.Node!, toolContext, errorResult, startedAt, parentRecordId);
             _toolExecutionRecords.Add(record);
-            var message = $"Tool execution error: {ex.Message}";
+            var message = NodeErrorFactory.SafeMessage;
             return ToolResultFactory.Error(toolCall, args, message);
         }
     }

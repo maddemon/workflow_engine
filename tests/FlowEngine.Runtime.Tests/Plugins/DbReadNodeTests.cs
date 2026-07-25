@@ -113,16 +113,18 @@ public sealed class DbReadNodeTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_JsonInjection_EvaluatedPerItem()
+    public async Task ExecuteAsync_RawUpstreamValueInSql_Rejected()
     {
-        const string connectionString = "Data Source=shared_read_inject;Mode=Memory;Cache=Shared";
+        const string connectionString = "Data Source=shared_read_inject_reject;Mode=Memory;Cache=Shared";
         using var holder = CreateSharedMemoryConnection(connectionString);
+        await CreateUsersTableAsync(holder);
 
-        // Sql 为 JS 表达式：将 $json.greeting 拼接到 SQL 字符串中（注意此处不是 Literal，而是保留 JS 拼接语义）。
+        // SEC-0：直接把上游 $json 值拼进 SQL 文本属于注入风险，必须被明确拒绝。
+        const string sqlSrc = "'SELECT * FROM users WHERE name = ' + $json.name";
         var node = new DbReadNode
         {
             Connection = ResolvedConnection(connectionString),
-            Sql = (Script)@"""SELECT '"" + $json.greeting + ""' AS msg"""
+            Sql = (Script)sqlSrc
         };
 
         var result = await node.ExecuteAsync(
@@ -130,14 +132,86 @@ public sealed class DbReadNodeTests
             {
                 Items =
                 [
-                    new DataItem { Data = new JsonObject { ["greeting"] = "hello" }, Success = true }
+                    new DataItem { Data = new JsonObject { ["name"] = "alice" }, Success = true }
+                ]
+            }),
+            CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.Equal("UnsafeSqlInterpolation", result.Error?.Code);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_BoundParameter_PreventsSqlInjection()
+    {
+        const string connectionString = "Data Source=shared_read_bound;Mode=Memory;Cache=Shared";
+        using var holder = CreateSharedMemoryConnection(connectionString);
+        await CreateUsersTableAsync(holder);
+        await InsertSeedRowAsync(holder, 1, "alice", null);
+        await InsertSeedRowAsync(holder, 2, "bob", null);
+        // 注入式 payload：若被拼入 SQL 将变成 "x' OR '1'='1"，匹配全部行。
+        await InsertSeedRowAsync(holder, 3, "x' OR '1'='1", null);
+
+        var node = new DbReadNode
+        {
+            Connection = ResolvedConnection(connectionString),
+            Sql = Literal("SELECT \"id\", \"name\" FROM users WHERE \"name\" = @name ORDER BY \"id\""),
+            Parameters = new Dictionary<string, Script>
+            {
+                ["name"] = (Script)"$json.name"
+            }
+        };
+
+        var result = await node.ExecuteAsync(
+            CreateContext(new DataBatch
+            {
+                Items =
+                [
+                    new DataItem { Data = new JsonObject { ["name"] = "x' OR '1'='1" }, Success = true }
                 ]
             }),
             CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
+        // 参数化执行只匹配到精确值这一行，而不是全部三行（证明未做字符串拼接）。
         Assert.Single(result.Output.Items);
-        Assert.Equal("hello", GetString(result.Output.Items[0].Data, "msg"));
+        Assert.Equal(3, GetInt(result.Output.Items[0].Data, "id"));
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_BoundParameter_EvaluatedPerItem()
+    {
+        const string connectionString = "Data Source=shared_read_bound_items;Mode=Memory;Cache=Shared";
+        using var holder = CreateSharedMemoryConnection(connectionString);
+        await CreateUsersTableAsync(holder);
+        await InsertSeedRowAsync(holder, 10, "Carol", null);
+        await InsertSeedRowAsync(holder, 20, "Dave", null);
+
+        var node = new DbReadNode
+        {
+            Connection = ResolvedConnection(connectionString),
+            Sql = Literal("SELECT \"name\" FROM users WHERE \"id\" = @id"),
+            Parameters = new Dictionary<string, Script>
+            {
+                ["id"] = (Script)"$json.id"
+            }
+        };
+
+        var result = await node.ExecuteAsync(
+            CreateContext(new DataBatch
+            {
+                Items =
+                [
+                    new DataItem { Data = new JsonObject { ["id"] = 10 }, Success = true },
+                    new DataItem { Data = new JsonObject { ["id"] = 20 }, Success = true }
+                ]
+            }),
+            CancellationToken.None);
+
+        Assert.True(result.Success, result.Error?.Message);
+        Assert.Equal(2, result.Output.Items.Count);
+        Assert.Contains(result.Output.Items, i => GetString(i.Data, "name") == "Carol");
+        Assert.Contains(result.Output.Items, i => GetString(i.Data, "name") == "Dave");
     }
 
     private static long GetInt(JsonNode? node, string key)

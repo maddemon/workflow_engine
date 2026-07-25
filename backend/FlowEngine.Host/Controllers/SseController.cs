@@ -3,6 +3,7 @@ using System.Threading.Channels;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Authorization;
+using FlowEngine.Core.Entities;
 using FlowEngine.Core.Events;
 using FlowEngine.Host.WebSocketHandlers;
 using Microsoft.AspNetCore.Authorization;
@@ -148,22 +149,26 @@ public class SseController(
             Timestamp = evt.OccurredAt,
             Payload = BuildNodeExecutedPayload(evt),
         });
-        yield return SubscribeOne(executionId, writer, (NodeErrorEvent evt) => evt.ExecutionId, evt => new WebSocketPushMessage
+        yield return SubscribeOne(executionId, writer, (NodeErrorEvent evt) => evt.ExecutionId, evt =>
         {
-            Type = "node_error",
-            ExecutionId = evt.ExecutionId,
-            Timestamp = evt.OccurredAt,
-            Payload = new
+            var safeError = NodeErrorFactory.ToClientSafe(evt.Error);
+            return new WebSocketPushMessage
             {
-                nodeDefinitionId = evt.NodeDefinitionId,
-                runIndex = evt.RunIndex,
-                error = new
+                Type = "node_error",
+                ExecutionId = evt.ExecutionId,
+                Timestamp = evt.OccurredAt,
+                Payload = new
                 {
-                    code = evt.Error.Code,
-                    message = evt.Error.Message,
+                    nodeDefinitionId = evt.NodeDefinitionId,
+                    runIndex = evt.RunIndex,
+                    error = new
+                    {
+                        code = safeError.Code,
+                        message = safeError.Message,
+                    },
+                    eventType = evt.EventType,
                 },
-                eventType = evt.EventType,
-            },
+            };
         });
         yield return SubscribeOne(executionId, writer, (WorkflowCompletedEvent evt) => evt.ExecutionId, evt => new WebSocketPushMessage
         {
@@ -177,21 +182,25 @@ public class SseController(
                 eventType = evt.EventType,
             },
         });
-        yield return SubscribeOne(executionId, writer, (WorkflowFailedEvent evt) => evt.ExecutionId, evt => new WebSocketPushMessage
+        yield return SubscribeOne(executionId, writer, (WorkflowFailedEvent evt) => evt.ExecutionId, evt =>
         {
-            Type = "execution_failed",
-            ExecutionId = evt.ExecutionId,
-            Timestamp = evt.OccurredAt,
-            Payload = new
+            var safeError = NodeErrorFactory.ToClientSafe(evt.Error);
+            return new WebSocketPushMessage
             {
-                workflowDefinitionId = evt.WorkflowDefinitionId,
-                error = new
+                Type = "execution_failed",
+                ExecutionId = evt.ExecutionId,
+                Timestamp = evt.OccurredAt,
+                Payload = new
                 {
-                    code = evt.Error?.Code ?? string.Empty,
-                    message = evt.Error?.Message ?? string.Empty,
+                    workflowDefinitionId = evt.WorkflowDefinitionId,
+                    error = new
+                    {
+                        code = safeError.Code,
+                        message = safeError.Message,
+                    },
+                    eventType = evt.EventType,
                 },
-                eventType = evt.EventType,
-            },
+            };
         });
         yield return SubscribeOne(executionId, writer, (WorkflowCancelledEvent evt) => evt.ExecutionId, evt => new WebSocketPushMessage
         {

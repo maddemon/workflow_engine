@@ -269,4 +269,70 @@ public sealed class CredentialTypeRegistryTests
         Assert.NotNull(definition);
         Assert.Equal(expectedName, definition!.Name);
     }
+
+    [Fact]
+    public void Register_CustomType_BecomesKnownAndValidatable()
+    {
+        var custom = new CredentialTypeDefinition(
+            "customVault",
+            "Custom Vault",
+            [new CredentialFieldDefinition("address", "Address", isRequired: true, secret: false)]);
+
+        _registry.Register(custom);
+
+        Assert.True(_registry.IsKnown("customVault"));
+        var definition = _registry.Get("customVault");
+        Assert.NotNull(definition);
+        Assert.Equal("Custom Vault", definition!.DisplayName);
+        var result = _registry.Validate("customVault", new Dictionary<string, string> { ["address"] = "https://vault" });
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void Register_OverridesBuiltInType()
+    {
+        var overridden = new CredentialTypeDefinition(
+            "apiKey",
+            "API Key (custom)",
+            [new CredentialFieldDefinition("token", "Token", isRequired: true, secret: true)]);
+
+        _registry.Register(overridden);
+
+        var definition = _registry.Get("apiKey");
+        Assert.NotNull(definition);
+        Assert.Equal("API Key (custom)", definition!.DisplayName);
+    }
+
+    [Fact]
+    public void RegisterOAuth2Provider_AcceptsNewProvider()
+    {
+        _registry.RegisterOAuth2Provider("okta");
+
+        var fields = new Dictionary<string, string>
+        {
+            ["tokenUrl"] = "https://example.com/token",
+            ["clientId"] = "id",
+            ["clientSecret"] = "secret",
+            ["provider"] = "okta",
+        };
+
+        var result = _registry.Validate("oauth2", fields);
+        Assert.True(result.IsValid);
+    }
+
+    [Fact]
+    public void RegisterOAuth2Provider_UnknownProviderStillRejected()
+    {
+        var fields = new Dictionary<string, string>
+        {
+            ["tokenUrl"] = "https://example.com/token",
+            ["clientId"] = "id",
+            ["clientSecret"] = "secret",
+            ["provider"] = "still-unknown",
+        };
+
+        var result = _registry.Validate("oauth2", fields);
+        Assert.False(result.IsValid);
+        Assert.Contains("still-unknown", result.ErrorMessage);
+    }
 }

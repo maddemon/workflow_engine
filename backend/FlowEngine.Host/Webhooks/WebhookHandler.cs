@@ -30,6 +30,10 @@ public sealed class WebhookHandler : IWebhookHandler
     private readonly IExecutionIdempotencyService _idempotencyService;
     private readonly ILogger<WebhookHandler> _logger;
     private readonly WebhookOptions _options;
+    private readonly WebhookReplayCache _replayCache;
+    private readonly WebhookRateLimiter _rateLimiter;
+    private readonly WebhookSecurityOptions _securityOptions;
+    private readonly IWebhookSyncCompletionService _syncCompletion;
 
     /// <summary>
     /// 初始化 Webhook 处理器。
@@ -41,7 +45,11 @@ public sealed class WebhookHandler : IWebhookHandler
         AuditEventFactory auditFactory,
         IExecutionIdempotencyService idempotencyService,
         ILogger<WebhookHandler> logger,
-        IOptions<WebhookOptions> options)
+        IOptions<WebhookOptions> options,
+        WebhookReplayCache replayCache,
+        WebhookRateLimiter rateLimiter,
+        IOptions<WebhookSecurityOptions> securityOptions,
+        IWebhookSyncCompletionService syncCompletion)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _engine = engine ?? throw new ArgumentNullException(nameof(engine));
@@ -50,6 +58,10 @@ public sealed class WebhookHandler : IWebhookHandler
         _idempotencyService = idempotencyService;
         _logger = logger;
         _options = options.Value;
+        _replayCache = replayCache ?? throw new ArgumentNullException(nameof(replayCache));
+        _rateLimiter = rateLimiter ?? throw new ArgumentNullException(nameof(rateLimiter));
+        _securityOptions = securityOptions?.Value ?? throw new ArgumentNullException(nameof(securityOptions));
+        _syncCompletion = syncCompletion ?? throw new ArgumentNullException(nameof(syncCompletion));
     }
 
     /// <summary>
@@ -166,38 +178,34 @@ public sealed class WebhookHandler : IWebhookHandler
             if (route.IsSync)
             {
                 var maxWait = TimeSpan.FromSeconds(route.MaxWaitSeconds);
-                var startWait = DateTime.UtcNow;
-
-                while (DateTime.UtcNow - startWait < maxWait)
+                try
                 {
-                    var record = await _dbContext.ExecutionRecords
-                        .FirstOrDefaultAsync(e => e.Id == executionId.Value, context.RequestAborted)
+                    // EX-4：事件驱动等待执行完成，取代原先周期性查询 ExecutionRecords 的 DB 轮询循环。
+                    var status = await _syncCompletion
+                        .WaitAsync(executionId.Value, maxWait, context.RequestAborted)
                         .ConfigureAwait(false);
 
-                    if (record is not null && record.Status is ExecutionStatus.Completed or ExecutionStatus.Failed)
-                    {
-                        context.Response.StatusCode = StatusCodes.Status200OK;
-                        await context.Response.WriteAsJsonAsync(
-                            new { executionId = executionId.Value, status = record.Status.ToString() },
-                            context.RequestAborted).ConfigureAwait(false);
-                        return;
-                    }
-
-                    await Task.Delay(_options.PollingIntervalMs, context.RequestAborted).ConfigureAwait(false);
+                    context.Response.StatusCode = StatusCodes.Status200OK;
+                    await context.Response.WriteAsJsonAsync(
+                        new { executionId = executionId.Value, status = status.ToString() },
+                        context.RequestAborted).ConfigureAwait(false);
+                    return;
                 }
+                catch (OperationCanceledException) when (!context.RequestAborted.IsCancellationRequested)
+                {
+                    // 等待完成事件超时：返回 202，交由调用方稍后查询最终状态。
+                    context.Response.StatusCode = StatusCodes.Status202Accepted;
+                    await context.Response.WriteAsJsonAsync(
+                        new { executionId = executionId.Value, status = "Timeout" },
+                        context.RequestAborted).ConfigureAwait(false);
+                    return;
+                }
+            }
 
-                context.Response.StatusCode = StatusCodes.Status202Accepted;
-                await context.Response.WriteAsJsonAsync(
-                    new { executionId = executionId.Value, status = "Timeout" },
-                    context.RequestAborted).ConfigureAwait(false);
-            }
-            else
-            {
-                context.Response.StatusCode = StatusCodes.Status202Accepted;
-                await context.Response.WriteAsJsonAsync(
-                    new { executionId = executionId.Value },
-                    context.RequestAborted).ConfigureAwait(false);
-            }
+            context.Response.StatusCode = StatusCodes.Status202Accepted;
+            await context.Response.WriteAsJsonAsync(
+                new { executionId = executionId.Value },
+                context.RequestAborted).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -223,9 +231,16 @@ public sealed class WebhookHandler : IWebhookHandler
             return false;
         }
 
+        // SEC-3：重放保护与限流——要求时间戳与 nonce，并校验新鲜度/唯一性/配额。
+        if (!await ValidateReplayAndRateAsync(context, route).ConfigureAwait(false))
+        {
+            return false;
+        }
+
         if (!string.IsNullOrEmpty(route.Secret))
         {
-            if (!context.Request.Headers.TryGetValue("X-Hub-Signature-256", out var signatureValues))
+            if (!context.Request.Headers.TryGetValue("X-Hub-Signature-256", out var signatureValues)
+                || string.IsNullOrEmpty(signatureValues.FirstOrDefault()))
             {
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 await context.Response.WriteAsJsonAsync(
@@ -234,17 +249,11 @@ public sealed class WebhookHandler : IWebhookHandler
                 return false;
             }
 
-            var signature = signatureValues.FirstOrDefault();
-            if (string.IsNullOrEmpty(signature))
-            {
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                await context.Response.WriteAsJsonAsync(
-                    new { error = "Empty signature" },
-                    context.RequestAborted).ConfigureAwait(false);
-                return false;
-            }
-
-            var expectedHash = ComputeHmacSha256(route.Secret, rawBody ?? string.Empty);
+            // SEC-3：签名绑定 timestamp+nonce，使捕获的请求无法在窗口外被重放。
+            var signature = signatureValues.FirstOrDefault()!;
+            var timestamp = context.Request.Headers["X-Webhook-Timestamp"].ToString();
+            var nonce = context.Request.Headers["X-Webhook-Nonce"].ToString();
+            var expectedHash = ComputeHmacSha256(route.Secret, $"{timestamp}.{nonce}.{rawBody ?? string.Empty}");
             var expected = $"sha256={expectedHash}";
 
             if (!CryptographicOperations.FixedTimeEquals(
@@ -293,6 +302,79 @@ public sealed class WebhookHandler : IWebhookHandler
                 context.Response.StatusCode = StatusCodes.Status403Forbidden;
                 await context.Response.WriteAsJsonAsync(
                     new { error = "Origin not allowed" },
+                    context.RequestAborted).ConfigureAwait(false);
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// SEC-3：校验 Webhook 请求的防重放与限流。
+    /// 当启用重放保护或路由配置了签名密钥时，要求 <c>X-Webhook-Timestamp</c> 与 <c>X-Webhook-Nonce</c> 头
+    /// （二者被 HMAC 签名绑定，且重放校验消费它们）；否则这两个头非必需。
+    /// 限流仅依赖路由路径 + 客户端 IP，与这两个头无关，始终在启用时执行。
+    /// </summary>
+    private async Task<bool> ValidateReplayAndRateAsync(HttpContext context, WebhookRoute route)
+    {
+        // timestamp+nonce 头仅在以下情况为必需：
+        //  - 启用了重放保护（重放校验消费这两个头）；
+        //  - 或路由配置了签名密钥（HMAC 将 timestamp+nonce 绑定进签名，缺失则无法验签）。
+        // 限流仅依赖 路由路径 + 客户端 IP，与这两个头无关，因此不要求它们。
+        var timestampNonceRequired = _securityOptions.EnableReplayProtection
+                                     || !string.IsNullOrEmpty(route.Secret);
+
+        if (timestampNonceRequired)
+        {
+            var timestampHeader = context.Request.Headers["X-Webhook-Timestamp"].ToString();
+            var nonce = context.Request.Headers["X-Webhook-Nonce"].ToString();
+
+            if (string.IsNullOrWhiteSpace(timestampHeader) || string.IsNullOrWhiteSpace(nonce))
+            {
+                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                await context.Response.WriteAsJsonAsync(
+                    new { error = "Missing X-Webhook-Timestamp or X-Webhook-Nonce" },
+                    context.RequestAborted).ConfigureAwait(false);
+                return false;
+            }
+
+            if (!long.TryParse(timestampHeader, out var timestampUnix))
+            {
+                context.Response.StatusCode = StatusCodes.Status400BadRequest;
+                await context.Response.WriteAsJsonAsync(
+                    new { error = "Invalid X-Webhook-Timestamp" },
+                    context.RequestAborted).ConfigureAwait(false);
+                return false;
+            }
+
+            // 仅当重放保护启用时才做重放校验；route.Secret 仅用于 HMAC 签名（在签名步骤校验）。
+            if (_securityOptions.EnableReplayProtection)
+            {
+                var nowUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+                if (!_replayCache.TryAccept(route.Path, nonce, timestampUnix, nowUnix, out var replayError))
+                {
+                    _logger.LogWarning("Webhook 重放校验失败: Path={Path}, Reason={Reason}", route.Path, replayError);
+                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    await context.Response.WriteAsJsonAsync(
+                        new { error = "Replay protection rejected request" },
+                        context.RequestAborted).ConfigureAwait(false);
+                    return false;
+                }
+            }
+        }
+
+        // 限流与 timestamp/nonce 无关，仅在启用时执行（不受上方头要求影响）。
+        if (_securityOptions.EnableRateLimit)
+        {
+            var nowUnix = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+            var remoteIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+            if (!_rateLimiter.TryAcquire(route.Path, remoteIp, nowUnix))
+            {
+                _logger.LogWarning("Webhook 限流触发: Path={Path}, IP={IP}", route.Path, remoteIp);
+                context.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+                await context.Response.WriteAsJsonAsync(
+                    new { error = "Too many requests" },
                     context.RequestAborted).ConfigureAwait(false);
                 return false;
             }

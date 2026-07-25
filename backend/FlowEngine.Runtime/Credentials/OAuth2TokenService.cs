@@ -3,6 +3,7 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Threading;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Http;
@@ -16,6 +17,9 @@ public sealed class OAuth2TokenService : IOAuth2TokenService, IDisposable
 {
     private readonly IHttpClientPool _httpClientPool;
     private readonly ConcurrentDictionary<string, CacheEntry> _cache;
+    // CON-4：per-key 信号量，用于并发刷新去重（单飞），避免多个调用同时发现令牌过期各自刷新（TOCTOU 惊群）。
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _locks = new(StringComparer.Ordinal);
+    private long _callCount;
 
     /// <summary>
     /// 过期前缓冲秒数，默认 60 秒。
@@ -111,18 +115,56 @@ public sealed class OAuth2TokenService : IOAuth2TokenService, IDisposable
         ArgumentException.ThrowIfNullOrWhiteSpace(cacheKey);
         ArgumentNullException.ThrowIfNull(request);
 
+        // 周期性淘汰过期条目，避免 _cache 随不同凭据无界增长（CON-4）。
+        EvictExpiredIfDue();
+
         if (_cache.TryGetValue(cacheKey, out var entry) && !IsExpired(entry))
         {
             return entry.Response;
         }
 
-        var response = await GetTokenAsync(request, cancellationToken).ConfigureAwait(false);
-        _cache[cacheKey] = new CacheEntry
+        // CON-4：per-key 信号量去重刷新。首个到达的调用获取信号量并执行刷新，
+        // 其余并发调用阻塞等待；刷新完成后重新检查缓存，命中即直接返回，避免重复网络请求（惊群）。
+        var gate = _locks.GetOrAdd(cacheKey, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            Response = response,
-            ExpiresAt = ComputeExpiresAt(response)
-        };
-        return response;
+            // 重新检查：其他并发调用可能已先于本调用完成刷新。
+            if (_cache.TryGetValue(cacheKey, out entry) && !IsExpired(entry))
+            {
+                return entry.Response;
+            }
+
+            var response = await GetTokenAsync(request, cancellationToken).ConfigureAwait(false);
+            _cache[cacheKey] = new CacheEntry
+            {
+                Response = response,
+                ExpiresAt = ComputeExpiresAt(response)
+            };
+            return response;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private void EvictExpiredIfDue()
+    {
+        // 每约 100 次访问执行一次轻量过期扫描，平衡内存占用与扫描开销。
+        if (Interlocked.Increment(ref _callCount) % 100 != 0)
+        {
+            return;
+        }
+
+        foreach (var kvp in _cache)
+        {
+            if (IsExpired(kvp.Value) && _cache.TryRemove(kvp.Key, out _))
+            {
+                // 一并移除对应的 per-key 信号量，避免 _locks 随不同凭据无界增长（CON-4）。
+                _locks.TryRemove(kvp.Key, out _);
+            }
+        }
     }
 
     private async Task<OAuth2TokenResponse> RequestTokenAsync(OAuth2TokenRequest request, CancellationToken cancellationToken)
@@ -409,6 +451,7 @@ public sealed class OAuth2TokenService : IOAuth2TokenService, IDisposable
     public void Dispose()
     {
         _cache.Clear();
+        _locks.Clear();
     }
 
     private sealed class CacheEntry

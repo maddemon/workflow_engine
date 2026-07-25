@@ -16,6 +16,7 @@ public sealed class AuditLogFileSink : IHostedService, IDisposable
 {
     private readonly string _logDirectory;
     private readonly ILogger<AuditLogFileSink>? _logger;
+    private readonly Func<AuditEvent, string?>? _serializer;
     private readonly Lock _writerLock = new();
     private readonly Channel<AuditEvent> _channel;
     private readonly CancellationTokenSource _cts;
@@ -30,12 +31,15 @@ public sealed class AuditLogFileSink : IHostedService, IDisposable
     /// </summary>
     /// <param name="logDirectory">日志目录路径。</param>
     /// <param name="logger">可选日志记录器。</param>
+    /// <param name="serializer">可选序列化器（主要用于测试注入可抛异常的序列化以验证死信逻辑）；为 null 时使用默认 NDJSON 序列化。</param>
     public AuditLogFileSink(
         string logDirectory,
-        ILogger<AuditLogFileSink>? logger = null)
+        ILogger<AuditLogFileSink>? logger = null,
+        Func<AuditEvent, string?>? serializer = null)
     {
         _logDirectory = logDirectory;
         _logger = logger;
+        _serializer = serializer;
 
         // 任务 2.2：确保 Audit.NET 已配置（序列化适配器注册为进程级全局状态，幂等）。
         // 这样即使 Sink 在 DI 容器之外被直接构造（如单元测试），也能获得正确的 NDJSON 序列化。
@@ -156,6 +160,12 @@ public sealed class AuditLogFileSink : IHostedService, IDisposable
         var line = SerializeEvent(auditEvent);
         if (line is null)
         {
+            // E-1：序列化失败——记录错误日志并将事件写入死信，避免审计事件静默丢失。
+            _logger?.LogError(
+                "审计事件序列化失败，已写入死信文件: {EventType} (EventId={EventId})",
+                auditEvent.EventType,
+                auditEvent.EventId);
+            WriteDeadLetter(auditEvent);
             return;
         }
 
@@ -219,11 +229,18 @@ public sealed class AuditLogFileSink : IHostedService, IDisposable
         _currentDate = today;
     }
 
-    private static string? SerializeEvent(AuditEvent audit)
+    private string? SerializeEvent(AuditEvent audit)
     {
         try
         {
-            // 任务 2.2：将领域 AuditEvent 映射到 Audit.NET 事件模型，并以 Audit.NET 的可插拔
+            // 测试注入的序列化器优先（主要用于验证 E-1 死信逻辑）：其抛异常或返回 null 均会
+            // 触发死信落盘，而非静默丢弃事件。
+            if (_serializer is not null)
+            {
+                return _serializer(audit);
+            }
+
+            // 将领域 AuditEvent 映射到 Audit.NET 事件模型，并以 Audit.NET 的可插拔
             // JsonAdapter（FlowEngineAuditJsonAdapter）序列化为与历史 NDJSON 完全一致的字段布局。
             // 文件轮转、追加与后台刷盘逻辑保持不变。
             var mapped = new FlowEngineAuditEvent
@@ -240,9 +257,41 @@ public sealed class AuditLogFileSink : IHostedService, IDisposable
 
             return global::Audit.Core.Configuration.JsonAdapter.Serialize(mapped);
         }
+        catch (Exception)
+        {
+            // E-1：序列化失败不再静默丢弃事件。返回 null，由 WriteEventAsync 记录错误日志并写入死信。
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// 将序列化失败的事件写入死信文件（不记录任何敏感负载，仅保留事件类型与时间戳以便排查）。
+    /// 死信文件位于审计日志目录下的 <c>deadletter/</c> 子目录，按日滚动。
+    /// </summary>
+    private void WriteDeadLetter(AuditEvent audit)
+    {
+        try
+        {
+            var deadLetterDir = Path.Combine(_logDirectory, "deadletter");
+            Directory.CreateDirectory(deadLetterDir);
+
+            var record = new
+            {
+                eventType = audit.EventType,
+                occurredAt = audit.OccurredAt,
+                eventId = audit.EventId,
+            };
+
+            var line = System.Text.Json.JsonSerializer.Serialize(record);
+            var filePath = Path.Combine(deadLetterDir, $"audit-deadletter-{DateTime.UtcNow:yyyy-MM-dd}.ndjson");
+            lock (_writerLock)
+            {
+                File.AppendAllLines(filePath, [line]);
+            }
+        }
         catch
         {
-            return null;
+            // 死信写入本身失败（如磁盘不可写）时静默忽略，绝不向上抛出影响主流程。
         }
     }
 

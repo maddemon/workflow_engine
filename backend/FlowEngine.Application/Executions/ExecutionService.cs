@@ -214,6 +214,7 @@ public sealed class ExecutionService(
         ExecutionStatus? status = null,
         int page = 1,
         int pageSize = 20,
+        DateTime? beforeStartedAt = null,
         CancellationToken cancellationToken = default)
     {
         // RBAC：查询工作流执行列表前校验工作流读权限。
@@ -223,32 +224,50 @@ public sealed class ExecutionService(
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 200);
 
-        var query = dbContext.ExecutionRecords
+        var baseQuery = dbContext.ExecutionRecords
             .AsNoTracking()
             .Where(e => e.WorkflowDefinitionId == workflowId);
 
         if (projectId.HasValue)
         {
-            query = query.Where(e => e.ProjectId == projectId.Value);
+            baseQuery = baseQuery.Where(e => e.ProjectId == projectId.Value);
         }
 
         if (status.HasValue)
         {
-            query = query.Where(e => e.Status == status.Value);
+            baseQuery = baseQuery.Where(e => e.Status == status.Value);
         }
 
-        var totalCount = await query.CountAsync(cancellationToken).ConfigureAwait(false);
+        var totalCount = await baseQuery.CountAsync(cancellationToken).ConfigureAwait(false);
 
-        var records = await query
-            .OrderByDescending(e => e.StartedAt)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
+        // D-12：keyset 分页（WHERE StartedAt < lastSeen ORDER BY StartedAt DESC），深翻页不退化；
+        // 提供 beforeStartedAt 时走 keyset，否则回退 OFFSET 以保持 API 向后兼容。
+        var pageQuery = beforeStartedAt.HasValue
+            ? baseQuery
+                .Where(e => e.StartedAt < beforeStartedAt.Value)
+                .OrderByDescending(e => e.StartedAt)
+                .Take(pageSize)
+            : baseQuery
+                .OrderByDescending(e => e.StartedAt)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize);
+
+        // D-11：仅投影摘要字段，避免物化 NodeRecords 大 JSON 列。
+        var rows = await pageQuery
+            .Select(e => new ExecutionSummaryProjection
+            {
+                Id = e.Id,
+                WorkflowDefinitionId = e.WorkflowDefinitionId,
+                Status = e.Status,
+                StartedAt = e.StartedAt,
+                CompletedAt = e.CompletedAt,
+            })
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
         return new PagedResult<ExecutionSummaryDto>
         {
-            Items = records.Select(MapToSummary).ToList(),
+            Items = rows.Select(ToSummary).ToList(),
             TotalCount = totalCount,
             Page = page,
             PageSize = pageSize,
@@ -279,16 +298,48 @@ public sealed class ExecutionService(
             query = query.Where(e => e.ProjectId == projectId.Value);
         }
 
-        var records = await query
+        // D-11：仅投影摘要字段，避免物化 NodeRecords 大 JSON 列。
+        var rows = await query
             .OrderByDescending(e => e.StartedAt)
+            .Select(e => new ExecutionSummaryProjection
+            {
+                Id = e.Id,
+                WorkflowDefinitionId = e.WorkflowDefinitionId,
+                Status = e.Status,
+                StartedAt = e.StartedAt,
+                CompletedAt = e.CompletedAt,
+            })
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        return records.Select(MapToSummary).ToList();
+        return rows.Select(ToSummary).ToList();
     }
 
-    private static ExecutionSummaryDto MapToSummary(Core.Entities.ExecutionRecord record)
+    /// <summary>
+    /// 执行列表查询的投影载体：仅承载摘要所需字段，不包含 NodeRecords 等大 JSON 列。
+    /// </summary>
+    private sealed record ExecutionSummaryProjection
     {
-        return record.Adapt<ExecutionSummaryDto>();
+        public required Guid Id { get; init; }
+
+        public required Guid WorkflowDefinitionId { get; init; }
+
+        public required ExecutionStatus Status { get; init; }
+
+        public required DateTime StartedAt { get; init; }
+
+        public required DateTime? CompletedAt { get; init; }
+    }
+
+    private static ExecutionSummaryDto ToSummary(ExecutionSummaryProjection row)
+    {
+        return new ExecutionSummaryDto
+        {
+            Id = row.Id,
+            WorkflowDefinitionId = row.WorkflowDefinitionId,
+            Status = row.Status.ToString(),
+            StartedAt = row.StartedAt,
+            CompletedAt = row.CompletedAt,
+        };
     }
 }

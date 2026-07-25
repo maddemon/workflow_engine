@@ -204,4 +204,21 @@ public sealed class ScriptCacheTests
         Assert.Equal(first.CacheKey, second.CacheKey);
     }
 
+    [Fact]
+    public void TrimIfNeeded_ClearAll_LeavesNoDanglingState()
+    {
+        // Q-7 回归：maxItems<=0 时必须在同一把锁内清空所有结构，
+        // 避免 _cache 已清空而 _order 仍残留条目造成状态不一致。
+        var cache = CreateCache();
+        for (var i = 0; i < 10; i++)
+        {
+            cache.GetOrPrepare(new Script { Source = $"var x = {i}; x" });
+        }
+
+        cache.TrimIfNeeded(0);
+
+        Assert.Equal(0, GetCacheCount(cache));
+        Assert.Equal(0, GetInsertionOrderCount(cache));
+    }
+
 }

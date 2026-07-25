@@ -1,6 +1,8 @@
+using System.Linq;
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
+using System.Threading;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Exceptions;
 using FlowEngine.Runtime.Credentials;
@@ -244,6 +246,52 @@ public sealed class OAuth2TokenServiceTests
 
         var expiresAtProperty = entry.GetType().GetProperty("ExpiresAt");
         expiresAtProperty?.SetValue(entry, expiresAt);
+    }
+
+    [Fact]
+    public async Task GetOrRefreshTokenAsync_ConcurrentCalls_SameKey_RefreshesOnlyOnce()
+    {
+        // CON-4：并发调用同一 cacheKey 且令牌均过期时，per-key 信号量去重刷新（单飞），
+        // 仅触发一次网络刷新，避免 TOCTOU 惊群。
+        var handler = new DelayedTokenHandler(TimeSpan.FromMilliseconds(100));
+        var pool = new StubHttpClientPool(handler);
+        var service = new OAuth2TokenService(pool);
+
+        var request = CreateRequest();
+        var cacheKey = OAuth2TokenService.ComputeCacheKey("cred", request.TokenUrl, request.ClientId, request.Scope, request.GrantType);
+
+        var tasks = Enumerable.Range(0, 20)
+            .Select(_ => service.GetOrRefreshTokenAsync(cacheKey, request))
+            .ToArray();
+        var responses = await Task.WhenAll(tasks);
+
+        Assert.Equal(1, handler.CallCount);
+        Assert.All(responses, r => Assert.Equal("tok-1", r.AccessToken));
+    }
+
+    private sealed class DelayedTokenHandler : HttpMessageHandler
+    {
+        private readonly TimeSpan _delay;
+        public int CallCount { get; private set; }
+
+        public DelayedTokenHandler(TimeSpan delay) => _delay = delay;
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            CallCount++;
+            await Task.Delay(_delay, cancellationToken).ConfigureAwait(false);
+
+            var body = new JsonObject
+            {
+                ["access_token"] = "tok-1",
+                ["token_type"] = "Bearer",
+                ["expires_in"] = 3600
+            };
+            return new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body.ToJsonString(), Encoding.UTF8, "application/json")
+            };
+        }
     }
 
     private enum ResponseShape

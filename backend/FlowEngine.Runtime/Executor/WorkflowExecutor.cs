@@ -261,6 +261,33 @@ public sealed class WorkflowExecutor : IEngine
             }
         }
 
+        public Task PublishWorkflowStartedAsync(Guid executionId, Guid workflowDefinitionId, CancellationToken cancellationToken)
+        {
+            FlowEngine.Runtime.Diagnostics.FlowEngineMetrics.ExecutionsStarted.Add(1);
+            if (_eventBus is null) return Task.CompletedTask;
+
+            return _eventBus.PublishAsync(
+                new WorkflowStartedEvent(executionId, workflowDefinitionId), cancellationToken);
+        }
+
+        public Task PublishNodeExecutedAsync(Guid executionId, string nodeDefinitionId, int runIndex, NodeExecutionResult result, CancellationToken cancellationToken)
+        {
+            FlowEngine.Runtime.Diagnostics.FlowEngineMetrics.NodesExecuted.Add(1);
+            if (_eventBus is null) return Task.CompletedTask;
+
+            return _eventBus.PublishAsync(
+                new NodeExecutedEvent(executionId, nodeDefinitionId, runIndex, result), cancellationToken);
+        }
+
+        public Task PublishNodeErrorAsync(Guid executionId, string nodeDefinitionId, int runIndex, NodeError error, CancellationToken cancellationToken)
+        {
+            FlowEngine.Runtime.Diagnostics.FlowEngineMetrics.Failures.Add(1);
+            if (_eventBus is null) return Task.CompletedTask;
+
+            return _eventBus.PublishAsync(
+                new NodeErrorEvent(executionId, nodeDefinitionId, runIndex, error), cancellationToken);
+        }
+
         public Func<LlmStreamChunk, CancellationToken, Task> CreateLlmStreamCallback(Guid executionId, string nodeId, int runIndex)
         {
             if (_eventBus is null) return (_, _) => Task.CompletedTask;

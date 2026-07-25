@@ -127,8 +127,8 @@ public sealed class ExecutionWebSocketHandler
 
                             if (chunk.MessageType == WebSocketMessageType.Close)
                             {
-                                // 大消息中间收到 Close，退出外层循环。
-                                ArrayPool<byte>.Shared.Return(buffer);
+                                // 大消息中间收到 Close：直接退出，buffer 由下方 finally 独占归还，
+                                // 避免与 finally 中的 Return 形成双重归还污染 ArrayPool（CON-1）。
                                 return;
                             }
 

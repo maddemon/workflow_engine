@@ -196,26 +196,33 @@ export function useExecution() {
     if (!executionMeta) return;
     try {
       await apiCancelExecution(executionMeta.id);
-        setStatus('failed');
-        useCanvasStore.getState().setIsExecuting(false);
+      // 取消成功：刷新执行详情并同步节点状态，使界面正确反映终态。
+      const latest = await getExecution(executionMeta.id);
+      setExecutionMeta(latest);
+      if (latest.nodeRecords && latest.nodeRecords.length > 0) {
+        useCanvasStore.getState().upsertNodeExecutionRecords(latest.nodeRecords);
+        applyNodeStatuses(latest.nodeRecords);
+      }
+      setStatus(latest.status === 'Completed' ? 'completed' : 'failed');
+      useCanvasStore.getState().setIsExecuting(false);
+      stopPolling();
+    } catch (err: unknown) {
+      // 409 = 执行已结束，获取最新状态
+      const axiosErr = err as { response?: { status?: number } } | undefined;
+      if (axiosErr?.response?.status === 409) {
         stopPolling();
-      } catch (err: unknown) {
-        // 409 = 执行已结束，获取最新状态
-        const axiosErr = err as { response?: { status?: number } } | undefined;
-        if (axiosErr?.response?.status === 409) {
-          stopPolling();
-          try {
-            const latest = await getExecution(executionMeta.id);
-            setExecutionMeta(latest);
-            if (latest.nodeRecords && latest.nodeRecords.length > 0) {
-              useCanvasStore.getState().upsertNodeExecutionRecords(latest.nodeRecords);
-              applyNodeStatuses(latest.nodeRecords);
-            }
-            setStatus(latest.status === 'Completed' ? 'completed' : 'failed');
-          } catch {
-            setStatus('completed');
+        try {
+          const latest = await getExecution(executionMeta.id);
+          setExecutionMeta(latest);
+          if (latest.nodeRecords && latest.nodeRecords.length > 0) {
+            useCanvasStore.getState().upsertNodeExecutionRecords(latest.nodeRecords);
+            applyNodeStatuses(latest.nodeRecords);
           }
-          useCanvasStore.getState().setIsExecuting(false);
+          setStatus(latest.status === 'Completed' ? 'completed' : 'failed');
+        } catch {
+          setStatus('completed');
+        }
+        useCanvasStore.getState().setIsExecuting(false);
       } else {
         console.error('Failed to cancel execution:', err);
       }

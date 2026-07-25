@@ -42,9 +42,9 @@ public class GlobalExceptionHandlerMiddleware(
             logger.LogWarning(exception, "业务异常 {Status}: {Message}", status, exception.Message);
         }
 
-        // 业务异常和参数异常透传原始消息，帮助开发者定位问题；
+        // 领域异常和参数异常透传原始消息，帮助开发者定位问题；
         // 系统异常返回通用提示，避免泄露数据库表名、连接字符串等敏感信息。
-        var message = exception is BusinessException or ArgumentException
+        var message = exception is DomainException or ArgumentException
             ? exception.Message
             : "系统内部错误，请稍后重试。";
 
@@ -70,7 +70,8 @@ public class GlobalExceptionHandlerMiddleware(
             PermissionDeniedException => (StatusCodes.Status403Forbidden, "Forbidden"),
             UnauthorizedException => (StatusCodes.Status401Unauthorized, "Unauthorized"),
             NotFoundException => (StatusCodes.Status404NotFound, "NotFound"),
-            BusinessException => (StatusCodes.Status400BadRequest, "BadRequest"),
+            // EX-1：领域异常统一按基类映射为 400；上述具体领域异常仍为 404/401/403。
+            DomainException => (StatusCodes.Status400BadRequest, "BadRequest"),
             ArgumentException => (StatusCodes.Status400BadRequest, "BadRequest"),
             InvalidOperationException => (StatusCodes.Status500InternalServerError, "InternalServerError"),
             UnauthorizedAccessException => (StatusCodes.Status403Forbidden, "Forbidden"),

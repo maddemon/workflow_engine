@@ -107,7 +107,8 @@ public sealed class UserStoreTests : IDisposable
         await _store.DeleteAsync(user.Id, Ct);
 
         Assert.Null(await _store.GetByIdAsync(user.Id, Ct));
-        Assert.True(_dbContext.Users.AsNoTracking().Single(u => u.Id == user.Id).Deleted);
+        // 软删除行默认被全局过滤器排除；需读取已删数据处显式 IgnoreQueryFilters()。
+        Assert.True(_dbContext.Users.AsNoTracking().IgnoreQueryFilters().Single(u => u.Id == user.Id).Deleted);
     }
 
     [Fact]

@@ -37,6 +37,7 @@ public class AuthController(
     /// </summary>
     [HttpPost("register")]
     [ApiExplorerSettings(IgnoreApi = true)]
+    [AllowAnonymous]
     public ActionResult Register([FromBody] RegisterRequest request)
     {
         // 自助注册已永久关闭（内部私有化部署），用 410 Gone 表达资源不复存在，比 403 更准确。
@@ -52,6 +53,7 @@ public class AuthController(
     /// 用户登录，返回 JWT 令牌。
     /// </summary>
     [HttpPost("login")]
+    [AllowAnonymous]
     public async Task<ActionResult<LoginResult>> Login(
         [FromBody] LoginRequest request,
         CancellationToken cancellationToken)

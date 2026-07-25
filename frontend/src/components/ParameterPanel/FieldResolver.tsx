@@ -1,6 +1,5 @@
 import type { ParameterDefinition } from '../../types/workflow.ts';
-import { StringField } from './fields/StringField.tsx';
-import { hintFieldMap, typeFieldMap } from './FieldComponentMap.ts';
+import { resolveFieldComponent } from './FieldComponentMap.ts';
 import { resolveHint } from './resolveHint.ts';
 
 interface FieldResolverProps {
@@ -18,6 +17,6 @@ interface FieldResolverProps {
 export function FieldResolver({ definition, value, onChange, error, projectId }: FieldResolverProps) {
   const hint = resolveHint(definition);
 
-  const Field = hintFieldMap[hint] ?? typeFieldMap[definition.type] ?? StringField;
+  const Field = resolveFieldComponent(hint, definition.type);
   return <Field definition={definition} value={value} onChange={onChange} error={error} projectId={projectId} />;
 }

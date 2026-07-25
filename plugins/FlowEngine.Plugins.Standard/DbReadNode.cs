@@ -60,6 +60,13 @@ public sealed class DbReadNode : INodeType
     [Description("Optional dialect override. When omitted, inferred from the credential's dbType field.")]
     public DbDialect? Dialect { get; set; }
 
+    /// <summary>
+    /// 命名参数（SEC-0）：以 <c>@name</c> 占位符形式将上游数据以绑定参数传入，杜绝将上游值拼接入 SQL 文本导致的注入。
+    /// 每个值是一个脚本（如 <c>$json.name</c>），按当前输入项逐项求值，运行时经 Dapper 命名参数绑定执行。
+    /// </summary>
+    [Description("Named bound parameters (e.g. @name). Each value is a script evaluated per input item; values are passed as bound parameters, never concatenated into SQL text.")]
+    public Dictionary<string, Script>? Parameters { get; set; }
+
     /// <inheritdoc />
     public IReadOnlyList<PortDefinition> Ports { get; } =
     [
@@ -123,10 +130,13 @@ public sealed class DbReadNode : INodeType
             await using var executor = await DbExecutor.CreateAsync(dialect, connectionString, cancellationToken, context.EngineLogger).ConfigureAwait(false);
 
             var output = new DataBatch();
-            foreach (var (_, _, sql) in sqlStatements)
+            foreach (var (item, index, sql) in sqlStatements)
             {
+                // SEC-0：将命名参数（如 @name）按当前输入项逐项求值后，以绑定参数形式传入，杜绝 SQL 文本拼接注入。
+                var parameters = await ResolveParametersAsync(context, item, index, cancellationToken).ConfigureAwait(false);
+
                 await using var reader = await executor
-                    .ExecuteReaderAsync(sql, null, cancellationToken, Timeout)
+                    .ExecuteReaderAsync(sql, parameters, cancellationToken, Timeout)
                     .ConfigureAwait(false);
 
                 while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
@@ -179,6 +189,14 @@ public sealed class DbReadNode : INodeType
             return (null, context.ErrorResult("InvalidSql", "Sql expression is required."));
         }
 
+        // SEC-0：拒绝将上游数据（$json/$input/$item/$items 等）直接拼入 SQL 文本。
+        // 上游值必须以 @name 命名参数（Parameters）的形式绑定执行，杜绝字符串拼接注入。
+        if (ReferencesUpstreamData(Sql.Source))
+        {
+            return (null, context.ErrorResult("UnsafeSqlInterpolation",
+                "dbRead 不允许将上游数据（$json/$input/$item/$items）直接拼入 SQL 文本；请改用 @name 命名参数（Parameters）。"));
+        }
+
         var sql = await Sql.EvaluateAsync<string>(context, item, itemIndex, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(sql))
@@ -195,12 +213,59 @@ public sealed class DbReadNode : INodeType
     }
 
     /// <summary>
+    /// 判断 SQL 表达式源码是否直接引用了上游数据变量（$json/$input/$item/$items 等）。
+    /// 直接拼入 SQL 文本属于注入风险，必须以 @name 命名参数（Parameters）绑定。
+    /// </summary>
+    private static readonly System.Text.RegularExpressions.Regex UpstreamDataReferencePattern =
+        new(@"(?<!\w)\$(json|input|items|itemIndex|item|runIndex)\b", System.Text.RegularExpressions.RegexOptions.Compiled);
+
+    private static bool ReferencesUpstreamData(string? source)
+    {
+        if (string.IsNullOrWhiteSpace(source))
+        {
+            return false;
+        }
+
+        return UpstreamDataReferencePattern.IsMatch(source);
+    }
+
+    /// <summary>
+    /// 逐项求值 <see cref="Parameters"/> 中的命名参数脚本，得到绑定参数字典（SEC-0）。
+    /// 未配置参数时返回 <c>null</c>（由 <see cref="DbExecutor"/> 等效于无参数执行）。
+    /// 每个值经脚本引擎求值（如 <c>$json.name</c> → 上游字段），转换后的 CLR 值交由 Dapper 以命名参数绑定，
+    /// 绝不以字符串拼接方式嵌入 SQL 文本。
+    /// </summary>
+    private async Task<IReadOnlyDictionary<string, object?>?> ResolveParametersAsync(
+        NodeExecutionContext context,
+        JsonNode? item,
+        int itemIndex,
+        CancellationToken cancellationToken)
+    {
+        if (Parameters is null || Parameters.Count == 0)
+        {
+            return null;
+        }
+
+        var resolved = new Dictionary<string, object?>(Parameters.Count, StringComparer.Ordinal);
+        foreach (var (name, script) in Parameters)
+        {
+            if (script is null) continue;
+
+            resolved[name] = await script
+                .EvaluateAsync<object?>(context, item, itemIndex, cancellationToken: cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        return resolved;
+    }
+
+    /// <summary>
     /// 判断语句是否为只读（首个有效关键字为 <c>SELECT</c> 或 <c>WITH</c>，跳过空白与注释）。
     /// 任何其它关键字（INSERT/UPDATE/DELETE/DROP/TRUNCATE/MERGE/ALTER 等）或非标识符开头一律拒绝。
     /// </summary>
     private static bool IsReadOnlyStatement(string sql)
     {
-        var keyword = ExtractFirstKeyword(sql);
+        var keyword = SqlStatementScanner.ExtractFirstKeyword(sql);
         if (keyword is null) return false;
 
         if (!string.Equals(keyword, "SELECT", StringComparison.OrdinalIgnoreCase)
@@ -211,107 +276,10 @@ public sealed class DbReadNode : INodeType
 
         // Reject SELECT ... INTO (writes to a target table) and stacked statements
         // separated by ';' (a second statement after the first).
-        if (ContainsKeyword(sql, "INTO")) return false;
-        if (HasTrailingStatement(sql)) return false;
+        if (SqlStatementScanner.ContainsKeyword(sql, "INTO")) return false;
+        if (SqlStatementScanner.HasTrailingStatement(sql)) return false;
 
         return true;
-    }
-
-    private static bool ContainsKeyword(string sql, string keyword)
-    {
-        var upper = sql.ToUpperInvariant();
-        var target = keyword.ToUpperInvariant();
-        var idx = upper.IndexOf(target, StringComparison.Ordinal);
-        while (idx >= 0)
-        {
-            var before = idx == 0 || (!char.IsLetterOrDigit(upper[idx - 1]) && upper[idx - 1] != '_');
-            var end = idx + target.Length;
-            var after = end >= upper.Length || (!char.IsLetterOrDigit(upper[end]) && upper[end] != '_');
-            if (before && after) return true;
-            idx = upper.IndexOf(target, idx + target.Length, StringComparison.Ordinal);
-        }
-
-        return false;
-    }
-
-    private static bool HasTrailingStatement(string sql)
-    {
-        var length = sql.Length;
-        for (var i = 0; i < length; i++)
-        {
-            var c = sql[i];
-            if (c == '-' && i + 1 < length && sql[i + 1] == '-')
-            {
-                while (i < length && sql[i] != '\n') i++;
-                continue;
-            }
-
-            if (c == '/' && i + 1 < length && sql[i + 1] == '*')
-            {
-                i += 2;
-                while (i + 1 < length && (sql[i] != '*' || sql[i + 1] != '/')) i++;
-                i += 2;
-                continue;
-            }
-
-            if (c == '\'' || c == '"')
-            {
-                var quote = c;
-                i++;
-                while (i < length && sql[i] != quote)
-                {
-                    if (sql[i] == '\\' && quote == '"') i++;
-                    i++;
-                }
-
-                continue;
-            }
-
-            if (c == ';') return true;
-        }
-
-        return false;
-    }
-
-    private static string? ExtractFirstKeyword(string sql)
-    {
-        var i = 0;
-        var length = sql.Length;
-        while (i < length)
-        {
-            var c = sql[i];
-            if (char.IsWhiteSpace(c))
-            {
-                i++;
-                continue;
-            }
-
-            // 行注释 --
-            if (c == '-' && i + 1 < length && sql[i + 1] == '-')
-            {
-                while (i < length && sql[i] != '\n') i++;
-                continue;
-            }
-
-            // 块注释 /* ... */
-            if (c == '/' && i + 1 < length && sql[i + 1] == '*')
-            {
-                i += 2;
-                while (i + 1 < length && (sql[i] != '*' || sql[i + 1] != '/')) i++;
-                i += 2;
-                continue;
-            }
-
-            // 读取标识符（字母/数字/下划线）。非标识符开头（如 '('、';'、字符串字面量等）直接拒绝。
-            var start = i;
-            while (i < length && (char.IsLetterOrDigit(sql[i]) || sql[i] == '_')) i++;
-
-            if (i == start) return null;
-
-            return sql.Substring(start, i - start);
-        }
-
-        return null;
     }
 
     /// <summary>

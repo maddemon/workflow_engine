@@ -1,5 +1,7 @@
 using System.Linq;
 using System.Reflection;
+using System.Threading;
+using System.Collections.Generic;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Host.Tests.Infrastructure;
 using FlowEngine.Core.Data;
@@ -137,6 +139,119 @@ public sealed class WorkflowExecutionWorkerScopeTests : HostIntegrationTestBase
     }
 
     /// <summary>
+    /// CON-2：验证工作流执行后台服务并发消费队列——多个执行项并行处理且互不阻塞。
+    /// 探针节点在 ExecuteAsync 中记录当前活跃执行数（静态计数），并 await 100ms 制造重叠窗口；
+    /// 若 worker 仍串行处理，MaxActive 应为 1，并需累计约 N×100ms；并发时 MaxActive≥2。
+    /// </summary>
+    [Fact]
+    public async Task Execute_ConcurrentItems_RunInParallel()
+    {
+        var ct = TestContext.Current.CancellationToken;
+
+        using var resolveScope = _factory.Services.CreateScope();
+        var rsp = resolveScope.ServiceProvider;
+        var nodeRegistry = rsp.GetRequiredService<INodeRegistry>();
+        nodeRegistry.Register(new ConcurrencyProbeNode());
+        var contextFactory = rsp.GetRequiredService<NodeExecutionContextFactory>();
+        var errorHandler = rsp.GetRequiredService<ErrorStrategyHandler>();
+        var secretMasker = rsp.GetRequiredService<SecretMasker>();
+        var execLogger = rsp.GetRequiredService<ILogger<WorkflowExecutor>>();
+        var kernelLogger = rsp.GetRequiredService<ILogger<WorkflowSchedulerKernel>>();
+
+        var queue = new WorkflowExecutionQueue();
+        var cancellationRegistry = new ExecutionCancellationRegistry();
+
+        var resolvedDbContexts = new List<FlowEngineDbContext>();
+
+        var collection = new ServiceCollection();
+        collection.AddSingleton(nodeRegistry);
+        collection.AddSingleton(contextFactory);
+        collection.AddSingleton(errorHandler);
+        collection.AddSingleton(secretMasker);
+        collection.AddSingleton(execLogger);
+        collection.AddSingleton(kernelLogger);
+        collection.AddSingleton(queue);
+        collection.AddSingleton(cancellationRegistry);
+        collection.AddDbContext<FlowEngineDbContext>(o => o.UseInMemoryDatabase("worker-concurrency-test"));
+        collection.AddScoped<WorkflowExecutor>(sp =>
+        {
+            var db = sp.GetRequiredService<FlowEngineDbContext>();
+            resolvedDbContexts.Add(db);
+            return new WorkflowExecutor(db, nodeRegistry, contextFactory, errorHandler, queue, execLogger, kernelLogger, secretMasker);
+        });
+
+        var provider = collection.BuildServiceProvider();
+        IServiceScopeFactory scopeFactory = new DelegatingScopeFactory(provider);
+
+        var workflow = new Workflow
+        {
+            Name = "W",
+            ProjectId = Guid.NewGuid(),
+            Nodes =
+            [
+                new NodeDefinition
+                {
+                    Id = "n1",
+                    Name = "n1",
+                    TypeName = "concurrencyProbe",
+                    IsEntry = true,
+                    Parameters = [],
+                    ErrorStrategy = ErrorStrategy.Terminate,
+                },
+            ],
+            Connections = [],
+            CreatedBy = "test",
+            Version = 1,
+            IsActive = true,
+        };
+        var workflowId = workflow.Id;
+
+        const int itemCount = 4;
+        using (var seedScope = scopeFactory.CreateScope())
+        {
+            var db = seedScope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
+            foreach (var _ in Enumerable.Range(0, itemCount))
+            {
+                var record = new ExecutionRecord
+                {
+                    WorkflowDefinitionId = workflowId,
+                    ProjectId = workflow.ProjectId,
+                    Status = ExecutionStatus.Pending,
+                    StartedAt = DateTime.UtcNow,
+                    NodeRecords = [],
+                };
+                db.ExecutionRecords.Add(record);
+                await db.SaveChangesAsync(ct);
+                await queue.EnqueueAsync(new WorkflowExecutionWorkItem(record.Id, workflowId, null, workflow), ct);
+            }
+        }
+
+        ConcurrencyProbeNode.Reset();
+        var worker = new WorkflowExecutionWorker(scopeFactory, null!, NullLogger<WorkflowExecutionWorker>.Instance);
+
+        using var stoppingCts = new CancellationTokenSource();
+        var executeMethod = typeof(BackgroundService).GetMethod("ExecuteAsync", BindingFlags.NonPublic | BindingFlags.Instance)
+            ?? throw new InvalidOperationException("未能通过反射获取 ExecuteAsync。");
+        var workerTask = (Task)executeMethod.Invoke(worker, new object[] { stoppingCts.Token })!;
+
+        var deadline = DateTime.UtcNow.AddSeconds(15);
+        while (ConcurrencyProbeNode.Completed < itemCount && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(20, ct);
+        }
+
+        // 全部执行完成，且执行过程存在并行（MaxActive≥2），证明 worker 并发消费队列（CON-2）。
+        Assert.Equal(itemCount, ConcurrencyProbeNode.Completed);
+        Assert.True(
+            ConcurrencyProbeNode.MaxActive >= 2,
+            $"期望并行执行（MaxActive>=2），实际 {ConcurrencyProbeNode.MaxActive}。");
+
+        stoppingCts.Cancel();
+        await Task.WhenAny(workerTask, Task.Delay(5000, ct));
+        Assert.True(workerTask.IsCompleted);
+    }
+
+    /// <summary>
     /// P3 #20 衍生：验证工作项携带 <see cref="WorkflowExecutionWorkItem.PreloadedWorkflow"/> 时，
     /// worker 直接复用该实例而无需重新查询 Workflows。本用例刻意不将工作流写入数据库，
     /// 若 worker 回退到数据库查询会得到 null 并跳过执行，从而可断言透传生效。
@@ -247,5 +362,55 @@ public sealed class WorkflowExecutionWorkerScopeTests : HostIntegrationTestBase
     private sealed class DelegatingScopeFactory(ServiceProvider inner) : IServiceScopeFactory
     {
         public IServiceScope CreateScope() => inner.CreateScope();
+    }
+
+    /// <summary>
+    /// 探针节点（CON-2）：在执行期间记录当前活跃执行数（静态计数），并 await 制造重叠窗口，
+    /// 用于验证 worker 并发消费队列时多个执行确实并行运行。
+    /// </summary>
+    private sealed class ConcurrencyProbeNode : INodeType
+    {
+        public static int Active;
+        public static int MaxActive;
+        public static int Completed;
+
+        public static void Reset()
+        {
+            Active = 0;
+            MaxActive = 0;
+            Completed = 0;
+        }
+
+        public string TypeName => "concurrencyProbe";
+        public string DisplayName => "Probe";
+        public string Category => "Test";
+        public string Icon => string.Empty;
+        public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
+        public IReadOnlyList<PortDefinition> Ports => new[]
+        {
+            new PortDefinition { Name = "input", Direction = PortDirection.Input, Type = PortType.Main },
+        };
+        public bool DefaultIsEntry => true;
+
+        public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+        {
+            var active = Interlocked.Increment(ref Active);
+            var max = MaxActive;
+            while (active > max)
+            {
+                max = Interlocked.CompareExchange(ref MaxActive, active, max);
+            }
+
+            try
+            {
+                await Task.Delay(100, cancellationToken).ConfigureAwait(false);
+                return new NodeExecutionResult { Success = true, Output = new DataBatch() };
+            }
+            finally
+            {
+                Interlocked.Decrement(ref Active);
+                Interlocked.Increment(ref Completed);
+            }
+        }
     }
 }

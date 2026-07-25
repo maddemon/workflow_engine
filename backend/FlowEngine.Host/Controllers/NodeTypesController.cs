@@ -1,3 +1,4 @@
+using FlowEngine.Application.Dtos;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -21,11 +22,12 @@ public class NodeTypesController(
     /// <summary>
     /// 获取所有节点类型描述，支持按分类过滤。
     /// 根据 Accept-Language 头自动本地化节点名称、分类、参数名和描述。
+    /// 返回 <see cref="NodeTypeDescriptorDto"/>（非 Core 实体）。
     /// </summary>
     /// <param name="category">节点分类过滤条件。</param>
     /// <returns>节点类型描述列表。</returns>
     [HttpGet]
-    public ActionResult<IReadOnlyCollection<NodeTypeDescriptor>> GetAll(string? category = null)
+    public ActionResult<IReadOnlyCollection<NodeTypeDescriptorDto>> GetAll(string? category = null)
     {
         var descriptors = nodeRegistry.GetDescriptors();
 
@@ -40,7 +42,7 @@ public class NodeTypesController(
         return Ok(localized);
     }
 
-    private NodeTypeDescriptor LocalizeDescriptor(NodeTypeDescriptor descriptor)
+    private NodeTypeDescriptorDto LocalizeDescriptor(NodeTypeDescriptor descriptor)
     {
         var displayName = localizer[$"NodeType_{descriptor.TypeName}_DisplayName"];
         var category = localizer[$"Category_{descriptor.Category}"];
@@ -49,7 +51,7 @@ public class NodeTypesController(
             .Select(p => LocalizeParameter(descriptor.TypeName, p))
             .ToList();
 
-        return new NodeTypeDescriptor
+        return new NodeTypeDescriptorDto
         {
             TypeName = descriptor.TypeName,
             DisplayName = displayName.ResourceNotFound ? descriptor.DisplayName : displayName.Value,
@@ -57,12 +59,12 @@ public class NodeTypesController(
             Icon = descriptor.Icon,
             ExecutionMode = descriptor.ExecutionMode,
             Parameters = localizedParams,
-            Ports = descriptor.Ports,
+            Ports = descriptor.Ports.Select(MapPort).ToList(),
             DefaultIsEntry = descriptor.DefaultIsEntry,
         };
     }
 
-    private ParameterDefinition LocalizeParameter(string nodeTypeName, ParameterDefinition param)
+    private ParameterDefinitionDto LocalizeParameter(string nodeTypeName, ParameterDefinition param)
     {
         var paramKey = $"{nodeTypeName}_{param.Name}";
         var displayName = localizer[$"Param_{paramKey}_DisplayName"];
@@ -72,14 +74,14 @@ public class NodeTypesController(
         {
             var optValueStr = opt.Value?.ToString() ?? string.Empty;
             var optLabel = localizer[$"Option_{paramKey}_{optValueStr}"];
-            return new Option
+            return new OptionDto
             {
                 Label = optLabel.ResourceNotFound ? opt.Label : optLabel.Value,
                 Value = opt.Value,
             };
         }).ToList();
 
-        return new ParameterDefinition
+        return new ParameterDefinitionDto
         {
             Name = param.Name,
             DisplayName = displayName.ResourceNotFound ? param.DisplayName : displayName.Value,
@@ -94,8 +96,21 @@ public class NodeTypesController(
             HintProperties = param.HintProperties,
             Description = description.ResourceNotFound ? param.Description : description.Value,
             ResourceType = param.ResourceType,
-            ItemDefinition = param.ItemDefinition,
-            Fields = param.Fields,
+            ItemDefinition = param.ItemDefinition is null ? null : LocalizeParameter(nodeTypeName, param.ItemDefinition),
+            Fields = param.Fields.Select(f => LocalizeParameter(nodeTypeName, f)).ToList(),
         };
     }
+
+    private PortDefinitionDto MapPort(PortDefinition port) => new()
+    {
+        Name = port.Name,
+        DisplayName = port.DisplayName,
+        Direction = port.Direction,
+        Type = port.Type,
+        Required = port.Required,
+        Condition = port.Condition,
+        AllowedTypes = port.AllowedTypes,
+        OutputSchema = port.OutputSchema,
+        ExpectedSchema = port.ExpectedSchema,
+    };
 }

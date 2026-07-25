@@ -6,6 +6,7 @@ import { WorkflowCanvas } from "../components/Canvas/WorkflowCanvas.tsx"
 import { ExecutionPanel } from "../components/ExecutionPanel/ExecutionPanel.tsx"
 import { NodePanel } from "../components/NodePanel/NodePanel.tsx"
 import { ParameterPanel } from "../components/ParameterPanel/ParameterPanel.tsx"
+import { ErrorBoundary } from "../components/common/ErrorBoundary.tsx"
 import { useExecution } from "../hooks/useExecution.ts"
 import { useNodeTypes } from "../hooks/useNodeTypes.ts"
 import { useWorkflowStore } from "../stores/workflowStore.ts"
@@ -64,48 +65,58 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
 
   const aside = useMemo(() => {
     if (execution || error) {
-      return <ExecutionPanel execution={execution} onClose={clearExecution} onCancel={cancelExecution} error={error} />
+      return (
+        <ErrorBoundary fallbackTitle="执行面板加载失败">
+          <ExecutionPanel execution={execution} onClose={clearExecution} onCancel={cancelExecution} error={error} />
+        </ErrorBoundary>
+      );
     }
 
     // In review mode, show a review panel
     if (reviewMode) {
       return (
-        <Stack gap="xs" p="sm" style={{ height: '100%', overflow: 'hidden' }}>
-          <Group gap={4}>
-            <Eye size={14} />
-            <Text fw={600} size="sm">{t('editor.reviewMode')}</Text>
-            <Badge size="xs" color="blue" variant="light">{t('editor.aiDraft')}</Badge>
-          </Group>
-          <Text size="xs" c="dimmed">{t('editor.reviewHint')}</Text>
+        <ErrorBoundary fallbackTitle="参数面板加载失败">
+          <Stack gap="xs" p="sm" style={{ height: '100%', overflow: 'hidden' }}>
+            <Group gap={4}>
+              <Eye size={14} />
+              <Text fw={600} size="sm">{t('editor.reviewMode')}</Text>
+              <Badge size="xs" color="blue" variant="light">{t('editor.aiDraft')}</Badge>
+            </Group>
+            <Text size="xs" c="dimmed">{t('editor.reviewHint')}</Text>
 
-          {structuredDiff && structuredDiff.length > 0 && (
-            <DiffPanel diff={structuredDiff} highlightedNodeIds={highlightedNodeIds} onNodeHighlight={setHighlightedNodeIds} />
-          )}
+            {structuredDiff && structuredDiff.length > 0 && (
+              <DiffPanel diff={structuredDiff} highlightedNodeIds={highlightedNodeIds} onNodeHighlight={setHighlightedNodeIds} />
+            )}
 
-          <ParameterPanel />
+            <ParameterPanel />
 
-          <Divider />
+            <Divider />
 
-          <Stack gap="xs">
-            <Text fw={600} size="xs" tt="uppercase">{t('editor.actions')}</Text>
-            <Button leftSection={<Play size={14} />} variant="light" onClick={() => dryRun()} loading={dryRunLoading}>
-              {t('editor.dryRun')}
-            </Button>
-            <Button leftSection={<Check size={14} />} color="green" onClick={() => setValidationModalOpen(true)}>
-              {t('editor.confirmActivate')}
-            </Button>
-            <Button leftSection={<X size={14} />} color="red" variant="light" onClick={() => setRejectModalOpen(true)}>
-              {t('editor.reject')}
-            </Button>
-            <Button variant="subtle" color="gray" onClick={() => setReviewMode(false)}>
-              {t('editor.switchManual')}
-            </Button>
+            <Stack gap="xs">
+              <Text fw={600} size="xs" tt="uppercase">{t('editor.actions')}</Text>
+              <Button leftSection={<Play size={14} />} variant="light" onClick={() => dryRun()} loading={dryRunLoading}>
+                {t('editor.dryRun')}
+              </Button>
+              <Button leftSection={<Check size={14} />} color="green" onClick={() => setValidationModalOpen(true)}>
+                {t('editor.confirmActivate')}
+              </Button>
+              <Button leftSection={<X size={14} />} color="red" variant="light" onClick={() => setRejectModalOpen(true)}>
+                {t('editor.reject')}
+              </Button>
+              <Button variant="subtle" color="gray" onClick={() => setReviewMode(false)}>
+                {t('editor.switchManual')}
+              </Button>
+            </Stack>
           </Stack>
-        </Stack>
+        </ErrorBoundary>
       );
     }
 
-    return <ParameterPanel />
+    return (
+      <ErrorBoundary fallbackTitle="参数面板加载失败">
+        <ParameterPanel />
+      </ErrorBoundary>
+    );
   }, [execution, clearExecution, cancelExecution, error, reviewMode, setReviewMode, structuredDiff, highlightedNodeIds, dryRun, dryRunLoading, t])
 
   const handleLayoutChange = useCallback(() => {
@@ -171,7 +182,9 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
         </Alert>
       )}
     <ReactFlowProvider>
-      <WorkflowCanvas onExecute={execute} onCancel={cancelExecution} onDryRun={dryRun} dryRunLoading={dryRunLoading} />
+      <ErrorBoundary fallbackTitle="画布加载失败">
+        <WorkflowCanvas onExecute={execute} onCancel={cancelExecution} onDryRun={dryRun} dryRunLoading={dryRunLoading} />
+      </ErrorBoundary>
 
       <ValidationChecklistModal
         opened={validationModalOpen}
