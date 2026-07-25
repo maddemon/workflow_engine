@@ -69,17 +69,10 @@ function downloadJson(content: string, filename: string) {
   URL.revokeObjectURL(url);
 }
 
+import { formatLocalDateTime } from '../../utils/dateUtils.ts';
+
 function formatDateTime(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return '—';
-  return d.toLocaleString(undefined, {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  });
+  return formatLocalDateTime(iso);
 }
 
 function readFileAsText(file: File): Promise<string> {

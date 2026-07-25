@@ -8,6 +8,16 @@ import type { WorkflowNode } from '../stores/workflowStore.ts';
 export function computeDynamicPorts(data: WorkflowNode['data']): PortDefinition[] {
   const staticPorts = data.descriptor.ports;
 
+  // 只有“带 default 输出端口的动态端口节点”（如 Switch）才需要根据数组参数生成动态端口。
+  // 其它拥有数组参数（如 Set 的 Fields）的节点不能据此生成动态端口，否则会丢失固定的 Output
+  // 端口，导致 set 节点的输出连线无法锚定。default 输出端口是此类节点的特征。
+  const isDynamicPortNode = staticPorts.some(
+    (p) => p.direction === 'Output' && p.name === 'default',
+  );
+  if (!isDynamicPortNode) {
+    return staticPorts;
+  }
+
   const dynamicArrayParam = data.descriptor.parameters.find(
     (p) => p.type === 'Array' && p.itemDefinition?.fields && p.itemDefinition.fields.length > 0,
   );

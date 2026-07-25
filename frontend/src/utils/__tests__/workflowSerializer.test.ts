@@ -285,5 +285,91 @@ describe('workflowSerializer', () => {
       const result = deserializeWorkflow(workflow, [descriptor]);
       expect(result.nodes[0].data.isEntry).toBe(true);
     });
+
+    it('encodes port names with spaces into safe handle ids (regression: merge Input 1/Input 2)', () => {
+      const descriptor = makeNodeType('Merge', [
+        { name: 'Input 1', direction: 'Input' },
+        { name: 'Input 2', direction: 'Input' },
+        { name: 'Output', direction: 'Output' },
+      ]);
+      const workflow: Workflow = {
+        id: 'wf-1',
+        name: 'Test',
+        projectId: 'p1',
+        version: 1,
+        createdBy: 'user',
+        createdAt: '2024-01-01',
+        updatedAt: '2024-01-01',
+        isActive: true,
+        styleSettings: null,
+        nodes: [
+          {
+            id: 'src',
+            typeName: 'Merge',
+            name: 'src',
+            parameters: {},
+            ports: [],
+            positionX: 0,
+            positionY: 0,
+            isEntry: false,
+            disabled: false,
+            errorStrategy: 'Terminate',
+            retryPolicy: null,
+            timeout: null,
+          },
+          {
+            id: 'dst',
+            typeName: 'Merge',
+            name: 'dst',
+            parameters: {},
+            ports: [],
+            positionX: 0,
+            positionY: 0,
+            isEntry: false,
+            disabled: false,
+            errorStrategy: 'Terminate',
+            retryPolicy: null,
+            timeout: null,
+          },
+        ],
+        connections: [
+          { id: 'c1', sourceNodeId: 'src', sourcePortName: 'Output', targetNodeId: 'dst', targetPortName: 'Input 1' },
+          { id: 'c2', sourceNodeId: 'src', sourcePortName: 'Output', targetNodeId: 'dst', targetPortName: 'Input 2' },
+        ],
+      };
+      const result = deserializeWorkflow(workflow, [descriptor]);
+      expect(result.edges).toHaveLength(2);
+      // handle id 中不得含空格，否则 React Flow 无法锚定连线
+      expect(result.edges[0].targetHandle).toBe('port-Input%201');
+      expect(result.edges[1].targetHandle).toBe('port-Input%202');
+      expect(result.edges[0].targetHandle).not.toContain(' ');
+      expect(result.edges[1].targetHandle).not.toContain(' ');
+    });
+  });
+
+  describe('space-in-port-name round trip', () => {
+    it('serializes encoded handles back to canonical port names (no %20 leakage)', () => {
+      const descriptor = makeNodeType('Merge', [
+        { name: 'Input 1', direction: 'Input' },
+        { name: 'Output', direction: 'Output' },
+      ]);
+      const nodes: WorkflowNode[] = [makeWorkflowNode('n1', 'Merge', descriptor), makeWorkflowNode('n2', 'Merge', descriptor)];
+      const edges: Edge[] = [
+        {
+          id: 'e1',
+          source: 'n1',
+          target: 'n2',
+          sourceHandle: 'port-Output',
+          targetHandle: 'port-Input%201',
+          type: 'workflow',
+        },
+      ];
+      const result = serializeWorkflow(nodes, edges, 'test');
+      expect(result.connections).toHaveLength(1);
+      expect(result.connections[0]).toMatchObject({
+        sourcePortName: 'Output',
+        targetPortName: 'Input 1',
+      });
+    });
   });
 });

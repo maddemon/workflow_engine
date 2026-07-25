@@ -21,10 +21,10 @@ import { useTranslation } from 'react-i18next';
 import { getWorkflowExecutions, getExecution } from '../services/api.ts';
 import type { ExecutionDto, ExecutionSummaryDto } from '../types/workflow.ts';
 import { statusConfig, formatDuration } from '../utils/execution.tsx';
+import { formatLocalDateTime } from '../utils/dateUtils.ts';
 
 function formatDate(dateStr: string | null): string {
-  if (!dateStr) return '-';
-  return new Date(dateStr).toLocaleString();
+  return formatLocalDateTime(dateStr) || '-';
 }
 
 export function ExecutionHistoryPage() {

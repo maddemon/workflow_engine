@@ -107,4 +107,66 @@ describe('computeDynamicPorts', () => {
     expect(ports[2].name).toBe('case2');
     expect(ports[3].name).toBe('default');
   });
+
+  it('keeps fixed Output port for nodes with Array param but no default output (regression: Set Fields)', () => {
+    const data = makeData({
+      descriptor: {
+        typeName: 'set',
+        displayName: 'Edit Fields (Set)',
+        category: 'Core',
+        icon: 'edit',
+        executionMode: 'Sync',
+        parameters: [
+          {
+            name: 'fields',
+            displayName: 'Fields',
+            type: 'Array',
+            required: false,
+            defaultValue: [],
+            validationRules: [],
+            options: [],
+            description: null,
+            hint: null,
+            displayRule: null,
+            credentialType: null,
+            resourceType: null,
+            itemDefinition: {
+              name: 'fields',
+              displayName: 'Fields',
+              type: 'Array',
+              required: false,
+              defaultValue: [],
+              validationRules: [],
+              options: [],
+              description: null,
+              hint: null,
+              displayRule: null,
+              credentialType: null,
+              resourceType: null,
+              itemDefinition: null,
+              fields: [
+                { name: 'name', displayName: 'Name', type: 'String', required: false, defaultValue: '', validationRules: [], options: [], description: null, hint: null, displayRule: null, credentialType: null, resourceType: null, itemDefinition: null },
+                { name: 'value', displayName: 'Value', type: 'String', required: false, defaultValue: '', validationRules: [], options: [], description: null, hint: null, displayRule: null, credentialType: null, resourceType: null, itemDefinition: null },
+              ],
+            },
+          },
+        ],
+        // Set 没有 default 输出端口，只有固定的 Output
+        ports: [
+          { name: 'input', displayName: 'Input', direction: 'Input', type: 'Main', required: false },
+          { name: 'output', displayName: 'Output', direction: 'Output', type: 'Main', required: false },
+        ],
+        defaultIsEntry: false,
+      },
+      parameters: {
+        fields: [{ name: 'msg', value: 'big' }],
+      },
+    });
+
+    const ports = computeDynamicPorts(data);
+    // 不能把 Fields 当成动态端口源，否则会丢失 Output 端口、断掉输出连线
+    expect(ports).toHaveLength(2);
+    expect(ports[0].name).toBe('input');
+    expect(ports[1].name).toBe('output');
+  });
 });

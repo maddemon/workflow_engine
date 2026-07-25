@@ -4,6 +4,7 @@ import { memo, useState } from "react"
 import type { WorkflowNode } from "./stores/canvasStore.ts"
 import { useCanvasStore } from "./stores/canvasStore.ts"
 import { computeDynamicPorts } from "../../utils/computeDynamicPorts.ts"
+import { encodeHandleId } from "../../utils/handleId.ts"
 
 const HANDLE_SIZE = 20
 const EDGE_PADDING = 130
@@ -13,7 +14,7 @@ const AI_PORT_TYPES = new Set(["AgentTool", "LLM", "Memory"])
 function isAiPortHandle(nodeData: WorkflowNode["data"] | undefined, handleId: string | null | undefined): boolean {
   if (!nodeData || !handleId) return false
   const ports = computeDynamicPorts(nodeData)
-  return ports.some((p) => AI_PORT_TYPES.has(p.type) && handleId === `port-${p.name}`)
+  return ports.some((p) => AI_PORT_TYPES.has(p.type) && handleId === encodeHandleId(p.name))
 }
 
 function CustomEdgeComponent({
@@ -46,7 +47,7 @@ function CustomEdgeComponent({
     const ports = computeDynamicPorts(sourceData)
     const outputPorts = ports.filter((p) => p.direction === "Output")
     if (outputPorts.length > 1) {
-      const port = outputPorts.find((p) => sourceHandleId === `port-${p.name}`)
+      const port = outputPorts.find((p) => sourceHandleId === encodeHandleId(p.name))
       if (port) label = port.displayName
     }
   }

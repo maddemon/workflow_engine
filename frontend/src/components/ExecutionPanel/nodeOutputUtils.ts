@@ -42,7 +42,8 @@ export function formatDuration(startedAt: string | null, completedAt: string | n
   const ms = end - start;
   // 如果开始和结束时间相同（后端未提供真实开始时间），不显示时长
   if (ms <= 0) return null;
-  if (ms < 1000) return `${ms}ms`;
+  if (ms < 1) return '<1ms';
+  if (ms < 1000) return `${Math.round(ms)}ms`;
   return `${(ms / 1000).toFixed(1)}s`;
 }
 

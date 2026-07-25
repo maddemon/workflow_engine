@@ -48,12 +48,10 @@ public sealed class OutputRouter
         IExecutionSideEffects sideEffects,
         CancellationToken cancellationToken)
     {
-        var sourcePortName = ResolveSourcePortName(nodeType, result);
-        var sourceKey = (node.Id, sourcePortName.ToLowerInvariant());
-        var connections = session.ConnectionsBySource.Contains(sourceKey)
-            ? session.ConnectionsBySource[sourceKey]
-            : Enumerable.Empty<Connection>();
-        var connectionList = connections.ToList();
+        foreach (var route in ResolveRoutes(node, nodeType, result, session))
+        {
+            var outputBatch = route.OutputBatch;
+            var connectionList = route.Connections.ToList();
 
         foreach (var connection in connectionList)
         {
@@ -68,7 +66,6 @@ public sealed class OutputRouter
 
             var targetNodeType = _nodeRegistry.Get(targetNode.TypeName);
             var targetInputPorts = GetInputPortNames(targetNodeType);
-            var outputBatch = result.Output;
 
             // 当 TargetPortName 为 null 时，解析为目标节点的第一个输入端口名。
             var resolvedTargetPort = connection.TargetPortName;
@@ -109,6 +106,36 @@ public sealed class OutputRouter
                 }
             }
         }
+        }
+    }
+
+    /// <summary>
+    /// 解析路由条目：当结果提供 <see cref="NodeExecutionResult.PortOutputs"/> 时，按各命名输出端口分别路由；
+    /// 否则回退到单一 <see cref="NodeExecutionResult.Output"/> + <see cref="NodeExecutionResult.BranchIndex"/> 逻辑。
+    /// </summary>
+    private static IEnumerable<(string SourcePortName, DataBatch OutputBatch, IEnumerable<Connection> Connections)> ResolveRoutes(
+        NodeDefinition node, INodeType nodeType, NodeExecutionResult result, ExecutionSession session)
+    {
+        if (result.PortOutputs is { Count: > 0 })
+        {
+            foreach (var (portName, batch) in result.PortOutputs)
+            {
+                var key = (node.Id, portName.ToLowerInvariant());
+                var conns = session.ConnectionsBySource.Contains(key)
+                    ? session.ConnectionsBySource[key]
+                    : Enumerable.Empty<Connection>();
+                yield return (portName, batch, conns);
+            }
+
+            yield break;
+        }
+
+        var sourcePortName = ResolveSourcePortName(nodeType, result);
+        var sourceKey = (node.Id, sourcePortName.ToLowerInvariant());
+        var connections = session.ConnectionsBySource.Contains(sourceKey)
+            ? session.ConnectionsBySource[sourceKey]
+            : Enumerable.Empty<Connection>();
+        yield return (sourcePortName, result.Output, connections);
     }
 
     /// <summary>

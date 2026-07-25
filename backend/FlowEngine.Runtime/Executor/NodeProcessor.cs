@@ -187,6 +187,11 @@ public sealed class NodeProcessor
             await sideEffects.PublishNodeStartedAsync(session.Execution.Id, node.Id, runIndex, cancellationToken)
                 .ConfigureAwait(false);
 
+            // 记录节点实际执行开始时间；首个节点继承执行的 StartedAt 以包含引擎初始化开销。
+            var nodeStartedAt = session.Execution.NodeRecords.Count == 0
+                ? session.Execution.StartedAt
+                : DateTime.UtcNow;
+
             NodeExecutionResult result;
             try
             {
@@ -204,7 +209,7 @@ public sealed class NodeProcessor
                 session.NodeLlmClients[node.Id] = context.LlmClient;
             }
 
-            var record = BuildNodeExecutionRecord(node.Id, runIndex, runInputs, result, context, session.SensitiveValues);
+            var record = BuildNodeExecutionRecord(node.Id, runIndex, runInputs, result, context, session.SensitiveValues, nodeStartedAt);
 
             session.Execution.NodeRecords.Add(record);
             await sideEffects.PersistNodeRecordAsync(record, cancellationToken).ConfigureAwait(false);
@@ -435,6 +440,7 @@ public sealed class NodeProcessor
     /// <param name="output">本次运行输出。</param>
     /// <param name="context">节点执行上下文（含脱敏所需的原始/已解析参数与记录 ID）。</param>
     /// <param name="sensitiveValues">敏感值集合（字面凭据）。</param>
+    /// <param name="startedAt">节点执行开始时间。</param>
     /// <returns>脱敏后的节点执行记录。</returns>
     private NodeExecutionRecord BuildNodeExecutionRecord(
         string nodeDefinitionId,
@@ -442,14 +448,15 @@ public sealed class NodeProcessor
         IReadOnlyDictionary<string, DataBatch> inputs,
         NodeExecutionResult output,
         NodeExecutionContext context,
-        IReadOnlySet<string> sensitiveValues)
+        IReadOnlySet<string> sensitiveValues,
+        DateTime startedAt)
     {
         return new NodeExecutionRecord
         {
             Id = context.NodeExecutionRecordId,
             NodeDefinitionId = nodeDefinitionId,
             RunIndex = runIndex,
-            StartedAt = DateTime.UtcNow,
+            StartedAt = startedAt,
             CompletedAt = DateTime.UtcNow,
             Inputs = inputs.ToDictionary(kv => kv.Key, kv => _secretMasker.MaskDataBatch(kv.Value, sensitiveValues), StringComparer.OrdinalIgnoreCase),
             Output = _secretMasker.MaskOutput(output, sensitiveValues),

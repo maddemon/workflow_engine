@@ -9,6 +9,7 @@ import styles from "./WorkflowCanvas.module.css"
 import { CanvasToolbar } from "./CanvasToolbar.tsx"
 import { CustomEdge } from "./CustomEdge.tsx"
 import { CustomNode } from "./CustomNode.tsx"
+import { encodeHandleId } from "../../utils/handleId.ts"
 
 const nodeTypes = { workflow: CustomNode }
 const edgeTypes = { workflow: CustomEdge }
@@ -89,12 +90,12 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
       if (targetNode && !targetHandle) {
         const firstInput = targetNode.data.descriptor.ports.find((p) => p.direction === "Input")
         if (firstInput) {
-          targetHandle = `port-${firstInput.name}`
+          targetHandle = encodeHandleId(firstInput.name)
         }
       }
 
       if (sourceNode && sourceHandle) {
-        const port = sourceNode.data.descriptor.ports.find((p) => `port-${p.name}` === sourceHandle)
+        const port = sourceNode.data.descriptor.ports.find((p) => encodeHandleId(p.name) === sourceHandle)
         if (port && port.direction !== "Output") {
           notifications.show({
             title: t('canvas.connectionRejected'),
@@ -105,7 +106,7 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
         }
       }
       if (targetNode && targetHandle) {
-        const port = targetNode.data.descriptor.ports.find((p) => `port-${p.name}` === targetHandle)
+        const port = targetNode.data.descriptor.ports.find((p) => encodeHandleId(p.name) === targetHandle)
         if (port && port.direction !== "Input") {
           notifications.show({
             title: t('canvas.connectionRejected'),
@@ -116,8 +117,8 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
         }
       }
 
-      const sourcePort = sourceNode?.data.descriptor.ports.find((p) => `port-${p.name}` === sourceHandle)
-      const targetPort = targetNode?.data.descriptor.ports.find((p) => `port-${p.name}` === targetHandle)
+      const sourcePort = sourceNode?.data.descriptor.ports.find((p) => encodeHandleId(p.name) === sourceHandle)
+      const targetPort = targetNode?.data.descriptor.ports.find((p) => encodeHandleId(p.name) === targetHandle)
 
       if (sourcePort && targetPort) {
         const compatible =

@@ -15,4 +15,9 @@ public interface IExecutionService
         string? idempotencyKey = null,
         CancellationToken cancellationToken = default,
         Dictionary<string, object>? inputs = null);
+
+    /// <summary>
+    /// 按 ID 获取执行详情（状态、输出、错误信息）。
+    /// </summary>
+    Task<ExecutionDto?> GetAsync(Guid executionId, CancellationToken cancellationToken = default);
 }

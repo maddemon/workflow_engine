@@ -7,6 +7,7 @@ import type {
   PortDefinition,
 } from '../types/workflow.ts';
 import type { WorkflowNodeData, WorkflowNode } from '../stores/workflowStore.ts';
+import { encodeHandleId, decodeHandleId } from './handleId.ts';
 
 export function serializeWorkflow(
   nodes: WorkflowNode[],
@@ -46,8 +47,9 @@ export function serializeWorkflow(
       const sourcePorts = nodePortMap.get(edge.source);
       const targetPorts = nodePortMap.get(edge.target);
       if (!sourcePorts || !targetPorts) return false;
-      const sourcePortName = (edge.sourceHandle ?? '').replace(/^port-/, '');
-      const targetPortName = (edge.targetHandle ?? '').replace(/^port-/, '');
+      const sourcePortName = decodeHandleId(edge.sourceHandle);
+      const targetPortName = decodeHandleId(edge.targetHandle);
+      if (!sourcePortName || !targetPortName) return false;
       if (!sourcePorts.has(sourcePortName)) return false;
       if (!targetPorts.has(targetPortName)) return false;
       return true;
@@ -55,9 +57,9 @@ export function serializeWorkflow(
     .map((edge) => ({
       id: edge.id,
       sourceNodeId: edge.source,
-      sourcePortName: (edge.sourceHandle ?? 'port-Output').replace(/^port-/, ''),
+      sourcePortName: decodeHandleId(edge.sourceHandle) || 'Output',
       targetNodeId: edge.target,
-      targetPortName: (edge.targetHandle ?? 'port-Input').replace(/^port-/, ''),
+      targetPortName: decodeHandleId(edge.targetHandle) || 'Input',
     }));
 
   return { nodeDefinitions, connections };
@@ -96,8 +98,8 @@ export function deserializeWorkflow(
     id: conn.id,
     source: conn.sourceNodeId,
     target: conn.targetNodeId,
-    sourceHandle: conn.sourcePortName ? `port-${conn.sourcePortName}` : undefined,
-    targetHandle: conn.targetPortName ? `port-${conn.targetPortName}` : undefined,
+    sourceHandle: conn.sourcePortName ? encodeHandleId(conn.sourcePortName) : undefined,
+    targetHandle: conn.targetPortName ? encodeHandleId(conn.targetPortName) : undefined,
     type: 'workflow',
     animated: false,
   }));

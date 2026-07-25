@@ -180,6 +180,40 @@ public sealed class WorkflowLifecycleTools(
     }
 
     /// <summary>
+    /// 按执行 ID 获取执行详情（状态、输出、错误信息）。execute_workflow 可能返回 Pending 状态，
+    /// AI 应据此工具轮询最终状态，无需直接调用 REST 端点。
+    /// </summary>
+    /// <param name="executionId">执行 ID（合法 Guid 格式）。</param>
+    /// <returns>执行 DTO 或结构化错误。</returns>
+    [McpServerTool(Name = "get_execution")]
+    [Description("按执行 ID 获取执行详情（状态、输出、错误信息）。execute_workflow 返回 Pending 时，用此工具轮询最终状态，无需直接调用 REST。")]
+    public async Task<object> GetExecution(
+        [Description("执行 ID（合法 Guid 格式）。")] string executionId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(executionId) || !Guid.TryParse(executionId, out var id))
+        {
+            return new McpToolError(
+                "InvalidInput",
+                "执行 ID 格式无效",
+                CanAutoFix: true,
+                SuggestedFix: "请传入合法的执行 GUID");
+        }
+
+        var execution = await executionService.GetAsync(id, cancellationToken).ConfigureAwait(false);
+        if (execution is null)
+        {
+            return new McpToolError(
+                "NotFound",
+                $"执行 '{executionId}' 不存在",
+                CanAutoFix: false,
+                SuggestedFix: "请确认 ID 正确或先执行工作流");
+        }
+
+        return execution;
+    }
+
+    /// <summary>
     /// 拒绝 AI 生成的工作流草稿，写入拒绝理由。草稿保留以供 AI 拉取反馈。
     /// </summary>
     /// <param name="draftId">草稿工作流 ID（合法 Guid 格式）。</param>

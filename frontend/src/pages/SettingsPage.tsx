@@ -23,6 +23,7 @@ import { Trans, useTranslation } from "react-i18next"
 import { useAuth } from "../hooks/AuthContext.tsx"
 import type { CreateApiKeyResult } from "../types/workflow.ts"
 import * as api from "../services/api.ts"
+import { formatLocalDate } from "../utils/dateUtils.ts"
 
 export function SettingsPage() {
   const { user } = useAuth()
@@ -110,11 +111,7 @@ export function SettingsPage() {
 
   const formatDate = (dateStr: string | null | undefined) => {
     if (!dateStr) return "—"
-    try {
-      return new Date(dateStr).toLocaleDateString()
-    } catch {
-      return dateStr
-    }
+    return formatLocalDate(dateStr)
   }
 
   return (

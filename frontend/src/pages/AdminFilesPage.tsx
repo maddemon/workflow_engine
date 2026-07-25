@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useRequest } from 'ahooks';
 import { Upload, Download, Trash2, AlertCircle } from 'lucide-react';
 import { getProjects, listFiles, uploadFile, downloadFile, deleteFile, formatFileSize } from '../services/api.ts';
+import { formatLocalDateTime } from '../utils/dateUtils.ts';
 import styles from './AdminFilesPage.module.css';
 
 export function AdminFilesPage() {
@@ -190,7 +191,7 @@ export function AdminFilesPage() {
                     <Table.Td><Text fw={500} size="sm">{f.fileName}</Text></Table.Td>
                     <Table.Td><Text size="xs" c="dimmed">{f.contentType}</Text></Table.Td>
                     <Table.Td><Text size="sm">{formatFileSize(f.fileSize)}</Text></Table.Td>
-                    <Table.Td><Text size="sm">{new Date(f.createdAt).toLocaleString()}</Text></Table.Td>
+                    <Table.Td><Text size="sm">{formatLocalDateTime(f.createdAt)}</Text></Table.Td>
                     <Table.Td>
                       <Group gap={4} justify="flex-end">
                         <Tooltip label={t('filesPage.download')}>

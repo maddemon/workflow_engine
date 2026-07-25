@@ -5,6 +5,7 @@ import { useRequest } from 'ahooks';
 import { Search, X } from 'lucide-react';
 import { queryAuditEvents, type AuditQueryParams } from '../services/api.ts';
 import { AuditDetailDrawer } from '../components/admin/AuditDetailDrawer.tsx';
+import { formatLocalDateTime } from '../utils/dateUtils.ts';
 
 const PAGE_SIZE = 20;
 
@@ -16,12 +17,7 @@ function extractField(event: Record<string, unknown>, field: string): string {
 }
 
 function formatTime(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  try {
-    return new Date(iso).toLocaleString();
-  } catch {
-    return iso;
-  }
+  return formatLocalDateTime(iso);
 }
 
 export function AdminAuditPage() {

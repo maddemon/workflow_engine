@@ -6,6 +6,7 @@ using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Scripting;
+using FlowEngine.Core.ValueObjects;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -88,7 +89,14 @@ public sealed class FilterNode : INodeType
         return new NodeExecutionResult
         {
             Success = true,
-            Output = new DataBatch { Items = keptItems }
+            Output = new DataBatch { Items = keptItems },
+            // 同时向 Kept / Discarded 两个输出端口分发，使下游分支节点（连到 Kept 或 Discarded）能被正确调度。
+            // 旧的「单一 Output + BranchIndex」模型无法表达「一次向两个端口同时输出」，故用 PortOutputs 逐端口路由。
+            PortOutputs = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase)
+            {
+                [FlowConstants.PortNames.Kept] = new DataBatch { Items = keptItems },
+                [FlowConstants.PortNames.Discarded] = new DataBatch { Items = discardedItems },
+            }
         };
     }
 

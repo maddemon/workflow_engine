@@ -772,7 +772,7 @@ public class WorkflowExecutorTests
             "BuildNodeExecutionRecord",
             BindingFlags.NonPublic | BindingFlags.Instance,
             null,
-            new[] { typeof(string), typeof(int), typeof(IReadOnlyDictionary<string, DataBatch>), typeof(NodeExecutionResult), typeof(NodeExecutionContext), typeof(IReadOnlySet<string>) },
+            new[] { typeof(string), typeof(int), typeof(IReadOnlyDictionary<string, DataBatch>), typeof(NodeExecutionResult), typeof(NodeExecutionContext), typeof(IReadOnlySet<string>), typeof(DateTime) },
             null);
         Assert.NotNull(method);
 
@@ -785,7 +785,8 @@ public class WorkflowExecutorTests
                 new Dictionary<string, DataBatch>(),
                 new NodeExecutionResult(),
                 context,
-                ExecutionSession.EmptySensitiveValues
+                ExecutionSession.EmptySensitiveValues,
+                DateTime.UtcNow
             })!;
 
         var masked = Assert.IsType<Dictionary<string, object>>(record.ResolvedParameters["cred"]);

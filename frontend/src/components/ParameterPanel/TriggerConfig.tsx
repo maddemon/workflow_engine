@@ -9,6 +9,7 @@ import { useTranslation } from 'react-i18next';
 import { useRequest } from 'ahooks';
 import { InfoTooltip } from './fields/InfoTooltip.tsx';
 import { CronBuilder } from './fields/CronBuilder.tsx';
+import { formatLocalDateTime } from '../../utils/dateUtils.ts';
 import type { TriggerDto, TriggerSettingsDto } from '../../types/workflow.ts';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
 import * as api from '../../services/api.ts';
@@ -170,7 +171,7 @@ export function TriggerConfig({ workflowId, isExecuting, reviewMode }: TriggerCo
               {trigger.type === 'Schedule' && trigger.settings?.cronExpression && (
                 <Text size="xs" ff="monospace" c="dimmed" mt={2}>
                   Cron: {trigger.settings.cronExpression}
-                  {trigger.nextTriggerAt && <> · Next: {new Date(trigger.nextTriggerAt).toLocaleString()}</>}
+                  {trigger.nextTriggerAt && <> · Next: {formatLocalDateTime(trigger.nextTriggerAt)}</>}
                 </Text>
               )}
               {trigger.type === 'Webhook' && (

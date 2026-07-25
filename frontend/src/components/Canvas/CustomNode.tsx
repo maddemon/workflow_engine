@@ -8,6 +8,7 @@ import { useCanvasStore } from "./stores/canvasStore.ts"
 import { getNodeCategoryColor } from "../../theme.ts"
 import type { PortDefinition } from "../../types/workflow.ts"
 import { computeDynamicPorts } from "../../utils/computeDynamicPorts.ts"
+import { encodeHandleId } from "../../utils/handleId.ts"
 import { NodeIcon } from "../common/NodeIcon.tsx"
 import { ConnectedHandlesContext } from "./connectedHandlesContext.ts"
 
@@ -267,7 +268,7 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
       {visibleInputPorts.map((port) => {
         const layout = layouts.get(port.name)
         if (!layout) return null
-        const handleId = `port-${port.name}`
+        const handleId = encodeHandleId(port.name)
         const isConnected = connectedHandles.has(handleId)
         const isVerticalEdge = layout.position === Position.Left || layout.position === Position.Right
         const posClass =
@@ -293,7 +294,7 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
       {visibleOutputPorts.map((port) => {
         const layout = layouts.get(port.name)
         if (!layout) return null
-        const handleId = `port-${port.name}`
+        const handleId = encodeHandleId(port.name)
         const isConnected = connectedHandles.has(handleId)
         const isVerticalEdge = layout.position === Position.Left || layout.position === Position.Right
         const posClass =

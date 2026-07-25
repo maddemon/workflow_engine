@@ -119,6 +119,73 @@ public sealed class OutputRouterTests
         Assert.False(session.WaitingArea.IsReady(session.Execution.Id, target.Id, inputPorts));
     }
 
+    [Fact]
+    public async Task RouteOutputsAsync_MultiOutputPortSource_RoutesEachPortToItsTarget()
+    {
+        // 复现 Filter 节点 bug：一个节点同时向 Kept / Discarded 两个输出端口分发数据，
+        // OutputRouter 必须按各命名端口分别路由，否则连到 Kept/Discarded 的下游永远不被调度。
+        var source = CreateNode("f", "passThrough");
+        var kept = CreateNode("k", "passThrough");
+        var discarded = CreateNode("d", "passThrough");
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "w",
+            CreatedBy = "t",
+            Nodes = [source, kept, discarded],
+            Connections =
+            [
+                new Connection
+                {
+                    Id = Guid.NewGuid(),
+                    SourceNodeId = source.Id,
+                    SourcePortName = FlowConstants.PortNames.Kept,
+                    TargetNodeId = kept.Id,
+                    TargetPortName = FlowConstants.PortNames.Input
+                },
+                new Connection
+                {
+                    Id = Guid.NewGuid(),
+                    SourceNodeId = source.Id,
+                    SourcePortName = FlowConstants.PortNames.Discarded,
+                    TargetNodeId = discarded.Id,
+                    TargetPortName = FlowConstants.PortNames.Input
+                }
+            ]
+        };
+        var session = BuildSession(workflow);
+        var sourceType = _nodeRegistry.Get(source.TypeName);
+        var result = new NodeExecutionResult
+        {
+            Success = true,
+            PortOutputs = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase)
+            {
+                [FlowConstants.PortNames.Kept] = new DataBatch
+                {
+                    Items = [new DataItem { Data = 1, Success = true, SourceIndex = 0 }]
+                },
+                [FlowConstants.PortNames.Discarded] = new DataBatch
+                {
+                    Items = [new DataItem { Data = 2, Success = true, SourceIndex = 0 }]
+                }
+            }
+        };
+
+        await _router.RouteOutputsAsync(source, sourceType, result, session, new NoopSideEffects(), CancellationToken.None);
+
+        var enqueued = new List<NodeWorkItem>();
+        while (session.Queue.Reader.TryRead(out var it))
+        {
+            enqueued.Add(it);
+        }
+
+        Assert.Equal(2, enqueued.Count);
+        var keptItem = enqueued.Single(i => i.NodeInstanceId == kept.Id);
+        var discardedItem = enqueued.Single(i => i.NodeInstanceId == discarded.Id);
+        Assert.Equal(1, keptItem.Inputs[FlowConstants.PortNames.Input].Items[0].Data!.GetValue<int>());
+        Assert.Equal(2, discardedItem.Inputs[FlowConstants.PortNames.Input].Items[0].Data!.GetValue<int>());
+    }
+
     private static ExecutionSession BuildSession(Workflow workflow)
     {
         var record = new ExecutionRecord
