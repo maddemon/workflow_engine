@@ -1,5 +1,6 @@
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Configuration;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -23,6 +24,7 @@ public sealed class WorkflowSchedulerKernelTests
     private readonly INodeRegistry _nodeRegistry;
     private readonly NodeExecutionContextFactory _contextFactory;
     private readonly WorkflowSchedulerKernel _kernel;
+    private readonly NodeProcessor _nodeProcessor;
 
     public WorkflowSchedulerKernelTests()
     {
@@ -55,6 +57,15 @@ public sealed class WorkflowSchedulerKernelTests
             new HashSet<string>());
         _kernel = new WorkflowSchedulerKernel(
             _nodeRegistry, _contextFactory, new ErrorStrategyHandler(), new SecretMasker(), NullLogger<WorkflowSchedulerKernel>.Instance);
+
+        // BuildNodeExecutionRecord 已下沉至 NodeProcessor，构造其实例供反射测试调用。
+        _nodeProcessor = new NodeProcessor(
+            _nodeRegistry,
+            _contextFactory,
+            new SecretMasker(),
+            new RetryExecutor(new EngineDefaultsOptions(), new ErrorStrategyHandler(), NullLogger<RetryExecutor>.Instance),
+            new OutputRouter(_nodeRegistry, NullLogger<OutputRouter>.Instance),
+            new EngineDefaultsOptions());
     }
 
     // CON-6：调度空闲循环由 SchedulerWake 信号事件驱动唤醒，取代固定 500ms 空轮询。
@@ -330,7 +341,7 @@ public sealed class WorkflowSchedulerKernelTests
             Inputs = new Dictionary<string, DataBatch>()
         };
 
-        var method = typeof(WorkflowSchedulerKernel).GetMethod(
+        var method = typeof(NodeProcessor).GetMethod(
             "BuildNodeExecutionRecord",
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance,
             null,
@@ -339,7 +350,7 @@ public sealed class WorkflowSchedulerKernelTests
         Assert.NotNull(method);
 
         var record = (NodeExecutionRecord)method.Invoke(
-            _kernel,
+            _nodeProcessor,
             new object?[]
             {
                 "test-node",

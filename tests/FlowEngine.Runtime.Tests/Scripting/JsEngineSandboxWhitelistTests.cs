@@ -76,4 +76,17 @@ public class JsEngineSandboxWhitelistTests
             "(function () { var o = {}; var p = o['pro' + 'cess']; return (p && p.System) ? 'LEAK' : 'SAFE'; })()");
         Assert.Equal("SAFE", result.AsString());
     }
+
+    [Fact]
+    public void ConfusableHomoglyphIdentifier_IsNotExposed()
+    {
+        using var engine = JsEngine.Create();
+
+        // SEC-7：白名单为默认拒绝，仅放行已知安全标识符。借助 Unicode 同形异义字符
+        // （如西里尔小写 е U+0435）拼写的 'еval'/'fеtch' 是不同于 ASCII 标识符的全新名称，
+        // 在沙箱中不存在，无法借拼写变体绕过白名单逃逸到危险 API 或 CLR。
+        Assert.True(engine.Evaluate("typeof еval === 'undefined'").AsBoolean());
+        Assert.True(engine.Evaluate("typeof fеtch === 'undefined'").AsBoolean());
+        Assert.True(engine.Evaluate("typeof glоbalThis === 'undefined'").AsBoolean());
+    }
 }

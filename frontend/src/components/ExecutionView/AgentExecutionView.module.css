@@ -1,0 +1,60 @@
+.iterationRow {
+  display: flex;
+  gap: 10px;
+  position: relative;
+}
+
+.iconColumn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.iterationIcon {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1.5px solid var(--mantine-color-indigo-3);
+  background: var(--mantine-color-indigo-1);
+  color: var(--mantine-color-indigo-6);
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.connector {
+  width: 1.5px;
+  flex: 1;
+  min-height: 12px;
+  background: var(--exec-connector);
+  border-radius: 1px;
+}
+
+.content {
+  flex: 1;
+  min-width: 0;
+}
+
+.itemButton {
+  border-radius: 6px;
+  padding: 4px 6px;
+  transition: background 0.15s ease;
+}
+
+.itemButton:hover {
+  background: var(--exec-hover);
+}
+
+.subRecordButton {
+  border-radius: 6px;
+  padding: 4px 6px;
+  transition: background 0.15s ease;
+}
+
+.subRecordButton:hover {
+  background: var(--exec-hover);
+}

@@ -1,3 +1,5 @@
+using System.Buffers;
+using System.Threading;
 using FlowEngine.Application.Authorization;
 using FlowEngine.Application.Identity;
 using FlowEngine.Core.Authorization;
@@ -144,6 +146,81 @@ public class ExecutionWebSocketHandlerTests
         Assert.Empty(_connectionManager.GetConnections(executionId));
     }
 
+    [Fact]
+    public async Task HandleAsync_NormalSubscribe_RentsAndReturnsBufferExactlyOnce()
+    {
+        // CON-1 回归守护：正常订阅路径应恰好 Rent 一次、Return 一次（禁止双重归还污染 ArrayPool）。
+        var pool = new TrackingArrayPool();
+        var userId = Guid.NewGuid();
+        var executionId = Guid.NewGuid();
+
+        var userContextMock = new Mock<IUserContext>();
+        userContextMock.Setup(u => u.IsAuthenticated).Returns(true);
+        userContextMock.Setup(u => u.UserId).Returns(userId);
+        _authzMock
+            .Setup(a => a.CanAccessExecutionAsync(userId, executionId, Operation.Read, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var subscribeJson = $"{{\"type\":\"subscribe\",\"executionId\":\"{executionId}\"}}";
+        var webSocket = CreateWebSocketForSubscribeThenClose(Encoding.UTF8.GetBytes(subscribeJson));
+
+        var handler = new ExecutionWebSocketHandler(
+            _connectionManager,
+            _replayService,
+            userContextMock.Object,
+            _authzMock.Object,
+            _loggerMock.Object,
+            pool);
+
+        var context = new DefaultHttpContext();
+        context.Features.Set<IHttpWebSocketFeature>(new TestWebSocketFeature(webSocket));
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+        context.RequestAborted = cts.Token;
+
+        await handler.HandleAsync(context, () => Task.CompletedTask);
+
+        Assert.Equal(1, pool.RentCount);
+        Assert.Equal(1, pool.ReturnCount);
+    }
+
+    [Fact]
+    public async Task HandleAsync_MidClose_RentsAndReturnsBufferExactlyOnce()
+    {
+        // CON-1 回归守护：大消息中间收到 Close 的路径同样应恰好 Rent 一次、Return 一次。
+        var pool = new TrackingArrayPool();
+        var userId = Guid.NewGuid();
+        var executionId = Guid.NewGuid();
+
+        var userContextMock = new Mock<IUserContext>();
+        userContextMock.Setup(u => u.IsAuthenticated).Returns(true);
+        userContextMock.Setup(u => u.UserId).Returns(userId);
+        _authzMock
+            .Setup(a => a.CanAccessExecutionAsync(userId, executionId, Operation.Read, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+
+        var subscribeJson = $"{{\"type\":\"subscribe\",\"executionId\":\"{executionId}\"}}";
+        var bytes = Encoding.UTF8.GetBytes(subscribeJson);
+        var webSocket = new SplitCloseWebSocket(bytes, bytes.Length / 2);
+
+        var handler = new ExecutionWebSocketHandler(
+            _connectionManager,
+            _replayService,
+            userContextMock.Object,
+            _authzMock.Object,
+            _loggerMock.Object,
+            pool);
+
+        var context = new DefaultHttpContext();
+        context.Features.Set<IHttpWebSocketFeature>(new TestWebSocketFeature(webSocket));
+        using var cts = new CancellationTokenSource(TimeSpan.FromMilliseconds(500));
+        context.RequestAborted = cts.Token;
+
+        await handler.HandleAsync(context, () => Task.CompletedTask);
+
+        Assert.Equal(1, pool.RentCount);
+        Assert.Equal(1, pool.ReturnCount);
+    }
+
     private static WebSocket CreateWebSocketForSubscribeThenClose(byte[] messageBytes)
     {
         return new FakeWebSocket(messageBytes);
@@ -272,6 +349,29 @@ public class ExecutionWebSocketHandlerTests
 
         public override void Dispose()
         {
+        }
+    }
+
+    /// <summary>
+    /// 计数型 <see cref="ArrayPool{T}"/> 包装，用于断言接收缓冲区恰好被租借/归还一次（CON-1 回归守护）。
+    /// </summary>
+    private sealed class TrackingArrayPool : ArrayPool<byte>
+    {
+        private readonly ArrayPool<byte> _inner = ArrayPool<byte>.Shared;
+
+        public int RentCount;
+        public int ReturnCount;
+
+        public override byte[] Rent(int minimumLength)
+        {
+            Interlocked.Increment(ref RentCount);
+            return _inner.Rent(minimumLength);
+        }
+
+        public override void Return(byte[] array, bool clearArray = false)
+        {
+            Interlocked.Increment(ref ReturnCount);
+            _inner.Return(array, clearArray);
         }
     }
 }

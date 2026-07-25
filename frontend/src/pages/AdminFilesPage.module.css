@@ -1,0 +1,32 @@
+.hiddenInput {
+  display: none;
+}
+
+.dropZone {
+  border-radius: var(--mantine-radius-sm);
+  transition: border-color 0.2s, background-color 0.2s;
+  padding: 4px;
+  position: relative;
+}
+
+.dropZoneActive {
+  border: 2px dashed var(--mantine-color-blue-5);
+  background-color: var(--mantine-color-blue-0);
+}
+
+.dropZoneIdle {
+  border: 2px dashed transparent;
+  background-color: transparent;
+}
+
+.dropOverlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--mantine-color-body);
+  z-index: 10;
+  border-radius: var(--mantine-radius-sm);
+  pointer-events: none;
+}

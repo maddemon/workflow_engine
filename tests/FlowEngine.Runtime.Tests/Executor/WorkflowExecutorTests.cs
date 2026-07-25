@@ -1,8 +1,11 @@
 using System.Reflection;
+using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Configuration;
 using FlowEngine.Core.Data;
 using FlowEngine.Core.Entities;
+using FlowEngine.Core.Events;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.ValueObjects;
 using FlowEngine.Runtime.Executor;
@@ -22,6 +25,7 @@ public class WorkflowExecutorTests
     private readonly INodeRegistry _nodeRegistry;
     private readonly WorkflowExecutor _executor;
     private readonly WorkflowExecutionQueue _executionQueue;
+    private readonly RecordingEventBus _eventBus = new();
 
     public WorkflowExecutorTests()
     {
@@ -64,7 +68,8 @@ public class WorkflowExecutorTests
             _executionQueue,
             NullLogger<WorkflowExecutor>.Instance,
             NullLogger<WorkflowSchedulerKernel>.Instance,
-            new FlowEngine.Runtime.Security.SecretMasker());
+            new FlowEngine.Runtime.Security.SecretMasker(),
+            _eventBus);
     }
 
     private async Task DrainAndExecuteAsync(CancellationToken cancellationToken = default)
@@ -577,6 +582,25 @@ public class WorkflowExecutorTests
             => Task.FromResult(new CredentialValue());
     }
 
+    /// <summary>
+    /// 记录所有已发布领域事件的虚假 <see cref="IEventBus"/>，用于断言执行器确实发布了事件（OBS-2）。
+    /// </summary>
+    private sealed class RecordingEventBus : IEventBus
+    {
+        public List<IDomainEvent> Published { get; } = new();
+
+        public Task PublishAsync<TEvent>(TEvent eventInstance, CancellationToken cancellationToken = default)
+            where TEvent : IDomainEvent
+        {
+            Published.Add(eventInstance);
+            return Task.CompletedTask;
+        }
+
+        public IDisposable Subscribe<TEvent>(Func<TEvent, CancellationToken, Task> handler)
+            where TEvent : IDomainEvent
+            => throw new NotImplementedException();
+    }
+
     private SpyDbContext CreateSpyDbContext()
     {
         var options = new DbContextOptionsBuilder<FlowEngineDbContext>()
@@ -736,13 +760,15 @@ public class WorkflowExecutorTests
             new TestCredentialAccessor(),
             new HashSet<string>());
         var errorHandler = new ErrorStrategyHandler();
-        var kernel = new WorkflowSchedulerKernel(
+        // BuildNodeExecutionRecord 已下沉至 NodeProcessor，构造其实例供反射调用。
+        var processor = new NodeProcessor(
             _nodeRegistry,
             contextFactory,
-            errorHandler,
             new FlowEngine.Runtime.Security.SecretMasker(),
-            NullLogger<WorkflowSchedulerKernel>.Instance);
-        var method = typeof(WorkflowSchedulerKernel).GetMethod(
+            new RetryExecutor(new EngineDefaultsOptions(), errorHandler, NullLogger<RetryExecutor>.Instance),
+            new OutputRouter(_nodeRegistry, NullLogger<OutputRouter>.Instance),
+            new EngineDefaultsOptions());
+        var method = typeof(NodeProcessor).GetMethod(
             "BuildNodeExecutionRecord",
             BindingFlags.NonPublic | BindingFlags.Instance,
             null,
@@ -751,7 +777,7 @@ public class WorkflowExecutorTests
         Assert.NotNull(method);
 
         var record = (NodeExecutionRecord)method.Invoke(
-            kernel,
+            processor,
             new object?[]
             {
                 "testNode",
@@ -766,5 +792,120 @@ public class WorkflowExecutorTests
         Assert.Equal("my-api-key", masked["name"]);
         Assert.False(masked.ContainsKey("Fields"));
         Assert.False(masked.ContainsKey("fields"));
+    }
+
+    /// <summary>
+    /// CON-5 回归：默认配置必须启用内存上限。修复前 MaxRetainedOutputItems 默认 0（与注释"0=不限制"一致，
+    /// 但导致计划验收"大批次输出内存有上限"在默认环境下根本不生效）。
+    /// </summary>
+    [Fact]
+    public void EngineDefaultsOptions_MaxRetainedOutputItems_HasPositiveDefault()
+    {
+        Assert.True(
+            new EngineDefaultsOptions().MaxRetainedOutputItems > 0,
+            "MaxRetainedOutputItems 默认应为正数，确保默认环境下大批次输出内存上限生效。");
+    }
+
+    /// <summary>
+    /// CON-5 回归：超过上限时仅保留最新 N 项输出（旧项被丢弃），以限制常驻内存。
+    /// 直接验证内核私有 CapRetainedOutput（与 BuildNodeExecutionRecord 测试一致，经反射调用）。
+    /// </summary>
+    [Fact]
+    public void CapRetainedOutput_TruncatesToLatestMaxItems()
+    {
+        var resolver = new ParameterResolver(
+            NullLogger<ParameterResolver>.Instance,
+            Options.Create(new JsEngineOptions()),
+            new ScriptCache(Options.Create(new JsEngineOptions())));
+        var contextFactory = new NodeExecutionContextFactory(
+            _nodeRegistry,
+            new ScriptCache(Options.Create(new JsEngineOptions())),
+            resolver,
+            new TestCredentialAccessor(),
+            new HashSet<string>());
+        // CapRetainedOutput 已下沉至 NodeProcessor，构造其实例（MaxRetainedOutputItems=5）供反射调用。
+        var processor = new NodeProcessor(
+            _nodeRegistry,
+            contextFactory,
+            new FlowEngine.Runtime.Security.SecretMasker(),
+            new RetryExecutor(new EngineDefaultsOptions { MaxRetainedOutputItems = 5 }, new ErrorStrategyHandler(), NullLogger<RetryExecutor>.Instance),
+            new OutputRouter(_nodeRegistry, NullLogger<OutputRouter>.Instance),
+            new EngineDefaultsOptions { MaxRetainedOutputItems = 5 });
+
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "cap",
+            CreatedBy = "test",
+            Nodes = [],
+            Connections = []
+        };
+        var execution = new ExecutionRecord { Id = Guid.NewGuid(), Status = ExecutionStatus.Pending };
+        var session = new ExecutionSession(workflow, execution, execution.Id);
+
+        var items = Enumerable.Range(0, 10)
+            .Select(i => new DataItem
+            {
+                Data = new JsonObject { ["i"] = i },
+                Success = true,
+                SourceIndex = i
+            })
+            .ToList();
+        session.SuccessfulOutputs["n"] = new DataBatch { Items = items };
+
+        var method = typeof(NodeProcessor).GetMethod(
+            "CapRetainedOutput",
+            BindingFlags.NonPublic | BindingFlags.Instance);
+        Assert.NotNull(method);
+        method.Invoke(processor, new object[] { session, "n" });
+
+        Assert.Equal(5, session.SuccessfulOutputs["n"].Items.Count);
+        // 保留最新 5 项（SourceIndex 5..9），最旧项被丢弃。
+        Assert.Equal(5, session.SuccessfulOutputs["n"].Items[0].Data?["i"]?.GetValue<int>());
+        Assert.Equal(9, session.SuccessfulOutputs["n"].Items[^1].Data?["i"]?.GetValue<int>());
+    }
+
+    /// <summary>
+    /// OBS-2 回归：执行真实工作流时，执行器应经事件总线发布
+    /// <see cref="WorkflowStartedEvent"/>、<see cref="NodeExecutedEvent"/>（每个节点一次）与
+    /// <see cref="WorkflowCompletedEvent"/>，使审计链（执行开始/节点完成/执行结束）可被订阅。
+    /// </summary>
+    [Fact]
+    public async Task Executor_Publishes_WorkflowStarted_NodeExecuted_And_Completed_Events()
+    {
+        var nodeA = CreateNode("a", "passThrough", isEntry: true);
+        var nodeB = CreateNode("b", "increment");
+        var workflow = new Workflow
+        {
+            Id = Guid.NewGuid(),
+            Name = "events",
+            CreatedBy = "test",
+            Nodes = [nodeA, nodeB],
+            Connections =
+            [
+                new Connection
+                {
+                    Id = Guid.NewGuid(),
+                    SourceNodeId = nodeA.Id,
+                    SourcePortName = FlowConstants.PortNames.Output,
+                    TargetNodeId = nodeB.Id,
+                    TargetPortName = FlowConstants.PortNames.Input
+                }
+            ]
+        };
+
+        _eventBus.Published.Clear();
+        _dbContext.Workflows.Add(workflow);
+        await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
+
+        var executionId = await _executor.StartAsync(workflow.Id, 5, TestContext.Current.CancellationToken);
+        var record = await WaitForExecutionAsync(executionId.Value, cancellationToken: TestContext.Current.CancellationToken);
+
+        Assert.Equal(ExecutionStatus.Completed, record.Status);
+        Assert.Contains(_eventBus.Published, e => e is WorkflowStartedEvent);
+        Assert.Contains(_eventBus.Published, e => e is NodeExecutedEvent);
+        Assert.Contains(_eventBus.Published, e => e is WorkflowCompletedEvent);
+        // 每个节点应各发布一次 NodeExecutedEvent（共 2 个节点）。
+        Assert.Equal(2, _eventBus.Published.Count(e => e is NodeExecutedEvent));
     }
 }

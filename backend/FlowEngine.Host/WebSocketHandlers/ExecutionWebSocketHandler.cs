@@ -17,19 +17,23 @@ public sealed class ExecutionWebSocketHandler
     private readonly WebSocketAuthenticator _authenticator;
     private readonly WebSocketSubscriptionManager _subscriptions;
     private readonly WebSocketHeartbeatHandler _heartbeat;
+    private readonly ArrayPool<byte> _bufferPool;
 
     /// <summary>
     /// 初始化执行 WebSocket 端点处理器。
     /// </summary>
+    /// <param name="bufferPool">接收缓冲区池，默认 <see cref="ArrayPool{T}.Shared"/>；测试可注入自定义池以校验归还次数（CON-1）。</param>
     public ExecutionWebSocketHandler(
         WebSocketConnectionManager connectionManager,
         WebSocketReplayService replayService,
         IUserContext userContext,
         IResourceAuthorizationService resourceAuthorization,
-        ILogger<ExecutionWebSocketHandler> logger)
+        ILogger<ExecutionWebSocketHandler> logger,
+        ArrayPool<byte>? bufferPool = null)
     {
         _connectionManager = connectionManager;
         _logger = logger;
+        _bufferPool = bufferPool ?? ArrayPool<byte>.Shared;
         _authenticator = new WebSocketAuthenticator(userContext, resourceAuthorization);
         _subscriptions = new WebSocketSubscriptionManager(
             connectionManager, replayService, _authenticator, logger);
@@ -88,7 +92,7 @@ public sealed class ExecutionWebSocketHandler
 
     private async Task ProcessConnectionAsync(WebSocketConnection connection, CancellationToken cancellationToken)
     {
-        var buffer = ArrayPool<byte>.Shared.Rent(4096);
+        var buffer = _bufferPool.Rent(4096);
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         var heartbeatCts = new CancellationTokenSource();
         cts.Token.Register(() => heartbeatCts.Cancel());
@@ -155,7 +159,7 @@ public sealed class ExecutionWebSocketHandler
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(buffer);
+            _bufferPool.Return(buffer);
             heartbeatCts.Cancel();
             heartbeatCts.Dispose();
         }

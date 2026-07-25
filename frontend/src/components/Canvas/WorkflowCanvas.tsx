@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef } from "react"
 import { useTranslation } from "react-i18next"
 import { useCanvasStore } from "./stores/canvasStore.ts"
 import { ConnectedHandlesContext } from "./connectedHandlesContext.ts"
+import styles from "./WorkflowCanvas.module.css"
 import { CanvasToolbar } from "./CanvasToolbar.tsx"
 import { CustomEdge } from "./CustomEdge.tsx"
 import { CustomNode } from "./CustomNode.tsx"
@@ -229,7 +230,7 @@ export function WorkflowCanvas({ onExecute, onCancel, onDryRun, dryRunLoading }:
   }, [copyNode, pasteNode, screenToFlowPosition, t])
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+    <div className={styles.root}>
       <CanvasToolbar onExecute={onExecute} onCancel={onCancel} onDryRun={onDryRun} dryRunLoading={dryRunLoading} />
       <div ref={reactFlowWrapper} className="workflow-canvas" data-testid="workflow-canvas">
         <ConnectedHandlesContext.Provider value={connectedHandlesByNode}>

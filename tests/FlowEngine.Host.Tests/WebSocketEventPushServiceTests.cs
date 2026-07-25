@@ -304,6 +304,63 @@ public class WebSocketEventPushServiceTests : IDisposable
         Assert.True(true);
     }
 
+    /// <summary>
+    /// OBS-7：全部连接开放时，应自增 WebSocketBroadcastSuccess 计数（成功数=连接数），
+    /// 并记录结构化调试日志（成功=N）。
+    /// </summary>
+    [Fact]
+    public async Task Handle_AllOpenConnections_RecordsSuccessLog()
+    {
+        // OBS-7：全部连接开放时，结构化日志应记录成功计数=连接数（WebSocketBroadcastSuccess 同步自增）。
+        var executionId = Guid.NewGuid();
+        for (var i = 0; i < 3; i++)
+        {
+            var ws = new Mock<WebSocket>();
+            ws.SetupGet(w => w.State).Returns(WebSocketState.Open);
+            _connectionManager.Subscribe(executionId, new WebSocketConnection(ws.Object));
+        }
+
+        await ((INotificationHandler<WorkflowStartedEvent>)_service)
+            .Handle(new WorkflowStartedEvent(executionId, Guid.NewGuid()), CancellationToken.None);
+
+        _loggerMock.Verify(
+            x => x.Log(
+                LogLevel.Debug,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, _) => v.ToString()!.Contains("成功=3")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+
+    /// <summary>
+    /// OBS-7：存在失败连接时，应自增 WebSocketBroadcastFailure 计数（失败数=失败连接数），
+    /// 并记录结构化警告日志（成功=M，失败=N）。
+    /// </summary>
+    [Fact]
+    public async Task Handle_MixedConnections_RecordsFailureCounterAndLog()
+    {
+        var executionId = Guid.NewGuid();
+        var openWs = new Mock<WebSocket>();
+        openWs.SetupGet(w => w.State).Returns(WebSocketState.Open);
+        var closedWs = new Mock<WebSocket>();
+        closedWs.SetupGet(w => w.State).Returns(WebSocketState.Closed);
+        _connectionManager.Subscribe(executionId, new WebSocketConnection(openWs.Object));
+        _connectionManager.Subscribe(executionId, new WebSocketConnection(closedWs.Object));
+
+        await ((INotificationHandler<WorkflowStartedEvent>)_service)
+            .Handle(new WorkflowStartedEvent(executionId, Guid.NewGuid()), CancellationToken.None);
+
+        _loggerMock.Verify(
+            x => x.Log(
+                LogLevel.Warning,
+                It.IsAny<EventId>(),
+                It.Is<It.IsAnyType>((v, _) => v.ToString()!.Contains("成功=1") && v.ToString()!.Contains("失败=1")),
+                It.IsAny<Exception>(),
+                It.IsAny<Func<It.IsAnyType, Exception?, string>>()),
+            Times.Once);
+    }
+
     public void Dispose()
     {
         _service?.Dispose();

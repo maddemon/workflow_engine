@@ -3,6 +3,7 @@ import { ActionIcon, Box, CopyButton, Group, Modal, Space, Text, Tooltip } from 
 import { Copy, Maximize2 } from "lucide-react"
 import { useState } from "react"
 import { useTranslation } from "react-i18next"
+import styles from "./CodeViewer.module.css"
 
 interface CodeViewerProps {
   label: string
@@ -46,7 +47,7 @@ export function CodeViewer({ label, code, language = "json", maxHeight = 120 }: 
           overflow: "hidden",
         }}
       >
-        <div style={{ maxHeight, overflow: "auto" }}>
+        <div className={styles.scroll} style={{ maxHeight }}>
           <CodeHighlight
             code={code}
             language={language}

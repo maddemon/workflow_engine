@@ -13,6 +13,7 @@ import {
 } from '@mantine/core';
 import { useTranslation, Trans } from 'react-i18next';
 import { useRequest } from 'ahooks';
+import styles from './HelpPage.module.css';
 import { Check, Copy } from 'lucide-react';
 import * as api from '../services/api.ts';
 import type { CreateApiKeyResult } from '../types/workflow.ts';
@@ -132,7 +133,7 @@ function ApiKeyManager() {
 export function HelpPage() {
   const { t } = useTranslation('help');
   return (
-    <div style={{ height: '100%', overflowY: 'auto' }}>
+    <div className={styles.page}>
       <Stack p="md" gap="lg" style={{ maxWidth: 860, margin: '0 auto' }}>
         <Title order={2}>{t('title')}</Title>
 

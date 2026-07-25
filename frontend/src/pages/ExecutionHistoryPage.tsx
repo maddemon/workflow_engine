@@ -1,5 +1,6 @@
 import { useState, Fragment } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import styles from './ExecutionHistoryPage.module.css';
 import {
   Stack,
   Text,
@@ -274,13 +275,7 @@ export function ExecutionHistoryPage() {
                                   <Text size="xs" fw={500} mb={4} c="dimmed">
                                     {record.nodeDefinitionId.slice(0, 8)} output:
                                   </Text>
-                                  <pre style={{
-                                    margin: 0,
-                                    fontSize: 'var(--mantine-font-size-xs)',
-                                    whiteSpace: 'pre-wrap',
-                                    wordBreak: 'break-all',
-                                    color: 'var(--mantine-color-gray-0)',
-                                  }}>
+                                  <pre className={styles.outputPre}>
                                     {outputStr}
                                   </pre>
                                 </Box>

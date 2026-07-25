@@ -17,6 +17,7 @@ import {
 } from "@mantine/core"
 import { notifications } from "@mantine/notifications"
 import { useRequest } from "ahooks"
+import styles from "./SettingsPage.module.css"
 import { Check, Copy, Trash2 } from "lucide-react"
 import { Trans, useTranslation } from "react-i18next"
 import { useAuth } from "../hooks/AuthContext.tsx"
@@ -117,7 +118,7 @@ export function SettingsPage() {
   }
 
   return (
-    <div style={{ height: "100%", overflowY: "auto" }}>
+    <div className={styles.page}>
       <Stack p="md" gap="lg" style={{ maxWidth: 860, margin: "0 auto" }}>
         <Title order={2}>{t('title')}</Title>
 

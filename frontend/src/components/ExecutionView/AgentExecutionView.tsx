@@ -16,6 +16,7 @@ import type {
   AgentIteration,
 } from '../../types/agent-execution.ts';
 import { statusConfig, formatDuration } from '../../utils/execution.tsx';
+import styles from './AgentExecutionView.module.css';
 
 interface AgentExecutionViewProps {
   data: AgentExecutionData;
@@ -39,55 +40,22 @@ function IterationGroup({
   const duration = formatDuration(iteration.startedAt, iteration.completedAt);
 
   return (
-    <div style={{ display: 'flex', gap: 10, position: 'relative' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
-        <div
-          style={{
-            width: 24,
-            height: 24,
-            borderRadius: '50%',
-            background: 'var(--mantine-color-indigo-1)',
-            border: '1.5px solid var(--mantine-color-indigo-3)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'var(--mantine-color-indigo-6)',
-            flexShrink: 0,
-            fontSize: 10,
-            fontWeight: 600,
-          }}
-        >
+    <div className={styles.iterationRow}>
+      <div className={styles.iconColumn}>
+        <div className={styles.iterationIcon}>
           {iteration.index + 1}
         </div>
         {!isLast && (
-          <div
-            style={{
-              width: 1.5,
-              flex: 1,
-              minHeight: 12,
-              background: 'var(--exec-connector)',
-              borderRadius: 1,
-            }}
-          />
+          <div className={styles.connector} />
         )}
       </div>
 
-      <div style={{ flex: 1, minWidth: 0, paddingBottom: isLast ? 0 : 4 }}>
+      <div className={styles.content} style={{ paddingBottom: isLast ? 0 : 4 }}>
         <UnstyledButton
           data-testid={`iteration-${iteration.index}`}
           onClick={onToggle}
           w="100%"
-          style={{
-            borderRadius: 6,
-            padding: '4px 6px',
-            transition: 'background 0.15s ease',
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.background = 'var(--exec-hover)';
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLElement).style.background = 'transparent';
-          }}
+          className={styles.itemButton}
         >
           <Group gap="xs" wrap="nowrap">
             <Text size="xs" fw={500}>
@@ -151,17 +119,7 @@ function SubRecordItem({
       <UnstyledButton
         onClick={onToggle}
         w="100%"
-        style={{
-          borderRadius: 6,
-          padding: '4px 6px',
-          transition: 'background 0.15s ease',
-        }}
-        onMouseEnter={(e) => {
-          (e.currentTarget as HTMLElement).style.background = 'var(--exec-hover)';
-        }}
-        onMouseLeave={(e) => {
-          (e.currentTarget as HTMLElement).style.background = 'transparent';
-        }}
+        className={styles.subRecordButton}
       >
         <Group gap="xs" wrap="nowrap">
           <Box

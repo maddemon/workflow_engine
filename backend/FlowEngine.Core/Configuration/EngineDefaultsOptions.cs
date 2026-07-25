@@ -40,9 +40,10 @@ public class EngineDefaultsOptions
     /// <summary>
     /// 单个节点在 <c>SuccessfulOutputs</c> / <c>LatestBatches</c> 中保留的最大输出项数（CON-5）。
     /// 超过后仅保留最新 N 项，以限制大批次（如大 OncePerItem 输入）常驻内存。
-    /// 0 或负值表示不限制（沿用既有行为，内存随批次大小线性增长）。
+    /// 默认值 <c>1000</c>，确保默认环境下大批次输出内存上限生效。
+    /// 显式设为 0 或负值可关闭上限（不限制，内存随批次大小线性增长）。
     /// </summary>
-    public int MaxRetainedOutputItems { get; set; }
+    public int MaxRetainedOutputItems { get; set; } = 1000;
 
     /// <summary>
     /// 工作流执行后台服务并发消费队列的最大并行度（CON-2）。

@@ -1,0 +1,50 @@
+.row {
+  display: flex;
+  gap: 10px;
+  position: relative;
+}
+
+.chain {
+  display: flex;
+  flex-direction: column;
+}
+
+.iconColumn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.statusIcon {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  border: 1px solid transparent;
+}
+
+.connector {
+  width: 1px;
+  flex: 1;
+  min-height: 8px;
+  background: var(--exec-connector);
+}
+
+.content {
+  flex: 1;
+  min-width: 0;
+}
+
+.itemButton {
+  border-radius: 6px;
+  padding: 4px 6px;
+  transition: background 0.15s ease;
+}
+
+.itemButton:hover {
+  background: var(--exec-hover);
+}

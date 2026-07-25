@@ -1,0 +1,7 @@
+.outputPre {
+  margin: 0;
+  font-size: var(--mantine-font-size-xs);
+  white-space: pre-wrap;
+  word-break: break-all;
+  color: var(--mantine-color-gray-0);
+}

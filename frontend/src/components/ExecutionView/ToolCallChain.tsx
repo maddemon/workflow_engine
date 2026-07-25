@@ -13,6 +13,7 @@ import {
 import { useTranslation } from 'react-i18next';
 import { CodeViewer } from '../ExecutionPanel/CodeViewer.tsx';
 import type { ToolCallRecord, ExecutionStatus } from '../../types/agent-execution.ts';
+import styles from './ToolCallChain.module.css';
 
 interface ToolCallChainProps {
   toolCalls: ToolCallRecord[];
@@ -54,51 +55,28 @@ function ToolCallItem({
     : null;
 
   return (
-    <div style={{ display: 'flex', gap: 10, position: 'relative' }}>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
+    <div className={styles.row}>
+      <div className={styles.iconColumn}>
         <div
+          className={styles.statusIcon}
           style={{
-            width: 22,
-            height: 22,
-            borderRadius: 4,
             background: `var(--mantine-color-${config.color}-1)`,
-            border: `1px solid var(--mantine-color-${config.color}-3)`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            borderColor: `var(--mantine-color-${config.color}-3)`,
             color: `var(--mantine-color-${config.color}-6)`,
-            flexShrink: 0,
           }}
         >
           <Wrench size={11} />
         </div>
         {!isLast && (
-          <div
-            style={{
-              width: 1,
-              flex: 1,
-              minHeight: 8,
-              background: 'var(--exec-connector)',
-            }}
-          />
+          <div className={styles.connector} />
         )}
       </div>
 
-      <div style={{ flex: 1, minWidth: 0, paddingBottom: isLast ? 0 : 4 }}>
+      <div className={styles.content} style={{ paddingBottom: isLast ? 0 : 4 }}>
         <UnstyledButton
           onClick={() => setExpanded(!expanded)}
           w="100%"
-          style={{
-            borderRadius: 6,
-            padding: '4px 6px',
-            transition: 'background 0.15s ease',
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.background = 'var(--exec-hover)';
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLElement).style.background = 'transparent';
-          }}
+          className={styles.itemButton}
         >
           <Group gap="xs" wrap="nowrap">
             <Text size="xs" fw={500} style={{ fontFamily: 'monospace' }}>
@@ -187,7 +165,7 @@ export function ToolCallChain({ toolCalls }: ToolCallChainProps) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
+    <div className={styles.chain}>
       {toolCalls.map((call, index) => (
         <ToolCallItem
           key={call.id}

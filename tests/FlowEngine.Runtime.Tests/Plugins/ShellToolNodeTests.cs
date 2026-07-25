@@ -161,9 +161,11 @@ public class ShellToolNodeTests
     [Fact]
     public async Task Execute_RunInShellFalse_NotGated()
     {
+        // 使用跨平台真实可执行文件 `dotnet --version`：Windows 上 `echo` 是 cmd 内置命令而非独立 exe，
+        // 在 RunInShell=false 时直接以进程方式启动会失败；`dotnet` 在两种平台均为真实 exe。
         var node = new ShellToolNode
         {
-            Command = (Script)"'echo noglob'",
+            Command = (Script)"'dotnet --version'",
             Shell = ShellType.Cmd,
             RunInShell = false
         };

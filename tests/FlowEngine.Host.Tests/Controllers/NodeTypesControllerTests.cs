@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http.Json;
+using FlowEngine.Application.Dtos;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -32,7 +33,7 @@ public class NodeTypesControllerTests : HostIntegrationTestBase
         var response = await client.GetAsync("/api/v1/node-types", ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var result = await response.Content.ReadFromJsonAsync<IReadOnlyCollection<NodeTypeDescriptor>>(TestJsonOptions, ct);
+        var result = await response.Content.ReadFromJsonAsync<IReadOnlyCollection<NodeTypeDescriptorDto>>(TestJsonOptions, ct);
         Assert.NotNull(result);
         Assert.Equal(2, result!.Count);
     }
@@ -46,7 +47,7 @@ public class NodeTypesControllerTests : HostIntegrationTestBase
         var response = await client.GetAsync("/api/v1/node-types?category=Core", ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var result = await response.Content.ReadFromJsonAsync<IReadOnlyCollection<NodeTypeDescriptor>>(TestJsonOptions, ct);
+        var result = await response.Content.ReadFromJsonAsync<IReadOnlyCollection<NodeTypeDescriptorDto>>(TestJsonOptions, ct);
         Assert.NotNull(result);
         Assert.Single(result);
         Assert.Equal("Start", result!.First().TypeName);

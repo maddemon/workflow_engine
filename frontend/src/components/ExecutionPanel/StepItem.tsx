@@ -6,6 +6,7 @@ import { AgentExecutionView } from '../ExecutionView/AgentExecutionView.tsx';
 import type { NodeExecutionRecordDto, ExecutionStatus } from '../../types/workflow.ts';
 import type { AgentExecutionData } from '../../types/agent-execution.ts';
 import { extractError, formatDuration, formatOutputSummary, isAgentOutput } from './nodeOutputUtils.ts';
+import styles from './StepItem.module.css';
 
 const statusConfig: Record<ExecutionStatus, { icon: React.ReactNode; shade: string; labelKey: string }> = {
   Pending: { icon: <Clock size={13} />, shade: 'gray', labelKey: 'status.pending' },
@@ -51,54 +52,30 @@ export function StepItem({
     : 'var(--exec-pending-bg)';
 
   return (
-    <div style={{ display: 'flex', gap: 10, position: 'relative' }}>
+    <div className={styles.row}>
       {/* Fixed icon + connector column */}
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
+      <div className={styles.iconColumn}>
         <div
+          className={styles.statusIcon}
           style={{
-            width: 26,
-            height: 26,
-            borderRadius: '50%',
             background: statusBg,
-            border: `1.5px solid var(--mantine-color-${config.shade}-3)`,
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
+            borderColor: `var(--mantine-color-${config.shade}-3)`,
             color: `var(--mantine-color-${config.shade}-6)`,
-            flexShrink: 0,
           }}
         >
           {config.icon}
         </div>
         {!isLast && (
-          <div
-            style={{
-              width: 1.5,
-              flex: 1,
-              minHeight: 12,
-              background: 'var(--exec-connector)',
-              borderRadius: 1,
-            }}
-          />
+          <div className={styles.connector} />
         )}
       </div>
 
       {/* Content column */}
-      <div style={{ flex: 1, minWidth: 0, paddingBottom: isLast ? 0 : 4 }}>
+      <div className={styles.content} style={{ paddingBottom: isLast ? 0 : 4 }}>
         <UnstyledButton
           w="100%"
           onClick={onToggle}
-          style={{
-            borderRadius: 6,
-            padding: '6px 8px',
-            transition: 'background 0.15s ease',
-          }}
-          onMouseEnter={(e) => {
-            (e.currentTarget as HTMLElement).style.background = 'var(--exec-hover)';
-          }}
-          onMouseLeave={(e) => {
-            (e.currentTarget as HTMLElement).style.background = 'transparent';
-          }}
+          className={styles.itemButton}
         >
           <Group gap="xs" wrap="nowrap">
             <Text size="sm" fw={500} flex={1} truncate>
@@ -109,7 +86,7 @@ export function StepItem({
                 {duration}
               </Text>
             )}
-            <div style={{ color: 'var(--mantine-color-dimmed)', flexShrink: 0 }}>
+            <div className={styles.chevron}>
               {isExpanded ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
             </div>
           </Group>

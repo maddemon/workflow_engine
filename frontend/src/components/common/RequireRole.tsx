@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { useRoles } from '../../hooks/useRoles.ts';
+import styles from './RequireRole.module.css';
 
 interface RequireRoleProps {
   role: string;
@@ -13,7 +14,7 @@ export function RequireRole({ role, children, fallback }: RequireRoleProps) {
 
   if (!hasRole(role)) {
     return fallback ?? (
-      <div data-testid="permission-denied" style={{ padding: '2rem', textAlign: 'center', color: 'var(--mantine-color-dimmed)' }}>
+      <div data-testid="permission-denied" className={styles.denied}>
         {t('noPermission')}
       </div>
     );

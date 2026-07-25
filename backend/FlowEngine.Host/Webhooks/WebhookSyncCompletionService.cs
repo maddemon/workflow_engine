@@ -33,8 +33,9 @@ public sealed class WebhookSyncCompletionService : IWebhookSyncCompletionService
         }
 
         // 超时/取消时清理并失败该等待，由调用方降级为 202 Timeout。
-        using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        linked.CancelAfter(timeout);
+        // linked 必须存活至等待结束（完成或超时）才能触发回调；不能用 using 提前释放，
+        // 否则 linked 被释放后 CancelAfter 的定时器不执行，超时永远不生效，调用方将无限等待（EX-4 缺陷）。
+        var linked = CancellationTokenSource.CreateLinkedTokenSource(ct);
         linked.Token.Register(() =>
         {
             if (_pending.TryRemove(executionId, out var t))
@@ -42,7 +43,12 @@ public sealed class WebhookSyncCompletionService : IWebhookSyncCompletionService
                 // 超时与客户端断开都表示为"未在窗口内完成"，统一以 OperationCanceledException 让调用方降级为 202 Timeout。
                 t.TrySetException(new OperationCanceledException("Webhook sync wait timed out."));
             }
+
+            linked.Dispose();
         });
+        // 等待被 Complete 正常兑现时也释放 linked，避免定时器资源泄漏。
+        tcs.Task.ContinueWith(_ => linked.Dispose(), TaskScheduler.Default);
+        linked.CancelAfter(timeout);
 
         return tcs.Task;
     }

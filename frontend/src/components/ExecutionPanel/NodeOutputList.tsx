@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import type { NodeExecutionRecordDto } from '../../types/workflow.ts';
 import { StepItem } from './StepItem.tsx';
 import { isAgentOutput } from './nodeOutputUtils.ts';
+import styles from './NodeOutputList.module.css';
 
 interface NodeOutputListProps {
   records: NodeExecutionRecordDto[];
@@ -28,7 +29,7 @@ export function NodeOutputList({ records, nodeNames, nodeTypeNames }: NodeOutput
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column' }}>
+    <div className={styles.list}>
       {records.map((record, index) => {
         const typeName = nodeTypeNames?.[record.nodeDefinitionId];
         const isAgent = typeName === 'agent' || isAgentOutput(record.output);

@@ -1,0 +1,5 @@
+.denied {
+  padding: 2rem;
+  text-align: center;
+  color: var(--mantine-color-dimmed);
+}

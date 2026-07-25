@@ -128,6 +128,60 @@ public class SwitchNodeTests
         Assert.Equal(1, result.BranchIndex);
     }
 
+    [Fact]
+    public async Task Execute_ConcurrentDistinctNodes_RouteIndependently()
+    {
+        // CON-3：两个并发 SwitchNode 各持独立 Cases，互不篡改；断言各自路由至自身匹配的 case。
+        const int pairs = 40;
+        var tasks = new List<Task<int>>();
+
+        for (var i = 0; i < pairs; i++)
+        {
+            // 节点 A：cases=[a,b]，输入命中 "a" → BranchIndex 0
+            var nodeA = new SwitchNode
+            {
+                Expression = new Script
+                {
+                    Source = "$json.category",
+                    Language = ScriptLanguage.JavaScript,
+                    ReturnType = ScriptReturnType.String
+                }.WithResolvedValue(JsonValue.Create("a")),
+                Cases =
+                [
+                    new SwitchCase { Name = "a", Label = "A", Value = "a" },
+                    new SwitchCase { Name = "b", Label = "B", Value = "b" }
+                ]
+            };
+            var ctxA = CreateContext(JsonNode.Parse("{\"category\":\"a\"}")!);
+            tasks.Add(Task.Run(async () => (await nodeA.ExecuteAsync(ctxA, CancellationToken.None)).BranchIndex ?? -1));
+
+            // 节点 B：cases=[x,y]，输入命中 "y" → BranchIndex 1
+            var nodeB = new SwitchNode
+            {
+                Expression = new Script
+                {
+                    Source = "$json.category",
+                    Language = ScriptLanguage.JavaScript,
+                    ReturnType = ScriptReturnType.String
+                }.WithResolvedValue(JsonValue.Create("y")),
+                Cases =
+                [
+                    new SwitchCase { Name = "x", Label = "X", Value = "x" },
+                    new SwitchCase { Name = "y", Label = "Y", Value = "y" }
+                ]
+            };
+            var ctxB = CreateContext(JsonNode.Parse("{\"category\":\"y\"}")!);
+            tasks.Add(Task.Run(async () => (await nodeB.ExecuteAsync(ctxB, CancellationToken.None)).BranchIndex ?? -1));
+        }
+
+        var results = await Task.WhenAll(tasks);
+        for (var i = 0; i < results.Length; i++)
+        {
+            // 偶数位为节点 A（期望 0），奇数位为节点 B（期望 1）。
+            Assert.Equal(i % 2 == 0 ? 0 : 1, results[i]);
+        }
+    }
+
     private static NodeExecutionContextFactory BuildFactory() =>
         new(
             new NodeRegistry(new List<INodeType> { new SwitchNode() }, NullLogger<NodeRegistry>.Instance),

@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { useRequest } from 'ahooks';
 import { Upload, Download, Trash2, AlertCircle } from 'lucide-react';
 import { getProjects, listFiles, uploadFile, downloadFile, deleteFile, formatFileSize } from '../services/api.ts';
+import styles from './AdminFilesPage.module.css';
 
 export function AdminFilesPage() {
   const { t } = useTranslation('admin');
@@ -139,7 +140,7 @@ export function AdminFilesPage() {
             <input
               ref={fileInputRef}
               type="file"
-              style={{ display: 'none' }}
+              className={styles.hiddenInput}
               onChange={handleUpload}
             />
             <Button
@@ -165,27 +166,10 @@ export function AdminFilesPage() {
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          style={{
-            border: dragOver ? '2px dashed var(--mantine-color-blue-5)' : '2px dashed transparent',
-            borderRadius: 'var(--mantine-radius-sm)',
-            transition: 'border-color 0.2s, background-color 0.2s',
-            backgroundColor: dragOver ? 'var(--mantine-color-blue-0)' : 'transparent',
-            padding: '4px',
-            position: 'relative',
-          }}
+          className={`${styles.dropZone} ${dragOver ? styles.dropZoneActive : styles.dropZoneIdle}`}
         >
           {dragOver && (
-            <div style={{
-              position: 'absolute',
-              inset: 0,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              background: 'var(--mantine-color-body)',
-              zIndex: 10,
-              borderRadius: 'var(--mantine-radius-sm)',
-              pointerEvents: 'none',
-            }}>
+            <div className={styles.dropOverlay}>
               <Text size="sm" fw={500} c="blue">{t('filesPage.dropFilesHere')}</Text>
             </div>
           )}
