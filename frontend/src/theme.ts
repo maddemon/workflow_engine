@@ -1,14 +1,12 @@
 import { createTheme, type MantineColorsTuple } from '@mantine/core';
 
 const nodeCategoryVarMap: Record<string, string> = {
-  HTTP: 'var(--node-category-http)',
-  Core: 'var(--node-category-core)',
-  Utility: 'var(--node-category-utility)',
-  Entry: 'var(--node-category-entry)',
+  Trigger: 'var(--node-category-trigger)',
+  Flow: 'var(--node-category-flow)',
+  Data: 'var(--node-category-data)',
+  Network: 'var(--node-category-network)',
   AI: 'var(--node-category-ai)',
-  Agent: 'var(--node-category-agent)',
-  LLM: 'var(--node-category-llm)',
-  Tool: 'var(--node-category-tool)',
+  Storage: 'var(--node-category-storage)',
 };
 
 export function getNodeCategoryColor(category: string): string {

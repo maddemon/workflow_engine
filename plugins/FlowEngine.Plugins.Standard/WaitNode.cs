@@ -18,7 +18,7 @@ public sealed class WaitNode : INodeType
     public string DisplayName => "Wait";
 
     /// <inheritdoc />
-    public string Category => "Core";
+    public string Category => "Flow";
 
     /// <inheritdoc />
     public string Icon => "pause";

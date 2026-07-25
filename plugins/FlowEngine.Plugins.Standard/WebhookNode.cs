@@ -32,7 +32,7 @@ public sealed class WebhookNode : INodeType
     public string DisplayName => "Webhook";
 
     /// <inheritdoc />
-    public string Category => "Core";
+    public string Category => "Trigger";
 
     /// <inheritdoc />
     public string Icon => "webhook";

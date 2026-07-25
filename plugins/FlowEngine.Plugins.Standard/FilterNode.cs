@@ -24,7 +24,7 @@ public sealed class FilterNode : INodeType
     public string DisplayName => "Filter";
 
     /// <inheritdoc />
-    public string Category => "Core";
+    public string Category => "Data";
 
     /// <inheritdoc />
     public string Icon => "filter";

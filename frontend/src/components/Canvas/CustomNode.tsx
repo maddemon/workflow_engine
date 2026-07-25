@@ -176,7 +176,7 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
   const connectedHandles = useContext(ConnectedHandlesContext)[id] ?? EMPTY_HANDLES
   const status = data.executionStatus
   const statusClass = status && status !== "idle" ? `status-${status}` : ""
-  const categoryColor = getNodeCategoryColor(data.descriptor.category)
+  const categoryColor = getNodeCategoryColor(data.descriptor.categoryKey)
   const updateNodeInternals = useUpdateNodeInternals()
 
   useLayoutEffect(() => {

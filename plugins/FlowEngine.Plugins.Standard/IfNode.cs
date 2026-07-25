@@ -34,7 +34,7 @@ public sealed class IfNode : INodeType
     public string DisplayName => "If";
 
     /// <inheritdoc />
-    public string Category => "Core";
+    public string Category => "Flow";
 
     /// <inheritdoc />
     public string Icon => "shuffle";

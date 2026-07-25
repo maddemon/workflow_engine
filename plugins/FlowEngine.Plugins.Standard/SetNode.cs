@@ -33,7 +33,7 @@ public sealed class SetNode : INodeType
     public string DisplayName => "Edit Fields (Set)";
 
     /// <inheritdoc />
-    public string Category => "Core";
+    public string Category => "Data";
 
     /// <inheritdoc />
     public string Icon => "edit";

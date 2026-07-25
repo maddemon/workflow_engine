@@ -25,7 +25,7 @@ public sealed class CompressNode : INodeType
     public string DisplayName => "Compress";
 
     /// <inheritdoc />
-    public string Category => "File";
+    public string Category => "Storage";
 
     /// <inheritdoc />
     public string Icon => "compress";

@@ -217,15 +217,16 @@ new ParameterDefinition
 
 ## 5. 节点分类
 
-> 下表为**面向用户的功能视角**分类。代码中 `INodeType.Category` 字段的实际取值更粗：标准插件里大多数节点（含 `HTTP Request`、`Webhook`、`Code`、`Set`、`Filter`、`Paginate`、`OAuth2` 等）当前 `Category` 均为 `"Core"`，数据库写入类为 `"Data"`，AI 类为 `"AI"`。功能分类与代码字段并非一一对应。
+节点按功能分为 6 个类别，对应 `INodeType.Category` 字段的值：
 
-| 分类      | 说明           | 示例                                  |
-| --------- | -------------- | ------------------------------------- |
-| `Core`    | 核心控制流 / 通用节点 | `If`、`Loop`、`Merge`、`HTTP Request`、`Paginate (Cursor)`、`OAuth2` |
-| `Data`    | 数据读写节点   | `Postgres`、`MySQL`、`Redis`、`DB Upsert` |
-| `AI`      | AI 相关节点    | `Agent`、`LLM`、`Prompt`              |
-| `Trigger` | 触发器节点     | `Schedule Trigger`、`Webhook Trigger` |
-| `Utility` | 工具节点（功能视角） | `Code`、`Set`、`Filter`（代码 `Category` 实为 `Core`） |
+| 分类 | 说明 | 示例 |
+| --- | --- | --- |
+| `Trigger` | 工作流入口 | `Manual Trigger`、`Schedule Trigger`、`Webhook`、`Error Trigger`、`Chat Input` |
+| `Flow` | 流程控制（分支/循环/等待/并行） | `If`、`Switch`、`Loop`、`Wait`、`Merge`、`Batch Split`、`Stop Error`、`No-Op`、`Note` |
+| `Data` | 数据变换/清洗/聚合 | `Set`、`Filter`、`Sort`、`Limit`、`Deduplicate`、`Aggregate`、`Paginate`、`Code`、`Data Quality`、`List Ops`、`Date & Time`、`Crypto` |
+| `Network` | 外部 HTTP 调用/认证 | `HTTP Request`、`OAuth2`、`Send Email` |
+| `AI` | Agent / LLM / 工具 | `Agent`、`LLM`、`Memory`、`Shell Tool`、`Code Tool`、`Sub-Agent Tool`、`Workflow Tool`、`Web Search Tool`、`Calculator Tool`、`Think Tool`、`HTTP Tool`、`Structured Output` |
+| `Storage` | 数据库/文件/对象存储 | `DB Read`、`DB Upsert`、`Read File`、`Write File`、`Spreadsheet`、`Compress`、`Redis`、`MongoDB`、`Object Storage` |
 
 ## 6. 冷启动加载流程
 

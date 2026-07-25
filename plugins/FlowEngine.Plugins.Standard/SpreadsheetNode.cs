@@ -30,7 +30,7 @@ public sealed class SpreadsheetNode : INodeType
     public string DisplayName => "Spreadsheet";
 
     /// <inheritdoc />
-    public string Category => "File";
+    public string Category => "Storage";
 
     /// <inheritdoc />
     public string Icon => "spreadsheet";

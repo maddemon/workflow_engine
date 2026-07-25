@@ -20,7 +20,7 @@ public sealed class AggregateNode : INodeType
     public string DisplayName => "Aggregate";
 
     /// <inheritdoc />
-    public string Category => "Core";
+    public string Category => "Data";
 
     /// <inheritdoc />
     public string Icon => "layers";

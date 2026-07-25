@@ -30,7 +30,7 @@ public sealed class ManualTriggerNode : INodeType
     public string DisplayName => "Manual Trigger";
 
     /// <inheritdoc />
-    public string Category => "Core";
+    public string Category => "Trigger";
 
     /// <inheritdoc />
     public string Icon => "play";

@@ -33,7 +33,7 @@ public sealed class HttpRequestNode : INodeType
     public string DisplayName => "HTTP Request";
 
     /// <inheritdoc />
-    public string Category => "Core";
+    public string Category => "Network";
 
     /// <inheritdoc />
     public string Icon => "globe";

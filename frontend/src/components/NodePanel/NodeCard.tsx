@@ -17,7 +17,7 @@ function NodeCardComponent({ descriptor, onClick }: NodeCardProps) {
     event.dataTransfer.effectAllowed = 'move';
   };
 
-  const categoryColor = getNodeCategoryColor(descriptor.category);
+  const categoryColor = getNodeCategoryColor(descriptor.categoryKey);
   const displayName = descriptor.displayName;
 
   return (

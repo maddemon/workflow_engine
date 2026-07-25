@@ -26,7 +26,7 @@ public sealed class WriteFileNode : INodeType
     public string DisplayName => "Write File";
 
     /// <inheritdoc />
-    public string Category => "File";
+    public string Category => "Storage";
 
     /// <inheritdoc />
     public string Icon => "file-write";

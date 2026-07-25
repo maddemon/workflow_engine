@@ -28,7 +28,7 @@ public sealed class LoopNode : INodeType
     public string DisplayName => "Loop Over Items";
 
     /// <inheritdoc />
-    public string Category => "Core";
+    public string Category => "Flow";
 
     /// <inheritdoc />
     public string Icon => "repeat";

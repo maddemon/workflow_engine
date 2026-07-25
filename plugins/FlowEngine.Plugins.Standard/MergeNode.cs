@@ -20,7 +20,7 @@ public sealed class MergeNode : INodeType
     public string DisplayName => "Merge";
 
     /// <inheritdoc />
-    public string Category => "Core";
+    public string Category => "Flow";
 
     /// <inheritdoc />
     public string Icon => "merge";

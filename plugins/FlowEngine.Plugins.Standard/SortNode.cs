@@ -20,7 +20,7 @@ public sealed class SortNode : INodeType
     public string DisplayName => "Sort";
 
     /// <inheritdoc />
-    public string Category => "Core";
+    public string Category => "Data";
 
     /// <inheritdoc />
     public string Icon => "sort";

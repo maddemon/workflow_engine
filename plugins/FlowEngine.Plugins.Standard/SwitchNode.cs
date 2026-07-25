@@ -35,7 +35,7 @@ public sealed class SwitchNode : INodeType
     public string DisplayName => "Switch";
 
     /// <inheritdoc />
-    public string Category => "Core";
+    public string Category => "Flow";
 
     /// <inheritdoc />
     public string Icon => "git-branch";

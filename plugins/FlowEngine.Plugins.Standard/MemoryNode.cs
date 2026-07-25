@@ -19,7 +19,7 @@ public sealed class MemoryNode : INodeType
     public string DisplayName => "Memory";
 
     /// <inheritdoc />
-    public string Category => "Core";
+    public string Category => "AI";
 
     /// <inheritdoc />
     public string Icon => "database";

@@ -28,7 +28,7 @@ public sealed class ReadFileNode : INodeType
     public string DisplayName => "Read File";
 
     /// <inheritdoc />
-    public string Category => "File";
+    public string Category => "Storage";
 
     /// <inheritdoc />
     public string Icon => "file-read";

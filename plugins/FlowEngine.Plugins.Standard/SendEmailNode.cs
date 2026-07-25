@@ -27,7 +27,7 @@ public sealed class SendEmailNode : INodeType
     public string DisplayName => "Send Email";
 
     /// <inheritdoc />
-    public string Category => "Communication";
+    public string Category => "Network";
 
     /// <inheritdoc />
     public string Icon => "email";

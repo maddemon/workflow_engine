@@ -20,7 +20,7 @@ public sealed class DeduplicateNode : INodeType
     public string DisplayName => "Remove Duplicates";
 
     /// <inheritdoc />
-    public string Category => "Core";
+    public string Category => "Data";
 
     /// <inheritdoc />
     public string Icon => "filter-1";

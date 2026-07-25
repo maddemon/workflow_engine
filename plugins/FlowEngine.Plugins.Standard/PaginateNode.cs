@@ -31,7 +31,7 @@ public sealed class PaginateNode : INodeType
     public string DisplayName => "Paginate (Cursor)";
 
     /// <inheritdoc />
-    public string Category => "Core";
+    public string Category => "Data";
 
     /// <inheritdoc />
     public string Icon => "repeat";

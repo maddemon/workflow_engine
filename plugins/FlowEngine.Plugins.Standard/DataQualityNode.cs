@@ -23,7 +23,7 @@ public sealed class DataQualityNode : INodeType
     public string DisplayName => "Data Quality";
 
     /// <inheritdoc />
-    public string Category => "Core";
+    public string Category => "Data";
 
     /// <inheritdoc />
     public string Icon => "shield-check";

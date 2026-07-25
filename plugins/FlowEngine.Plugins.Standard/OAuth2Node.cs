@@ -21,7 +21,7 @@ public sealed class OAuth2Node : INodeType
     public string DisplayName => "OAuth2";
 
     /// <inheritdoc />
-    public string Category => "Core";
+    public string Category => "Network";
 
     /// <inheritdoc />
     public string Icon => "key";

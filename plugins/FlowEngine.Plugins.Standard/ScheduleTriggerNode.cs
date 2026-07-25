@@ -31,7 +31,7 @@ public sealed class ScheduleTriggerNode : INodeType
     public string DisplayName => "Schedule Trigger";
 
     /// <inheritdoc />
-    public string Category => "Core";
+    public string Category => "Trigger";
 
     /// <inheritdoc />
     public string Icon => "clock";

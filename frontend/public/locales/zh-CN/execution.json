@@ -16,6 +16,10 @@
     "completed": "已完成",
     "failed": "失败",
     "cancelled": "已取消",
+    "compensating": "补偿中",
+    "compensated": "已补偿",
+    "compensationFailed": "补偿失败",
+    "dryRunCompleted": "模拟运行完成",
     "success": "成功"
   },
   "noExecutions": "还没有执行记录",

@@ -33,7 +33,7 @@ public sealed class NoteNode : INodeType
     public string DisplayName => "Note";
 
     /// <inheritdoc />
-    public string Category => "Utility";
+    public string Category => "Flow";
 
     /// <inheritdoc />
     public string Icon => "note";

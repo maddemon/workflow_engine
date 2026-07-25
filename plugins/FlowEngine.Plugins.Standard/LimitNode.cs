@@ -18,7 +18,7 @@ public sealed class LimitNode : INodeType
     public string DisplayName => "Limit";
 
     /// <inheritdoc />
-    public string Category => "Core";
+    public string Category => "Data";
 
     /// <inheritdoc />
     public string Icon => "hash";

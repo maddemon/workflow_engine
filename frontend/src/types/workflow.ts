@@ -75,6 +75,7 @@ export interface NodeTypeDescriptor {
   typeName: string;
   displayName: string;
   category: string;
+  categoryKey: string;
   icon: string;
   executionMode: string;
   parameters: ParameterDefinition[];

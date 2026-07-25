@@ -16,6 +16,10 @@
     "completed": "Completed",
     "failed": "Failed",
     "cancelled": "Cancelled",
+    "compensating": "Compensating",
+    "compensated": "Compensated",
+    "compensationFailed": "Compensation Failed",
+    "dryRunCompleted": "Dry Run Completed",
     "success": "Success"
   },
   "noExecutions": "No executions yet",

@@ -56,6 +56,7 @@ public class NodeTypesController(
             TypeName = descriptor.TypeName,
             DisplayName = displayName.ResourceNotFound ? descriptor.DisplayName : displayName.Value,
             Category = category.ResourceNotFound ? descriptor.Category : category.Value,
+            CategoryKey = descriptor.Category,
             Icon = descriptor.Icon,
             ExecutionMode = descriptor.ExecutionMode,
             Parameters = localizedParams,

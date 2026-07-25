@@ -16,8 +16,11 @@ public sealed class NodeTypeDescriptorDto
     /// <summary>显示名称。</summary>
     public string DisplayName { get; init; } = string.Empty;
 
-    /// <summary>节点分类。</summary>
+    /// <summary>节点分类（本地化显示名）。</summary>
     public string Category { get; init; } = string.Empty;
+
+    /// <summary>节点分类原始键（英文，用于颜色映射等）。</summary>
+    public string CategoryKey { get; init; } = string.Empty;
 
     /// <summary>节点图标。</summary>
     public string Icon { get; init; } = string.Empty;

@@ -36,7 +36,7 @@ public sealed class JSNode : INodeType
     public string DisplayName => "Code";
 
     /// <inheritdoc />
-    public string Category => "Core";
+    public string Category => "Data";
 
     /// <inheritdoc />
     public string Icon => "code";

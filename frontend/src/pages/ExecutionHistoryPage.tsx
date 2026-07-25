@@ -15,7 +15,7 @@ import {
   Modal,
   Box,
 } from '@mantine/core';
-import { ArrowLeft, RefreshCw, Eye, ChevronDown, ChevronRight } from 'lucide-react';
+import { ArrowLeft, Eye, ChevronDown, ChevronRight } from 'lucide-react';
 import { useRequest } from 'ahooks';
 import { useTranslation } from 'react-i18next';
 import { getWorkflowExecutions, getExecution } from '../services/api.ts';
@@ -37,7 +37,7 @@ export function ExecutionHistoryPage() {
   const [page, setPage] = useState(1);
   const [expandedOutputs, setExpandedOutputs] = useState<Set<string>>(new Set());
 
-  const { data, loading, error, refresh: refreshExecutions } = useRequest(
+  const { data, loading, error } = useRequest(
     () => getWorkflowExecutions(id!, {
       status: statusFilter === 'all' ? undefined : statusFilter,
       page,
@@ -51,7 +51,7 @@ export function ExecutionHistoryPage() {
   const executions = data?.items ?? [];
   const totalPages = data?.totalPages ?? 0;
 
-  const { loading: detailLoading, run: handleViewExecution } = useRequest(
+  const { run: handleViewExecution } = useRequest(
     (execution: ExecutionSummaryDto) => getExecution(execution.id).then((detailed) => {
       setSelectedExecution(detailed);
       setExpandedOutputs(new Set());
@@ -98,9 +98,6 @@ export function ExecutionHistoryPage() {
               size="xs"
               w={140}
             />
-            <ActionIcon variant="subtle" onClick={refreshExecutions}>
-              <RefreshCw size={16} />
-            </ActionIcon>
           </Group>
         </Group>
 
@@ -149,7 +146,7 @@ export function ExecutionHistoryPage() {
                           size="sm"
                           leftSection={statusInfo.icon}
                         >
-                          {execution.status}
+                          {t(statusInfo.labelKey)}
                         </Badge>
                       </Table.Td>
                       <Table.Td>{formatDate(execution.startedAt)}</Table.Td>
@@ -160,7 +157,6 @@ export function ExecutionHistoryPage() {
                           variant="subtle"
                           size="sm"
                           onClick={() => handleViewExecution(execution)}
-                          loading={detailLoading}
                         >
                           <Eye size={14} />
                         </ActionIcon>
@@ -200,14 +196,14 @@ export function ExecutionHistoryPage() {
                 variant="light"
                 size="sm"
               >
-                {selectedExecution.status}
+                {t(statusConfig[selectedExecution.status]?.labelKey ?? 'status.pending')}
               </Badge>
             </Group>
             <Text size="sm" c="dimmed">
-              Started: {formatDate(selectedExecution.startedAt)}
+              {t('history.started')}: {formatDate(selectedExecution.startedAt)}
             </Text>
             <Text size="sm" c="dimmed">
-              Completed: {formatDate(selectedExecution.completedAt)}
+              {t('history.completed')}: {formatDate(selectedExecution.completedAt)}
             </Text>
             {(selectedExecution.nodeRecords?.length ?? 0) > 0 && (
               <>
@@ -240,7 +236,7 @@ export function ExecutionHistoryPage() {
                                 variant="light"
                                 size="xs"
                               >
-                                {record.status}
+                                {t(recordStatus.labelKey)}
                               </Badge>
                             </Table.Td>
                             <Table.Td>{recordDuration ?? '-'}</Table.Td>
