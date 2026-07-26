@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
@@ -25,6 +25,7 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Done, "Done", PortDirection.Output, PortType.Main)]
 public sealed class BatchSplitNode : NodeBase
 {
+    [Inject] public NodeContext NodeContext { get; private set; } = null!;
     /// <summary>
     /// 单批包含的最大项数。
     /// </summary>

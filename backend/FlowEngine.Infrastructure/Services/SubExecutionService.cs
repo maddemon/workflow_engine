@@ -5,6 +5,7 @@ using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Tools;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace FlowEngine.Infrastructure.Services;
 
@@ -12,7 +13,10 @@ namespace FlowEngine.Infrastructure.Services;
 /// 子执行服务实现：包装 <see cref="INodeExecutionContextFactory"/> 构造上下文并执行单次子节点，
 /// 作为节点发起子执行（如子工作流、递归调用）的统一抽象。
 /// </summary>
-public sealed class SubExecutionService(INodeExecutionContextFactory factory, INodeRegistry nodeRegistry) : ISubExecutionService
+public sealed class SubExecutionService(
+    INodeExecutionContextFactory factory,
+    INodeRegistry nodeRegistry,
+    IServiceProvider serviceProvider) : ISubExecutionService
 {
     /// <inheritdoc />
     public async Task<NodeExecutionResult> ExecuteSubAsync(
@@ -24,18 +28,31 @@ public sealed class SubExecutionService(INodeExecutionContextFactory factory, IN
         int runIndex,
         CancellationToken ct = default)
     {
+        // 取得每运行全新实例，避免复用调用方传入的 nodeType 导致真实并发竞争
+        // （共享实例字段被并行执行串改）。调用方 nodeType 仅用于读取类型元数据（TypeName）。
+        var instance = nodeRegistry.CreateInstance(nodeType.TypeName);
+
         var context = await factory.CreateAsync(
             workflow,
             execution,
             node,
-            nodeType,
+            instance,
             inputs,
             new Dictionary<string, DataBatch>(),
             new Dictionary<string, DataBatch>(),
             runIndex,
             ct).ConfigureAwait(false);
 
-        return await nodeType.ExecuteAsync(context, ct).ConfigureAwait(false);
+        // 经共享 NodeCapabilityInjector 注入能力（与 ExecutionStage 主路径一致）：
+        // 运行上下文能力（ILlmClient / IExecutionLogger / ICredentialAccessor / JsEngine / NodeContext /
+        // NodeExecutionContext）取自 context，DI 服务（IHttpExecutionService / ISubExecutionService / INodeRegistry /
+        // IToolResolver）走 serviceProvider。生产中 IToolResolver 可能未注册（GetService 返回 null），保持与原 BindServices 一致。
+        if (instance is NodeBase nb)
+        {
+            NodeCapabilityInjector.Inject(nb, serviceProvider, context);
+        }
+
+        return await instance.ExecuteAsync(context, ct).ConfigureAwait(false);
     }
 
     /// <inheritdoc />

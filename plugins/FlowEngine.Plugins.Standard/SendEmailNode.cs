@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Net;
 using System.Net.Mail;
 using System.Text.Json.Nodes;
@@ -23,6 +23,8 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
 public sealed class SendEmailNode : NodeBase
 {
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
+    [Inject] public IExecutionLogger? Logger { get; private set; }
     /// <summary>
     /// SMTP 凭据（类型为 <c>smtp</c>）。字段：host/port/user/password/useSsl。密码为 secret，绝不输出到日志或异常。
     /// </summary>
@@ -215,7 +217,7 @@ public sealed class SendEmailNode : NodeBase
             return (null, NodeHandlerOutput.Failure(errorCode, $"{paramName} is required."));
         }
 
-        var value = await EvaluateItemAsync<string>(script, scope, 0, cancellationToken).ConfigureAwait(false);
+        var value = await script.EvaluateAsync<string>(Ctx, item: scope, itemIndex: 0, cancellationToken: cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(value))
         {
             return (null, NodeHandlerOutput.Failure(errorCode, $"{paramName} is required."));

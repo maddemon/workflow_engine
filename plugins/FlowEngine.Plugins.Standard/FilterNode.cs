@@ -13,7 +13,7 @@ namespace FlowEngine.Plugins.Standard;
 /// 过滤节点，根据条件保留或丢弃数据项。
 /// <c>Condition</c> 为 <see cref="Script"/> 类型（Hint=Script），在逐项求值时支持 <c>$json</c>/<c>$input</c>/<c>$credentials</c> 等所有 <c>$</c> 前缀变量。
 /// 新写法继承 <see cref="NodeBase"/>，通过 [NodeMeta]/[Port]/[Required]/[Hint] 声明式描述元信息与参数，
-/// 逐项求值经 <see cref="NodeBase.EvaluateItemAsync{T}"/> 复用节点托管引擎；结构化条件组合逻辑保持不变。
+/// 逐项求值经 <see cref="ScriptEvaluationExtensions.EvaluateAsync{T}"/> 复用节点托管引擎；结构化条件组合逻辑保持不变。
 /// </summary>
 [NodeMeta(TypeName = "filter", DisplayName = "Filter", Category = NodeCategory.Data, Icon = "filter")]
 [Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input)]
@@ -21,6 +21,8 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Discarded, "Discarded", PortDirection.Output)]
 public sealed class FilterNode : NodeBase
 {
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
+
     /// <summary>
     /// 过滤条件表达式（逐项求值）。支持 <c>$json.field === 'value'</c>、<c>$input.item().count > 10</c> 等。
     /// 类型为 <see cref="Script"/>，由节点在执行时逐项求值（不经工厂预求值）。
@@ -72,7 +74,7 @@ public sealed class FilterNode : NodeBase
         // 主条件（表达式）
         if (!string.IsNullOrWhiteSpace(Condition.Source))
         {
-            var mainResult = await EvaluateItemAsync<bool>(Condition, data, itemIndex, ct).ConfigureAwait(false);
+            var mainResult = await Condition.EvaluateAsync<bool>(Ctx, item: data, itemIndex: itemIndex, cancellationToken: ct).ConfigureAwait(false);
 
             if (Conditions.Count == 0)
             {

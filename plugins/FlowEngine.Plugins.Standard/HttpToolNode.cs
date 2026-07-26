@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
@@ -19,6 +19,7 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Tools, "Tool Output", PortDirection.Output, PortType.AgentTool)]
 public sealed class HttpToolNode : NodeBase
 {
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
     /// <summary>
     /// HTTP 方法。
     /// </summary>
@@ -90,7 +91,7 @@ public sealed class HttpToolNode : NodeBase
     /// <inheritdoc />
     public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
-        var result = await HttpNodeExecution.ExecuteAsync(ExecutionContext, Url, Method, Authentication, CredentialId, QueryParameterName, SendHeaders, HeadersExpression, SendBody, BodyExpression, null, ct).ConfigureAwait(false);
+        var result = await HttpNodeExecution.ExecuteAsync(Ctx, Url, Method, Authentication, CredentialId, QueryParameterName, SendHeaders, HeadersExpression, SendBody, BodyExpression, null, ct).ConfigureAwait(false);
         if (!result.Success)
         {
             throw new NodeExecutionException(result.Error!.Code, result.Error.Message);

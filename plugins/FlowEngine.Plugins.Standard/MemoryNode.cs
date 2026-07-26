@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
@@ -17,6 +17,7 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
 public sealed class MemoryNode : NodeBase
 {
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
     /// <summary>
     /// 记忆操作类型。
     /// </summary>
@@ -56,7 +57,7 @@ public sealed class MemoryNode : NodeBase
 
     private NodeHandlerOutput Read()
     {
-        if (!ExecutionContext.Memory.TryGetValue(Key, out var value))
+        if (!Ctx.Memory.TryGetValue(Key, out var value))
         {
             throw new NodeExecutionException("KeyNotFound", $"Memory key '{Key}' not found.");
         }
@@ -67,13 +68,13 @@ public sealed class MemoryNode : NodeBase
     private NodeHandlerOutput Write(NodeInput input)
     {
         var valueToStore = ResolveValue(input);
-        ExecutionContext.Memory[Key] = valueToStore;
+        Ctx.Memory[Key] = valueToStore;
         return NodeHandlerOutput.Data(SingleItemBatch(valueToStore));
     }
 
     private NodeHandlerOutput Clear()
     {
-        ExecutionContext.Memory.Remove(Key);
+        Ctx.Memory.Remove(Key);
         return NodeHandlerOutput.Data(SingleItemBatch(JsonValue.Create(true)));
     }
 

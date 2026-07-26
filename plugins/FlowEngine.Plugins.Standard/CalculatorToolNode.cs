@@ -19,6 +19,8 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Tools, "Tool Output", PortDirection.Output, PortType.AgentTool)]
 public sealed class CalculatorToolNode : NodeBase
 {
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
+
     /// <summary>
     /// 待计算表达式。JS 表达式，支持 <c>$json</c> / <c>$input</c>。示例：<c>1 + 2</c>。
     /// 输入批次读取之后回退到此属性（不再读取被合规规则禁止的已解析参数字典）。
@@ -44,7 +46,7 @@ public sealed class CalculatorToolNode : NodeBase
                 ReturnType = ScriptReturnType.Number
             };
             var evalItem = input.InputBatch.Items.Count > 0 ? input.InputBatch.Items[0].Data : null;
-            var value = await EvaluateItemAsync<object>(script, evalItem, 0, ct).ConfigureAwait(false);
+            var value = await script.EvaluateAsync<object>(Ctx, item: evalItem, itemIndex: 0, cancellationToken: ct).ConfigureAwait(false);
 
             var outputBatch = new DataBatch
             {

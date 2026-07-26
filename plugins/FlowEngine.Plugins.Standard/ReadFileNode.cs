@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.IO;
 using System.Net.Http;
 using System.Text;
@@ -25,6 +25,8 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
 public sealed class ReadFileNode : NodeBase
 {
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
+    [Inject] public IExecutionLogger? Logger { get; private set; }
     private static readonly HttpExecutionService HttpService = new HttpExecutionService();
 
     /// <summary>
@@ -66,7 +68,7 @@ public sealed class ReadFileNode : NodeBase
             var inputBatch = input.InputBatch;
             var evalItem = inputBatch.Items.Count > 0 ? inputBatch.Items[0].Data : null;
 
-            var source = await EvaluateItemAsync<string>(Source, evalItem, 0, ct).ConfigureAwait(false);
+            var source = await Source.EvaluateAsync<string>(Ctx, item: evalItem, itemIndex: 0, cancellationToken: ct).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(source))
             {
                 throw new NodeExecutionException("FileNotFound", "Source is required.");
@@ -77,11 +79,11 @@ public sealed class ReadFileNode : NodeBase
             string fileName = Path.GetFileName(source);
             string mime;
 
-            // URL 来源：复用 GuardSsrf 做 SSRF 预检，并经 HttpExecutionService 取内容（复用其客户端池/异常处理）。
+            // URL 来源：复用 Ctx.GuardSsrf 做 SSRF 预检，并经 HttpExecutionService 取内容（复用其客户端池/异常处理）。
             if (source.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
                 || source.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
             {
-                var ssrfBlock = GuardSsrf(source);
+                var ssrfBlock = Ctx.GuardSsrf(source);
                 if (ssrfBlock is not null)
                 {
                     throw new NodeExecutionException(ssrfBlock.Error!.Code, ssrfBlock.Error.Message);
@@ -89,7 +91,7 @@ public sealed class ReadFileNode : NodeBase
 
                 var httpResult = await HttpService.ExecuteAsync(
                     new HttpExecutionRequest { Url = source, Method = HttpMethod.Get },
-                    ExecutionContext,
+                    Ctx,
                     ct).ConfigureAwait(false);
 
                 if (!httpResult.Success)

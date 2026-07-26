@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
@@ -18,6 +18,7 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Tools, "Tool Output", PortDirection.Output, PortType.AgentTool)]
 public sealed class ThinkToolNode : NodeBase
 {
+    [Inject] public IExecutionLogger? Logger { get; private set; }
     /// <summary>
     /// 工具描述（帮助 LLM 理解何时使用）。
     /// </summary>

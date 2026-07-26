@@ -28,6 +28,8 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
 public sealed class CryptoNode : NodeBase
 {
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
+
     /// <summary>AES-GCM 随机 Nonce 长度（字节）。</summary>
     private const int NonceSize = 12;
 
@@ -403,7 +405,7 @@ public sealed class CryptoNode : NodeBase
 
         try
         {
-            return await EvaluateItemAsync<string>(Input, item, index, cancellationToken)
+            return await Input.EvaluateAsync<string>(Ctx, item: item, itemIndex: index, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (ScriptErrorException)

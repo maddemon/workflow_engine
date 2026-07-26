@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
@@ -21,6 +21,8 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
 public sealed class StructuredOutputNode : NodeBase
 {
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
+    [Inject] public IExecutionLogger? Logger { get; private set; }
     /// <summary>
     /// 待解析的原始文本（通常为 LLM 输出）。JS 表达式，支持 <c>$json</c> / <c>$input</c>。示例：<c>$json.text</c>。必填。
     /// </summary>
@@ -63,7 +65,7 @@ public sealed class StructuredOutputNode : NodeBase
 
             // 1) 解析 Input 文本
             var text = Input is not null
-                ? await EvaluateItemAsync<string>(Input, evalItem, 0, ct).ConfigureAwait(false)
+                ? await Input.EvaluateAsync<string>(Ctx, item: evalItem, itemIndex: 0, cancellationToken: ct).ConfigureAwait(false)
                 : null;
 
             if (string.IsNullOrWhiteSpace(text))
@@ -90,7 +92,7 @@ public sealed class StructuredOutputNode : NodeBase
             // 3) 可选 Schema 校验（仅 required 必填键 + 可选 properties 基本类型核对）
             if (Schema is not null)
             {
-                var schemaText = await EvaluateItemAsync<string>(Schema, evalItem, 0, ct).ConfigureAwait(false);
+                var schemaText = await Schema.EvaluateAsync<string>(Ctx, item: evalItem, itemIndex: 0, cancellationToken: ct).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(schemaText))
                 {
                     JsonNode? schemaParsed;

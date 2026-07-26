@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.IO.Compression;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -23,6 +23,7 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
 public sealed class CompressNode : NodeBase
 {
+    [Inject] public IExecutionLogger? Logger { get; private set; }
     /// <summary>
     /// 压缩或解压操作。
     /// </summary>

@@ -11,6 +11,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Scripting;
 using FlowEngine.Plugins.Standard;
+using FlowEngine.Plugins.Standard.Enums;
 using FlowEngine.Runtime.Expressions;
 using FlowEngine.Runtime.Executor;
 using FlowEngine.Runtime.Registry;
@@ -75,7 +76,15 @@ public sealed class PaginateNodeTests
             ContextFactory = factory
         };
 
-        var node = new PaginateNode();
+        var node = new PaginateNode
+        {
+            CursorType = CursorType.Number,
+            CursorInitial = "0",
+            MaxPages = 10,
+            NextCursorPath = "result.next_cursor",
+            ItemsPath = "result.list",
+            TerminateWhen = "$nextCursor == ''"
+        };
         var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message ?? "PaginateNode failed without error");
@@ -148,7 +157,15 @@ public sealed class PaginateNodeTests
             ContextFactory = factory
         };
 
-        var node = new PaginateNode();
+        var node = new PaginateNode
+        {
+            CursorType = CursorType.Number,
+            CursorInitial = "0",
+            MaxPages = 10,
+            NextCursorPath = "result.next_cursor",
+            ItemsPath = "result.list",
+            TerminateWhen = "$page >= 2"
+        };
         var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message ?? "PaginateNode failed without error");
@@ -212,7 +229,15 @@ public sealed class PaginateNodeTests
             ContextFactory = factory
         };
 
-        var node = new PaginateNode();
+        var node = new PaginateNode
+        {
+            CursorType = CursorType.Number,
+            CursorInitial = "0",
+            MaxPages = 10,
+            NextCursorPath = "result.next_cursor",
+            ItemsPath = "result.list",
+            TerminateWhen = "$nextCursor == ''"
+        };
         var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
@@ -326,6 +351,12 @@ public sealed class PaginateNodeTests
 
         var node = new PaginateNode
         {
+            CursorType = CursorType.Number,
+            CursorInitial = "0",
+            MaxPages = 10,
+            NextCursorPath = "result.next_cursor",
+            ItemsPath = "result.list",
+            TerminateWhen = "$nextCursor == ''",
             SuccessWhen = new Script
             {
                 Source = "$json.errcode == 0",

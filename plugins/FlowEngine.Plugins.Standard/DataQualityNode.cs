@@ -1,4 +1,4 @@
-using FlowEngine.Core;
+﻿using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
@@ -20,6 +20,7 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
 public sealed class DataQualityNode : NodeBase
 {
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
     /// <summary>
     /// 校验规则列表（JSON 数组）。每项包含 type + 参数。
     /// 支持类型：rowCount(min,max), fieldNotNull(field), fieldPattern(field,pattern), fieldRange(field,min,max), customExpression(expression)
@@ -46,7 +47,7 @@ public sealed class DataQualityNode : NodeBase
         var itemCount = inputBatch.Items.Count;
 
         // 2. Parse rules
-        if (!ExecutionContext.TryParseJson(Rules, out var rulesDoc, out _))
+        if (!Ctx.TryParseJson(Rules, out var rulesDoc, out _))
         {
             throw new NodeExecutionException("InvalidRules", "Rules JSON 格式无效。");
         }
@@ -116,7 +117,7 @@ public sealed class DataQualityNode : NodeBase
                         {
                             Code = "DataQualityCheckFailed",
                             Message = failureMessage,
-                            NodeDefinitionId = ExecutionContext.Node?.Id ?? string.Empty,
+                            NodeDefinitionId = Ctx.Node?.Id ?? string.Empty,
                             Details = new Dictionary<string, string>
                             {
                                 ["failedRules"] = failures.Count.ToString(),
@@ -127,7 +128,7 @@ public sealed class DataQualityNode : NodeBase
                 ]
             };
 
-            return Task.FromResult(NodeHandlerOutput.Failure("DataQualityCheckFailed", failureMessage, output, ExecutionContext.Node?.Id));
+            return Task.FromResult(NodeHandlerOutput.Failure("DataQualityCheckFailed", failureMessage, output, Ctx.Node?.Id));
         }
 
         // Pass data through (either all passed, or PassOnFailure=true)
@@ -150,7 +151,7 @@ public sealed class DataQualityNode : NodeBase
         // PassOnFailure 且存在失败：仍透传数据，但标记为失败（与旧版 Success = !hasFailures 语义一致）。
         if (hasFailures)
         {
-            return Task.FromResult(NodeHandlerOutput.Failure("DataQualityCheckFailed", failureMessage, new DataBatch { Items = outputItems }, ExecutionContext.Node?.Id));
+            return Task.FromResult(NodeHandlerOutput.Failure("DataQualityCheckFailed", failureMessage, new DataBatch { Items = outputItems }, Ctx.Node?.Id));
         }
 
         return Task.FromResult(NodeHandlerOutput.Data(new DataBatch { Items = outputItems }));

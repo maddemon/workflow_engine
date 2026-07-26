@@ -20,4 +20,8 @@ public sealed class NodeMetaAttribute : Attribute
 
     /// <summary>是否默认作为入口节点。</summary>
     public bool DefaultIsEntry { get; init; } = false;
+
+    /// <summary>节点执行模式。默认 <see cref="ExecutionMode.OnceForAll"/>（整批执行一次）；
+    /// 逐项处理类节点可声明 <see cref="ExecutionMode.OncePerItem"/>，由初始化阶段按最大输入项数展开多次运行。</summary>
+    public ExecutionMode ExecutionMode { get; init; } = ExecutionMode.OnceForAll;
 }

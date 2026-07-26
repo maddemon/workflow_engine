@@ -25,12 +25,8 @@ public sealed class NodeApiComplianceAnalyzer : DiagnosticAnalyzer
         "HttpClientPool",
         "NodeRegistry",
         "ContextFactory",
-        "WorkflowLoader",
         "LlmClientFactory",
         "ScriptCache",
-        "NestingDepth",
-        "AllowShellExecution",
-        "IsAgentInvocation",
         "ResolveCredentialAsync",
         "ResolvedParameters",
         "RawParameters",
@@ -46,14 +42,41 @@ public sealed class NodeApiComplianceAnalyzer : DiagnosticAnalyzer
         isEnabledByDefault: true,
         description: "NodeBase derived nodes may only read their resolved properties, NodeInput, and NodeBase protected capabilities. Service-locator / pull-style context APIs are forbidden.");
 
+    /// <summary>诊断描述符 FE0002：禁止对 <c>INodeRegistry.GetAll()</c> 返回的共享单例调用 <c>ExecuteAsync</c>。</summary>
+    public static readonly DiagnosticDescriptor Rule2 = new(
+        id: "FE0002",
+        title: "禁止对 GetAll() 共享单例调用 ExecuteAsync",
+        messageFormat: "检测到 x.GetAll().ExecuteAsync(...)：GetAll() 返回注册期共享单例，直接执行会造成真实并发数据竞争。应使用 INodeRegistry.CreateInstance + 管线注入获取每运行实例。",
+        category: "Design",
+        defaultSeverity: DiagnosticSeverity.Error,
+        isEnabledByDefault: true,
+        description: "Calling ExecuteAsync on the shared singleton returned by INodeRegistry.GetAll() is a real data race. Use CreateInstance + pipeline injection to obtain a per-run instance instead.");
+
     /// <inheritdoc />
-    public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule);
+    public override ImmutableArray<DiagnosticDescriptor> SupportedDiagnostics => ImmutableArray.Create(Rule, Rule2);
 
     /// <inheritdoc />
     public override void Initialize(AnalysisContext context)
     {
         context.EnableConcurrentExecution();
         context.ConfigureGeneratedCodeAnalysis(GeneratedCodeAnalysisFlags.None);
+
+        // FE0002：纯语法检测，与 FE0001 的 ForbiddenNames 风格一致，不引入语义模型依赖。
+        context.RegisterSyntaxNodeAction(syntaxContext =>
+        {
+            try
+            {
+                var invocation = (InvocationExpressionSyntax)syntaxContext.Node;
+                if (DetectsGetAllExecuteAsync(invocation))
+                {
+                    syntaxContext.ReportDiagnostic(Diagnostic.Create(Rule2, invocation.GetLocation()));
+                }
+            }
+            catch
+            {
+                // 永不破坏构建：任何异常都吞掉，仅停止本次分析。
+            }
+        }, SyntaxKind.InvocationExpression);
 
         // 若项目未引用 Core（找不到 NodeBase 符号），则无可检查目标，直接跳过。
         context.RegisterCompilationStartAction(compilationStartContext =>
@@ -98,6 +121,51 @@ public sealed class NodeApiComplianceAnalyzer : DiagnosticAnalyzer
                 }
             }, SyntaxKind.ClassDeclaration);
         });
+    }
+
+    /// <summary>
+    /// 纯语法判断：给定的 <c>ExecuteAsync(...)</c> 调用是否作用在 <c>GetAll()</c> 返回的共享单例上
+    /// （即形如 <c>x.GetAll().ExecuteAsync(...)</c>）。沿接收者表达式链路向下查找是否存在 <c>GetAll()</c> 调用，
+    /// 不依赖语义模型，与 <see cref="Rule2"/> 的检测逻辑保持一致。
+    /// </summary>
+    /// <param name="invocation">待检测的调用表达式（应为方法调用）。</param>
+    /// <returns>命中 <c>GetAll().ExecuteAsync</c> 模式时为 true。</returns>
+    public static bool DetectsGetAllExecuteAsync(InvocationExpressionSyntax invocation)
+    {
+        // 被调用方法必须是 ExecuteAsync。
+        if (invocation.Expression is not MemberAccessExpressionSyntax memberAccess
+            || memberAccess.Name is not IdentifierNameSyntax methodName
+            || methodName.Identifier.Text != "ExecuteAsync")
+        {
+            return false;
+        }
+
+        // 沿接收者链路（x.GetAll().Foo().ExecuteAsync）向下查找任意一级的 GetAll() 调用。
+        var current = memberAccess.Expression;
+        while (current is not null)
+        {
+            if (current is InvocationExpressionSyntax receiverInvocation)
+            {
+                if (receiverInvocation.Expression is MemberAccessExpressionSyntax receiverMember
+                    && receiverMember.Name is IdentifierNameSyntax receiverName
+                    && receiverName.Identifier.Text == "GetAll")
+                {
+                    return true;
+                }
+
+                current = receiverInvocation.Expression;
+            }
+            else if (current is MemberAccessExpressionSyntax member)
+            {
+                current = member.Expression;
+            }
+            else
+            {
+                current = null;
+            }
+        }
+
+        return false;
     }
 
     private static bool IsDerivedFromNodeBase(INamedTypeSymbol symbol, INamedTypeSymbol nodeBaseSymbol)

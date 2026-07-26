@@ -1,4 +1,5 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json.Nodes;
 using System.Threading;
 using System.Threading.Tasks;
@@ -25,6 +26,9 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
 public sealed class PaginateNode : NodeBase
 {
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
+    [Inject] public INodeRegistry? Registry { get; private set; }
+    [Inject] public INodeExecutionContextFactory Factory { get; private set; } = null!;
     private static readonly HttpExecutionService s_httpService = new HttpExecutionService();
 
     /// <summary>HTTP 请求方法。</summary>
@@ -44,6 +48,7 @@ public sealed class PaginateNode : NodeBase
     public CursorType CursorType { get; set; } = Enums.CursorType.String;
 
     /// <summary>最大分页次数（安全上限，防止无限循环）。</summary>
+    [Range(1, int.MaxValue)]
     [Description("Maximum number of pages to fetch (safety cap).")]
     public int MaxPages { get; set; } = 100;
 
@@ -55,6 +60,22 @@ public sealed class PaginateNode : NodeBase
     [Hint(PresentationHint.Expression)]
     public Script SuccessWhen { get; set; } = Script.Empty;
 
+    /// <summary>下一页游标 JSON 路径。</summary>
+    [Description("JSON path to extract the next-page cursor from the response.")]
+    public string? NextCursorPath { get; set; }
+
+    /// <summary>数据项 JSON 路径。</summary>
+    [Description("JSON path to extract the items array from the response.")]
+    public string? ItemsPath { get; set; }
+
+    /// <summary>终止条件表达式（如 <c>$nextCursor == ''</c>）。</summary>
+    [Description("Termination condition expression (e.g. '$nextCursor == \"\"').")]
+    public string TerminateWhen { get; set; } = "$nextCursor == ''";
+
+    /// <summary>认证凭据名称（可选）。</summary>
+    [Description("Credential name used for authentication (optional).")]
+    public string? CredentialName { get; set; }
+
     /// <inheritdoc />
     public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
@@ -65,25 +86,22 @@ public sealed class PaginateNode : NodeBase
 
         try
         {
-            var cursorTypeStr = GetConfig("cursorType", CursorType.ToString());
-            var cursorType = cursorTypeStr.Equals("Number", StringComparison.OrdinalIgnoreCase)
-                ? Enums.CursorType.Number
-                : Enums.CursorType.String;
-            var nextCursorPath = GetConfig("nextCursorPath", "");
-            var itemsPath = GetConfig("itemsPath", "");
-            var terminateWhen = GetConfig("terminateWhen", "$nextCursor == ''");
-            var credentialName = GetConfig("credentialName", "");
-            var maxPages = int.TryParse(GetConfig("maxPages", MaxPages.ToString()), out var mp) && mp > 0 ? mp : MaxPages;
+            var cursorType = CursorType;
+            var nextCursorPath = NextCursorPath ?? "";
+            var itemsPath = ItemsPath ?? "";
+            var terminateWhen = TerminateWhen;
+            var credentialName = CredentialName ?? "";
+            var maxPages = MaxPages;
 
-            var nodeType = FindNodeType(ExecutionContext.Node.TypeName);
+            var nodeType = Registry.Get(Ctx.Node.TypeName);
             if (nodeType is null)
             {
-                throw new NodeExecutionException("NodeTypeNotFound", $"PaginateNode could not resolve node type '{ExecutionContext.Node.TypeName}'.");
+                throw new NodeExecutionException("NodeTypeNotFound", $"PaginateNode could not resolve node type '{Ctx.Node.TypeName}'.");
             }
 
-            var execution = new ExecutionRecord { Id = ExecutionContext.ExecutionId };
+            var execution = new ExecutionRecord { Id = Ctx.ExecutionId };
 
-            object? cursor = CoerceCursorLiteral(GetConfig("cursorInitial", CursorInitial ?? "0"), cursorType);
+            object? cursor = CoerceCursorLiteral(CursorInitial ?? "0", cursorType);
             JsonNode? lastResponse = null;
             var allItems = new List<DataItem>();
 
@@ -107,15 +125,17 @@ public sealed class PaginateNode : NodeBase
                 NodeExecutionContext iterContext;
                 try
                 {
-                    iterContext = await CreateChildContextAsync(
-                        ExecutionContext.Workflow,
+                    iterContext = await Factory.CreateAsync(
+                        Ctx.Workflow,
                         execution,
-                        ExecutionContext.Node,
+                        Ctx.Node,
                         nodeType!,
                         input.AllInputs,
-                        ExecutionContext.RunIndex,
+                        new Dictionary<string, DataBatch>(),
+                        new Dictionary<string, DataBatch>(),
+                        Ctx.RunIndex,
                         ct,
-                        credentialAccessorOverride: ExecutionContext.Credentials,
+                        credentialAccessorOverride: Ctx.Credentials,
                         extraGlobals: extraGlobals).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (ex is not NodeExecutionException)
@@ -150,7 +170,7 @@ public sealed class PaginateNode : NodeBase
                 NodeExecutionResult pageResult;
                 try
                 {
-                    pageResult = await s_httpService.ExecuteAsync(httpRequest, ExecutionContext, ct)
+                    pageResult = await s_httpService.ExecuteAsync(httpRequest, Ctx, ct)
                         .ConfigureAwait(false);
                 }
                 catch (OperationCanceledException)
@@ -184,7 +204,7 @@ public sealed class PaginateNode : NodeBase
                         body,
                         statusCode,
                         statusText,
-                        ExecutionContext,
+                        Ctx,
                         ct).ConfigureAwait(false);
                     if (!businessOk)
                     {
@@ -235,7 +255,7 @@ public sealed class PaginateNode : NodeBase
                 bool stop;
                 try
                 {
-                    stop = await terminateScript.EvaluateAsync<bool>(ExecutionContext,
+                    stop = await terminateScript.EvaluateAsync<bool>(Ctx,
                         ct,
                         ("$cursor", cursor),
                         ("$nextCursor", nextCursor),
@@ -282,16 +302,6 @@ public sealed class PaginateNode : NodeBase
         }
 
         return string.Empty;
-    }
-
-    private string GetConfig(string key, string fallback)
-    {
-        if (GetRawParameter(key) is string s && !string.IsNullOrEmpty(s))
-        {
-            return s;
-        }
-
-        return fallback;
     }
 
     private static HttpMethod ResolveMethod(NodeExecutionContext iterContext, HttpMethodOption fallback)

@@ -23,7 +23,8 @@ public sealed class ExecutionStage(
     NodeExecutionContextFactory contextFactory,
     RetryExecutor retryExecutor,
     SecretMasker secretMasker,
-    EngineDefaultsOptions defaults) : IExecutionStage
+    EngineDefaultsOptions defaults,
+    IServiceProvider? serviceProvider) : IExecutionStage
 {
     /// <summary>执行节点主体。节点缺失（未初始化）或取消/无路由结果时提前返回且不调用 next；失败短路时设置 Result 并短路。</summary>
     /// <param name="context">管线上下文（由 <see cref="InitializeStage"/> 填充 NodeDefinition / NodeType / NodeContext / RunCount / ExecutionMode）。</param>
@@ -101,6 +102,13 @@ public sealed class ExecutionStage(
             }
 
             nodeExecContext.OnLlmStreamChunk = sideEffects.CreateLlmStreamCallback(session.Execution.Id, node.Id, runIndex);
+
+            // 步骤 4：将运行上下文能力与 DI 服务注入 NodeBase 派生节点（取代原 ResolutionStage.BindServices）。
+            // 注入点须在 ctx 创建且 LlmClient 解析之后，因 ILlmClient 等上下文能力直接取自 ctx。
+            if (nodeType is NodeBase nb)
+            {
+                NodeCapabilityInjector.Inject(nb, serviceProvider, nodeExecContext);
+            }
 
             await sideEffects.PublishNodeStartedAsync(session.Execution.Id, node.Id, runIndex, ct)
                 .ConfigureAwait(false);

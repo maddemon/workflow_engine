@@ -16,7 +16,7 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// 代码执行节点，使用 Jint 沙箱执行 JavaScript 代码。
 /// 支持 Run Once for All Items 和 Run Once for Each Item 两种模式。
-/// 新写法继承 <see cref="NodeBase"/>，经 <see cref="NodeBase.EvaluateItemAsync{T}"/> 复用节点托管引擎，
+/// 新写法继承 <see cref="NodeBase"/>，经 <see cref="ScriptEvaluationExtensions.EvaluateAsync{T}"/> 复用节点托管引擎，
 /// 业务失败统一抛 <see cref="NodeExecutionException"/>（不再使用 context.ErrorResult）。
 /// </summary>
 [NodeMeta(TypeName = "script", DisplayName = "Code", Category = NodeCategory.Data, Icon = "code")]
@@ -24,6 +24,8 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output)]
 public sealed class JSNode : NodeBase
 {
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
+
     /// <inheritdoc />
     protected override AiNodeDefinition? GetAiDefinition(NodeTypeDescriptor descriptor) =>
         AiDefinitionHelpers.Def(
@@ -91,9 +93,9 @@ public sealed class JSNode : NodeBase
         var allItems = inputBatch.Items.Select(i => (object?)i.Data).ToList();
         var currentItem = allItems.Count > 0 ? allItems[0] as JsonNode : null;
 
-        // 标准逐项作用域（经 EvaluateItemAsync 注入 $json/$input），currentItem 即 $json 与 $input.item()；
+        // 标准逐项作用域（经 Script.EvaluateAsync 注入 $json/$input），currentItem 即 $json 与 $input.item()；
         // 框架已按与 NodeExecutionContextFactory 完全一致的方式构造 $input 容器，无需节点自行注入。
-        var result = await EvaluateItemAsync<JsonNode>(Code, currentItem, 0, ct).ConfigureAwait(false);
+        var result = await Code.EvaluateAsync<JsonNode>(Ctx, item: currentItem, itemIndex: 0, cancellationToken: ct).ConfigureAwait(false);
 
         // 返回值为 JsonArray 时，每个元素展开为一个独立 DataItem（对齐 n8n normalizeItems），
         // 使下游节点（如 dbUpsert）能逐 item 处理，而非把整个数组当成单个 item 的 Data。
@@ -123,7 +125,7 @@ public sealed class JSNode : NodeBase
         for (var itemIndex = 0; itemIndex < inputBatch.Items.Count; itemIndex++)
         {
             var item = inputBatch.Items[itemIndex];
-            var result = await EvaluateItemAsync<JsonNode>(Code, item.Data, itemIndex, ct).ConfigureAwait(false);
+            var result = await Code.EvaluateAsync<JsonNode>(Ctx, item: item.Data, itemIndex: itemIndex, cancellationToken: ct).ConfigureAwait(false);
             outputItems.Add(ToDataItem(result));
         }
 

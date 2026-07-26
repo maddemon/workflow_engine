@@ -79,7 +79,7 @@ public sealed class ValidationStageTests
             new InitializeStage(registry, new EngineDefaultsOptions()),
             new ValidationStage(registry),
             new ResolutionStage(),
-            new ExecutionStage(null!, null!, new SecretMasker(), new EngineDefaultsOptions()),
+            new ExecutionStage(null!, null!, new SecretMasker(), new EngineDefaultsOptions(), null),
             new PostProcessStage(),
             new RoutingStage(null!),
             new PersistenceStage(new SecretMasker()),
