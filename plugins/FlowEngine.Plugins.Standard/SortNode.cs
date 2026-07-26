@@ -1,33 +1,22 @@
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Attributes;
+using FlowEngine.Core.Entities;
+using FlowEngine.Core.Enums;
 using FlowEngine.Core.Scripting;
 using System.ComponentModel;
 using System.Text.Json.Nodes;
-using FlowEngine.Core.Entities;
-using FlowEngine.Core.Enums;
 
 namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
 /// 排序节点，对数据进行排序。
 /// </summary>
-public sealed class SortNode : INodeType
+[NodeMeta(TypeName = "sort", DisplayName = "Sort", Category = NodeCategory.Data, Icon = "sort", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class SortNode : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "sort";
-
-    /// <inheritdoc />
-    public string DisplayName => "Sort";
-
-    /// <inheritdoc />
-    public string Category => "Data";
-
-    /// <inheritdoc />
-    public string Icon => "sort";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
     /// <summary>
     /// 排序字段列表。
     /// </summary>
@@ -35,27 +24,13 @@ public sealed class SortNode : INodeType
     public List<SortField> SortFields { get; set; } = [];
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
-        var inputBatch = context.GetInputBatch();
+        var inputBatch = input.InputBatch;
 
         if (SortFields.Count == 0)
         {
-            return Task.FromResult(new NodeExecutionResult
-            {
-                Success = true,
-                Output = inputBatch
-            });
+            return Task.FromResult(NodeHandlerOutput.Data(inputBatch));
         }
 
         IOrderedEnumerable<DataItem> sortedItems;
@@ -84,11 +59,7 @@ public sealed class SortNode : INodeType
             }
         }
 
-        return Task.FromResult(new NodeExecutionResult
-        {
-            Success = true,
-            Output = new DataBatch { Items = sortedItems.ToList() }
-        });
+        return Task.FromResult(NodeHandlerOutput.Data(new DataBatch { Items = sortedItems.ToList() }));
     }
 
     private static SortKey GetSortKey(JsonNode? data, SortField field)

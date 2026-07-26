@@ -20,24 +20,12 @@ namespace FlowEngine.Plugins.Standard;
 /// <c>nextCursorPath</c> 提取下一页游标，按 <c>terminateWhen</c> 表达式判断是否终止，
 /// 将各页 <c>itemsPath</c> 下的数组合并为单一输出。
 /// </summary>
-public sealed class PaginateNode : INodeType
+[NodeMeta(TypeName = "paginate", DisplayName = "Paginate (Cursor)", Category = NodeCategory.Data, Icon = "repeat", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class PaginateNode : NodeBase
 {
     private static readonly HttpExecutionService s_httpService = new HttpExecutionService();
-
-    /// <inheritdoc />
-    public string TypeName => "paginate";
-
-    /// <inheritdoc />
-    public string DisplayName => "Paginate (Cursor)";
-
-    /// <inheritdoc />
-    public string Category => "Data";
-
-    /// <inheritdoc />
-    public string Icon => "repeat";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
 
     /// <summary>HTTP 请求方法。</summary>
     [Description("HTTP request method.")]
@@ -51,9 +39,9 @@ public sealed class PaginateNode : INodeType
     [Description("Initial cursor value.")]
     public string? CursorInitial { get; set; } = "0";
 
-/// <summary>游标类型：number 或 string。</summary>
-[Description("Cursor type: 'number' or 'string'.")]
-public CursorType CursorType { get; set; } = Enums.CursorType.String;
+    /// <summary>游标类型：number 或 string。</summary>
+    [Description("Cursor type: 'number' or 'string'.")]
+    public CursorType CursorType { get; set; } = Enums.CursorType.String;
 
     /// <summary>最大分页次数（安全上限，防止无限循环）。</summary>
     [Description("Maximum number of pages to fetch (safety cap).")]
@@ -68,224 +56,222 @@ public CursorType CursorType { get; set; } = Enums.CursorType.String;
     public Script SuccessWhen { get; set; } = Script.Empty;
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
-        if (context.ContextFactory is null || context.NodeRegistry is null)
+        if (Registry is null)
         {
-            return context.ErrorResult("ContextFactoryMissing", "PaginateNode requires a context factory to iterate.");
+            throw new NodeExecutionException("ContextFactoryMissing", "PaginateNode requires a context factory to iterate.");
         }
 
-        var cursorTypeStr = GetConfig(context, "cursorType", CursorType.ToString());
-        var cursorType = cursorTypeStr.Equals("Number", StringComparison.OrdinalIgnoreCase)
-            ? Enums.CursorType.Number
-            : Enums.CursorType.String;
-        var nextCursorPath = GetConfig(context, "nextCursorPath", "");
-        var itemsPath = GetConfig(context, "itemsPath", "");
-        var terminateWhen = GetConfig(context, "terminateWhen", "$nextCursor == ''");
-        var credentialName = GetConfig(context, "credentialName", "");
-        var maxPages = int.TryParse(GetConfig(context, "maxPages", MaxPages.ToString()), out var mp) && mp > 0 ? mp : MaxPages;
-
-        var nodeType = context.NodeRegistry.Get(context.Node.TypeName);
-        var execution = new ExecutionRecord { Id = context.ExecutionId };
-
-        object? cursor = CoerceCursorLiteral(GetConfig(context, "cursorInitial", CursorInitial ?? "0"), cursorType);
-        JsonNode? lastResponse = null;
-        var allItems = new List<DataItem>();
-
-        var terminateScript = new Script
+        try
         {
-            Source = terminateWhen,
-            Language = ScriptLanguage.JavaScript,
-            ReturnType = ScriptReturnType.Bool
-        };
+            var cursorTypeStr = GetConfig("cursorType", CursorType.ToString());
+            var cursorType = cursorTypeStr.Equals("Number", StringComparison.OrdinalIgnoreCase)
+                ? Enums.CursorType.Number
+                : Enums.CursorType.String;
+            var nextCursorPath = GetConfig("nextCursorPath", "");
+            var itemsPath = GetConfig("itemsPath", "");
+            var terminateWhen = GetConfig("terminateWhen", "$nextCursor == ''");
+            var credentialName = GetConfig("credentialName", "");
+            var maxPages = int.TryParse(GetConfig("maxPages", MaxPages.ToString()), out var mp) && mp > 0 ? mp : MaxPages;
 
-        for (var page = 0; page < maxPages; page++)
-        {
-            var extraGlobals = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
+            var nodeType = FindNodeType(ExecutionContext.Node.TypeName);
+            if (nodeType is null)
             {
-                ["$cursor"] = cursor,
-                ["$nextCursor"] = cursor,
-                ["$page"] = page,
-                ["$response"] = lastResponse
+                throw new NodeExecutionException("NodeTypeNotFound", $"PaginateNode could not resolve node type '{ExecutionContext.Node.TypeName}'.");
+            }
+
+            var execution = new ExecutionRecord { Id = ExecutionContext.ExecutionId };
+
+            object? cursor = CoerceCursorLiteral(GetConfig("cursorInitial", CursorInitial ?? "0"), cursorType);
+            JsonNode? lastResponse = null;
+            var allItems = new List<DataItem>();
+
+            var terminateScript = new Script
+            {
+                Source = terminateWhen,
+                Language = ScriptLanguage.JavaScript,
+                ReturnType = ScriptReturnType.Bool
             };
 
-            NodeExecutionContext iterContext;
-            try
+            for (var page = 0; page < maxPages; page++)
             {
-                iterContext = await context.ContextFactory.CreateAsync(
-                    context.Workflow,
-                    execution,
-                    context.Node,
-                    nodeType,
-                    context.Inputs,
-                    new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase),
-                    new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase),
-                    context.RunIndex,
-                    cancellationToken,
-                    credentialAccessorOverride: context.Credentials,
-                    extraGlobals: extraGlobals).ConfigureAwait(false);
-            }
-            catch (Exception ex)
-            {
-                return context.ErrorResult("PageResolveFailed", $"Failed to resolve page {page}: {ex.Message}");
-            }
-
-            var resolved = iterContext.ResolvedParameters;
-            var resolvedUrl = resolved.TryGetValue("url", out var ru) ? ru as string : null;
-            if (string.IsNullOrWhiteSpace(resolvedUrl))
-            {
-                return context.ErrorResult(FlowConstants.ErrorCodes.MissingUrl, $"URL resolution failed on page {page}.");
-            }
-
-            var httpMethod = ResolveMethod(resolved, Method);
-
-            string? bodyJson = null;
-            if (httpMethod != HttpMethod.Get && httpMethod != HttpMethod.Head
-                && resolved.TryGetValue("bodyExpression", out var rb) && rb is not null)
-            {
-                bodyJson = BuildBody(rb);
-            }
-
-            var httpRequest = new HttpExecutionRequest
-            {
-                Url = resolvedUrl,
-                Method = httpMethod,
-                AuthMode = Authentication,
-                CredentialId = credentialName,
-                BodyContent = bodyJson
-            };
-
-            NodeExecutionResult pageResult;
-            try
-            {
-                pageResult = await s_httpService.ExecuteAsync(httpRequest, context, cancellationToken)
-                    .ConfigureAwait(false);
-            }
-            catch (OperationCanceledException)
-            {
-                return context.ErrorResult(FlowConstants.ErrorCodes.Cancelled, "Paginated request was cancelled.");
-            }
-            catch (HttpRequestException ex)
-            {
-                return context.ErrorResult(FlowConstants.ErrorCodes.HttpRequestFailed, $"HTTP request failed on page {page}: {ex.Message}");
-            }
-
-            if (!pageResult.Success)
-            {
-                return new NodeExecutionResult
+                var extraGlobals = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)
                 {
-                    Success = false,
-                    Output = new DataBatch { Items = allItems },
-                    Error = pageResult.Error
+                    ["$cursor"] = cursor,
+                    ["$nextCursor"] = cursor,
+                    ["$page"] = page,
+                    ["$response"] = lastResponse
                 };
-            }
 
-            // 阶段零 0.2：HTTP 成功后判 successWhen 业务成功表达式（如钉钉 errcode != 0 但 HTTP 200）
-            var successWhenExpr = GetSuccessWhenExpression();
-            if (!string.IsNullOrWhiteSpace(successWhenExpr))
-            {
-                var envelope = pageResult.Output.Items.Count > 0 ? pageResult.Output.Items[0].Data as JsonObject : null;
-                var body = envelope?["body"];
-                var statusCode = envelope?["statusCode"]?.GetValue<int>() ?? 200;
-                var statusText = envelope?["statusText"]?.GetValue<string>();
-                var businessOk = await HttpExecutionHelper.EvaluateSuccessWhenAsync(
-                    new Script { Source = successWhenExpr, Language = ScriptLanguage.JavaScript, ReturnType = ScriptReturnType.Bool },
-                    body,
-                    statusCode,
-                    statusText,
-                    context,
-                    cancellationToken).ConfigureAwait(false);
-                if (!businessOk)
+                NodeExecutionContext iterContext;
+                try
                 {
-                    var errcode = body?["errcode"]?.GetValue<int>();
-                    var errmsg = body?["errmsg"]?.GetValue<string>();
-                    var subMsg = body?["sub_msg"]?.GetValue<string>();
-                    var detail = errcode.HasValue ? $"，实际 errcode={errcode}" : "";
-                    if (!string.IsNullOrEmpty(subMsg))
-                        detail += $"，{subMsg}";
-                    else if (!string.IsNullOrEmpty(errmsg))
-                        detail += $"，{errmsg}";
-                    return context.ErrorResult(FlowConstants.ErrorCodes.SuccessWhenFailed,
-                        $"业务条件未满足：{successWhenExpr}{detail}");
+                    iterContext = await CreateChildContextAsync(
+                        ExecutionContext.Workflow,
+                        execution,
+                        ExecutionContext.Node,
+                        nodeType!,
+                        input.AllInputs,
+                        ExecutionContext.RunIndex,
+                        ct,
+                        credentialAccessorOverride: ExecutionContext.Credentials,
+                        extraGlobals: extraGlobals).ConfigureAwait(false);
                 }
-            }
-
-            var responseBody = pageResult.Output.Items.Count > 0 ? pageResult.Output.Items[0].Data : null;
-
-            // HTTP 响应体位于输出信封的 .body 下
-            var httpBody = responseBody is JsonObject env && env["body"] is JsonNode b ? b : responseBody;
-
-            // 提取本页数据项
-            if (!string.IsNullOrEmpty(itemsPath) && httpBody is JsonNode bodyNode)
-            {
-                var itemsNode = Navigate(bodyNode, itemsPath);
-                if (itemsNode is JsonArray arr)
+                catch (Exception ex) when (ex is not NodeExecutionException)
                 {
-                    foreach (var item in arr)
+                    throw new NodeExecutionException("PageResolveFailed", $"Failed to resolve page {page}: {ex.Message}");
+                }
+
+                var resolvedUrl = ReadResolvedParameter(iterContext, "url") as string;
+                if (string.IsNullOrWhiteSpace(resolvedUrl))
+                {
+                    throw new NodeExecutionException(FlowConstants.ErrorCodes.MissingUrl, $"URL resolution failed on page {page}.");
+                }
+
+                var httpMethod = ResolveMethod(iterContext, Method);
+
+                string? bodyJson = null;
+                if (httpMethod != HttpMethod.Get && httpMethod != HttpMethod.Head
+                    && ReadResolvedParameter(iterContext, "bodyExpression") is { } rb)
+                {
+                    bodyJson = BuildBody(rb);
+                }
+
+                var httpRequest = new HttpExecutionRequest
+                {
+                    Url = resolvedUrl,
+                    Method = httpMethod,
+                    AuthMode = Authentication,
+                    CredentialId = credentialName,
+                    BodyContent = bodyJson
+                };
+
+                NodeExecutionResult pageResult;
+                try
+                {
+                    pageResult = await s_httpService.ExecuteAsync(httpRequest, ExecutionContext, ct)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw new NodeExecutionException(FlowConstants.ErrorCodes.Cancelled, "Paginated request was cancelled.");
+                }
+                catch (HttpRequestException ex)
+                {
+                    throw new NodeExecutionException(FlowConstants.ErrorCodes.HttpRequestFailed, $"HTTP request failed on page {page}: {ex.Message}");
+                }
+
+                if (!pageResult.Success)
+                {
+                    // 保留“失败但仍输出已收集项”的语义：携带已收集项作为输出，同时标记失败。
+                    return NodeHandlerOutput.Failure(
+                        pageResult.Error!.Code,
+                        pageResult.Error!.Message,
+                        new DataBatch { Items = allItems });
+                }
+
+                // 阶段零 0.2：HTTP 成功后判 successWhen 业务成功表达式（如钉钉 errcode != 0 但 HTTP 200）
+                var successWhenExpr = GetSuccessWhenExpression();
+                if (!string.IsNullOrWhiteSpace(successWhenExpr))
+                {
+                    var envelope = pageResult.Output.Items.Count > 0 ? pageResult.Output.Items[0].Data as JsonObject : null;
+                    var body = envelope?["body"];
+                    var statusCode = envelope?["statusCode"]?.GetValue<int>() ?? 200;
+                    var statusText = envelope?["statusText"]?.GetValue<string>();
+                    var businessOk = await HttpExecutionHelper.EvaluateSuccessWhenAsync(
+                        new Script { Source = successWhenExpr, Language = ScriptLanguage.JavaScript, ReturnType = ScriptReturnType.Bool },
+                        body,
+                        statusCode,
+                        statusText,
+                        ExecutionContext,
+                        ct).ConfigureAwait(false);
+                    if (!businessOk)
                     {
-                        allItems.Add(new DataItem
-                        {
-                            Data = item?.DeepClone(),
-                            Success = true,
-                            SourceIndex = allItems.Count
-                        });
+                        var errcode = body?["errcode"]?.GetValue<int>();
+                        var errmsg = body?["errmsg"]?.GetValue<string>();
+                        var subMsg = body?["sub_msg"]?.GetValue<string>();
+                        var detail = errcode.HasValue ? $"，实际 errcode={errcode}" : "";
+                        if (!string.IsNullOrEmpty(subMsg))
+                            detail += $"，{subMsg}";
+                        else if (!string.IsNullOrEmpty(errmsg))
+                            detail += $"，{errmsg}";
+                        throw new NodeExecutionException(FlowConstants.ErrorCodes.SuccessWhenFailed,
+                            $"业务条件未满足：{successWhenExpr}{detail}");
                     }
                 }
+
+                var responseBody = pageResult.Output.Items.Count > 0 ? pageResult.Output.Items[0].Data : null;
+
+                // HTTP 响应体位于输出信封的 .body 下
+                var httpBody = responseBody is JsonObject env && env["body"] is JsonNode b ? b : responseBody;
+
+                // 提取本页数据项
+                if (!string.IsNullOrEmpty(itemsPath) && httpBody is JsonNode bodyNode)
+                {
+                    var itemsNode = Navigate(bodyNode, itemsPath);
+                    if (itemsNode is JsonArray arr)
+                    {
+                        foreach (var item in arr)
+                        {
+                            allItems.Add(new DataItem
+                            {
+                                Data = item?.DeepClone(),
+                                Success = true,
+                                SourceIndex = allItems.Count
+                            });
+                        }
+                    }
+                }
+
+                // 提取下一页游标
+                object? nextCursor = null;
+                if (!string.IsNullOrEmpty(nextCursorPath) && httpBody is JsonNode nextNode)
+                {
+                    nextCursor = CoerceCursor(Navigate(nextNode, nextCursorPath), cursorType);
+                }
+
+                // 终止判断：以新游标作为 $nextCursor 求值 terminateWhen
+                bool stop;
+                try
+                {
+                    stop = await terminateScript.EvaluateAsync<bool>(ExecutionContext,
+                        ct,
+                        ("$cursor", cursor),
+                        ("$nextCursor", nextCursor),
+                        ("$page", page),
+                        ("$response", httpBody)).ConfigureAwait(false);
+                }
+                catch (ScriptErrorException)
+                {
+                    stop = false;
+                }
+
+                if (stop)
+                {
+                    break;
+                }
+
+                // 安全兜底：游标为空表示无更多数据
+                if (nextCursor is null || (nextCursor is string s && s == ""))
+                {
+                    break;
+                }
+
+                lastResponse = responseBody;
+                cursor = nextCursor;
             }
 
-            // 提取下一页游标
-            object? nextCursor = null;
-            if (!string.IsNullOrEmpty(nextCursorPath) && httpBody is JsonNode nextNode)
-            {
-                nextCursor = CoerceCursor(Navigate(nextNode, nextCursorPath), cursorType);
-            }
-
-            // 终止判断：以新游标作为 $nextCursor 求值 terminateWhen
-            bool stop;
-            try
-            {
-                stop = await terminateScript.EvaluateAsync<bool>(context,
-                    cancellationToken,
-                    ("$cursor", cursor),
-                    ("$nextCursor", nextCursor),
-                    ("$page", page),
-                    ("$response", httpBody)).ConfigureAwait(false);
-            }
-            catch (ScriptErrorException)
-            {
-                stop = false;
-            }
-
-            if (stop)
-            {
-                break;
-            }
-
-            // 安全兜底：游标为空表示无更多数据
-            if (nextCursor is null || (nextCursor is string s && s == ""))
-            {
-                break;
-            }
-
-            lastResponse = responseBody;
-            cursor = nextCursor;
+            return NodeHandlerOutput.Data(new DataBatch { Items = allItems });
         }
-
-        return new NodeExecutionResult
+        catch (OperationCanceledException)
         {
-            Success = true,
-            Output = new DataBatch { Items = allItems }
-        };
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.Cancelled, "Paginated request was cancelled.");
+        }
+        catch (Exception ex) when (ex is not NodeExecutionException)
+        {
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.UnexpectedError, $"Unexpected error in paginate: {ex.Message}");
+        }
     }
 
     private string GetSuccessWhenExpression()
@@ -298,9 +284,9 @@ public CursorType CursorType { get; set; } = Enums.CursorType.String;
         return string.Empty;
     }
 
-    private static string GetConfig(NodeExecutionContext context, string key, string fallback)
+    private string GetConfig(string key, string fallback)
     {
-        if (context.RawParameters.TryGetValue(key, out var v) && v is string s && !string.IsNullOrEmpty(s))
+        if (GetRawParameter(key) is string s && !string.IsNullOrEmpty(s))
         {
             return s;
         }
@@ -308,9 +294,9 @@ public CursorType CursorType { get; set; } = Enums.CursorType.String;
         return fallback;
     }
 
-    private static HttpMethod ResolveMethod(IReadOnlyDictionary<string, object> resolved, HttpMethodOption fallback)
+    private static HttpMethod ResolveMethod(NodeExecutionContext iterContext, HttpMethodOption fallback)
     {
-        if (resolved.TryGetValue("method", out var m) && m is string ms && !string.IsNullOrWhiteSpace(ms))
+        if (ReadResolvedParameter(iterContext, "method") is string ms && !string.IsNullOrWhiteSpace(ms))
         {
             return new HttpMethod(ms.ToUpperInvariant());
         }

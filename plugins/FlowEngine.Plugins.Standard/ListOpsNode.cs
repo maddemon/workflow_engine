@@ -2,8 +2,10 @@ using System.ComponentModel;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Scripting;
 
 namespace FlowEngine.Plugins.Standard;
@@ -12,23 +14,11 @@ namespace FlowEngine.Plugins.Standard;
 /// 列表操作节点，对数据批次做聚合 / 拆分 / 合并 / 分组等列表级变换。
 /// 复用 <see cref="JsonPath"/> 读取字段，避免散落路径解析逻辑。
 /// </summary>
-public sealed class ListOpsNode : INodeType
+[NodeMeta(TypeName = "listOps", DisplayName = "List Operations", Category = NodeCategory.Data, Icon = "list", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class ListOpsNode : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "listOps";
-
-    /// <inheritdoc />
-    public string DisplayName => "List Operations";
-
-    /// <inheritdoc />
-    public string Category => "Data";
-
-    /// <inheritdoc />
-    public string Icon => "list";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
     /// <summary>
     /// 列表操作类型。
     /// </summary>
@@ -54,30 +44,20 @@ public sealed class ListOpsNode : INodeType
     public string GroupBy { get; set; } = string.Empty;
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
-        var inputBatch = context.GetInputBatch();
+        var inputBatch = input.InputBatch;
 
         // 空输入 -> 空批次（成功，但无输出项）。
         if (inputBatch.Items.Count == 0)
         {
-            return Task.FromResult(context.Ok(new DataBatch()));
+            return Task.FromResult(NodeHandlerOutput.Data(new DataBatch()));
         }
 
         // 先校验 Operation 合法性（早于字段校验，使未知 Operation 始终返回 UnknownOperation）。
         if (Operation is not (ListOpsOperation.Summarize or ListOpsOperation.FieldToItems or ListOpsOperation.ItemsToField or ListOpsOperation.GroupBy))
         {
-            return Task.FromResult(context.ErrorResult("UnknownOperation", $"Unsupported operation: {Operation}"));
+            throw new NodeExecutionException("UnknownOperation", $"Unsupported operation: {Operation}");
         }
 
         // 参数校验。
@@ -85,32 +65,27 @@ public sealed class ListOpsNode : INodeType
         {
             if (string.IsNullOrWhiteSpace(GroupBy))
             {
-                return Task.FromResult(context.ErrorResult("MissingGroupBy", "GroupBy field is required for groupBy operation."));
+                throw new NodeExecutionException("MissingGroupBy", "GroupBy field is required for groupBy operation.");
             }
 
             if (Aggregate != ListOpsAggregate.Count && string.IsNullOrWhiteSpace(Field))
             {
-                return Task.FromResult(context.ErrorResult("MissingField", "Field is required for groupBy aggregation other than count."));
+                throw new NodeExecutionException("MissingField", "Field is required for groupBy aggregation other than count.");
             }
         }
         else if (string.IsNullOrWhiteSpace(Field))
         {
-            return Task.FromResult(context.ErrorResult("MissingField", $"Field is required for {Operation} operation."));
+            throw new NodeExecutionException("MissingField", $"Field is required for {Operation} operation.");
         }
 
         var result = Operation switch
         {
-            ListOpsOperation.Summarize => Summarize(inputBatch, context),
-            ListOpsOperation.FieldToItems => FieldToItems(inputBatch, context),
+            ListOpsOperation.Summarize => Summarize(inputBatch),
+            ListOpsOperation.FieldToItems => FieldToItems(inputBatch),
             ListOpsOperation.ItemsToField => ItemsToField(inputBatch),
-            ListOpsOperation.GroupBy => GroupByAggregate(inputBatch, context),
-            _ => (NodeExecutionResult?)null
+            ListOpsOperation.GroupBy => GroupByAggregate(inputBatch),
+            _ => throw new NodeExecutionException("UnknownOperation", $"Unsupported operation: {Operation}")
         };
-
-        if (result is null)
-        {
-            return Task.FromResult(context.ErrorResult("UnknownOperation", $"Unsupported operation: {Operation}"));
-        }
 
         return Task.FromResult(result);
     }
@@ -118,7 +93,7 @@ public sealed class ListOpsNode : INodeType
     /// <summary>
     /// 对指定数值字段做聚合，输出单条 <c>{ field, value, count }</c>。
     /// </summary>
-    private NodeExecutionResult Summarize(DataBatch inputBatch, NodeExecutionContext context)
+    private NodeHandlerOutput Summarize(DataBatch inputBatch)
     {
         JsonNode valueNode;
         if (Aggregate == ListOpsAggregate.Count)
@@ -128,13 +103,8 @@ public sealed class ListOpsNode : INodeType
         }
         else
         {
-            var (values, originals, error) = CollectNumericValues(inputBatch, Field, context);
-            if (error is not null)
-            {
-                return error;
-            }
-
-            valueNode = ComputeAggregate(values!, originals!, Aggregate);
+            var (values, originals) = CollectNumericValues(inputBatch, Field);
+            valueNode = ComputeAggregate(values, originals, Aggregate);
         }
 
         var output = new JsonObject
@@ -144,23 +114,19 @@ public sealed class ListOpsNode : INodeType
             ["count"] = inputBatch.Items.Count
         };
 
-        return new NodeExecutionResult
+        return NodeHandlerOutput.Data(new DataBatch
         {
-            Success = true,
-            Output = new DataBatch
-            {
-                Items =
-                [
-                    new DataItem { Data = output, Success = true, SourceIndex = 0 }
-                ]
-            }
-        };
+            Items =
+            [
+                new DataItem { Data = output, Success = true, SourceIndex = 0 }
+            ]
+        });
     }
 
     /// <summary>
     /// 将每个输入项中的数组字段拆分为多条输出项，每条输出 <c>{ value: element }</c>。
     /// </summary>
-    private NodeExecutionResult FieldToItems(DataBatch inputBatch, NodeExecutionContext context)
+    private NodeHandlerOutput FieldToItems(DataBatch inputBatch)
     {
         var outputItems = new List<DataItem>();
         var index = 0;
@@ -170,7 +136,7 @@ public sealed class ListOpsNode : INodeType
             var arrayNode = JsonPath.GetNode(item.Data, Field);
             if (arrayNode is not JsonArray array)
             {
-                return context.ErrorResult("FieldNotArray", $"Field '{Field}' must be an array for fieldToItems operation.");
+                throw new NodeExecutionException("FieldNotArray", $"Field '{Field}' must be an array for fieldToItems operation.");
             }
 
             foreach (var element in array)
@@ -184,17 +150,13 @@ public sealed class ListOpsNode : INodeType
             }
         }
 
-        return new NodeExecutionResult
-        {
-            Success = true,
-            Output = new DataBatch { Items = outputItems }
-        };
+        return NodeHandlerOutput.Data(new DataBatch { Items = outputItems });
     }
 
     /// <summary>
     /// 将多个输入项中同一字段的值收集为数组，输出单条 <c>{ field: [values] }</c>。
     /// </summary>
-    private NodeExecutionResult ItemsToField(DataBatch inputBatch)
+    private NodeHandlerOutput ItemsToField(DataBatch inputBatch)
     {
         var array = new JsonArray();
         foreach (var item in inputBatch.Items)
@@ -205,23 +167,19 @@ public sealed class ListOpsNode : INodeType
 
         var output = new JsonObject { [Field] = array };
 
-        return new NodeExecutionResult
+        return NodeHandlerOutput.Data(new DataBatch
         {
-            Success = true,
-            Output = new DataBatch
-            {
-                Items =
-                [
-                    new DataItem { Data = output, Success = true, SourceIndex = 0 }
-                ]
-            }
-        };
+            Items =
+            [
+                new DataItem { Data = output, Success = true, SourceIndex = 0 }
+            ]
+        });
     }
 
     /// <summary>
     /// 按分组字段分组，组内对数值字段做聚合，每组输出单条 <c>{ group, value }</c>。
     /// </summary>
-    private NodeExecutionResult GroupByAggregate(DataBatch inputBatch, NodeExecutionContext context)
+    private NodeHandlerOutput GroupByAggregate(DataBatch inputBatch)
     {
         // key(string) -> (values, originals)
         var groups = new Dictionary<string, (List<decimal> Values, List<JsonNode> Originals)>();
@@ -240,7 +198,7 @@ public sealed class ListOpsNode : INodeType
             {
                 if (!TryGetDecimal(JsonPath.GetNode(item.Data, Field), out var d))
                 {
-                    return context.ErrorResult("InvalidAggregateValue", $"Field '{Field}' is not numeric for item in group '{key}'.");
+                    throw new NodeExecutionException("InvalidAggregateValue", $"Field '{Field}' is not numeric for item in group '{key}'.");
                 }
 
                 bucket.Values.Add(d);
@@ -269,17 +227,13 @@ public sealed class ListOpsNode : INodeType
             });
         }
 
-        return new NodeExecutionResult
-        {
-            Success = true,
-            Output = new DataBatch { Items = outputItems }
-        };
+        return NodeHandlerOutput.Data(new DataBatch { Items = outputItems });
     }
 
     /// <summary>
-    /// 收集字段的数值，遇到非数值立即返回 <see cref="ErrorResult"/>（InvalidAggregateValue）。
+    /// 收集字段的数值，遇到非数值立即抛出 <see cref="NodeExecutionException"/>（InvalidAggregateValue）。
     /// </summary>
-    private (List<decimal>? Values, List<JsonNode>? Originals, NodeExecutionResult? Error) CollectNumericValues(DataBatch inputBatch, string field, NodeExecutionContext context)
+    private static (List<decimal> Values, List<JsonNode> Originals) CollectNumericValues(DataBatch inputBatch, string field)
     {
         var values = new List<decimal>(inputBatch.Items.Count);
         var originals = new List<JsonNode>(inputBatch.Items.Count);
@@ -289,14 +243,14 @@ public sealed class ListOpsNode : INodeType
             var node = JsonPath.GetNode(item.Data, field);
             if (!TryGetDecimal(node, out var d))
             {
-                return (null, null, context.ErrorResult("InvalidAggregateValue", $"Field '{field}' is not numeric."));
+                throw new NodeExecutionException("InvalidAggregateValue", $"Field '{field}' is not numeric.");
             }
 
             values.Add(d);
             originals.Add(node!);
         }
 
-        return (values, originals, null);
+        return (values, originals);
     }
 
     /// <summary>

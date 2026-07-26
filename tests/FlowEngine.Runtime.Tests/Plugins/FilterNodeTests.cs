@@ -22,6 +22,7 @@ namespace FlowEngine.Runtime.Tests.Plugins;
 /// FilterNode 单元测试：验证 Condition 改为 <see cref="Script"/> 类型后，
 /// 逐项走 IScriptCache + PreparedScriptSession 求值，支持裸式 <c>$json.field</c> 表达式，
 /// 脚本错误时向上冒泡，空条件时保留全部 item。
+/// 迁移为 NodeBase 后，经 <c>((INodeType)node).ExecuteAsync</c> 走适配层。
 /// </summary>
 public sealed class FilterNodeTests
 {
@@ -77,14 +78,16 @@ public sealed class FilterNodeTests
         return items;
     }
 
+    private static Task<NodeExecutionResult> RunAsync(FilterNode node, NodeExecutionContext context, CancellationToken ct = default)
+        => ((INodeType)node).ExecuteAsync(context, ct);
+
     [Fact]
     public async Task ExecuteAsync_KeepsItemsMatchingExpression()
     {
         var items = BuildItems(1, 2, 3);
         var context = await BuildContextAsync("$json.value > 1", items);
 
-        var result = await new FilterNode { Condition = new Script { Source = "$json.value > 1", ReturnType = ScriptReturnType.Bool } }
-            .ExecuteAsync(context, CancellationToken.None);
+        var result = await RunAsync(new FilterNode { Condition = new Script { Source = "$json.value > 1", ReturnType = ScriptReturnType.Bool } }, context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(2, result.Output.Items.Count);
@@ -96,8 +99,7 @@ public sealed class FilterNodeTests
         var items = BuildItems(1, 2, 3);
         var context = await BuildContextAsync("", items);
 
-        var result = await new FilterNode { Condition = Script.Empty }
-            .ExecuteAsync(context, CancellationToken.None);
+        var result = await RunAsync(new FilterNode { Condition = Script.Empty }, context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(3, result.Output.Items.Count);
@@ -110,8 +112,7 @@ public sealed class FilterNodeTests
         var items = BuildItems(1);
         var context = await BuildContextAsync("$json.value > 0", items);
 
-        var result = await new FilterNode { Condition = new Script { Source = "$input.context.nodeName === 'f1'", ReturnType = ScriptReturnType.Bool } }
-            .ExecuteAsync(context, CancellationToken.None);
+        var result = await RunAsync(new FilterNode { Condition = new Script { Source = "$input.context.nodeName === 'f1'", ReturnType = ScriptReturnType.Bool } }, context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Output.Items);
@@ -127,8 +128,7 @@ public sealed class FilterNodeTests
         };
         var context = await BuildContextAsync("$json.value === $itemIndex + 1", items);
 
-        var result = await new FilterNode { Condition = new Script { Source = "$json.value === $itemIndex + 1", ReturnType = ScriptReturnType.Bool } }
-            .ExecuteAsync(context, CancellationToken.None);
+        var result = await RunAsync(new FilterNode { Condition = new Script { Source = "$json.value === $itemIndex + 1", ReturnType = ScriptReturnType.Bool } }, context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(2, result.Output.Items.Count);
@@ -141,8 +141,7 @@ public sealed class FilterNodeTests
         var context = await BuildContextAsync("$json.value === ", items);
 
         await Assert.ThrowsAsync<ScriptErrorException>(() =>
-            new FilterNode { Condition = new Script { Source = "$json.value === ", ReturnType = ScriptReturnType.Bool } }
-                .ExecuteAsync(context, CancellationToken.None));
+            RunAsync(new FilterNode { Condition = new Script { Source = "$json.value === ", ReturnType = ScriptReturnType.Bool } }, context, CancellationToken.None));
     }
 
     private sealed class NullCredentialAccessor : ICredentialAccessor

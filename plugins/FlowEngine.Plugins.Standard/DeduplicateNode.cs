@@ -1,33 +1,22 @@
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Attributes;
+using FlowEngine.Core.Entities;
+using FlowEngine.Core.Enums;
 using FlowEngine.Core.Scripting;
 using System.ComponentModel;
 using System.Text.Json.Nodes;
-using FlowEngine.Core.Entities;
-using FlowEngine.Core.Enums;
 
 namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
 /// 去重节点，移除重复的数据项。
 /// </summary>
-public sealed class DeduplicateNode : INodeType
+[NodeMeta(TypeName = "deduplicate", DisplayName = "Remove Duplicates", Category = NodeCategory.Data, Icon = "filter-1", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class DeduplicateNode : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "deduplicate";
-
-    /// <inheritdoc />
-    public string DisplayName => "Remove Duplicates";
-
-    /// <inheritdoc />
-    public string Category => "Data";
-
-    /// <inheritdoc />
-    public string Icon => "filter-1";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
     /// <summary>
     /// 用于判断重复的字段名。
     /// </summary>
@@ -41,19 +30,9 @@ public sealed class DeduplicateNode : INodeType
     public bool KeepFirst { get; set; } = true;
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
-        var inputBatch = context.GetInputBatch();
+        var inputBatch = input.InputBatch;
 
         var seen = new HashSet<string>();
         var outputItems = new List<DataItem>();
@@ -85,11 +64,7 @@ public sealed class DeduplicateNode : INodeType
             outputItems.Reverse();
         }
 
-        return Task.FromResult(new NodeExecutionResult
-        {
-            Success = true,
-            Output = new DataBatch { Items = outputItems }
-        });
+        return Task.FromResult(NodeHandlerOutput.Data(new DataBatch { Items = outputItems }));
     }
 
     private string GetItemKey(JsonNode? data)

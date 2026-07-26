@@ -58,7 +58,7 @@ public sealed class SubWorkflowNodeContextIsolationTests
         };
         context.NodeRegistry = new NodeRegistry(new INodeType[] { new ContextWriterNode() }, NullLogger<NodeRegistry>.Instance);
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         // 父上下文未被子工作流内部节点污染：仍仅有 parentKey，不含内部节点写入的 innerKey。

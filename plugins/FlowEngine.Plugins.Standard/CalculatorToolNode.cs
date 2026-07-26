@@ -1,6 +1,8 @@
+using System.ComponentModel;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Exceptions;
@@ -11,54 +13,38 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// 计算器工具节点，作为 Agent 的工具执行数学计算。
 /// </summary>
-public sealed class CalculatorToolNode : INodeType
+[NodeMeta(TypeName = "calculatorTool", DisplayName = "Calculator Tool", Category = NodeCategory.AI, Icon = "calculator", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+[Port(FlowConstants.PortNames.Tools, "Tool Output", PortDirection.Output, PortType.AgentTool)]
+public sealed class CalculatorToolNode : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "calculatorTool";
+    /// <summary>
+    /// 待计算表达式。JS 表达式，支持 <c>$json</c> / <c>$input</c>。示例：<c>1 + 2</c>。
+    /// 输入批次读取之后回退到此属性（不再读取被合规规则禁止的已解析参数字典）。
+    /// </summary>
+    [Description("Math expression to evaluate. JS expression; supports $json/$input. Example: 1 + 2")]
+    public string Expression { get; set; } = string.Empty;
 
     /// <inheritdoc />
-    public string DisplayName => "Calculator Tool";
-
-    /// <inheritdoc />
-    public string Category => "AI";
-
-    /// <inheritdoc />
-    public string Icon => "calculator";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
-    /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Tools, DisplayName = "Tool Output", Direction = PortDirection.Output, Type = PortType.AgentTool }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
         try
         {
-            // Get math expression from LLM input
-            var expression = GetExpression(context);
+            var expression = GetExpression(input);
             if (string.IsNullOrWhiteSpace(expression))
             {
-                return context.ErrorResult("MissingExpression", "Math expression is required.");
+                throw new NodeExecutionException("MissingExpression", "Math expression is required.");
             }
 
-            // Evaluate expression through the unified script evaluation facade.
             var script = new Script
             {
                 Source = expression,
                 Language = ScriptLanguage.JavaScript,
                 ReturnType = ScriptReturnType.Number
             };
-            var value = await script.EvaluateAsync<object>(context, cancellationToken: cancellationToken);
+            var evalItem = input.InputBatch.Items.Count > 0 ? input.InputBatch.Items[0].Data : null;
+            var value = await EvaluateItemAsync<object>(script, evalItem, 0, ct).ConfigureAwait(false);
 
             var outputBatch = new DataBatch
             {
@@ -77,29 +63,25 @@ public sealed class CalculatorToolNode : INodeType
                 ]
             };
 
-            return new NodeExecutionResult
-            {
-                Success = true,
-                Output = outputBatch
-            };
+            return NodeHandlerOutput.Data(outputBatch);
         }
         catch (OperationCanceledException)
         {
-            return context.ErrorResult(FlowConstants.ErrorCodes.Cancelled, "Calculation was cancelled.");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.Cancelled, "Calculation was cancelled.");
         }
         catch (ScriptErrorException ex)
         {
-            return context.ErrorResult(FlowConstants.ErrorCodes.ScriptError, $"Expression evaluation failed: {ex.Message}");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.ScriptError, $"Expression evaluation failed: {ex.Message}");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not NodeExecutionException)
         {
-            return context.ErrorResult("CalculationError", $"Calculation failed: {ex.Message}");
+            throw new NodeExecutionException("CalculationError", $"Calculation failed: {ex.Message}");
         }
     }
 
-    private string? GetExpression(NodeExecutionContext context)
+    private string? GetExpression(NodeInput input)
     {
-        var batch = context.GetInputBatch();
+        var batch = input.InputBatch;
         if (batch.Items.Count > 0)
         {
             var data = batch.Items[0].Data;
@@ -124,10 +106,10 @@ public sealed class CalculatorToolNode : INodeType
             }
         }
 
-        // Check ResolvedParameters
-        if (context.ResolvedParameters.TryGetValue("expression", out var paramExpr))
+        // 回退到绑定属性（不读取被合规规则禁止的已解析参数字典）。
+        if (!string.IsNullOrWhiteSpace(Expression))
         {
-            return paramExpr?.ToString();
+            return Expression;
         }
 
         return null;

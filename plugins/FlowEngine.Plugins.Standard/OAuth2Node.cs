@@ -5,6 +5,7 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -12,23 +13,11 @@ namespace FlowEngine.Plugins.Standard;
 /// OAuth2 节点：将凭据层已托管（已缓存/刷新）的令牌物化为工作流变量。
 /// 不自行请求 token，仅消费 <see cref="ICredentialAccessor"/> 返回的 accessToken。
 /// </summary>
-public sealed class OAuth2Node : INodeType
+[NodeMeta(TypeName = "oauth2", DisplayName = "OAuth2", Category = NodeCategory.Network, Icon = "key", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class OAuth2Node : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "oauth2";
-
-    /// <inheritdoc />
-    public string DisplayName => "OAuth2";
-
-    /// <inheritdoc />
-    public string Category => "Network";
-
-    /// <inheritdoc />
-    public string Icon => "key";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
     /// <summary>
     /// 凭据名称。
     /// </summary>
@@ -37,34 +26,24 @@ public sealed class OAuth2Node : INodeType
     public string CredentialName { get; set; } = string.Empty;
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(CredentialName))
         {
-            return context.ErrorResult("MissingCredentialName", "CredentialName is required.");
+            throw new NodeExecutionException("MissingCredentialName", "CredentialName is required.");
         }
 
-        var credential = await context.ResolveCredentialAsync(CredentialName, cancellationToken)
+        var credential = await GetCredentialAsync(CredentialName, ct)
             .ConfigureAwait(false);
 
         if (credential is null)
         {
-            return context.ErrorResult("CredentialNotFound", $"Credential '{CredentialName}' not found.");
+            throw new NodeExecutionException("CredentialNotFound", $"Credential '{CredentialName}' not found.");
         }
 
         if (!credential.Fields.TryGetValue("accessToken", out var accessToken) || string.IsNullOrWhiteSpace(accessToken))
         {
-            return context.ErrorResult("MissingAccessToken", $"Credential '{CredentialName}' does not contain an accessToken.");
+            throw new NodeExecutionException("MissingAccessToken", $"Credential '{CredentialName}' does not contain an accessToken.");
         }
 
         var tokenType = credential.Fields.TryGetValue("tokenType", out var tt) ? tt : "Bearer";
@@ -82,6 +61,23 @@ public sealed class OAuth2Node : INodeType
             ["expiresAt"] = expiresAt.HasValue ? expiresAt.Value.ToString("O") : null
         };
 
-        return context.Ok(data);
+        return Single(data);
     }
+
+    /// <summary>
+    /// 构造单数据项的成功输出。
+    /// </summary>
+    private static NodeHandlerOutput Single(JsonNode? data) =>
+        NodeHandlerOutput.Data(new DataBatch
+        {
+            Items =
+            [
+                new DataItem
+                {
+                    Data = data,
+                    Success = true,
+                    SourceIndex = 0
+                }
+            ]
+        });
 }

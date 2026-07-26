@@ -1,23 +1,23 @@
 using FlowEngine.Core;
-using System.ComponentModel;
-using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Ai;
+using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using System.ComponentModel;
+using System.Text.Json.Nodes;
 
 namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
 /// 定时触发器节点，按时间表触发工作流。
 /// </summary>
-public sealed class ScheduleTriggerNode : INodeType
+[NodeMeta(TypeName = "scheduleTrigger", DisplayName = "Schedule Trigger", Category = NodeCategory.Trigger, Icon = "clock", DefaultIsEntry = true)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class ScheduleTriggerNode : NodeBase
 {
     /// <inheritdoc />
-    public string TypeName => "scheduleTrigger";
-
-    /// <inheritdoc />
-    AiNodeDefinition? INodeType.GetAiDefinition(NodeTypeDescriptor descriptor) =>
+    protected override AiNodeDefinition? GetAiDefinition(NodeTypeDescriptor descriptor) =>
         AiDefinitionHelpers.Def(
             "Schedule Trigger", "Trigger", true,
             "按 Cron 表达式定时触发工作流，是工作流的入口节点。常用于每日/每小时周期性任务。",
@@ -26,18 +26,6 @@ public sealed class ScheduleTriggerNode : INodeType
             AiDefinitionHelpers.Example("每天 9 点触发",
                 JsonNode.Parse("""{"cron":"0 9 * * *"}"""),
                 JsonNode.Parse("""{"triggeredAt":"2026-07-12T09:00:00Z"}""")));
-
-    /// <inheritdoc />
-    public string DisplayName => "Schedule Trigger";
-
-    /// <inheritdoc />
-    public string Category => "Trigger";
-
-    /// <inheritdoc />
-    public string Icon => "clock";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
 
     /// <summary>
     /// 触发间隔。
@@ -58,16 +46,7 @@ public sealed class ScheduleTriggerNode : INodeType
     public string? CronExpression { get; set; }
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => true;
-
-    /// <inheritdoc />
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
         // In a real implementation, this would be scheduled by a timer
         // For now, we just return the current time as trigger data
@@ -78,7 +57,7 @@ public sealed class ScheduleTriggerNode : INodeType
             [
                 new DataItem
                 {
-                    Data = new System.Text.Json.Nodes.JsonObject
+                    Data = new JsonObject
                     {
                         ["timestamp"] = DateTime.UtcNow.ToString("o"),
                         ["interval"] = Interval.ToString(),
@@ -91,11 +70,7 @@ public sealed class ScheduleTriggerNode : INodeType
             ]
         };
 
-        return Task.FromResult(new NodeExecutionResult
-        {
-            Success = true,
-            Output = outputBatch
-        });
+        return Task.FromResult(NodeHandlerOutput.Data(outputBatch));
     }
 }
 

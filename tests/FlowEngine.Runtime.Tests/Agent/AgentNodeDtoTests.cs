@@ -34,7 +34,7 @@ public class AgentNodeDtoTests
         var workflow = CreateWorkflow();
         var context = CreateContext(workflow: workflow, llmClient: llmClient);
 
-        var result = await node.ExecuteAsync(context);
+        var result = await ((INodeType)node).ExecuteAsync(context);
 
         Assert.True(result.Success);
         Assert.Single(result.Output.Items);
@@ -89,7 +89,7 @@ public class AgentNodeDtoTests
         var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNode.Id);
         var node = new AgentNode { MaxIterations = 2 };
 
-        var result = await node.ExecuteAsync(context);
+        var result = await ((INodeType)node).ExecuteAsync(context);
 
         Assert.False(result.Success);
         Assert.Single(result.Output.Items);
@@ -122,7 +122,7 @@ public class AgentNodeDtoTests
         var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNode.Id);
         var node = new AgentNode();
 
-        var result = await node.ExecuteAsync(context);
+        var result = await ((INodeType)node).ExecuteAsync(context);
 
         Assert.False(result.Success);
         Assert.Single(result.Output.Items);
@@ -189,7 +189,7 @@ public class AgentNodeDtoTests
         var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNode.Id);
         var node = new AgentNode();
 
-        var result = await node.ExecuteAsync(context);
+        var result = await ((INodeType)node).ExecuteAsync(context);
 
         Assert.True(result.Success);
         var dto = JsonSerializer.Deserialize<AgentExecutionResultDto>(
@@ -219,7 +219,7 @@ public class AgentNodeDtoTests
         var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNode.Id);
         var node = new AgentNode();
 
-        var result = await node.ExecuteAsync(context);
+        var result = await ((INodeType)node).ExecuteAsync(context);
 
         Assert.True(result.Success);
         var dto = JsonSerializer.Deserialize<AgentExecutionResultDto>(
@@ -251,7 +251,7 @@ public class AgentNodeDtoTests
         var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNode.Id);
         var node = new AgentNode();
 
-        var result = await node.ExecuteAsync(context);
+        var result = await ((INodeType)node).ExecuteAsync(context);
 
         Assert.True(result.Success);
         var dto = JsonSerializer.Deserialize<AgentExecutionResultDto>(

@@ -1,4 +1,4 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
@@ -18,7 +18,10 @@ namespace FlowEngine.Plugins.Storage;
 /// against a MongoDB collection using the <c>mongo</c> credential type.
 /// The node references only <see cref="FlowEngine.Core"/> plus the MongoDB driver.
 /// </summary>
-public sealed class MongoDbNode : INodeType
+[NodeMeta(TypeName = "mongoDb", DisplayName = "MongoDB", Category = NodeCategory.Storage, Icon = "mongo", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class MongoDbNode : NodeBase
 {
     /// <summary>
     /// MongoDB operation selector.
@@ -37,31 +40,6 @@ public sealed class MongoDbNode : INodeType
         /// <summary>Delete the first document matching the filter.</summary>
         Delete
     }
-
-    /// <inheritdoc />
-    public string TypeName => "mongoDb";
-
-    /// <inheritdoc />
-    public string DisplayName => "MongoDB";
-
-    /// <inheritdoc />
-    public string Category => "Storage";
-
-    /// <inheritdoc />
-    public string Icon => "mongo";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
-    /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
 
     /// <summary>
     /// MongoDB connection credential (type <c>mongo</c>). Fields: connectionString (secret), database.
@@ -105,28 +83,28 @@ public sealed class MongoDbNode : INodeType
     internal IMongoCollection<BsonDocument>? CollectionOverride { get; set; }
 
     /// <inheritdoc />
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken cancellationToken = default)
     {
         try
         {
             if (Connection is null)
             {
-                return context.ErrorResult(FlowConstants.ErrorCodes.MissingConnection, "MongoDB connection credential is required.");
+                throw new NodeExecutionException(FlowConstants.ErrorCodes.MissingConnection, "MongoDB connection credential is required.");
             }
 
             if (!Connection.Fields.TryGetValue("connectionString", out var connectionString) || string.IsNullOrWhiteSpace(connectionString))
             {
-                return context.ErrorResult(FlowConstants.ErrorCodes.MissingConnection, "MongoDB connectionString is required.");
+                throw new NodeExecutionException(FlowConstants.ErrorCodes.MissingConnection, "MongoDB connectionString is required.");
             }
 
             if (!Connection.Fields.TryGetValue("database", out var database) || string.IsNullOrWhiteSpace(database))
             {
-                return context.ErrorResult(FlowConstants.ErrorCodes.MissingConnection, "MongoDB database is required.");
+                throw new NodeExecutionException(FlowConstants.ErrorCodes.MissingConnection, "MongoDB database is required.");
             }
 
             if (string.IsNullOrWhiteSpace(Collection))
             {
-                return context.ErrorResult("MissingCollection", "Collection name is required.");
+                throw new NodeExecutionException("MissingCollection", "Collection name is required.");
             }
 
             var collection = CollectionOverride
@@ -134,46 +112,46 @@ public sealed class MongoDbNode : INodeType
 
             var filter = BuildFilter(Filter);
 
-            switch (Operation)
+            return Operation switch
             {
-                case MongoOperation.Insert:
-                    return await ExecuteInsertAsync(context, collection, cancellationToken).ConfigureAwait(false);
-                case MongoOperation.Find:
-                    return await ExecuteFindAsync(context, collection, filter, cancellationToken).ConfigureAwait(false);
-                case MongoOperation.Update:
-                    return await ExecuteUpdateAsync(context, collection, filter, cancellationToken).ConfigureAwait(false);
-                case MongoOperation.Delete:
-                    return await ExecuteDeleteAsync(context, collection, filter, cancellationToken).ConfigureAwait(false);
-                default:
-                    return context.ErrorResult(FlowConstants.ErrorCodes.UnexpectedError, $"Unsupported operation: {Operation}");
-            }
+                MongoOperation.Insert => await ExecuteInsertAsync(collection, cancellationToken).ConfigureAwait(false),
+                MongoOperation.Find => await ExecuteFindAsync(collection, filter, cancellationToken).ConfigureAwait(false),
+                MongoOperation.Update => await ExecuteUpdateAsync(collection, filter, cancellationToken).ConfigureAwait(false),
+                MongoOperation.Delete => await ExecuteDeleteAsync(collection, filter, cancellationToken).ConfigureAwait(false),
+                _ => throw new NodeExecutionException(FlowConstants.ErrorCodes.UnexpectedError, $"Unsupported operation: {Operation}")
+            };
         }
         catch (MongoException ex)
         {
             // Only non-sensitive info is logged; connectionString is never written.
-            context.Logger?.LogError(ex, "mongoDb 操作失败（集合 {Collection}，操作 {Operation}）。", Collection, Operation);
-            return context.ErrorResult("MongoError", $"MongoDB error: {ex.Message}");
+            Logger?.LogError(ex, "mongoDb 操作失败（集合 {Collection}，操作 {Operation}）。", Collection, Operation);
+            throw new NodeExecutionException("MongoError", $"MongoDB error: {ex.Message}");
         }
         catch (BsonException ex)
         {
-            return context.ErrorResult("InvalidJson", $"Invalid MongoDB JSON: {ex.Message}");
+            throw new NodeExecutionException("InvalidJson", $"Invalid MongoDB JSON: {ex.Message}");
         }
         catch (JsonException ex)
         {
-            return context.ErrorResult("InvalidJson", $"Invalid MongoDB JSON: {ex.Message}");
+            throw new NodeExecutionException("InvalidJson", $"Invalid MongoDB JSON: {ex.Message}");
         }
-        catch (Exception ex)
+        catch (NodeExecutionException)
         {
-            return context.ErrorResult(FlowConstants.ErrorCodes.UnexpectedError, $"Unexpected MongoDB error: {ex.Message}");
+            // 业务异常：保留原始错误码/消息，由 NodeBase 转换为失败结果。
+            throw;
+        }
+        catch (Exception ex) when (ex is not NodeExecutionException)
+        {
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.UnexpectedError, $"Unexpected MongoDB error: {ex.Message}");
         }
     }
 
-    private async Task<NodeExecutionResult> ExecuteInsertAsync(
-        NodeExecutionContext context, IMongoCollection<BsonDocument> collection, CancellationToken cancellationToken)
+    private async Task<NodeHandlerOutput> ExecuteInsertAsync(
+        IMongoCollection<BsonDocument> collection, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(Document))
         {
-            return context.ErrorResult("InvalidJson", "Document is required for Insert.");
+            throw new NodeExecutionException("InvalidJson", "Document is required for Insert.");
         }
 
         BsonDocument doc;
@@ -181,26 +159,26 @@ public sealed class MongoDbNode : INodeType
         {
             doc = BsonDocument.Parse(Document!);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not NodeExecutionException)
         {
-            return context.ErrorResult("InvalidJson", $"Document is not valid JSON: {ex.Message}");
+            throw new NodeExecutionException("InvalidJson", $"Document is not valid JSON: {ex.Message}");
         }
 
         await collection.InsertOneAsync(doc, (InsertOneOptions?)null, cancellationToken).ConfigureAwait(false);
 
         var insertedId = doc["_id"] is { } id ? JsonNode.Parse(id.ToJson()) : null;
 
-        context.Logger?.LogInformation("mongoDb Insert 完成：集合 {Collection}，新增 1 条。", Collection);
+        Logger?.LogInformation("mongoDb Insert 完成：集合 {Collection}，新增 1 条。", Collection);
 
-        return context.Ok(new JsonObject
+        return Single(new JsonObject
         {
             ["success"] = true,
             ["insertedId"] = insertedId
         });
     }
 
-    private async Task<NodeExecutionResult> ExecuteFindAsync(
-        NodeExecutionContext context, IMongoCollection<BsonDocument> collection,
+    private async Task<NodeHandlerOutput> ExecuteFindAsync(
+        IMongoCollection<BsonDocument> collection,
         FilterDefinition<BsonDocument> filter, CancellationToken cancellationToken)
     {
         using var cursor = await collection.FindAsync(filter, null, cancellationToken).ConfigureAwait(false);
@@ -218,18 +196,18 @@ public sealed class MongoDbNode : INodeType
             });
         }
 
-        context.Logger?.LogInformation("mongoDb Find 完成：集合 {Collection}，返回 {Count} 条。", Collection, docs.Count);
+        Logger?.LogInformation("mongoDb Find 完成：集合 {Collection}，返回 {Count} 条。", Collection, docs.Count);
 
-        return context.Ok(batch);
+        return NodeHandlerOutput.Data(batch);
     }
 
-    private async Task<NodeExecutionResult> ExecuteUpdateAsync(
-        NodeExecutionContext context, IMongoCollection<BsonDocument> collection,
+    private async Task<NodeHandlerOutput> ExecuteUpdateAsync(
+        IMongoCollection<BsonDocument> collection,
         FilterDefinition<BsonDocument> filter, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(Document))
         {
-            return context.ErrorResult("InvalidJson", "Document is required for Update.");
+            throw new NodeExecutionException("InvalidJson", "Document is required for Update.");
         }
 
         BsonDocument updateDoc;
@@ -237,9 +215,9 @@ public sealed class MongoDbNode : INodeType
         {
             updateDoc = BsonDocument.Parse(Document!);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not NodeExecutionException)
         {
-            return context.ErrorResult("InvalidJson", $"Document is not valid JSON: {ex.Message}");
+            throw new NodeExecutionException("InvalidJson", $"Document is not valid JSON: {ex.Message}");
         }
 
         var update = new BsonDocumentUpdateDefinition<BsonDocument>(WrapUpdate(updateDoc));
@@ -248,26 +226,26 @@ public sealed class MongoDbNode : INodeType
 
         var modifiedCount = result.ModifiedCount;
 
-        context.Logger?.LogInformation("mongoDb Update 完成：集合 {Collection}，修改 {Count} 条。", Collection, modifiedCount);
+        Logger?.LogInformation("mongoDb Update 完成：集合 {Collection}，修改 {Count} 条。", Collection, modifiedCount);
 
-        return context.Ok(new JsonObject
+        return Single(new JsonObject
         {
             ["success"] = true,
             ["modifiedCount"] = (long)modifiedCount
         });
     }
 
-    private async Task<NodeExecutionResult> ExecuteDeleteAsync(
-        NodeExecutionContext context, IMongoCollection<BsonDocument> collection,
+    private async Task<NodeHandlerOutput> ExecuteDeleteAsync(
+        IMongoCollection<BsonDocument> collection,
         FilterDefinition<BsonDocument> filter, CancellationToken cancellationToken)
     {
         var result = await collection.DeleteOneAsync(filter, null, cancellationToken).ConfigureAwait(false);
 
         var deletedCount = result.DeletedCount;
 
-        context.Logger?.LogInformation("mongoDb Delete 完成：集合 {Collection}，删除 {Count} 条。", Collection, deletedCount);
+        Logger?.LogInformation("mongoDb Delete 完成：集合 {Collection}，删除 {Count} 条。", Collection, deletedCount);
 
-        return context.Ok(new JsonObject
+        return Single(new JsonObject
         {
             ["success"] = true,
             ["deletedCount"] = (long)deletedCount
@@ -303,7 +281,7 @@ public sealed class MongoDbNode : INodeType
     }
 
     /// <inheritdoc />
-    AiNodeDefinition? INodeType.GetAiDefinition(NodeTypeDescriptor descriptor) =>
+    protected override AiNodeDefinition? GetAiDefinition(NodeTypeDescriptor descriptor) =>
         AiDefinitionHelpers.Def(
             "MongoDB", "Storage", false,
             "MongoDB 节点：对集合执行 Insert/Find/Update/Delete 操作，凭据类型为 mongo。",
@@ -312,4 +290,13 @@ public sealed class MongoDbNode : INodeType
             AiDefinitionHelpers.Example("查找",
                 JsonNode.Parse("""{"Collection":"users","Operation":"Find","Filter":"{\"name\":\"alice\"}"}"""),
                 JsonNode.Parse("""{"success":true}""")));
+
+    /// <summary>
+    /// 将单条 JSON 对象包装为单条 DataItem 的输出。
+    /// </summary>
+    private static NodeHandlerOutput Single(JsonObject obj) =>
+        NodeHandlerOutput.Data(new DataBatch
+        {
+            Items = [ new DataItem { Data = obj, Success = true, SourceIndex = 0 } ]
+        });
 }

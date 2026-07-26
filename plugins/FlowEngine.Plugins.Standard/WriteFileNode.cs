@@ -17,23 +17,11 @@ namespace FlowEngine.Plugins.Standard;
 /// 写文件节点。从上游输入项的 base64 字段解码出二进制内容并落盘（覆盖或追加）。
 /// 二进制一律从 base64 字段解码写入本地磁盘，不依赖任何附件存储后端（本引擎当前无附件存储实现）。
 /// </summary>
-public sealed class WriteFileNode : INodeType
+[NodeMeta(TypeName = "writeFile", DisplayName = "Write File", Category = NodeCategory.Storage, Icon = "file-write", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class WriteFileNode : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "writeFile";
-
-    /// <inheritdoc />
-    public string DisplayName => "Write File";
-
-    /// <inheritdoc />
-    public string Category => "Storage";
-
-    /// <inheritdoc />
-    public string Icon => "file-write";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
     /// <summary>
     /// 输入 JSON 字段名，承载待写入的 base64 内容。默认 <c>data</c>。
     /// </summary>
@@ -60,37 +48,27 @@ public sealed class WriteFileNode : INodeType
     public FileWriteMode WriteMode { get; set; } = FileWriteMode.Overwrite;
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
         try
         {
             // 缺输入项即视为缺内容（OnceForAll 仅取首个输入项）。
-            var inputBatch = context.GetInputBatch();
+            var inputBatch = input.InputBatch;
             var item = inputBatch.Items.Count > 0 ? inputBatch.Items[0].Data : null;
             if (item is null)
             {
-                return context.ErrorResult("MissingBinaryField", "No input item available to read base64 content from.");
+                throw new NodeExecutionException("MissingBinaryField", "No input item available to read base64 content from.");
             }
 
             if (FileName is null)
             {
-                return context.ErrorResult("MissingFileName", "FileName is required.");
+                throw new NodeExecutionException("MissingFileName", "FileName is required.");
             }
 
-            var fileName = await FileName.EvaluateAsync<string>(context, item, 0, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var fileName = await EvaluateItemAsync<string>(FileName, item, 0, ct).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(fileName))
             {
-                return context.ErrorResult("MissingFileName", "FileName must evaluate to a non-empty string.");
+                throw new NodeExecutionException("MissingFileName", "FileName must evaluate to a non-empty string.");
             }
 
             // 从指定字段取 base64 字符串；缺失或非字符串均视为缺内容。
@@ -98,9 +76,9 @@ public sealed class WriteFileNode : INodeType
             var status = NodeDataHelpers.TryGetBase64Field(item, BinaryField, out bytes);
             if (status is not NodeDataHelpers.Base64FieldResult.Success)
             {
-                return status == NodeDataHelpers.Base64FieldResult.Invalid
-                    ? context.ErrorResult("InvalidBase64", "Field content is not valid base64.")
-                    : context.ErrorResult("MissingBinaryField", $"Input item is missing a string value at field '{BinaryField}'.");
+                throw status == NodeDataHelpers.Base64FieldResult.Invalid
+                    ? new NodeExecutionException("InvalidBase64", "Field content is not valid base64.")
+                    : new NodeExecutionException("MissingBinaryField", $"Input item is missing a string value at field '{BinaryField}'.");
             }
 
             // 解析目标路径：Path 非空时自动创建目录并按相对路径组合。
@@ -119,46 +97,55 @@ public sealed class WriteFileNode : INodeType
             {
                 if (WriteMode == FileWriteMode.Append)
                 {
-                    await File.AppendAllBytesAsync(target, bytes, cancellationToken).ConfigureAwait(false);
+                    await File.AppendAllBytesAsync(target, bytes, ct).ConfigureAwait(false);
                 }
                 else
                 {
-                    await File.WriteAllBytesAsync(target, bytes, cancellationToken).ConfigureAwait(false);
+                    await File.WriteAllBytesAsync(target, bytes, ct).ConfigureAwait(false);
                 }
             }
             catch (UnauthorizedAccessException)
             {
-                context.Logger?.LogWarning("writeFile 无权限写入 {FileName}。", fileName);
-                return context.ErrorResult("WriteError", $"Access denied writing file: '{fileName}'.");
+                Logger?.LogWarning("writeFile 无权限写入 {FileName}。", fileName);
+                throw new NodeExecutionException("WriteError", $"Access denied writing file: '{fileName}'.");
             }
             catch (IOException)
             {
-                context.Logger?.LogWarning("writeFile 写入 {FileName} 发生 IO 错误。", fileName);
-                return context.ErrorResult("WriteError", $"Failed to write file: '{fileName}'.");
+                Logger?.LogWarning("writeFile 写入 {FileName} 发生 IO 错误。", fileName);
+                throw new NodeExecutionException("WriteError", $"Failed to write file: '{fileName}'.");
             }
 
-            context.Logger?.LogInformation("writeFile 已写入 {FileName}（模式：{Mode}，字节：{Bytes}）。", fileName, WriteMode, bytes.Length);
+            Logger?.LogInformation("writeFile 已写入 {FileName}（模式：{Mode}，字节：{Bytes}）。", fileName, WriteMode, bytes.Length);
 
-            var obj = new JsonObject
+            return NodeHandlerOutput.Data(new DataBatch
             {
-                ["filePath"] = JsonValue.Create(System.IO.Path.GetFullPath(target)),
-                ["fileName"] = JsonValue.Create(fileName),
-                ["bytesWritten"] = JsonValue.Create(bytes.Length)
-            };
-
-            return context.Ok(obj);
+                Items =
+                [
+                    new DataItem
+                    {
+                        Data = new JsonObject
+                        {
+                            ["filePath"] = JsonValue.Create(System.IO.Path.GetFullPath(target)),
+                            ["fileName"] = JsonValue.Create(fileName),
+                            ["bytesWritten"] = JsonValue.Create(bytes.Length)
+                        },
+                        Success = true,
+                        SourceIndex = 0
+                    }
+                ]
+            });
         }
         catch (OperationCanceledException)
         {
-            return context.ErrorResult(FlowConstants.ErrorCodes.Cancelled, "writeFile was cancelled.");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.Cancelled, "writeFile was cancelled.");
         }
         catch (ScriptErrorException ex)
         {
-            return context.ErrorResult(FlowConstants.ErrorCodes.ScriptError, $"FileName expression evaluation failed: {ex.Message}");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.ScriptError, $"FileName expression evaluation failed: {ex.Message}");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not NodeExecutionException)
         {
-            return context.ErrorResult(FlowConstants.ErrorCodes.UnexpectedError, $"Unexpected error writing file: {ex.Message}");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.UnexpectedError, $"Unexpected error writing file: {ex.Message}");
         }
     }
 }

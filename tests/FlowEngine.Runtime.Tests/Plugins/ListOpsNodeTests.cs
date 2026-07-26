@@ -1,3 +1,4 @@
+using FlowEngine.Core.Abstractions;
 using System.Globalization;
 using System.Linq;
 using System.Text.Json.Nodes;
@@ -35,7 +36,7 @@ public sealed class ListOpsNodeTests
             new ListOpsNode(),
             new Dictionary<string, object>(),
             new() { [FlowConstants.PortNames.Input] = input });
-        return await node.ExecuteAsync(context, CancellationToken.None);
+        return await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
     }
 
     // ---- summarize: sum ----

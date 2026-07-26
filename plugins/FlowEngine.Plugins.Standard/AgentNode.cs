@@ -1,12 +1,17 @@
+using System.Collections.Generic;
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Threading;
+using System.Threading.Tasks;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Attributes;
+using FlowEngine.Core.Agent;
 using FlowEngine.Core.Dtos;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
-using FlowEngine.Core.Agent;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Tools;
 
 namespace FlowEngine.Plugins.Standard;
@@ -14,23 +19,13 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// AI Agent 节点，通过 LLM 循环调用下游工具节点完成任务。
 /// </summary>
-public sealed class AgentNode : INodeType
+[NodeMeta(TypeName = "agent", DisplayName = "Agent", Category = NodeCategory.AI, Icon = "bot", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+[Port(FlowConstants.PortNames.Tools, "Tool", PortDirection.Input, PortType.AgentTool)]
+[Port(FlowConstants.PortNames.Llm, "LLM", PortDirection.Input, PortType.LLM)]
+public sealed class AgentNode : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "agent";
-
-    /// <inheritdoc />
-    public string DisplayName => "Agent";
-
-    /// <inheritdoc />
-    public string Category => "AI";
-
-    /// <inheritdoc />
-    public string Icon => "bot";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
     /// <summary>
     /// 最大 LLM 迭代次数。
     /// </summary>
@@ -62,32 +57,23 @@ public sealed class AgentNode : INodeType
     public int MemoryWindowSize { get; set; } = 20;
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Tools, DisplayName = "Tool (optional - connect tool nodes here)", Direction = PortDirection.Input, Type = PortType.AgentTool },
-        new PortDefinition { Name = FlowConstants.PortNames.Llm, DisplayName = "LLM (required - connect an LLM provider node)", Direction = PortDirection.Input, Type = PortType.LLM }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
-        var llmClient = context.LlmClient;
-        if (llmClient is null)
+        if (LlmClient is null)
         {
-            return context.ErrorResult(FlowConstants.ErrorCodes.MissingLlmClient, "LLM client not available. Connect an LLM supply node.");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.MissingLlmClient, "LLM client not available. Connect an LLM supply node.");
         }
 
-        var tools = CollectTools(context);
-        var messages = BuildMessages(context);
+        // 生产路径经注入的 SubExecutionService 解析工具；仅当 DI 未注入（遗留/直接实例化测试）时回退到直接读取上下文。
+        var tools = SubExecutionService is not null
+            ? await SubExecutionService.ResolveAgentToolsAsync(ExecutionContext, ct).ConfigureAwait(false)
+            : CollectTools(ExecutionContext);
+
+        var messages = BuildMessages(input);
 
         var maxIterations = MaxIterations > 0 ? MaxIterations : 10;
         using var timeoutCts = TimeoutSeconds.HasValue
-            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+            ? CancellationTokenSource.CreateLinkedTokenSource(ct)
             : null;
 
         if (timeoutCts is not null && TimeoutSeconds.HasValue)
@@ -95,7 +81,7 @@ public sealed class AgentNode : INodeType
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(TimeoutSeconds.Value));
         }
 
-        var effectiveToken = timeoutCts?.Token ?? cancellationToken;
+        var effectiveToken = timeoutCts?.Token ?? ct;
 
         AgentMemory? memory = null;
         if (MemoryEnabled)
@@ -103,47 +89,69 @@ public sealed class AgentNode : INodeType
             memory = new AgentMemory(MemoryWindowSize > 0 ? MemoryWindowSize : 20);
         }
 
+        // ExecutionContext 作为受控上下文传给注入的解析器（符合 NodeBase 设计：原始上下文仅委派给注入的基础设施服务）。
         var resolver = new InlineResolver(
-            llmClient,
+            LlmClient,
             tools,
-            context,
+            ExecutionContext,
             maxIterations,
             memory: memory,
-            logger: context.Logger);
+            logger: Logger);
 
         try
         {
             var result = await resolver.RunAsync(messages, effectiveToken).ConfigureAwait(false);
-
-            switch (result.StoppedReason)
-            {
-                case InlineResolverStopReason.Completed:
-                    return CreateSuccessResult(result, context);
-
-                case InlineResolverStopReason.MaxIterationsReached:
-                    return CreateTimeoutResult($"Maximum iterations ({maxIterations}) reached.", context);
-
-                case InlineResolverStopReason.Cancelled:
-                    return CreateTimeoutResult("LLM call timed out or was cancelled.", context);
-
-                default:
-                    return CreateTimeoutResult("Agent execution stopped.", context);
-            }
+            return BuildOutput(result, maxIterations);
         }
         catch (OperationCanceledException) when (timeoutCts is not null)
         {
-            return CreateTimeoutResult("LLM call timed out.", context);
+            return NodeHandlerOutput.Failure(
+                "AgentTimeout",
+                "LLM call timed out.",
+                BuildFailedBatch(FlowConstants.ErrorCodes.Cancelled, "LLM call timed out."),
+                ExecutionContext.Node?.Id);
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            return CreateLlmErrorResult(ex, context);
+            // EX-2：LLM 调用失败同样不可泄露原始异常文本或堆栈，统一脱敏为安全消息。
+            return NodeHandlerOutput.Failure(
+                "LlmError",
+                NodeErrorFactory.SafeMessage,
+                BuildFailedBatch("Failed", NodeErrorFactory.SafeMessage),
+                ExecutionContext.Node?.Id);
         }
     }
 
     /// <summary>
-    /// 扫描 Agent 工具端口连接的下游 tool 节点，生成工具定义列表。
+    /// 将解析器结果映射为节点业务输出：成功返回 Data 输出，超时/取消/LLM 错误返回携带结果 DTO 的失败输出。
     /// </summary>
-    internal IReadOnlyList<ToolDefinition> CollectTools(NodeExecutionContext context)
+    private NodeHandlerOutput BuildOutput(InlineResolverResult result, int maxIterations)
+    {
+        return result.StoppedReason switch
+        {
+            InlineResolverStopReason.Completed => NodeHandlerOutput.Data(BuildSuccessBatch(result)),
+            InlineResolverStopReason.MaxIterationsReached => NodeHandlerOutput.Failure(
+                "AgentTimeout",
+                $"Maximum iterations ({maxIterations}) reached.",
+                BuildFailedBatch(FlowConstants.ErrorCodes.Cancelled, $"Maximum iterations ({maxIterations}) reached."),
+                ExecutionContext.Node?.Id),
+            InlineResolverStopReason.Cancelled => NodeHandlerOutput.Failure(
+                "AgentTimeout",
+                "LLM call timed out or was cancelled.",
+                BuildFailedBatch(FlowConstants.ErrorCodes.Cancelled, "LLM call timed out or was cancelled."),
+                ExecutionContext.Node?.Id),
+            _ => NodeHandlerOutput.Failure(
+                "AgentTimeout",
+                "Agent execution stopped.",
+                BuildFailedBatch(FlowConstants.ErrorCodes.Cancelled, "Agent execution stopped."),
+                ExecutionContext.Node?.Id)
+        };
+    }
+
+    /// <summary>
+    /// 扫描 Agent 工具端口连接的下游 tool 节点，生成工具定义列表（仅当 SubExecutionService 未注入时的回退路径）。
+    /// </summary>
+    private IReadOnlyList<ToolDefinition> CollectTools(NodeExecutionContext context)
     {
         var workflow = context.Workflow;
         var currentNodeId = context.Node.Id;
@@ -167,7 +175,7 @@ public sealed class AgentNode : INodeType
             }
 
             INodeType? nodeType = null;
-            if (context.NodeRegistry?.TryGet(toolNode.TypeName, out var resolvedType) == true)
+            if (ToolRegistry?.TryGet(toolNode.TypeName, out var resolvedType) == true)
             {
                 nodeType = resolvedType;
             }
@@ -180,7 +188,7 @@ public sealed class AgentNode : INodeType
             NodeTypeDescriptor? descriptor = null;
             try
             {
-                descriptor = context.NodeRegistry?.GetDescriptor(toolNode.TypeName);
+                descriptor = ToolRegistry?.GetDescriptor(toolNode.TypeName);
             }
             catch (InvalidOperationException)
             {
@@ -201,7 +209,7 @@ public sealed class AgentNode : INodeType
         return tools;
     }
 
-    private List<LlmMessage> BuildMessages(NodeExecutionContext context)
+    private List<LlmMessage> BuildMessages(NodeInput input)
     {
         var messages = new List<LlmMessage>();
 
@@ -210,7 +218,7 @@ public sealed class AgentNode : INodeType
             messages.Add(new LlmMessage { Role = "system", Content = PromptTemplate });
         }
 
-        var inputJson = SerializeInput(context);
+        var inputJson = SerializeInput(input.InputBatch, Logger);
         if (inputJson is not null)
         {
             messages.Add(new LlmMessage { Role = "user", Content = inputJson });
@@ -219,9 +227,8 @@ public sealed class AgentNode : INodeType
         return messages;
     }
 
-    private static string? SerializeInput(NodeExecutionContext context)
+    private static string? SerializeInput(DataBatch batch, IExecutionLogger? logger)
     {
-        var batch = context.GetInputBatch();
         if (batch.Items.Count == 0)
         {
             return null;
@@ -229,7 +236,7 @@ public sealed class AgentNode : INodeType
 
         if (batch.Items.Count > 1)
         {
-            context.Logger?.LogWarning("Agent 节点收到 {Count} 条输入数据，仅处理第一条，其余将被忽略。", batch.Items.Count);
+            logger?.LogWarning("Agent 节点收到 {Count} 条输入数据，仅处理第一条，其余将被忽略。", batch.Items.Count);
         }
 
         var firstItem = batch.Items[0];
@@ -241,13 +248,13 @@ public sealed class AgentNode : INodeType
         return firstItem.Data.ToJsonString();
     }
 
-    private static NodeExecutionResult CreateSuccessResult(InlineResolverResult result, NodeExecutionContext context)
+    private DataBatch BuildSuccessBatch(InlineResolverResult result)
     {
         var dto = new AgentExecutionResultDto
         {
             AgentInfo = new AgentExecutionInfoDto
             {
-                Model = context.LlmClient?.ModelName ?? "unknown",
+                Model = LlmClient?.ModelName ?? "unknown",
                 IterationCount = result.Iterations.Count,
                 Status = "Completed",
                 StartedAt = null,
@@ -260,47 +267,32 @@ public sealed class AgentNode : INodeType
             SystemPrompt = null,
         };
 
-        return new NodeExecutionResult
+        return new DataBatch
         {
-            Success = true,
-            Output = new DataBatch
-            {
-                Items =
-                [
-                    new DataItem
-                    {
-                        Data = JsonSerializer.SerializeToNode(dto, JsonDefaults.Options),
-                        Success = true,
-                        SourceIndex = 0,
-                    }
-                ]
-            }
+            Items =
+            [
+                new DataItem
+                {
+                    Data = JsonSerializer.SerializeToNode(dto, JsonDefaults.Options),
+                    Success = true,
+                    SourceIndex = 0,
+                }
+            ]
         };
     }
 
-    private static NodeExecutionResult CreateTimeoutResult(string message, NodeExecutionContext context)
-    {
-        return CreateAgentFailedResult(FlowConstants.ErrorCodes.Cancelled, "AgentTimeout", message, context);
-    }
-
-    private static NodeExecutionResult CreateLlmErrorResult(Exception ex, NodeExecutionContext context)
-    {
-        // EX-2：LLM 调用失败同样不可泄露原始异常文本或堆栈。
-        return CreateAgentFailedResult("Failed", "LlmError", NodeErrorFactory.SafeMessage, context);
-    }
-
-    private static NodeExecutionResult CreateAgentFailedResult(string status, string code, string message, NodeExecutionContext context)
+    private DataBatch BuildFailedBatch(string status, string errorMessage)
     {
         var dto = new AgentExecutionResultDto
         {
             AgentInfo = new AgentExecutionInfoDto
             {
-                Model = context.LlmClient?.ModelName ?? "unknown",
+                Model = LlmClient?.ModelName ?? "unknown",
                 IterationCount = 0,
                 Status = status,
                 StartedAt = null,
                 CompletedAt = DateTime.UtcNow,
-                ErrorMessage = message,
+                ErrorMessage = errorMessage,
                 TokenUsage = null,
             },
             Iterations = [],
@@ -308,27 +300,17 @@ public sealed class AgentNode : INodeType
             SystemPrompt = null,
         };
 
-        return new NodeExecutionResult
+        return new DataBatch
         {
-            Success = false,
-            Error = new NodeError
-            {
-                Code = code,
-                Message = message,
-                NodeDefinitionId = context.Node.Id
-            },
-            Output = new DataBatch
-            {
-                Items =
-                [
-                    new DataItem
-                    {
-                        Data = JsonSerializer.SerializeToNode(dto, JsonDefaults.Options),
-                        Success = false,
-                        SourceIndex = 0,
-                    }
-                ]
-            }
+            Items =
+            [
+                new DataItem
+                {
+                    Data = JsonSerializer.SerializeToNode(dto, JsonDefaults.Options),
+                    Success = false,
+                    SourceIndex = 0,
+                }
+            ]
         };
     }
 }

@@ -1,37 +1,26 @@
-using FlowEngine.Core;
 using System.ComponentModel;
 using System.Text.Json.Nodes;
+using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Scripting;
-using FlowEngine.Core.ValueObjects;
 
 namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
 /// 过滤节点，根据条件保留或丢弃数据项。
 /// <c>Condition</c> 为 <see cref="Script"/> 类型（Hint=Script），在逐项求值时支持 <c>$json</c>/<c>$input</c>/<c>$credentials</c> 等所有 <c>$</c> 前缀变量。
-/// <c>Conditions</c> 列表为结构化条件（LeftValue/Operation/RightValue），独立于表达式求值。
+/// 新写法继承 <see cref="NodeBase"/>，通过 [NodeMeta]/[Port]/[Required]/[Hint] 声明式描述元信息与参数，
+/// 逐项求值经 <see cref="NodeBase.EvaluateItemAsync{T}"/> 复用节点托管引擎；结构化条件组合逻辑保持不变。
 /// </summary>
-public sealed class FilterNode : INodeType
+[NodeMeta(TypeName = "filter", DisplayName = "Filter", Category = NodeCategory.Data, Icon = "filter")]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input)]
+[Port(FlowConstants.PortNames.Kept, "Kept", PortDirection.Output)]
+[Port(FlowConstants.PortNames.Discarded, "Discarded", PortDirection.Output)]
+public sealed class FilterNode : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "filter";
-
-    /// <inheritdoc />
-    public string DisplayName => "Filter";
-
-    /// <inheritdoc />
-    public string Category => "Data";
-
-    /// <inheritdoc />
-    public string Icon => "filter";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
     /// <summary>
     /// 过滤条件表达式（逐项求值）。支持 <c>$json.field === 'value'</c>、<c>$input.item().count > 10</c> 等。
     /// 类型为 <see cref="Script"/>，由节点在执行时逐项求值（不经工厂预求值）。
@@ -53,66 +42,37 @@ public sealed class FilterNode : INodeType
     public List<FilterCondition> Conditions { get; set; } = [];
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Kept, DisplayName = "Kept", Direction = PortDirection.Output, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Discarded, DisplayName = "Discarded", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
-        var inputBatch = context.GetInputBatch();
-
         var keptItems = new List<DataItem>();
         var discardedItems = new List<DataItem>();
 
-        for (var itemIndex = 0; itemIndex < inputBatch.Items.Count; itemIndex++)
+        var items = input.InputBatch.Items;
+        for (var itemIndex = 0; itemIndex < items.Count; itemIndex++)
         {
-            var item = inputBatch.Items[itemIndex];
-            var matches = await EvaluateItemConditionAsync(
-                item.Data, itemIndex, context, cancellationToken).ConfigureAwait(false);
-            if (matches)
-            {
-                keptItems.Add(item);
-            }
-            else
-            {
-                discardedItems.Add(item);
-            }
+            var item = items[itemIndex];
+            var matches = await EvaluateItemConditionAsync(item.Data, itemIndex, ct).ConfigureAwait(false);
+            (matches ? keptItems : discardedItems).Add(item);
         }
 
-        return new NodeExecutionResult
+        // 同时向 Kept / Discarded 两个输出端口分发，使下游分支节点（连到 Kept 或 Discarded）能被正确调度。
+        // 旧的「单一 Output + BranchIndex」模型无法表达「一次向两个端口同时输出」，故用 PortOutputs 逐端口路由。
+        return NodeHandlerOutput.ToPorts(new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase)
         {
-            Success = true,
-            Output = new DataBatch { Items = keptItems },
-            // 同时向 Kept / Discarded 两个输出端口分发，使下游分支节点（连到 Kept 或 Discarded）能被正确调度。
-            // 旧的「单一 Output + BranchIndex」模型无法表达「一次向两个端口同时输出」，故用 PortOutputs 逐端口路由。
-            PortOutputs = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase)
-            {
-                [FlowConstants.PortNames.Kept] = new DataBatch { Items = keptItems },
-                [FlowConstants.PortNames.Discarded] = new DataBatch { Items = discardedItems },
-            }
-        };
+            [FlowConstants.PortNames.Kept] = new DataBatch { Items = keptItems },
+            [FlowConstants.PortNames.Discarded] = new DataBatch { Items = discardedItems },
+        });
     }
 
     /// <summary>
     /// 逐项求值：对单个数据项评估主条件 + 结构化条件组合。
     /// </summary>
-    private async Task<bool> EvaluateItemConditionAsync(
-        JsonNode? data,
-        int itemIndex,
-        NodeExecutionContext context,
-        CancellationToken cancellationToken)
+    private async Task<bool> EvaluateItemConditionAsync(JsonNode? data, int itemIndex, CancellationToken ct)
     {
         // 主条件（表达式）
         if (!string.IsNullOrWhiteSpace(Condition.Source))
         {
-            var mainResult = await Condition.EvaluateAsync<bool>(context, data, itemIndex, cancellationToken: cancellationToken);
+            var mainResult = await EvaluateItemAsync<bool>(Condition, data, itemIndex, ct).ConfigureAwait(false);
 
             if (Conditions.Count == 0)
             {

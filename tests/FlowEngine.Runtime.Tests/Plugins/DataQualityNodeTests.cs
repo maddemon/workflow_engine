@@ -4,6 +4,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Plugins.Standard;
 using Xunit;
 
+using FlowEngine.Core.Abstractions;
 namespace FlowEngine.Runtime.Tests.Plugins;
 
 /// <summary>
@@ -57,7 +58,7 @@ public sealed class DataQualityNodeTests
             PassOnFailure = false
         };
 
-        var result = await node.ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(3, result.Output.Items.Count);
@@ -85,7 +86,7 @@ public sealed class DataQualityNodeTests
 
         var node = new DataQualityNode { Rules = rules };
 
-        var result = await node.ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
 
         Assert.True(result.Success);
         Assert.Equal(2, result.Output.Items.Count);
@@ -100,7 +101,7 @@ public sealed class DataQualityNodeTests
 
         var node = new DataQualityNode { Rules = rules, PassOnFailure = false };
 
-        var result = await node.ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("DataQualityCheckFailed", result.Error?.Code);
@@ -114,7 +115,7 @@ public sealed class DataQualityNodeTests
 
         var node = new DataQualityNode { Rules = rules, PassOnFailure = false };
 
-        var result = await node.ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
 
         // customExpression should NOT silently pass — it returns failure
         Assert.False(result.Success);
@@ -129,7 +130,7 @@ public sealed class DataQualityNodeTests
 
         var node = new DataQualityNode { Rules = rules, PassOnFailure = false };
 
-        var result = await node.ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
 
         Assert.False(result.Success);
     }

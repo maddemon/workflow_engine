@@ -2,31 +2,21 @@ using System.ComponentModel;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 
 namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
 /// 记忆节点，用于在工作流执行内读写跨节点共享数据。
 /// </summary>
-public sealed class MemoryNode : INodeType
+[NodeMeta(TypeName = "memory", DisplayName = "Memory", Category = NodeCategory.AI, Icon = "database", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class MemoryNode : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "memory";
-
-    /// <inheritdoc />
-    public string DisplayName => "Memory";
-
-    /// <inheritdoc />
-    public string Category => "AI";
-
-    /// <inheritdoc />
-    public string Icon => "database";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
     /// <summary>
     /// 记忆操作类型。
     /// </summary>
@@ -46,56 +36,61 @@ public sealed class MemoryNode : INodeType
     public string? Value { get; set; }
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(Key))
         {
-            return Task.FromResult(context.ErrorResult("MissingKey", "Memory key is required."));
+            throw new NodeExecutionException("MissingKey", "Memory key is required.");
         }
 
-        return Task.FromResult(Action switch
+        var result = Action switch
         {
-            MemoryAction.Read => Read(context),
-            MemoryAction.Write => Write(context),
-            MemoryAction.Clear => Clear(context),
-            _ => context.ErrorResult("InvalidAction", $"Unsupported memory action: {Action}")
-        });
+            MemoryAction.Read => Read(),
+            MemoryAction.Write => Write(input),
+            MemoryAction.Clear => Clear(),
+            _ => throw new NodeExecutionException("InvalidAction", $"Unsupported memory action: {Action}")
+        };
+
+        return Task.FromResult(result);
     }
 
-    private NodeExecutionResult Read(NodeExecutionContext context)
+    private NodeHandlerOutput Read()
     {
-        if (!context.Memory.TryGetValue(Key, out var value))
+        if (!ExecutionContext.Memory.TryGetValue(Key, out var value))
         {
-            return context.ErrorResult("KeyNotFound", $"Memory key '{Key}' not found.");
+            throw new NodeExecutionException("KeyNotFound", $"Memory key '{Key}' not found.");
         }
 
-        return context.CreateSingleResult(value);
+        return NodeHandlerOutput.Data(SingleItemBatch(value));
     }
 
-    private NodeExecutionResult Write(NodeExecutionContext context)
+    private NodeHandlerOutput Write(NodeInput input)
     {
-        var valueToStore = ResolveValue(context);
-        context.Memory[Key] = valueToStore;
-        return context.CreateSingleResult(valueToStore);
+        var valueToStore = ResolveValue(input);
+        ExecutionContext.Memory[Key] = valueToStore;
+        return NodeHandlerOutput.Data(SingleItemBatch(valueToStore));
     }
 
-    private NodeExecutionResult Clear(NodeExecutionContext context)
+    private NodeHandlerOutput Clear()
     {
-        context.Memory.Remove(Key);
-        return context.CreateSingleResult(JsonValue.Create(true));
+        ExecutionContext.Memory.Remove(Key);
+        return NodeHandlerOutput.Data(SingleItemBatch(JsonValue.Create(true)));
     }
 
-    private JsonNode? ResolveValue(NodeExecutionContext context)
+    private static DataBatch SingleItemBatch(JsonNode? data) => new()
+    {
+        Items =
+        [
+            new DataItem
+            {
+                Data = data,
+                Success = true,
+                SourceIndex = 0
+            }
+        ]
+    };
+
+    private JsonNode? ResolveValue(NodeInput input)
     {
         if (!string.IsNullOrWhiteSpace(Value))
         {
@@ -109,7 +104,8 @@ public sealed class MemoryNode : INodeType
             }
         }
 
-        return context.GetInputPayload();
+        var batch = input.InputBatch;
+        return batch.Items.Count > 0 ? batch.Items[0].Data : null;
     }
 }
 

@@ -1,5 +1,6 @@
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Scripting;
@@ -11,23 +12,12 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// 合并节点，将多个输入分支的数据合并为一个输出。
 /// </summary>
-public sealed class MergeNode : INodeType
+[NodeMeta(TypeName = "merge", DisplayName = "Merge", Category = NodeCategory.Flow, Icon = "merge", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input1, "Input 1", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Input2, "Input 2", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class MergeNode : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "merge";
-
-    /// <inheritdoc />
-    public string DisplayName => "Merge";
-
-    /// <inheritdoc />
-    public string Category => "Flow";
-
-    /// <inheritdoc />
-    public string Icon => "merge";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
     /// <summary>
     /// 合并模式。
     /// </summary>
@@ -47,21 +37,10 @@ public sealed class MergeNode : INodeType
     public string MatchField { get; set; } = string.Empty;
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input1, DisplayName = "Input 1", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Input2, DisplayName = "Input 2", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
-        var batch1 = context.GetInputBatch(FlowConstants.PortNames.Input1);
-        var batch2 = context.GetInputBatch(FlowConstants.PortNames.Input2);
+        var batch1 = input.AllInputs.TryGetValue(FlowConstants.PortNames.Input1, out var b1) ? b1 : new DataBatch();
+        var batch2 = input.AllInputs.TryGetValue(FlowConstants.PortNames.Input2, out var b2) ? b2 : new DataBatch();
 
         var result = Mode switch
         {
@@ -71,11 +50,7 @@ public sealed class MergeNode : INodeType
             _ => throw new ArgumentOutOfRangeException(nameof(Mode), $"Unsupported merge mode: {Mode}")
         };
 
-        return Task.FromResult(new NodeExecutionResult
-        {
-            Success = true,
-            Output = result
-        });
+        return Task.FromResult(NodeHandlerOutput.Data(result));
     }
 
     private DataBatch MergeAppend(DataBatch batch1, DataBatch batch2)

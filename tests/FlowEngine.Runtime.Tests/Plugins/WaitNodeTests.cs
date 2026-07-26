@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
+using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Plugins.Standard;
 using Xunit;
@@ -37,7 +38,7 @@ public sealed class WaitNodeTests
     {
         var context = await BuildContextAsync();
 
-        var result = await new WaitNode { Amount = 0 }.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new WaitNode { Amount = 0 }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Output.Items);
@@ -49,7 +50,7 @@ public sealed class WaitNodeTests
     {
         var context = await BuildContextAsync();
 
-        var result = await new WaitNode { Amount = -5 }.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new WaitNode { Amount = -5 }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Output.Items);
@@ -60,7 +61,7 @@ public sealed class WaitNodeTests
     {
         var context = await BuildContextAsync();
 
-        var result = await new WaitNode { Amount = 0, Unit = WaitUnit.Minutes }.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new WaitNode { Amount = 0, Unit = WaitUnit.Minutes }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Output.Items);
@@ -71,14 +72,14 @@ public sealed class WaitNodeTests
     {
         var context = await BuildContextAsync();
 
-        var result = await new WaitNode
+        var result = await ((INodeType)new WaitNode
         {
             Amount = 1000,
             Unit = WaitUnit.Seconds,
             LimitWaitTime = true,
             MaxWaitAmount = 0,
             MaxWaitUnit = WaitUnit.Seconds
-        }.ExecuteAsync(context, CancellationToken.None);
+        }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Output.Items);
@@ -91,7 +92,7 @@ public sealed class WaitNodeTests
         using var cts = new CancellationTokenSource();
         cts.Cancel();
 
-        var result = await new WaitNode { Amount = 0 }.ExecuteAsync(context, cts.Token);
+        var result = await ((INodeType)new WaitNode { Amount = 0 }).ExecuteAsync(context, cts.Token);
 
         Assert.False(result.Success);
         Assert.Equal("Cancelled", result.Error?.Code);

@@ -1,10 +1,11 @@
-﻿using System.ComponentModel;
+using System.ComponentModel;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 using StackExchange.Redis;
 
 namespace FlowEngine.Plugins.Storage;
@@ -19,30 +20,15 @@ namespace FlowEngine.Plugins.Storage;
 /// <see cref="IConnectionMultiplexer.GetDatabase(int?)"/> 获取数据库。
 /// 日志仅记录 key 与 operation，绝不记录 password 等敏感信息。
 /// </remarks>
-public sealed class RedisNode : INodeType
+[NodeMeta(TypeName = "redis", DisplayName = "Redis", Category = NodeCategory.Storage, Icon = "redis", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class RedisNode : NodeBase
 {
     /// <summary>
     /// 注入的 Redis 数据库（测试用内部接缝）。非空时跳过凭据连接，直接使用该实例。
     /// </summary>
     internal IDatabase? DatabaseOverride { get; set; }
-
-    /// <inheritdoc />
-    public string TypeName => "redis";
-
-    /// <inheritdoc />
-    public string DisplayName => "Redis";
-
-    /// <inheritdoc />
-    public string Category => "Storage";
-
-    /// <inheritdoc />
-    public string Icon => "redis";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
 
     /// <summary>
     /// Redis 凭据（类型为 <c>redis</c>）。字段：host/port/password/db。密码为 secret，绝不输出到日志或异常。
@@ -76,53 +62,46 @@ public sealed class RedisNode : INodeType
     public int? Ttl { get; set; }
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
         try
         {
             if (Connection is null)
             {
-                return context.ErrorResult(FlowConstants.ErrorCodes.MissingConnection, "Redis connection credential is required.");
+                throw new NodeExecutionException(FlowConstants.ErrorCodes.MissingConnection, "Redis connection credential is required.");
             }
 
             if (string.IsNullOrWhiteSpace(Key))
             {
-                return context.ErrorResult("MissingKey", "Redis key is required for all operations.");
+                throw new NodeExecutionException("MissingKey", "Redis key is required for all operations.");
             }
 
-            var db = DatabaseOverride ?? await ConnectAsync(Connection, cancellationToken).ConfigureAwait(false);
+            var db = DatabaseOverride ?? await ConnectAsync(Connection, ct).ConfigureAwait(false);
 
             // 仅记录操作与键名；绝不记录 password 或完整凭据。
-            context.Logger?.LogInformation("redis 操作 {Operation} 作用于键 {Key}。", Operation, Key);
+            Logger?.LogInformation("redis 操作 {Operation} 作用于键 {Key}。", Operation, Key);
 
             return Operation switch
             {
-                RedisOperation.Set => ExecuteSet(db, context),
-                RedisOperation.Del => ExecuteDel(db, context),
-                RedisOperation.Expire => ExecuteExpire(db, context),
-                _ => ExecuteGet(db, context)
+                RedisOperation.Set => ExecuteSet(db),
+                RedisOperation.Del => ExecuteDel(db),
+                RedisOperation.Expire => ExecuteExpire(db),
+                _ => ExecuteGet(db)
             };
         }
         catch (RedisConnectionException ex)
         {
-            context.Logger?.LogError(ex, "redis 连接失败（键 {Key}）。", Key);
-            return context.ErrorResult("RedisError", $"Redis connection failed: {ex.Message}");
+            Logger?.LogError(ex, "redis 连接失败（键 {Key}）。", Key);
+            throw new NodeExecutionException("RedisError", $"Redis connection failed: {ex.Message}");
         }
         catch (RedisTimeoutException ex)
         {
-            context.Logger?.LogError(ex, "redis 操作超时（键 {Key}）。", Key);
-            return context.ErrorResult("RedisError", $"Redis operation timed out: {ex.Message}");
+            Logger?.LogError(ex, "redis 操作超时（键 {Key}）。", Key);
+            throw new NodeExecutionException("RedisError", $"Redis operation timed out: {ex.Message}");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not NodeExecutionException)
         {
-            return context.ErrorResult(FlowConstants.ErrorCodes.UnexpectedError, $"Unexpected error in redis node: {ex.Message}");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.UnexpectedError, $"Unexpected error in redis node: {ex.Message}");
         }
     }
 
@@ -162,56 +141,100 @@ public sealed class RedisNode : INodeType
     /// <summary>
     /// Get：读取字符串值；缺失时返回 <c>exists=false</c>。
     /// </summary>
-    private NodeExecutionResult ExecuteGet(IDatabase db, NodeExecutionContext context)
+    private NodeHandlerOutput ExecuteGet(IDatabase db)
     {
         var value = db.StringGet(Key);
         var exists = !value.IsNull;
-        return context.Ok(new JsonObject
+        return NodeHandlerOutput.Data(new DataBatch
         {
-            ["key"] = Key,
-            ["value"] = exists ? value.ToString() : null,
-            ["exists"] = exists
+            Items =
+            [
+                new DataItem
+                {
+                    Data = new JsonObject
+                    {
+                        ["key"] = Key,
+                        ["value"] = exists ? value.ToString() : null,
+                        ["exists"] = exists
+                    },
+                    Success = true,
+                    SourceIndex = 0
+                }
+            ]
         });
     }
 
     /// <summary>
     /// Set：写入字符串值（可选 TTL）；返回 <c>success=true</c>。
     /// </summary>
-    private NodeExecutionResult ExecuteSet(IDatabase db, NodeExecutionContext context)
+    private NodeHandlerOutput ExecuteSet(IDatabase db)
     {
         var expiry = Ttl.HasValue && Ttl.Value > 0 ? TimeSpan.FromSeconds(Ttl.Value) : (TimeSpan?)null;
         db.StringSet(Key, Value ?? string.Empty, expiry, When.Always, CommandFlags.None);
-        return context.Ok(new JsonObject
+        return NodeHandlerOutput.Data(new DataBatch
         {
-            ["key"] = Key,
-            ["success"] = true
+            Items =
+            [
+                new DataItem
+                {
+                    Data = new JsonObject
+                    {
+                        ["key"] = Key,
+                        ["success"] = true
+                    },
+                    Success = true,
+                    SourceIndex = 0
+                }
+            ]
         });
     }
 
     /// <summary>
     /// Del：删除键；返回 <c>deleted</c> 布尔值。
     /// </summary>
-    private NodeExecutionResult ExecuteDel(IDatabase db, NodeExecutionContext context)
+    private NodeHandlerOutput ExecuteDel(IDatabase db)
     {
         var deleted = db.KeyDelete(Key);
-        return context.Ok(new JsonObject
+        return NodeHandlerOutput.Data(new DataBatch
         {
-            ["key"] = Key,
-            ["deleted"] = deleted
+            Items =
+            [
+                new DataItem
+                {
+                    Data = new JsonObject
+                    {
+                        ["key"] = Key,
+                        ["deleted"] = deleted
+                    },
+                    Success = true,
+                    SourceIndex = 0
+                }
+            ]
         });
     }
 
     /// <summary>
     /// Expire：设置过期时间；返回 <c>success</c> 布尔值。
     /// </summary>
-    private NodeExecutionResult ExecuteExpire(IDatabase db, NodeExecutionContext context)
+    private NodeHandlerOutput ExecuteExpire(IDatabase db)
     {
         var expiry = Ttl.HasValue && Ttl.Value > 0 ? TimeSpan.FromSeconds(Ttl.Value) : (TimeSpan?)null;
         var success = db.KeyExpire(Key, expiry, ExpireWhen.Always, CommandFlags.None);
-        return context.Ok(new JsonObject
+        return NodeHandlerOutput.Data(new DataBatch
         {
-            ["key"] = Key,
-            ["success"] = success
+            Items =
+            [
+                new DataItem
+                {
+                    Data = new JsonObject
+                    {
+                        ["key"] = Key,
+                        ["success"] = success
+                    },
+                    Success = true,
+                    SourceIndex = 0
+                }
+            ]
         });
     }
 }

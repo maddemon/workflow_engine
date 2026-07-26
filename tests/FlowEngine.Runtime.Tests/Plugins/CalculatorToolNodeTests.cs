@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
+using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Plugins.Standard;
 using Xunit;
@@ -34,7 +35,7 @@ public sealed class CalculatorToolNodeTests
     {
         var context = await BuildContextAsync(JsonNode.Parse("""{"expression":"1 + 2"}"""));
 
-        var result = await new CalculatorToolNode().ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new CalculatorToolNode()).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("1 + 2", result.Output.Items[0].Data?["expression"]?.GetValue<string>());
@@ -46,7 +47,7 @@ public sealed class CalculatorToolNodeTests
     {
         var context = await BuildContextAsync(JsonNode.Parse("""{"query":"10 / 2"}"""));
 
-        var result = await new CalculatorToolNode().ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new CalculatorToolNode()).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("10 / 2", result.Output.Items[0].Data?["expression"]?.GetValue<string>());
@@ -58,7 +59,7 @@ public sealed class CalculatorToolNodeTests
     {
         var context = await BuildContextAsync(JsonNode.Parse("""{"math":"4 * 2"}"""));
 
-        var result = await new CalculatorToolNode().ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new CalculatorToolNode()).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("4 * 2", result.Output.Items[0].Data?["expression"]?.GetValue<string>());
@@ -70,7 +71,7 @@ public sealed class CalculatorToolNodeTests
     {
         var context = await BuildContextAsync(JsonValue.Create("7 - 3"));
 
-        var result = await new CalculatorToolNode().ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new CalculatorToolNode()).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("7 - 3", result.Output.Items[0].Data?["expression"]?.GetValue<string>());
@@ -78,15 +79,12 @@ public sealed class CalculatorToolNodeTests
     }
 
     [Fact]
-    public async Task ExecuteAsync_ResolvedParameter_FallsBackWhenNoInput()
+    public async Task ExecuteAsync_ExpressionProperty_FallsBackWhenNoInput()
     {
-        var parameters = new Dictionary<string, object>
-        {
-            ["expression"] = "5"
-        };
-        var context = await BuildContextAsync(null, parameters);
+        var context = await BuildContextAsync(null);
 
-        var result = await new CalculatorToolNode().ExecuteAsync(context, CancellationToken.None);
+        var node = new CalculatorToolNode { Expression = "5" };
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("5", result.Output.Items[0].Data?["expression"]?.GetValue<string>());
@@ -98,7 +96,7 @@ public sealed class CalculatorToolNodeTests
     {
         var context = await BuildContextAsync(JsonNode.Parse("{}"));
 
-        var result = await new CalculatorToolNode().ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new CalculatorToolNode()).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("MissingExpression", result.Error?.Code);
@@ -109,7 +107,7 @@ public sealed class CalculatorToolNodeTests
     {
         var context = await BuildContextAsync(JsonNode.Parse("""{"expression":"1 +"}"""));
 
-        var result = await new CalculatorToolNode().ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new CalculatorToolNode()).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("ScriptError", result.Error?.Code);

@@ -1,24 +1,30 @@
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
+using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Plugins.Standard;
+using Xunit;
 
 namespace FlowEngine.Runtime.Tests.Plugins;
 
 /// <summary>
 /// JavaScript 节点测试 —— 覆盖对象输出转换。
+/// 迁移为 NodeBase 后，经 <c>((INodeType)node).ExecuteAsync</c> 走适配层。
 /// </summary>
 public class JSNodeTests
 {
     private readonly JSNode _node = new();
+
+    private static Task<NodeExecutionResult> RunAsync(JSNode node, NodeExecutionContext context, CancellationToken ct = default)
+        => ((INodeType)node).ExecuteAsync(context, ct);
 
     [Fact]
     public async Task Execute_Returns_Object_As_JsonObject()
     {
         var (node, context) = CreateContext(code: "return { message: 'ok', statusCode: 200 }");
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await RunAsync(node, context, TestContext.Current.CancellationToken);
 
         Assert.True(result.Success, result.Error?.Message ?? "Unknown error");
         var data = result.Output.Items[0].Data;
@@ -33,7 +39,7 @@ public class JSNodeTests
     {
         var (node, context) = CreateContext(code: "return [{ id: 1 }, { id: 2 }]");
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await RunAsync(node, context, TestContext.Current.CancellationToken);
 
         Assert.True(result.Success, result.Error?.Message ?? "Unknown error");
         Assert.Equal(2, result.Output.Items.Count);
@@ -52,7 +58,7 @@ public class JSNodeTests
             code: "const first = $input.first();\nreturn { message: first.greeting, status: 'success' };",
             inputData: inputData);
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await RunAsync(node, context, TestContext.Current.CancellationToken);
 
         Assert.True(result.Success, result.Error?.Message ?? "Unknown error");
         var data = result.Output.Items[0].Data;

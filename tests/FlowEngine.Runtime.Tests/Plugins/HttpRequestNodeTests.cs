@@ -5,6 +5,7 @@ using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Http;
 using FlowEngine.Core.Scripting;
 using FlowEngine.Plugins.Standard;
 using Microsoft.Extensions.Options;
@@ -13,6 +14,13 @@ namespace FlowEngine.Runtime.Tests.Plugins;
 
 public sealed class HttpRequestNodeTests
 {
+    private static Task<NodeExecutionResult> RunAsync(HttpRequestNode node, NodeExecutionContext context, CancellationToken ct = default)
+    {
+        // 模拟框架经 ResolutionStage 注入的 HTTP 执行服务（真实管线由 DI 提供）。
+        node.BindServices(new HttpExecutionService(), null, null);
+        return ((INodeType)node).ExecuteAsync(context, ct);
+    }
+
     [Fact]
     public async Task ExecuteAsync_BearerWithOAuth2Credential_SendsAccessTokenHeader()
     {
@@ -32,7 +40,7 @@ public sealed class HttpRequestNodeTests
 
         var context = CreateContext(accessor, pool);
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await RunAsync(node, context, TestContext.Current.CancellationToken);
 
         Assert.True(result.Success);
         Assert.Equal(1, handler.CallCount);
@@ -59,7 +67,7 @@ public sealed class HttpRequestNodeTests
 
         var context = CreateContext(accessor, pool);
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await RunAsync(node, context, TestContext.Current.CancellationToken);
 
         Assert.True(result.Success);
         var authHeader = handler.LastRequest?.Headers.Authorization?.ToString();
@@ -72,7 +80,7 @@ public sealed class HttpRequestNodeTests
         var node = new HttpRequestNode { Url = "" };
         var context = CreateContext(new NullCredentialAccessor(), new StubHttpClientPool(new HttpClient(new RecordingHandler())));
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await RunAsync(node, context, TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
         Assert.Equal("MissingUrl", result.Error?.Code);
@@ -138,7 +146,7 @@ public sealed class HttpRequestNodeTests
         };
 
         var context = CreateContext(new NullCredentialAccessor(), pool);
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await RunAsync(node, context, CancellationToken.None);
 
         Assert.True(result.Success);
     }
@@ -164,7 +172,7 @@ public sealed class HttpRequestNodeTests
         };
 
         var context = CreateContext(new NullCredentialAccessor(), pool);
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await RunAsync(node, context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("SuccessWhenFailed", result.Error?.Code);

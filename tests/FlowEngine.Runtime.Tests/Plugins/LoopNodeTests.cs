@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
+using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Plugins.Standard;
 using Xunit;
@@ -8,6 +9,7 @@ namespace FlowEngine.Runtime.Tests.Plugins;
 
 /// <summary>
 /// LoopNode 单元测试，重点验证 BatchSize &lt;= 0 时边界校验不崩坏、迭代语义与节点上下文累积。
+/// 迁移为 NodeBase 后，经 <c>((INodeType)node).ExecuteAsync</c> 走适配层。
 /// </summary>
 public sealed class LoopNodeTests
 {
@@ -67,13 +69,16 @@ public sealed class LoopNodeTests
         };
     }
 
+    private static Task<NodeExecutionResult> RunAsync(LoopNode node, NodeExecutionContext context, CancellationToken ct = default)
+        => ((INodeType)node).ExecuteAsync(context, ct);
+
     [Fact]
     public async Task ExecuteAsync_BatchSizeZero_ClampsToOne()
     {
         var input = BuildBatch(3);
         var node = new LoopNode { BatchSize = 0 };
 
-        var result = await node.ExecuteAsync(CreateContext(input), CancellationToken.None);
+        var result = await RunAsync(node, CreateContext(input), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         // With BatchSize clamped to 1, first batch should have 1 item
@@ -88,7 +93,7 @@ public sealed class LoopNodeTests
         var input = BuildBatch(3);
         var node = new LoopNode { BatchSize = -5 };
 
-        var result = await node.ExecuteAsync(CreateContext(input), CancellationToken.None);
+        var result = await RunAsync(node, CreateContext(input), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Output.Items);
@@ -101,7 +106,7 @@ public sealed class LoopNodeTests
         var input = BuildBatch(5);
         var node = new LoopNode { BatchSize = 1 };
 
-        var result = await node.ExecuteAsync(CreateContext(input), CancellationToken.None);
+        var result = await RunAsync(node, CreateContext(input), CancellationToken.None);
 
         Assert.True(result.Success);
         Assert.Single(result.Output.Items);
@@ -114,7 +119,7 @@ public sealed class LoopNodeTests
         var input = BuildBatch(3);
         var node = new LoopNode { BatchSize = 10 };
 
-        var result = await node.ExecuteAsync(CreateContext(input), CancellationToken.None);
+        var result = await RunAsync(node, CreateContext(input), CancellationToken.None);
 
         Assert.True(result.Success);
         Assert.Equal(3, result.Output.Items.Count);
@@ -126,7 +131,7 @@ public sealed class LoopNodeTests
         var input = new DataBatch { Items = [] };
         var node = new LoopNode { BatchSize = 0 };
 
-        var result = await node.ExecuteAsync(CreateContext(input), CancellationToken.None);
+        var result = await RunAsync(node, CreateContext(input), CancellationToken.None);
 
         Assert.True(result.Success);
         // Empty input should route to done port (index 1)
@@ -139,7 +144,7 @@ public sealed class LoopNodeTests
         var input = new DataBatch { Items = [] };
         var node = new LoopNode { BatchSize = 2 };
 
-        var result = await node.ExecuteAsync(CreateContext(input), CancellationToken.None);
+        var result = await RunAsync(node, CreateContext(input), CancellationToken.None);
 
         Assert.True(result.Success);
         // 输入为空：走 Done 输出口（BranchIndex = 1）且输出为空批次。
@@ -153,7 +158,7 @@ public sealed class LoopNodeTests
         var input = BuildBatch(5);
         var node = new LoopNode { BatchSize = 2 };
 
-        var result = await node.ExecuteAsync(CreateContext(input), CancellationToken.None);
+        var result = await RunAsync(node, CreateContext(input), CancellationToken.None);
 
         Assert.True(result.Success);
         // 单词口语言：首批 2 项从 Loop 输出口（BranchIndex = 0）发出。
@@ -171,7 +176,7 @@ public sealed class LoopNodeTests
         var input = BuildBatch(3);
         var node = new LoopNode { BatchSize = 10 };
 
-        var result = await node.ExecuteAsync(CreateContext(input), CancellationToken.None);
+        var result = await RunAsync(node, CreateContext(input), CancellationToken.None);
 
         Assert.True(result.Success);
         // 批次大于输入数：全部项从 Loop 输出口（BranchIndex = 0）发出。
@@ -192,7 +197,7 @@ public sealed class LoopNodeTests
             ["position"] = JsonValue.Create(2)
         };
 
-        var result = await node.ExecuteAsync(CreateContext(input, resolved), CancellationToken.None);
+        var result = await RunAsync(node, CreateContext(input, resolved), CancellationToken.None);
 
         Assert.True(result.Success);
         Assert.Equal(0, result.BranchIndex); // Loop
@@ -212,22 +217,22 @@ public sealed class LoopNodeTests
         var ct = CancellationToken.None;
 
         // Call 1：初始输入 5 项原始全集 → 发首批（Loop）。
-        var r1 = await node.ExecuteAsync(CreateStatefulContext(BuildBatch(5), nodeContext), ct);
+        var r1 = await RunAsync(node, CreateStatefulContext(BuildBatch(5), nodeContext), ct);
         Assert.Equal(0, r1.BranchIndex);
         Assert.Equal(2, r1.Output.Items.Count);
 
         // Call 2：回环输入 = 上一批的「已处理」结果（此处原样回灌模拟下游）。
-        var r2 = await node.ExecuteAsync(CreateStatefulContext(r1.Output, nodeContext), ct);
+        var r2 = await RunAsync(node, CreateStatefulContext(r1.Output, nodeContext), ct);
         Assert.Equal(0, r2.BranchIndex);
         Assert.Equal(2, r2.Output.Items.Count);
 
         // Call 3：第三批。
-        var r3 = await node.ExecuteAsync(CreateStatefulContext(r2.Output, nodeContext), ct);
+        var r3 = await RunAsync(node, CreateStatefulContext(r2.Output, nodeContext), ct);
         Assert.Equal(0, r3.BranchIndex);
         Assert.Single(r3.Output.Items);
 
         // Call 4：第四批回流 → 全部处理完，走 Done，累积全部 5 项处理结果。
-        var r4 = await node.ExecuteAsync(CreateStatefulContext(r3.Output, nodeContext), ct);
+        var r4 = await RunAsync(node, CreateStatefulContext(r3.Output, nodeContext), ct);
         Assert.Equal(1, r4.BranchIndex);
         Assert.Equal(5, r4.Output.Items.Count);
         Assert.Equal(0, r4.Output.Items[0].SourceIndex);
@@ -250,7 +255,7 @@ public sealed class LoopNodeTests
 
         // position=2.0 → 读回兼容 double，跳过前 2 项发 [2,3]（未静默归零重发首项）。
         // 写回时归一为 int（switch 产出 int，position + 窗口大小 = int + int），故此后为 int 4。
-        var r1 = await node.ExecuteAsync(CreateStatefulContext(BuildBatch(1), nodeContext), CancellationToken.None);
+        var r1 = await RunAsync(node, CreateStatefulContext(BuildBatch(1), nodeContext), CancellationToken.None);
         Assert.Equal(0, r1.BranchIndex);
         Assert.Equal(2, r1.Output.Items.Count);
         Assert.Equal(2, r1.Output.Items[0].SourceIndex);
@@ -258,13 +263,13 @@ public sealed class LoopNodeTests
         Assert.Equal(4, nodeContext["position"]);
 
         // position=4 → 发 [4]（double 读回正确，未静默归零）。
-        var r2 = await node.ExecuteAsync(CreateStatefulContext(BuildBatch(1), nodeContext), CancellationToken.None);
+        var r2 = await RunAsync(node, CreateStatefulContext(BuildBatch(1), nodeContext), CancellationToken.None);
         Assert.Equal(0, r2.BranchIndex);
         Assert.Single(r2.Output.Items);
         Assert.Equal(4, r2.Output.Items[0].SourceIndex);
 
         // position=5 >= 5 → Done。
-        var r3 = await node.ExecuteAsync(CreateStatefulContext(BuildBatch(1), nodeContext), CancellationToken.None);
+        var r3 = await RunAsync(node, CreateStatefulContext(BuildBatch(1), nodeContext), CancellationToken.None);
         Assert.Equal(1, r3.BranchIndex);
     }
 
@@ -275,8 +280,8 @@ public sealed class LoopNodeTests
         var node = new LoopNode { BatchSize = 2 };
         var ct = CancellationToken.None;
 
-        var r1 = await node.ExecuteAsync(CreateStatefulContext(BuildBatch(5), new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)), ct);
-        var r2 = await node.ExecuteAsync(CreateStatefulContext(BuildBatch(5), new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)), ct);
+        var r1 = await RunAsync(node, CreateStatefulContext(BuildBatch(5), new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)), ct);
+        var r2 = await RunAsync(node, CreateStatefulContext(BuildBatch(5), new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)), ct);
 
         Assert.Equal(0, r1.BranchIndex);
         Assert.Equal(0, r2.BranchIndex);
@@ -296,23 +301,23 @@ public sealed class LoopNodeTests
         var ct = CancellationToken.None;
 
         // Call 1：5 项原始全集 → 发 [0,1]。
-        var r1 = await node.ExecuteAsync(CreateStatefulContext(BuildBatch(5), nodeContext), ct);
+        var r1 = await RunAsync(node, CreateStatefulContext(BuildBatch(5), nodeContext), ct);
         Assert.Equal(0, r1.BranchIndex);
         Assert.Equal(2, r1.Output.Items.Count);
 
         // 回环输入：下游仅回灌 1 项（过滤掉 idx1），但 Loop 仍按 allItems 发 [2,3]。
         var feedback1 = new DataBatch { Items = { r1.Output.Items[0] } };
-        var r2 = await node.ExecuteAsync(CreateStatefulContext(feedback1, nodeContext), ct);
+        var r2 = await RunAsync(node, CreateStatefulContext(feedback1, nodeContext), ct);
         Assert.Equal(0, r2.BranchIndex);
         Assert.Equal(2, r2.Output.Items.Count);
 
         // 回环输入：回灌 [2,3]。
-        var r3 = await node.ExecuteAsync(CreateStatefulContext(r2.Output, nodeContext), ct);
+        var r3 = await RunAsync(node, CreateStatefulContext(r2.Output, nodeContext), ct);
         Assert.Equal(0, r3.BranchIndex);
         Assert.Single(r3.Output.Items);
 
         // 回环输入：回灌 [4] → 全部处理完，Done。
-        var r4 = await node.ExecuteAsync(CreateStatefulContext(r3.Output, nodeContext), ct);
+        var r4 = await RunAsync(node, CreateStatefulContext(r3.Output, nodeContext), ct);
         Assert.Equal(1, r4.BranchIndex);
         // processedItems = 回灌的 [idx0, idx2, idx3, idx4] 共 4 项，不等于原始 5 项。
         Assert.Equal(4, r4.Output.Items.Count);
@@ -328,22 +333,22 @@ public sealed class LoopNodeTests
         var node = new LoopNode { BatchSize = 0 }; // 钳制为 1
         var ct = CancellationToken.None;
 
-        var r1 = await node.ExecuteAsync(CreateStatefulContext(BuildBatch(3), nodeContext), ct);
+        var r1 = await RunAsync(node, CreateStatefulContext(BuildBatch(3), nodeContext), ct);
         Assert.Equal(0, r1.BranchIndex);
         Assert.Single(r1.Output.Items);
         Assert.Equal(0, r1.Output.Items[0].SourceIndex);
 
-        var r2 = await node.ExecuteAsync(CreateStatefulContext(r1.Output, nodeContext), ct);
+        var r2 = await RunAsync(node, CreateStatefulContext(r1.Output, nodeContext), ct);
         Assert.Equal(0, r2.BranchIndex);
         Assert.Single(r2.Output.Items);
         Assert.Equal(1, r2.Output.Items[0].SourceIndex);
 
-        var r3 = await node.ExecuteAsync(CreateStatefulContext(r2.Output, nodeContext), ct);
+        var r3 = await RunAsync(node, CreateStatefulContext(r2.Output, nodeContext), ct);
         Assert.Equal(0, r3.BranchIndex);
         Assert.Single(r3.Output.Items);
         Assert.Equal(2, r3.Output.Items[0].SourceIndex);
 
-        var r4 = await node.ExecuteAsync(CreateStatefulContext(r3.Output, nodeContext), ct);
+        var r4 = await RunAsync(node, CreateStatefulContext(r3.Output, nodeContext), ct);
         Assert.Equal(1, r4.BranchIndex); // Done
         Assert.Equal(3, r4.Output.Items.Count); // 累积 3 项
     }

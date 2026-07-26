@@ -1,4 +1,5 @@
 using System.ComponentModel;
+using System.Net.Http;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
@@ -6,20 +7,27 @@ using FlowEngine.Core.Ai;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
+using FlowEngine.Core.Http;
+using FlowEngine.Core.Metadata;
 using FlowEngine.Core.Scripting;
 
 namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
 /// HTTP 请求节点，支持静态配置和占位符。
+/// 新写法继承 <see cref="NodeBase"/>，通过 [NodeMeta]/[Port]/[Hint] 声明式描述元信息与参数；
+/// URL/Headers/Body 经 <see cref="NodeBase.EvaluateContextAsync{T}"/> 在整批作用域求值，
+/// 业务失败统一抛 <see cref="NodeExecutionException"/>（不再使用 context.ErrorResult），
+/// 真正的 HTTP 收发与凭据解析委派给注入的 <see cref="IHttpExecutionService"/>（取代经 context 直接依赖）。
 /// </summary>
-public sealed class HttpRequestNode : INodeType
+[NodeMeta(TypeName = "httpRequest", DisplayName = "HTTP Request", Category = NodeCategory.Network, Icon = "globe")]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output)]
+public sealed class HttpRequestNode : NodeBase
 {
     /// <inheritdoc />
-    public string TypeName => "httpRequest";
-
-    /// <inheritdoc />
-    AiNodeDefinition? INodeType.GetAiDefinition(NodeTypeDescriptor descriptor) =>
+    protected override AiNodeDefinition? GetAiDefinition(NodeTypeDescriptor descriptor) =>
         AiDefinitionHelpers.Def(
             "HTTP Request", "Core", false,
             "发起 HTTP 请求并解析响应。支持 GET/POST/PUT/DELETE/PATCH，可配置认证（Bearer/Basic/API Key/Query）、自定义请求头与请求体。返回状态码、响应头与自动解析的响应体。常用于调用外部 API、Webhook 回调。",
@@ -28,18 +36,6 @@ public sealed class HttpRequestNode : INodeType
             AiDefinitionHelpers.Example("GET 请求示例",
                 JsonNode.Parse("""{"method":"GET","url":"https://api.example.com/users"}"""),
                 JsonNode.Parse("""{"statusCode":200,"body":[{"id":1,"name":"Alice"}]}""")));
-
-    /// <inheritdoc />
-    public string DisplayName => "HTTP Request";
-
-    /// <inheritdoc />
-    public string Category => "Network";
-
-    /// <inheritdoc />
-    public string Icon => "globe";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
 
     /// <summary>
     /// HTTP 请求方法。
@@ -119,32 +115,62 @@ public sealed class HttpRequestNode : INodeType
     public Script SuccessWhen { get; set; } = Script.Empty;
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
-        return HttpNodeExecution.ExecuteAsync(
-            context,
-            Url,
-            Method,
-            Authentication,
-            CredentialId,
-            QueryParameterName,
-            SendHeaders,
-            HeadersExpression,
-            SendBody,
-            BodyExpression,
-            SuccessWhen,
-            cancellationToken);
+        // 1. URL 校验与求值
+        if (Url is null || string.IsNullOrWhiteSpace(Url.Source))
+        {
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.MissingUrl, "URL is required.");
+        }
+
+        var resolvedUrl = await EvaluateContextAsync<string>(Url, ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(resolvedUrl))
+        {
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.MissingUrl, "URL resolution failed.");
+        }
+
+        // 2. 求值请求头（脚本表达式 → Dictionary）
+        Dictionary<string, string>? headers = null;
+        if (SendHeaders && HeadersExpression is not null && !string.IsNullOrWhiteSpace(HeadersExpression.Source))
+        {
+            headers = await EvaluateContextAsync<Dictionary<string, string>>(HeadersExpression, ct).ConfigureAwait(false);
+        }
+
+        // 3. 求值请求体（脚本表达式 → JSON 字符串）
+        string? bodyContent = null;
+        if (SendBody && BodyExpression is not null && !string.IsNullOrWhiteSpace(BodyExpression.Source) &&
+            Method is HttpMethodOption.Post or HttpMethodOption.Put or HttpMethodOption.Patch)
+        {
+            var bodyJson = (await EvaluateContextAsync<JsonNode>(BodyExpression, ct).ConfigureAwait(false))?.ToJsonString() ?? string.Empty;
+            bodyContent = bodyJson;
+        }
+
+        // 4. 构建请求参数并委派给注入的 IHttpExecutionService（内部处理客户端池、SSRF 预检、凭据解析、成功条件判定）
+        if (HttpExecutionService is null)
+        {
+            throw new NodeExecutionException("HttpServiceUnavailable", "HTTP execution service is not available.");
+        }
+
+        var httpRequest = new HttpExecutionRequest
+        {
+            Url = resolvedUrl,
+            Method = new HttpMethod(Method.ToString().ToUpperInvariant()),
+            AuthMode = Authentication,
+            CredentialId = CredentialId,
+            QueryParameterName = QueryParameterName,
+            Headers = headers,
+            BodyContent = bodyContent,
+            SuccessWhen = SuccessWhen
+        };
+
+        var result = await HttpExecutionService.ExecuteAsync(httpRequest, ExecutionContext, ct).ConfigureAwait(false);
+
+        // 5. 业务失败统一转换为 NodeExecutionException，由框架适配层映射为失败结果（保持错误码/消息一致）
+        if (!result.Success)
+        {
+            throw new NodeExecutionException(result.Error?.Code ?? FlowConstants.ErrorCodes.UnexpectedError, result.Error?.Message ?? "HTTP request failed.");
+        }
+
+        return NodeHandlerOutput.Data(result.Output);
     }
 }
-
-// HttpPlaceholder is defined in HttpToolNode.cs

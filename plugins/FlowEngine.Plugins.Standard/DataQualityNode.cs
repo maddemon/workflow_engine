@@ -1,36 +1,25 @@
 using FlowEngine.Core;
+using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Attributes;
+using FlowEngine.Core.Entities;
+using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Scripting;
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
-using FlowEngine.Core.Abstractions;
-using FlowEngine.Core.Attributes;
-using FlowEngine.Core.Entities;
-using FlowEngine.Core.Enums;
 
 namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
 /// 数据质量校验节点，支持多种校验规则。校验失败时按 ErrorStrategy 处理。
 /// </summary>
-public sealed class DataQualityNode : INodeType
+[NodeMeta(TypeName = "dataQuality", DisplayName = "Data Quality", Category = NodeCategory.Data, Icon = "shield-check", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class DataQualityNode : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "dataQuality";
-
-    /// <inheritdoc />
-    public string DisplayName => "Data Quality";
-
-    /// <inheritdoc />
-    public string Category => "Data";
-
-    /// <inheritdoc />
-    public string Icon => "shield-check";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
     /// <summary>
     /// 校验规则列表（JSON 数组）。每项包含 type + 参数。
     /// 支持类型：rowCount(min,max), fieldNotNull(field), fieldPattern(field,pattern), fieldRange(field,min,max), customExpression(expression)
@@ -49,31 +38,21 @@ public sealed class DataQualityNode : INodeType
     public bool PassOnFailure { get; set; } = false;
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
         // 1. Get input data
-        var inputBatch = context.GetInputBatch();
+        var inputBatch = input.InputBatch;
 
         var itemCount = inputBatch.Items.Count;
 
         // 2. Parse rules
-        List<JsonElement>? rulesList;
-        if (!context.TryParseJson(Rules, out var rulesDoc, out _))
+        if (!ExecutionContext.TryParseJson(Rules, out var rulesDoc, out _))
         {
-            return Task.FromResult(context.ErrorResult("InvalidRules", "Rules JSON 格式无效。"));
+            throw new NodeExecutionException("InvalidRules", "Rules JSON 格式无效。");
         }
         // 注意：JsonElement 引用 JsonDocument 的池化内存，文档 dispose 后不可访问。
         // 此处不提前 dispose，保持文档存活至方法结束，由 GC 回收。
-        rulesList = rulesDoc.RootElement.EnumerateArray().ToList();
+        var rulesList = rulesDoc.RootElement.EnumerateArray().ToList();
 
         // 3. Validate each rule
         var failures = new List<JsonObject>();
@@ -120,6 +99,7 @@ public sealed class DataQualityNode : INodeType
 
         // 5. Determine result
         var hasFailures = failures.Count > 0;
+        var failureMessage = $"数据质量校验失败：{failures.Count}/{rulesList.Count} 条规则未通过。";
 
         if (hasFailures && !PassOnFailure)
         {
@@ -135,8 +115,8 @@ public sealed class DataQualityNode : INodeType
                         Error = new NodeError
                         {
                             Code = "DataQualityCheckFailed",
-                            Message = $"数据质量校验失败：{failures.Count}/{rulesList.Count} 条规则未通过。",
-                            NodeDefinitionId = context.Node.Id,
+                            Message = failureMessage,
+                            NodeDefinitionId = ExecutionContext.Node?.Id ?? string.Empty,
                             Details = new Dictionary<string, string>
                             {
                                 ["failedRules"] = failures.Count.ToString(),
@@ -147,17 +127,7 @@ public sealed class DataQualityNode : INodeType
                 ]
             };
 
-            return Task.FromResult(new NodeExecutionResult
-            {
-                Success = false,
-                Output = output,
-                Error = new NodeError
-                {
-                    Code = "DataQualityCheckFailed",
-                    Message = $"数据质量校验失败：{failures.Count}/{rulesList.Count} 条规则未通过。",
-                    NodeDefinitionId = context.Node.Id
-                }
-            });
+            return Task.FromResult(NodeHandlerOutput.Failure("DataQualityCheckFailed", failureMessage, output, ExecutionContext.Node?.Id));
         }
 
         // Pass data through (either all passed, or PassOnFailure=true)
@@ -177,11 +147,13 @@ public sealed class DataQualityNode : INodeType
             };
         }).ToList();
 
-        return Task.FromResult(new NodeExecutionResult
+        // PassOnFailure 且存在失败：仍透传数据，但标记为失败（与旧版 Success = !hasFailures 语义一致）。
+        if (hasFailures)
         {
-            Success = !hasFailures,
-            Output = new DataBatch { Items = outputItems }
-        });
+            return Task.FromResult(NodeHandlerOutput.Failure("DataQualityCheckFailed", failureMessage, new DataBatch { Items = outputItems }, ExecutionContext.Node?.Id));
+        }
+
+        return Task.FromResult(NodeHandlerOutput.Data(new DataBatch { Items = outputItems }));
     }
 
     private static (bool passed, string message) ValidateRowCount(JsonElement rule, int itemCount)

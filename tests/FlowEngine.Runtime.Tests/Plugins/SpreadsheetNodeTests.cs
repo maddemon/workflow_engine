@@ -37,7 +37,7 @@ public sealed class SpreadsheetNodeTests
             HasHeader = false
         };
 
-        var result = await node.ExecuteAsync(
+        var result = await ((INodeType)node).ExecuteAsync(
             CreateContext(InputWith("data", Convert.ToBase64String(bytes))),
             CancellationToken.None);
 
@@ -62,7 +62,7 @@ public sealed class SpreadsheetNodeTests
             HasHeader = false
         };
 
-        var result = await node.ExecuteAsync(
+        var result = await ((INodeType)node).ExecuteAsync(
             CreateContext(InputWith("data", Convert.ToBase64String(bytes))),
             CancellationToken.None);
 
@@ -87,7 +87,7 @@ public sealed class SpreadsheetNodeTests
             HasHeader = true
         };
 
-        var result = await node.ExecuteAsync(
+        var result = await ((INodeType)node).ExecuteAsync(
             CreateContext(InputWith("data", Convert.ToBase64String(bytes))),
             CancellationToken.None);
 
@@ -121,7 +121,7 @@ public sealed class SpreadsheetNodeTests
             HasHeader = true,
             FilePath = csvFile
         };
-        var writeResult = await writeNode.ExecuteAsync(CreateContext(rows), CancellationToken.None);
+        var writeResult = await ((INodeType)writeNode).ExecuteAsync(CreateContext(rows), CancellationToken.None);
         Assert.True(writeResult.Success, writeResult.Error?.Message);
         Assert.Equal(3, GetInt(writeResult.Output.Items[0].Data, "rowCount"));
 
@@ -132,7 +132,7 @@ public sealed class SpreadsheetNodeTests
             HasHeader = true,
             FilePath = csvFile
         };
-        var readResult = await readNode.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var readResult = await ((INodeType)readNode).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
         Assert.True(readResult.Success, readResult.Error?.Message);
         Assert.Equal(3, readResult.Output.Items.Count);
         Assert.Equal("Alice", GetString(readResult.Output.Items[0].Data, "name"));
@@ -156,7 +156,7 @@ public sealed class SpreadsheetNodeTests
             SheetName = "Data",
             FilePath = xlsxFile
         };
-        var writeResult = await writeNode.ExecuteAsync(CreateContext(rows), CancellationToken.None);
+        var writeResult = await ((INodeType)writeNode).ExecuteAsync(CreateContext(rows), CancellationToken.None);
         Assert.True(writeResult.Success, writeResult.Error?.Message);
         Assert.Equal(2, GetInt(writeResult.Output.Items[0].Data, "rowCount"));
 
@@ -181,7 +181,7 @@ public sealed class SpreadsheetNodeTests
             SheetName = "Data",
             FilePath = xlsxFile
         };
-        var readResult = await readNode.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var readResult = await ((INodeType)readNode).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
         Assert.True(readResult.Success, readResult.Error?.Message);
         Assert.Equal(2, readResult.Output.Items.Count);
         Assert.Equal("Alice", GetString(readResult.Output.Items[0].Data, "name"));
@@ -205,7 +205,7 @@ public sealed class SpreadsheetNodeTests
             SheetName = "Data",
             FilePath = odsFile
         };
-        var writeResult = await writeNode.ExecuteAsync(CreateContext(rows), CancellationToken.None);
+        var writeResult = await ((INodeType)writeNode).ExecuteAsync(CreateContext(rows), CancellationToken.None);
         Assert.True(writeResult.Success, writeResult.Error?.Message);
         Assert.Equal(2, GetInt(writeResult.Output.Items[0].Data, "rowCount"));
 
@@ -218,7 +218,7 @@ public sealed class SpreadsheetNodeTests
             SheetName = "Data",
             FilePath = odsFile
         };
-        var readResult = await readNode.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var readResult = await ((INodeType)readNode).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
         Assert.True(readResult.Success, readResult.Error?.Message);
         Assert.Equal(2, readResult.Output.Items.Count);
         Assert.Equal("Alice", GetString(readResult.Output.Items[0].Data, "name"));
@@ -240,7 +240,7 @@ public sealed class SpreadsheetNodeTests
 
         // 输入项存在，但缺默认 data 字段。
         var input = new DataBatch { Items = [new DataItem { Data = new JsonObject { ["other"] = "x" }, Success = true }] };
-        var result = await node.ExecuteAsync(CreateContext(input), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("MissingInput", result.Error?.Code);
@@ -255,7 +255,7 @@ public sealed class SpreadsheetNodeTests
             Format = SpreadsheetFormat.Csv
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("MissingInput", result.Error?.Code);
@@ -276,7 +276,7 @@ public sealed class SpreadsheetNodeTests
             FilePath = file
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Contains(result.Error?.Code, new[] { "ParseError", "ReadError" });
@@ -298,7 +298,7 @@ public sealed class SpreadsheetNodeTests
             SheetName = "S",
             FilePath = xlsxFile
         };
-        var writeResult = await writeNode.ExecuteAsync(CreateContext(rows), CancellationToken.None);
+        var writeResult = await ((INodeType)writeNode).ExecuteAsync(CreateContext(rows), CancellationToken.None);
         Assert.True(writeResult.Success, writeResult.Error?.Message);
 
         var readNode = new SpreadsheetNode
@@ -309,7 +309,7 @@ public sealed class SpreadsheetNodeTests
             SheetName = "S",
             FilePath = xlsxFile
         };
-        var readResult = await readNode.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var readResult = await ((INodeType)readNode).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
         Assert.True(readResult.Success, readResult.Error?.Message);
         // HasHeader=false：写入时无表头，读回按列字母 A/B/C，且包含全部数据行。
         Assert.Equal(2, readResult.Output.Items.Count);
@@ -331,7 +331,7 @@ public sealed class SpreadsheetNodeTests
             SheetName = "Target",
             FilePath = xlsxFile
         };
-        var writeResult = await writeNode.ExecuteAsync(CreateContext(rows), CancellationToken.None);
+        var writeResult = await ((INodeType)writeNode).ExecuteAsync(CreateContext(rows), CancellationToken.None);
         Assert.True(writeResult.Success, writeResult.Error?.Message);
 
         var readNode = new SpreadsheetNode
@@ -342,7 +342,7 @@ public sealed class SpreadsheetNodeTests
             SheetName = "Target",
             FilePath = xlsxFile
         };
-        var readResult = await readNode.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var readResult = await ((INodeType)readNode).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
         Assert.True(readResult.Success, readResult.Error?.Message);
         Assert.Equal("Alice", GetString(readResult.Output.Items[0].Data, "name"));
     }
@@ -363,7 +363,7 @@ public sealed class SpreadsheetNodeTests
             FilePath = csvFile,
             OutputField = "content"
         };
-        var result = await node.ExecuteAsync(CreateContext(rows), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(rows), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         // 自定义 OutputField="content" 应承载 base64；默认 "data" 不应出现。
@@ -386,7 +386,7 @@ public sealed class SpreadsheetNodeTests
             InputField = "payload"
         };
         var input = InputWith("payload", Convert.ToBase64String(bytes));
-        var result = await node.ExecuteAsync(CreateContext(input), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("Zoe", GetString(result.Output.Items[0].Data, "name"));
@@ -403,7 +403,7 @@ public sealed class SpreadsheetNodeTests
             Format = (SpreadsheetFormat)999
         };
 
-        var result = await node.ExecuteAsync(CreateContext(InputWith("data", "AQID")), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(InputWith("data", "AQID")), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("InvalidFormat", result.Error?.Code);

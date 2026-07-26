@@ -16,23 +16,11 @@ namespace FlowEngine.Plugins.Standard;
 /// 结构化输出节点。将上游（通常为 LLM 节点）产出的文本 JSON 解析为结构化 <see cref="DataItem"/>，
 /// 并可按 JSON Schema 的 <c>required</c> 键做轻量校验。本节点不调用 LLM，仅做解析/校验（符合 §3.3.3：不调用 LLM）。
 /// </summary>
-public sealed class StructuredOutputNode : INodeType
+[NodeMeta(TypeName = "structuredOutput", DisplayName = "Structured Output", Category = NodeCategory.AI, Icon = "structured", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class StructuredOutputNode : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "structuredOutput";
-
-    /// <inheritdoc />
-    public string DisplayName => "Structured Output";
-
-    /// <inheritdoc />
-    public string Category => "AI";
-
-    /// <inheritdoc />
-    public string Icon => "structured";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
     /// <summary>
     /// 待解析的原始文本（通常为 LLM 输出）。JS 表达式，支持 <c>$json</c> / <c>$input</c>。示例：<c>$json.text</c>。必填。
     /// </summary>
@@ -54,43 +42,33 @@ public sealed class StructuredOutputNode : INodeType
     public bool Strict { get; set; } = true;
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    AiNodeDefinition? INodeType.GetAiDefinition(NodeTypeDescriptor descriptor) =>
+    protected override AiNodeDefinition? GetAiDefinition(NodeTypeDescriptor descriptor) =>
         AiDefinitionHelpers.Def(
             "Structured Output", "AI", false,
             "将上游（通常为 LLM 节点）的文本 JSON 输出解析为结构化数据，并可按 JSON Schema 校验必填字段。本节点不调用 LLM，仅做解析与轻量校验。",
             ["ai", "transform", "json", "structured"],
-            JsonNode.Parse("""{"type":"object","description":"与输入文本解析后的 JSON 对象结构一致"}"""),
+            JsonNode.Parse("{\"type\":\"object\",\"description\":\"与输入文本解析后的 JSON 对象结构一致\"}"),
             AiDefinitionHelpers.Example("解析 LLM 输出为对象",
-                JsonNode.Parse("""{"input":"$json.text","schema":"{\"required\":[\"name\"]}"}"""),
-                JsonNode.Parse("""{"name":"Alice"}""")));
+                JsonNode.Parse("{\"input\":\"$json.text\",\"schema\":\"{\\\"required\\\":[\\\"name\\\"]}\"}"),
+                JsonNode.Parse("{\"name\":\"Alice\"}")));
 
     /// <inheritdoc />
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
         try
         {
             // OnceForAll：取首个输入项作为 $json 上下文（无输入则为 null，交由表达式求值处理）。
-            var inputBatch = context.GetInputBatch();
+            var inputBatch = input.InputBatch;
             var evalItem = inputBatch.Items.Count > 0 ? inputBatch.Items[0].Data : null;
 
             // 1) 解析 Input 文本
             var text = Input is not null
-                ? await Input.EvaluateAsync<string>(context, evalItem, 0, cancellationToken: cancellationToken).ConfigureAwait(false)
+                ? await EvaluateItemAsync<string>(Input, evalItem, 0, ct).ConfigureAwait(false)
                 : null;
 
             if (string.IsNullOrWhiteSpace(text))
             {
-                return context.ErrorResult("MissingInput", "Input 表达式求值结果为空，无法解析结构化输出。");
+                throw new NodeExecutionException("MissingInput", "Input 表达式求值结果为空，无法解析结构化输出。");
             }
 
             // 2) 解析为 JSON 对象（仅对象合法；数组/数值/字符串/布尔/null 视为 InvalidJson）
@@ -101,18 +79,18 @@ public sealed class StructuredOutputNode : INodeType
             }
             catch (JsonException ex)
             {
-                return context.ErrorResult("InvalidJson", $"输入不是合法 JSON：{ex.Message}");
+                throw new NodeExecutionException("InvalidJson", $"输入不是合法 JSON：{ex.Message}");
             }
 
             if (parsed is not JsonObject jsonObject)
             {
-                return context.ErrorResult("InvalidJson", "输入 JSON 不是对象（应为键值对对象）。");
+                throw new NodeExecutionException("InvalidJson", "输入 JSON 不是对象（应为键值对对象）。");
             }
 
             // 3) 可选 Schema 校验（仅 required 必填键 + 可选 properties 基本类型核对）
             if (Schema is not null)
             {
-                var schemaText = await Schema.EvaluateAsync<string>(context, evalItem, 0, cancellationToken: cancellationToken).ConfigureAwait(false);
+                var schemaText = await EvaluateItemAsync<string>(Schema, evalItem, 0, ct).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(schemaText))
                 {
                     JsonNode? schemaParsed;
@@ -122,7 +100,7 @@ public sealed class StructuredOutputNode : INodeType
                     }
                     catch (JsonException ex)
                     {
-                        return context.ErrorResult("InvalidJson", $"Schema 不是合法 JSON：{ex.Message}");
+                        throw new NodeExecutionException("InvalidJson", $"Schema 不是合法 JSON：{ex.Message}");
                     }
 
                     if (schemaParsed is JsonObject schemaObj)
@@ -130,28 +108,39 @@ public sealed class StructuredOutputNode : INodeType
                         var errors = ValidateAgainstSchema(jsonObject, schemaObj);
                         if (errors.Count > 0 && Strict)
                         {
-                            return context.ErrorResult("SchemaValidationFailed", string.Join("; ", errors));
+                            throw new NodeExecutionException("SchemaValidationFailed", string.Join("; ", errors));
                         }
                     }
                 }
             }
 
-            context.Logger?.LogInformation("structuredOutput 解析成功，字段数 {Count}。", jsonObject.Count);
-            return context.Ok(jsonObject);
+            Logger?.LogInformation("structuredOutput 解析成功，字段数 {Count}。", jsonObject.Count);
+            return NodeHandlerOutput.Data(new DataBatch
+            {
+                Items =
+                [
+                    new DataItem
+                    {
+                        Data = jsonObject,
+                        Success = true,
+                        SourceIndex = 0
+                    }
+                ]
+            });
         }
         catch (OperationCanceledException)
         {
-            return context.ErrorResult(FlowConstants.ErrorCodes.Cancelled, "操作已取消。");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.Cancelled, "操作已取消。");
         }
         catch (ScriptErrorException ex)
         {
-            return context.ErrorResult(FlowConstants.ErrorCodes.ScriptError, $"表达式求值失败：{ex.Message}");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.ScriptError, $"表达式求值失败：{ex.Message}");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not NodeExecutionException)
         {
             // 仅记录非敏感信息，绝不输出原始文本（可能含敏感内容）。
-            context.Logger?.LogError(ex, "structuredOutput 发生意外错误。");
-            return context.ErrorResult(FlowConstants.ErrorCodes.UnexpectedError, $"意外错误：{ex.Message}");
+            Logger?.LogError(ex, "structuredOutput 发生意外错误。");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.UnexpectedError, $"意外错误：{ex.Message}");
         }
     }
 

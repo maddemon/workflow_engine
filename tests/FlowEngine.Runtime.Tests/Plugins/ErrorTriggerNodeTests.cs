@@ -28,7 +28,7 @@ public sealed class ErrorTriggerNodeTests
         var node = new ErrorTriggerNode();
         var context = await NodeTestContextFactory.BuildAsync(node, null, Inputs(payload));
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         var data = Assert.IsType<JsonObject>(result.Output.Items[0].Data);
@@ -43,7 +43,7 @@ public sealed class ErrorTriggerNodeTests
         var node = new ErrorTriggerNode();
         var context = await NodeTestContextFactory.BuildAsync(node, null, null);
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Null(result.Error);
@@ -60,7 +60,7 @@ public sealed class ErrorTriggerNodeTests
         var node = new ErrorTriggerNode();
         var context = await NodeTestContextFactory.BuildAsync(node, null, Inputs(JsonValue.Create("raw")));
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         var data = Assert.IsType<JsonObject>(result.Output.Items[0].Data);
@@ -75,7 +75,7 @@ public sealed class ErrorTriggerNodeTests
         var node = new ErrorTriggerNode();
         var context = await NodeTestContextFactory.BuildAsync(node, null, Inputs(payload));
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         var data = Assert.IsType<JsonObject>(result.Output.Items[0].Data);
@@ -98,7 +98,7 @@ public sealed class ErrorTriggerNodeTests
             .Callback<string, object?[]>((m, a) => { capturedMessage = m; capturedArgs = a; });
         context.Logger = loggerMock.Object;
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         loggerMock.Verify(l => l.LogInformation(It.IsAny<string>(), It.IsAny<object?[]>()), Times.Once);

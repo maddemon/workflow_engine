@@ -6,8 +6,10 @@ using System.Text.Json.Nodes;
 using System.Xml.Linq;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Tools;
 using MiniExcelLibs;
 
@@ -21,23 +23,11 @@ namespace FlowEngine.Plugins.Standard;
 /// CSV 与 XLSX 使用内置解析/写入器与 MiniExcel；ODS 因 MiniExcel 1.45.0 不支持，
 /// 改用内置 BCL（<c>ZipArchive</c> + LINQ-to-XML）实现。
 /// </summary>
-public sealed class SpreadsheetNode : INodeType
+[NodeMeta(TypeName = "spreadsheet", DisplayName = "Spreadsheet", Category = NodeCategory.Storage, Icon = "spreadsheet", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class SpreadsheetNode : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "spreadsheet";
-
-    /// <inheritdoc />
-    public string DisplayName => "Spreadsheet";
-
-    /// <inheritdoc />
-    public string Category => "Storage";
-
-    /// <inheritdoc />
-    public string Icon => "spreadsheet";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
     /// <summary>
     /// 操作：将表格读入 <see cref="DataBatch"/>，或将 <see cref="DataBatch"/> 写为表格文件。
     /// </summary>
@@ -82,47 +72,42 @@ public sealed class SpreadsheetNode : INodeType
     public bool HasHeader { get; set; } = true;
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
         try
         {
             return Operation switch
             {
-                SpreadsheetOperation.Read => await ReadAsync(context, cancellationToken).ConfigureAwait(false),
-                SpreadsheetOperation.Write => await WriteAsync(context, cancellationToken).ConfigureAwait(false),
-                _ => context.ErrorResult("InvalidOperation", $"Unsupported operation: {Operation}.")
+                SpreadsheetOperation.Read => await ReadAsync(input, ct).ConfigureAwait(false),
+                SpreadsheetOperation.Write => await WriteAsync(input, ct).ConfigureAwait(false),
+                _ => throw new NodeExecutionException("InvalidOperation", $"Unsupported operation: {Operation}.")
             };
         }
         catch (OperationCanceledException)
         {
-            return context.ErrorResult(FlowConstants.ErrorCodes.Cancelled, "spreadsheet was cancelled.");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.Cancelled, "spreadsheet was cancelled.");
+        }
+        catch (NodeExecutionException)
+        {
+            // 业务异常：保留原始错误码/消息，由 NodeBase 转换为失败结果。
+            throw;
         }
         catch (InvalidDataException ex)
         {
             // 内置 CSV 解析器在字段未闭合时抛出；统一视为解析失败。
-            context.Logger?.LogWarning("spreadsheet 解析失败：{Message}。", ex.Message);
-            return context.ErrorResult("ParseError", $"Failed to parse spreadsheet: {ex.Message}");
+            Logger?.LogWarning("spreadsheet 解析失败：{Message}。", ex.Message);
+            throw new NodeExecutionException("ParseError", $"Failed to parse spreadsheet: {ex.Message}");
         }
         catch (Exception ex)
         {
-            context.Logger?.LogError(ex, "spreadsheet 执行出错。");
-            return context.ErrorResult(FlowConstants.ErrorCodes.UnexpectedError, $"Unexpected error processing spreadsheet: {ex.Message}");
+            Logger?.LogError(ex, "spreadsheet 执行出错。");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.UnexpectedError, $"Unexpected error processing spreadsheet: {ex.Message}");
         }
     }
 
     // ---- Read ----
 
-    private async Task<NodeExecutionResult> ReadAsync(NodeExecutionContext context, CancellationToken cancellationToken)
+    private async Task<NodeHandlerOutput> ReadAsync(NodeInput input, CancellationToken cancellationToken)
     {
         byte[] bytes;
         if (!string.IsNullOrEmpty(FilePath))
@@ -133,39 +118,39 @@ public sealed class SpreadsheetNode : INodeType
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                context.Logger?.LogWarning("spreadsheet 读取文件失败 {Path}：{Message}。", FilePath, ex.Message);
-                return context.ErrorResult("ReadError", $"Failed to read file '{FilePath}': {ex.Message}");
+                Logger?.LogWarning("spreadsheet 读取文件失败 {Path}：{Message}。", FilePath, ex.Message);
+                throw new NodeExecutionException("ReadError", $"Failed to read file '{FilePath}': {ex.Message}");
             }
         }
         else
         {
             // 无 FilePath：从首个输入项的 InputField base64 读取。
-            var inputBatch = context.GetInputBatch();
+            var inputBatch = input.InputBatch;
             var item = inputBatch.Items.Count > 0 ? inputBatch.Items[0].Data : null;
             if (item is null)
             {
-                return context.ErrorResult("MissingInput", "No input item available to read base64 content from.");
+                throw new NodeExecutionException("MissingInput", "No input item available to read base64 content from.");
             }
-            // No FilePath: read base64 from the first input item's InputField and decode.
+
             var status = NodeDataHelpers.TryGetBase64Field(item, InputField, out bytes);
             if (status is not NodeDataHelpers.Base64FieldResult.Success)
             {
-                return status == NodeDataHelpers.Base64FieldResult.Invalid
-                    ? context.ErrorResult("MissingInput", $"Field '{InputField}' is not valid base64.")
-                    : context.ErrorResult("MissingInput", $"Input item is missing a string value at field '{InputField}'.");
+                throw status == NodeDataHelpers.Base64FieldResult.Invalid
+                    ? new NodeExecutionException("MissingInput", $"Field '{InputField}' is not valid base64.")
+                    : new NodeExecutionException("MissingInput", $"Input item is missing a string value at field '{InputField}'.");
             }
         }
 
         return Format switch
         {
-            SpreadsheetFormat.Csv => ReadCsv(context, bytes, HasHeader),
-            SpreadsheetFormat.Xlsx => ReadWorkbook(context, bytes, HasHeader, SheetName),
-            SpreadsheetFormat.Ods => ReadOds(context, bytes, HasHeader, SheetName),
-            _ => context.ErrorResult("InvalidFormat", $"Unsupported format: {Format}.")
+            SpreadsheetFormat.Csv => ReadCsv(bytes, HasHeader),
+            SpreadsheetFormat.Xlsx => ReadWorkbook(bytes, HasHeader, SheetName),
+            SpreadsheetFormat.Ods => ReadOds(bytes, HasHeader, SheetName),
+            _ => throw new NodeExecutionException("InvalidFormat", $"Unsupported format: {Format}.")
         };
     }
 
-    private static NodeExecutionResult ReadCsv(NodeExecutionContext context, byte[] bytes, bool hasHeader)
+    private NodeHandlerOutput ReadCsv(byte[] bytes, bool hasHeader)
     {
         // 去除 UTF-8 BOM 后再按 UTF-8 解析文本。
         var text = bytes.Length >= 3 && bytes[0] == 0xEF && bytes[1] == 0xBB && bytes[2] == 0xBF
@@ -179,13 +164,13 @@ public sealed class SpreadsheetNode : INodeType
         }
         catch (InvalidDataException ex)
         {
-            return context.ErrorResult("ParseError", ex.Message);
+            throw new NodeExecutionException("ParseError", ex.Message);
         }
 
         var batch = new DataBatch();
         if (rows.Count == 0)
         {
-            return context.Ok(batch);
+            return NodeHandlerOutput.Data(batch);
         }
 
         if (hasHeader)
@@ -224,11 +209,11 @@ public sealed class SpreadsheetNode : INodeType
             }
         }
 
-        context.Logger?.LogInformation("spreadsheet Read CSV 解析 {Count} 行（HasHeader={HasHeader}）。", batch.Items.Count, hasHeader);
-        return context.Ok(batch);
+        Logger?.LogInformation("spreadsheet Read CSV 解析 {Count} 行（HasHeader={HasHeader}）。", batch.Items.Count, hasHeader);
+        return NodeHandlerOutput.Data(batch);
     }
 
-    private static NodeExecutionResult ReadWorkbook(NodeExecutionContext context, byte[] bytes, bool hasHeader, string? sheetName)
+    private NodeHandlerOutput ReadWorkbook(byte[] bytes, bool hasHeader, string? sheetName)
     {
         try
         {
@@ -251,18 +236,18 @@ public sealed class SpreadsheetNode : INodeType
                 AddItem(batch, obj);
             }
 
-            context.Logger?.LogInformation("spreadsheet Read Xlsx 解析 {Count} 行（HasHeader={HasHeader}）。", batch.Items.Count, hasHeader);
-            return context.Ok(batch);
+            Logger?.LogInformation("spreadsheet Read Xlsx 解析 {Count} 行（HasHeader={HasHeader}）。", batch.Items.Count, hasHeader);
+            return NodeHandlerOutput.Data(batch);
         }
         catch (InvalidDataException ex)
         {
-            return context.ErrorResult("ParseError", $"Failed to parse Xlsx file: {ex.Message}");
+            throw new NodeExecutionException("ParseError", $"Failed to parse Xlsx file: {ex.Message}");
         }
         catch (Exception ex)
         {
             // MiniExcel 对损坏文件可能抛出非 InvalidDataException 的异常。
-            context.Logger?.LogWarning("spreadsheet 解析 Xlsx 失败：{Message}。", ex.Message);
-            return context.ErrorResult("ParseError", $"Failed to parse Xlsx file: {ex.Message}");
+            Logger?.LogWarning("spreadsheet 解析 Xlsx 失败：{Message}。", ex.Message);
+            throw new NodeExecutionException("ParseError", $"Failed to parse Xlsx file: {ex.Message}");
         }
     }
 
@@ -271,7 +256,7 @@ public sealed class SpreadsheetNode : INodeType
     /// 支持按 <paramref name="sheetName"/> 选表（缺省取首个）；处理 <c>table:number-columns-repeated</c> 重复单元格；
     /// 按 <c>office:value-type</c> 映射为 JSON：string/boolean/date 为字符串，float/currency/percentage 为数字，空单元格为 JSON null。
     /// </summary>
-    private static NodeExecutionResult ReadOds(NodeExecutionContext context, byte[] bytes, bool hasHeader, string? sheetName)
+    private NodeHandlerOutput ReadOds(byte[] bytes, bool hasHeader, string? sheetName)
     {
         try
         {
@@ -300,7 +285,7 @@ public sealed class SpreadsheetNode : INodeType
             tableEl ??= tables.FirstOrDefault();
             if (tableEl is null)
             {
-                return context.ErrorResult("ParseError", "ODS contains no table.");
+                throw new NodeExecutionException("ParseError", "ODS contains no table.");
             }
 
             // 解析每行单元格为 JsonNode? 列表（含重复单元格展开）。
@@ -330,7 +315,7 @@ public sealed class SpreadsheetNode : INodeType
             var batch = new DataBatch();
             if (rawRows.Count == 0)
             {
-                return context.Ok(batch);
+                return NodeHandlerOutput.Data(batch);
             }
 
             if (hasHeader)
@@ -364,17 +349,17 @@ public sealed class SpreadsheetNode : INodeType
                 }
             }
 
-            context.Logger?.LogInformation("spreadsheet Read Ods 解析 {Count} 行（HasHeader={HasHeader}）。", batch.Items.Count, hasHeader);
-            return context.Ok(batch);
+            Logger?.LogInformation("spreadsheet Read Ods 解析 {Count} 行（HasHeader={HasHeader}）。", batch.Items.Count, hasHeader);
+            return NodeHandlerOutput.Data(batch);
         }
         catch (InvalidDataException ex)
         {
-            return context.ErrorResult("ParseError", $"Failed to parse Ods file: {ex.Message}");
+            throw new NodeExecutionException("ParseError", $"Failed to parse Ods file: {ex.Message}");
         }
         catch (Exception ex)
         {
-            context.Logger?.LogWarning("spreadsheet 解析 Ods 失败：{Message}。", ex.Message);
-            return context.ErrorResult("ParseError", $"Failed to parse Ods file: {ex.Message}");
+            Logger?.LogWarning("spreadsheet 解析 Ods 失败：{Message}。", ex.Message);
+            throw new NodeExecutionException("ParseError", $"Failed to parse Ods file: {ex.Message}");
         }
     }
 
@@ -418,12 +403,12 @@ public sealed class SpreadsheetNode : INodeType
 
     // ---- Write ----
 
-    private async Task<NodeExecutionResult> WriteAsync(NodeExecutionContext context, CancellationToken cancellationToken)
+    private async Task<NodeHandlerOutput> WriteAsync(NodeInput input, CancellationToken cancellationToken)
     {
-        var inputBatch = context.GetInputBatch();
+        var inputBatch = input.InputBatch;
         if (inputBatch.Items.Count == 0)
         {
-            return context.ErrorResult("MissingInput", "No input rows available to write.");
+            throw new NodeExecutionException("MissingInput", "No input rows available to write.");
         }
 
         var rows = new List<Dictionary<string, object?>>();
@@ -445,7 +430,7 @@ public sealed class SpreadsheetNode : INodeType
 
         if (rows.Count == 0)
         {
-            return context.ErrorResult("MissingInput", "No input rows available to write.");
+            throw new NodeExecutionException("MissingInput", "No input rows available to write.");
         }
 
         byte[] bytes;
@@ -461,11 +446,11 @@ public sealed class SpreadsheetNode : INodeType
         }
         catch (InvalidDataException ex)
         {
-            return context.ErrorResult("WriteError", ex.Message);
+            throw new NodeExecutionException("WriteError", ex.Message);
         }
         catch (Exception ex)
         {
-            return context.ErrorResult("WriteError", $"Failed to write spreadsheet: {ex.Message}");
+            throw new NodeExecutionException("WriteError", $"Failed to write spreadsheet: {ex.Message}");
         }
 
         string? writtenPath = null;
@@ -478,7 +463,7 @@ public sealed class SpreadsheetNode : INodeType
             }
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
-                return context.ErrorResult("WriteError", $"Failed to write file '{FilePath}': {ex.Message}");
+                throw new NodeExecutionException("WriteError", $"Failed to write file '{FilePath}': {ex.Message}");
             }
         }
 
@@ -490,8 +475,8 @@ public sealed class SpreadsheetNode : INodeType
             ["rowCount"] = JsonValue.Create(rows.Count)
         };
 
-        context.Logger?.LogInformation("spreadsheet Write {Format} 完成（行数：{Count}，字节：{Bytes}）。", Format, rows.Count, bytes.Length);
-        return context.Ok(result);
+        Logger?.LogInformation("spreadsheet Write {Format} 完成（行数：{Count}，字节：{Bytes}）。", Format, rows.Count, bytes.Length);
+        return Single(result);
     }
 
     private static byte[] WriteCsv(List<Dictionary<string, object?>> rows, bool hasHeader)
@@ -860,6 +845,15 @@ public sealed class SpreadsheetNode : INodeType
             SourceIndex = batch.Items.Count
         });
     }
+
+    /// <summary>
+    /// 将单条 JSON 对象包装为单条 DataItem 的输出。
+    /// </summary>
+    private static NodeHandlerOutput Single(JsonObject obj) =>
+        NodeHandlerOutput.Data(new DataBatch
+        {
+            Items = [ new DataItem { Data = obj, Success = true, SourceIndex = 0 } ]
+        });
 }
 
 /// <summary>

@@ -19,7 +19,7 @@ public sealed class StructuredOutputNodeTests
         var node = new StructuredOutputNode();
         var context = await BuildContextAsync(node, new() { ["input"] = Literal("{\"name\":\"Alice\",\"age\":30}") }, new DataBatch());
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Output.Items);
@@ -39,7 +39,7 @@ public sealed class StructuredOutputNodeTests
             ["schema"] = Literal("{\"required\":[\"name\",\"age\"]}")
         }, new DataBatch());
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Output.Items);
@@ -57,7 +57,7 @@ public sealed class StructuredOutputNodeTests
             ["strict"] = true
         }, new DataBatch());
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("SchemaValidationFailed", result.Error?.Code);
@@ -75,7 +75,7 @@ public sealed class StructuredOutputNodeTests
             ["strict"] = false
         }, new DataBatch());
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Output.Items);
@@ -87,7 +87,7 @@ public sealed class StructuredOutputNodeTests
         var node = new StructuredOutputNode();
         var context = await BuildContextAsync(node, new() { ["input"] = Literal("this is not json") }, new DataBatch());
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("InvalidJson", result.Error?.Code);
@@ -99,7 +99,7 @@ public sealed class StructuredOutputNodeTests
         var node = new StructuredOutputNode();
         var context = await BuildContextAsync(node, new() { ["input"] = Literal("[1,2,3]") }, new DataBatch());
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("InvalidJson", result.Error?.Code);
@@ -111,7 +111,7 @@ public sealed class StructuredOutputNodeTests
         var node = new StructuredOutputNode();
         var context = await BuildContextAsync(node, new() { ["input"] = Literal("") }, new DataBatch());
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("MissingInput", result.Error?.Code);
@@ -134,7 +134,7 @@ public sealed class StructuredOutputNodeTests
         };
         var context = await BuildContextAsync(node, new() { ["input"] = (Script)"$json.text" }, inputBatch);
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Output.Items);

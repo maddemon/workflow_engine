@@ -15,23 +15,11 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// 数据库只读查询节点。仅允许执行 <c>SELECT</c> / <c>WITH</c> 语句，把查询结果逐行映射为 <see cref="DataItem"/>。
 /// </summary>
-public sealed class DbReadNode : INodeType
+[NodeMeta(TypeName = "dbRead", DisplayName = "DB Read", Category = NodeCategory.Data, Icon = "database", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class DbReadNode : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "dbRead";
-
-    /// <inheritdoc />
-    public string DisplayName => "DB Read";
-
-    /// <inheritdoc />
-    public string Category => "Data";
-
-    /// <inheritdoc />
-    public string Icon => "database";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
     /// <summary>
     /// 数据库连接凭据（类型为 <c>connectionString</c>）。凭据按结构化字段（dbType/host/port/database/userid/password 等）
     /// 配置，运行时由对应方言的 <see cref="IConnectionStringBuilder"/> 生成 ADO.NET 连接字符串。
@@ -68,23 +56,13 @@ public sealed class DbReadNode : INodeType
     public Dictionary<string, Script>? Parameters { get; set; }
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken cancellationToken = default)
     {
         try
         {
             if (Connection is null)
             {
-                return context.ErrorResult(FlowConstants.ErrorCodes.MissingConnection, "Connection credential is required.");
+                throw new NodeExecutionException(FlowConstants.ErrorCodes.MissingConnection, "Connection credential is required.");
             }
 
             // 方言与连接字符串：复用 DbUpsertNode 同款组件，不重复连接构建逻辑。
@@ -98,42 +76,42 @@ public sealed class DbReadNode : INodeType
             }
             catch (InvalidOperationException ex)
             {
-                return context.ErrorResult(FlowConstants.ErrorCodes.MissingConnection, ex.Message);
+                throw new NodeExecutionException(FlowConstants.ErrorCodes.MissingConnection, ex.Message);
             }
 
             if (string.IsNullOrWhiteSpace(connectionString))
             {
-                return context.ErrorResult(FlowConstants.ErrorCodes.MissingConnection, "Connection string is required.");
+                throw new NodeExecutionException(FlowConstants.ErrorCodes.MissingConnection, "Connection string is required.");
             }
 
             // 无输入时以空批执行（触发器直连场景），仅求值一次；有输入时逐项求值以支持 $json/$input 注入。
-            var inputBatch = context.GetInputBatch();
+            var inputBatch = input.InputBatch;
             var items = inputBatch.Items;
 
             var sqlStatements = new List<(JsonNode? Item, int Index, string Sql)>();
             if (items.Count == 0)
             {
-                var (sql, error) = await ResolveSqlAsync(context, null, 0, cancellationToken).ConfigureAwait(false);
-                if (error is not null) return error;
+                var (sql, error) = await ResolveSqlAsync(null, 0, cancellationToken).ConfigureAwait(false);
+                if (error is not null) throw error;
                 sqlStatements.Add((null, 0, sql!));
             }
             else
             {
                 for (var index = 0; index < items.Count; index++)
                 {
-                    var (sql, error) = await ResolveSqlAsync(context, items[index].Data, index, cancellationToken).ConfigureAwait(false);
-                    if (error is not null) return error;
+                    var (sql, error) = await ResolveSqlAsync(items[index].Data, index, cancellationToken).ConfigureAwait(false);
+                    if (error is not null) throw error;
                     sqlStatements.Add((items[index].Data, index, sql!));
                 }
             }
 
-            await using var executor = await DbExecutor.CreateAsync(dialect, connectionString, cancellationToken, context.EngineLogger).ConfigureAwait(false);
+            await using var executor = await DbExecutor.CreateAsync(dialect, connectionString, cancellationToken, ExecutionContext.EngineLogger).ConfigureAwait(false);
 
             var output = new DataBatch();
             foreach (var (item, index, sql) in sqlStatements)
             {
                 // SEC-0：将命名参数（如 @name）按当前输入项逐项求值后，以绑定参数形式传入，杜绝 SQL 文本拼接注入。
-                var parameters = await ResolveParametersAsync(context, item, index, cancellationToken).ConfigureAwait(false);
+                var parameters = await ResolveParametersAsync(item, index, cancellationToken).ConfigureAwait(false);
 
                 await using var reader = await executor
                     .ExecuteReaderAsync(sql, parameters, cancellationToken, Timeout)
@@ -153,60 +131,64 @@ public sealed class DbReadNode : INodeType
             }
 
             await executor.CommitAsync(cancellationToken).ConfigureAwait(false);
-            return context.Ok(output);
+            return NodeHandlerOutput.Data(output);
         }
         catch (OperationCanceledException)
         {
-            return context.ErrorResult(FlowConstants.ErrorCodes.Cancelled, "Database read was cancelled.");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.Cancelled, "Database read was cancelled.");
         }
         catch (DbException ex)
         {
             // 仅记录非敏感信息，绝不输出连接字符串或凭据。
-            context.Logger?.LogError(ex, "dbRead 执行数据库查询失败（方言已配置，详情见消息）。");
-            return context.ErrorResult("DbError", $"Database error: {ex.Message}");
+            Logger?.LogError(ex, "dbRead 执行数据库查询失败（方言已配置，详情见消息）。");
+            throw new NodeExecutionException("DbError", $"Database error: {ex.Message}");
         }
         catch (ScriptErrorException ex)
         {
-            return context.ErrorResult(FlowConstants.ErrorCodes.ScriptError, $"Sql expression evaluation failed: {ex.Message}");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.ScriptError, $"Sql expression evaluation failed: {ex.Message}");
         }
-        catch (Exception ex)
+        catch (NodeExecutionException)
         {
-            return context.ErrorResult(FlowConstants.ErrorCodes.UnexpectedError, $"Unexpected database error: {ex.Message}");
+            // 业务异常：保留原始错误码/消息，由 NodeBase 转换为失败结果。
+            throw;
+        }
+        catch (Exception ex) when (ex is not NodeExecutionException)
+        {
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.UnexpectedError, $"Unexpected database error: {ex.Message}");
         }
     }
 
     /// <summary>
     /// 求值 Sql 表达式并做只读校验。
     /// </summary>
-    private async Task<(string? Sql, NodeExecutionResult? Error)> ResolveSqlAsync(
-        NodeExecutionContext context,
+    private async Task<(string? Sql, NodeExecutionException? Error)> ResolveSqlAsync(
         JsonNode? item,
         int itemIndex,
         CancellationToken cancellationToken)
     {
         if (Sql is null)
         {
-            return (null, context.ErrorResult("InvalidSql", "Sql expression is required."));
+            return (null, new NodeExecutionException("InvalidSql", "Sql expression is required."));
         }
 
         // SEC-0：拒绝将上游数据（$json/$input/$item/$items 等）直接拼入 SQL 文本。
         // 上游值必须以 @name 命名参数（Parameters）的形式绑定执行，杜绝字符串拼接注入。
         if (ReferencesUpstreamData(Sql.Source))
         {
-            return (null, context.ErrorResult("UnsafeSqlInterpolation",
+            return (null, new NodeExecutionException("UnsafeSqlInterpolation",
                 "dbRead 不允许将上游数据（$json/$input/$item/$items）直接拼入 SQL 文本；请改用 @name 命名参数（Parameters）。"));
         }
 
-        var sql = await Sql.EvaluateAsync<string>(context, item, itemIndex, cancellationToken: cancellationToken).ConfigureAwait(false);
+        var sql = await EvaluateItemAsync<string>(Sql!, item, itemIndex, cancellationToken).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(sql))
         {
-            return (null, context.ErrorResult("InvalidSql", "Sql expression must evaluate to a non-empty statement."));
+            return (null, new NodeExecutionException("InvalidSql", "Sql expression must evaluate to a non-empty statement."));
         }
 
         if (!IsReadOnlyStatement(sql!))
         {
-            return (null, context.ErrorResult("ReadOnlyViolation", "dbRead only permits SELECT/WITH statements."));
+            return (null, new NodeExecutionException("ReadOnlyViolation", "dbRead only permits SELECT/WITH statements."));
         }
 
         return (sql, null);
@@ -236,7 +218,6 @@ public sealed class DbReadNode : INodeType
     /// 绝不以字符串拼接方式嵌入 SQL 文本。
     /// </summary>
     private async Task<IReadOnlyDictionary<string, object?>?> ResolveParametersAsync(
-        NodeExecutionContext context,
         JsonNode? item,
         int itemIndex,
         CancellationToken cancellationToken)
@@ -251,8 +232,7 @@ public sealed class DbReadNode : INodeType
         {
             if (script is null) continue;
 
-            resolved[name] = await script
-                .EvaluateAsync<object?>(context, item, itemIndex, cancellationToken: cancellationToken)
+            resolved[name] = await EvaluateItemAsync<object?>(script, item, itemIndex, cancellationToken)
                 .ConfigureAwait(false);
         }
 

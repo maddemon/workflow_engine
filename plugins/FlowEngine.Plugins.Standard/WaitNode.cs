@@ -1,31 +1,25 @@
-using FlowEngine.Core;
 using System.ComponentModel;
+using System.Text.Json.Nodes;
+using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
+using FlowEngine.Core.Scripting;
 
 namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
-/// 等待节点，暂停工作流执行。
+/// 等待节点，暂停工作流执行指定时长后透传输入批次。
+/// 新写法继承 <see cref="NodeBase"/>，通过 [NodeMeta]/[Port] 声明式描述元信息与端口，
+/// 业务只需计算延迟并等待，随后返回输入批次（统一由基类包装为执行结果）。
 /// </summary>
-public sealed class WaitNode : INodeType
+[NodeMeta(TypeName = "wait", DisplayName = "Wait", Category = NodeCategory.Flow, Icon = "pause")]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output)]
+public sealed class WaitNode : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "wait";
-
-    /// <inheritdoc />
-    public string DisplayName => "Wait";
-
-    /// <inheritdoc />
-    public string Category => "Flow";
-
-    /// <inheritdoc />
-    public string Icon => "pause";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
     /// <summary>
     /// 等待时间。
     /// </summary>
@@ -57,26 +51,21 @@ public sealed class WaitNode : INodeType
     public WaitUnit MaxWaitUnit { get; set; } = WaitUnit.Seconds;
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
-        var inputBatch = context.GetInputBatch();
         var waitTime = CalculateWaitTime();
 
-        return await context.CatchToResult(async ct =>
+        try
         {
             await Task.Delay(waitTime, ct).ConfigureAwait(false);
-            return context.Ok(inputBatch);
-        }, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            // 取消视为节点级“已取消”业务结果，交由基类统一转换为 Cancelled 错误结果。
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.Cancelled, "等待被取消。");
+        }
+
+        return NodeHandlerOutput.Data(input.InputBatch);
     }
 
     private TimeSpan CalculateWaitTime()

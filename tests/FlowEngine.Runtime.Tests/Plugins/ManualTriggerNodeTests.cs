@@ -2,6 +2,7 @@ using System.Globalization;
 using FlowEngine.Plugins.Standard;
 using Xunit;
 
+using FlowEngine.Core.Abstractions;
 namespace FlowEngine.Runtime.Tests.Plugins;
 
 /// <summary>
@@ -15,7 +16,7 @@ public sealed class ManualTriggerNodeTests
         var context = await NodeTestContextFactory.BuildAsync(new ManualTriggerNode());
         var before = DateTime.UtcNow.AddSeconds(-1);
 
-        var result = await new ManualTriggerNode().ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new ManualTriggerNode()).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         var triggeredAt = result.Output.Items[0].Data?["triggeredAt"]?.GetValue<string>();

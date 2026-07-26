@@ -2,57 +2,37 @@ using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Ai;
+using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 
 namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
 /// 空操作节点：将输入原样传送到输出，用于调试、占位或分支布局。透传语义（OnceForAll）。
 /// </summary>
-public sealed class NoOpNode : INodeType
+[NodeMeta(TypeName = "noOp", DisplayName = "No Op", Category = NodeCategory.Flow, Icon = "noop", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class NoOpNode : NodeBase
 {
     /// <inheritdoc />
-    public string TypeName => "noOp";
-
-    /// <inheritdoc />
-    public string DisplayName => "No Op";
-
-    /// <inheritdoc />
-    public string Category => "Flow";
-
-    /// <inheritdoc />
-    public string Icon => "noop";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
-    /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
         try
         {
-            // 透传：将整个输入批次原样输出（无输入时 GetInputBatch 返回空批次）。
-            return context.Ok(context.GetInputBatch());
+            // 透传：将整个输入批次原样输出（无输入时 InputBatch 返回空批次）。
+            return Task.FromResult(NodeHandlerOutput.Data(input.InputBatch));
         }
         catch (Exception ex)
         {
-            return context.ErrorResult(FlowConstants.ErrorCodes.UnexpectedError, ex.Message);
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.UnexpectedError, ex.Message);
         }
     }
 
     /// <inheritdoc />
-    AiNodeDefinition? INodeType.GetAiDefinition(NodeTypeDescriptor descriptor) =>
+    protected override AiNodeDefinition? GetAiDefinition(NodeTypeDescriptor descriptor) =>
         AiDefinitionHelpers.Def(
             "No Op", "Flow", false,
             "空操作节点：将输入原样传送到输出，用于调试、占位或分支布局。",

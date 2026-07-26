@@ -25,7 +25,7 @@ public sealed class StopErrorNodeTests
         };
 
         var context = CreateContext(new JsonObject { ["id"] = 1 });
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.NotNull(result.Error);
@@ -42,7 +42,7 @@ public sealed class StopErrorNodeTests
         };
 
         var context = CreateContext(new JsonObject { ["id"] = 1 });
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("StopAndError", result.Error!.Code);
@@ -58,7 +58,7 @@ public sealed class StopErrorNodeTests
         };
 
         var context = CreateContext(new JsonObject { ["id"] = 1 });
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.Equal("StopAndError", result.Error!.Code);
     }
@@ -73,7 +73,7 @@ public sealed class StopErrorNodeTests
         };
 
         var context = CreateContext(new JsonObject { ["reason"] = "bad input" });
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("DomainError", result.Error!.Code);
@@ -95,7 +95,7 @@ public sealed class StopErrorNodeTests
         NodeExecutionResult? result = null;
         try
         {
-            result = await node.ExecuteAsync(context, CancellationToken.None);
+            result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
         }
         catch (Exception ex)
         {
@@ -120,7 +120,7 @@ public sealed class StopErrorNodeTests
 
         var context = CreateContext(new JsonObject { ["id"] = 1 });
 
-        var thrown = await Record.ExceptionAsync(() => node.ExecuteAsync(context, CancellationToken.None));
+        var thrown = await Record.ExceptionAsync(() => ((INodeType)node).ExecuteAsync(context, CancellationToken.None));
 
         Assert.Null(thrown);
     }
@@ -130,10 +130,10 @@ public sealed class StopErrorNodeTests
     {
         var node = new StopErrorNode();
 
-        Assert.Single(node.Ports);
-        Assert.Equal(FlowConstants.PortNames.Input, node.Ports[0].Name);
-        Assert.Equal(PortDirection.Input, node.Ports[0].Direction);
-        Assert.DoesNotContain(node.Ports, p => p.Direction == PortDirection.Output);
+        Assert.Single(((INodeType)node).Ports);
+        Assert.Equal(FlowConstants.PortNames.Input, ((INodeType)node).Ports[0].Name);
+        Assert.Equal(PortDirection.Input, ((INodeType)node).Ports[0].Direction);
+        Assert.DoesNotContain(((INodeType)node).Ports, p => p.Direction == PortDirection.Output);
     }
 
     [Fact]
@@ -141,10 +141,10 @@ public sealed class StopErrorNodeTests
     {
         var node = new StopErrorNode();
 
-        Assert.Equal("stopError", node.TypeName);
-        Assert.Equal("Flow", node.Category);
-        Assert.Equal("alert", node.Icon);
-        Assert.False(node.DefaultIsEntry);
+        Assert.Equal("stopError", ((INodeType)node).TypeName);
+        Assert.Equal("Flow", ((INodeType)node).Category);
+        Assert.Equal("alert", ((INodeType)node).Icon);
+        Assert.False(((INodeType)node).DefaultIsEntry);
     }
 
     private static NodeExecutionContext CreateContext(JsonObject inputData)

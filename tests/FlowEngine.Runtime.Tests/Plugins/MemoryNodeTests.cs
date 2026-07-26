@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
+using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Plugins.Standard;
 using Xunit;
@@ -42,7 +43,7 @@ public sealed class MemoryNodeTests
         };
         var context = await BuildContextAsync(memory);
 
-        var result = await new MemoryNode { Action = MemoryAction.Read, Key = "existing" }.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new MemoryNode { Action = MemoryAction.Read, Key = "existing" }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("stored", result.Output.Items[0].Data?.GetValue<string>());
@@ -53,7 +54,7 @@ public sealed class MemoryNodeTests
     {
         var context = await BuildContextAsync();
 
-        var result = await new MemoryNode { Action = MemoryAction.Read, Key = "missing" }.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new MemoryNode { Action = MemoryAction.Read, Key = "missing" }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("KeyNotFound", result.Error?.Code);
@@ -64,7 +65,7 @@ public sealed class MemoryNodeTests
     {
         var context = await BuildContextAsync();
 
-        var result = await new MemoryNode { Action = MemoryAction.Write, Key = "config", Value = "{\"enabled\":true}" }.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new MemoryNode { Action = MemoryAction.Write, Key = "config", Value = "{\"enabled\":true}" }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.True(context.Memory["config"]!["enabled"]!.GetValue<bool>());
@@ -76,7 +77,7 @@ public sealed class MemoryNodeTests
     {
         var context = await BuildContextAsync();
 
-        var result = await new MemoryNode { Action = MemoryAction.Write, Key = "name", Value = "hello" }.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new MemoryNode { Action = MemoryAction.Write, Key = "name", Value = "hello" }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("hello", context.Memory["name"]!.GetValue<string>());
@@ -88,7 +89,7 @@ public sealed class MemoryNodeTests
     {
         var context = await BuildContextAsync();
 
-        var result = await new MemoryNode { Action = MemoryAction.Write, Key = "input" }.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new MemoryNode { Action = MemoryAction.Write, Key = "input" }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("from-input", context.Memory["input"]!["payload"]!.GetValue<string>());
@@ -103,7 +104,7 @@ public sealed class MemoryNodeTests
         };
         var context = await BuildContextAsync(memory);
 
-        var result = await new MemoryNode { Action = MemoryAction.Clear, Key = "toRemove" }.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new MemoryNode { Action = MemoryAction.Clear, Key = "toRemove" }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.False(context.Memory.ContainsKey("toRemove"));
@@ -115,7 +116,7 @@ public sealed class MemoryNodeTests
     {
         var context = await BuildContextAsync();
 
-        var result = await new MemoryNode { Action = MemoryAction.Read, Key = " " }.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new MemoryNode { Action = MemoryAction.Read, Key = " " }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("MissingKey", result.Error?.Code);

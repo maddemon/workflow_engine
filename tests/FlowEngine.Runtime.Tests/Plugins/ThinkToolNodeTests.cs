@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
+using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Plugins.Standard;
 using Xunit;
@@ -31,7 +32,7 @@ public sealed class ThinkToolNodeTests
     {
         var context = await BuildContextAsync(JsonNode.Parse("""{"thought":"hello world"}"""));
 
-        var result = await new ThinkToolNode().ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new ThinkToolNode()).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("hello world", result.Output.Items[0].Data?["thought"]?.GetValue<string>());
@@ -42,7 +43,7 @@ public sealed class ThinkToolNodeTests
     {
         var context = await BuildContextAsync(JsonNode.Parse("""{"thinking":"thinking deeply"}"""));
 
-        var result = await new ThinkToolNode().ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new ThinkToolNode()).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("thinking deeply", result.Output.Items[0].Data?["thought"]?.GetValue<string>());
@@ -53,7 +54,7 @@ public sealed class ThinkToolNodeTests
     {
         var context = await BuildContextAsync(JsonNode.Parse("""{"content":"some content"}"""));
 
-        var result = await new ThinkToolNode().ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new ThinkToolNode()).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("some content", result.Output.Items[0].Data?["thought"]?.GetValue<string>());
@@ -64,7 +65,7 @@ public sealed class ThinkToolNodeTests
     {
         var context = await BuildContextAsync(JsonNode.Parse("""{"input":"raw input"}"""));
 
-        var result = await new ThinkToolNode().ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new ThinkToolNode()).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("raw input", result.Output.Items[0].Data?["thought"]?.GetValue<string>());
@@ -75,22 +76,22 @@ public sealed class ThinkToolNodeTests
     {
         var context = await BuildContextAsync(JsonValue.Create("scalar thought"));
 
-        var result = await new ThinkToolNode().ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new ThinkToolNode()).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("scalar thought", result.Output.Items[0].Data?["thought"]?.GetValue<string>());
     }
 
     [Fact]
-    public async Task ExecuteAsync_ResolvedParameter_FallsBackWhenNoInput()
+    public async Task ExecuteAsync_ThoughtProperty_FallsBackWhenNoInput()
     {
-        var parameters = new Dictionary<string, object> { ["thought"] = "param thought" };
-        var context = await BuildContextAsync(null, parameters);
+        var context = await BuildContextAsync(null);
 
-        var result = await new ThinkToolNode().ExecuteAsync(context, CancellationToken.None);
+        var node = new ThinkToolNode { Thought = "property thought" };
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
-        Assert.Equal("param thought", result.Output.Items[0].Data?["thought"]?.GetValue<string>());
+        Assert.Equal("property thought", result.Output.Items[0].Data?["thought"]?.GetValue<string>());
     }
 
     [Fact]
@@ -98,7 +99,7 @@ public sealed class ThinkToolNodeTests
     {
         var context = await BuildContextAsync(JsonNode.Parse("{}"));
 
-        var result = await new ThinkToolNode().ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new ThinkToolNode()).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("MissingThought", result.Error?.Code);

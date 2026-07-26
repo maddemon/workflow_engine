@@ -3,8 +3,10 @@ using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Ai;
+using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -18,13 +20,13 @@ namespace FlowEngine.Plugins.Standard;
 /// 必须声明 <see cref="FlowConstants.PortNames.Input"/> 端口：调度器（WorkflowSchedulerKernel）
 /// 仅当节点存在输入端口时，才会把触发负载写入 inputs[inputPorts[0]]。
 /// </remarks>
-public sealed class ErrorTriggerNode : INodeType
+[NodeMeta(TypeName = "errorTrigger", DisplayName = "Error Trigger", Category = NodeCategory.Trigger, Icon = "error", DefaultIsEntry = true)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class ErrorTriggerNode : NodeBase
 {
     /// <inheritdoc />
-    public string TypeName => "errorTrigger";
-
-    /// <inheritdoc />
-    AiNodeDefinition? INodeType.GetAiDefinition(NodeTypeDescriptor descriptor) =>
+    protected override AiNodeDefinition? GetAiDefinition(NodeTypeDescriptor descriptor) =>
         AiDefinitionHelpers.Def(
             "Error Trigger", "Trigger", true,
             "错误触发器：当其它工作流执行失败（产生 WorkflowFailedEvent）时触发本工作流，将失败工作流 ID 与错误信息作为首条 DataItem 传入，常用于失败补偿/告警。",
@@ -34,18 +36,6 @@ public sealed class ErrorTriggerNode : INodeType
                 JsonNode.Parse("""{"workflowId":"*"}"""),
                 JsonNode.Parse("""{"workflowId":"...","errorMessage":"...","triggeredAt":"..."}""")));
 
-    /// <inheritdoc />
-    public string DisplayName => "Error Trigger";
-
-    /// <inheritdoc />
-    public string Category => "Trigger";
-
-    /// <inheritdoc />
-    public string Icon => "error";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
     /// <summary>
     /// 被监控的工作流 ID；"*" 或留空表示监控任意工作流。
     /// </summary>
@@ -53,21 +43,11 @@ public sealed class ErrorTriggerNode : INodeType
     public string? WorkflowId { get; set; }
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => true;
-
-    /// <inheritdoc />
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
         try
         {
-            var batch = context.GetInputBatch();
+            var batch = input.InputBatch;
             var payload = new JsonObject();
 
             string? workflowId = null;
@@ -93,7 +73,7 @@ public sealed class ErrorTriggerNode : INodeType
             }
 
             // 输入未携带 workflowId 时，回退到节点参数配置。
-            workflowId ??= GetNodeParameter(context, "workflowId") ?? WorkflowId;
+            workflowId ??= GetNodeParameter("workflowId") ?? WorkflowId;
 
             // 仅在输入未自带触发时间时补充（避免覆盖调用方显式提供的值）。
             if (!payload.ContainsKey("triggeredAt"))
@@ -102,22 +82,39 @@ public sealed class ErrorTriggerNode : INodeType
             }
 
             // 仅记录触发动作与失败工作流 ID；不记录 errorMessage 原文，避免敏感/冗长内容落入日志。
-            context.Logger?.LogInformation("errorTrigger 触发，失败工作流 {WorkflowId}。", workflowId);
+            Logger?.LogInformation("errorTrigger 触发，失败工作流 {WorkflowId}。", workflowId);
 
-            return Task.FromResult(context.Ok(payload));
+            return Task.FromResult(NodeHandlerOutput.Data(new DataBatch
+            {
+                Items =
+                [
+                    new DataItem
+                    {
+                        Data = payload,
+                        Success = true,
+                        SourceIndex = 0
+                    }
+                ]
+            }));
         }
         catch (Exception ex)
         {
-            return Task.FromResult(context.ErrorResult(FlowConstants.ErrorCodes.UnexpectedError, ex.Message));
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.UnexpectedError, ex.Message);
         }
     }
 
     /// <summary>
     /// 从节点定义参数中按名称（大小写不敏感）读取字符串值。
     /// </summary>
-    private static string? GetNodeParameter(NodeExecutionContext context, string key)
+    private string? GetNodeParameter(string key)
     {
-        foreach (var kv in context.Node.Parameters)
+        var node = ExecutionContext.Node;
+        if (node is null)
+        {
+            return null;
+        }
+
+        foreach (var kv in node.Parameters)
         {
             if (string.Equals(kv.Key, key, StringComparison.OrdinalIgnoreCase) && kv.Value is string s)
             {

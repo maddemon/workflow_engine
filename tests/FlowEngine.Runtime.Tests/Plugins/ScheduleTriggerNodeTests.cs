@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using FlowEngine.Plugins.Standard;
 using Xunit;
 
+using FlowEngine.Core.Abstractions;
 namespace FlowEngine.Runtime.Tests.Plugins;
 
 /// <summary>
@@ -14,7 +15,7 @@ public sealed class ScheduleTriggerNodeTests
     {
         var context = await NodeTestContextFactory.BuildAsync(new ScheduleTriggerNode());
 
-        var result = await new ScheduleTriggerNode { Interval = ScheduleInterval.Hours, IntervalValue = 2 }.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new ScheduleTriggerNode { Interval = ScheduleInterval.Hours, IntervalValue = 2 }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         var data = result.Output.Items[0].Data as JsonObject;
@@ -29,12 +30,12 @@ public sealed class ScheduleTriggerNodeTests
     {
         var context = await NodeTestContextFactory.BuildAsync(new ScheduleTriggerNode());
 
-        var result = await new ScheduleTriggerNode
+        var result = await ((INodeType)new ScheduleTriggerNode
         {
             Interval = ScheduleInterval.Days,
             IntervalValue = 1,
             CronExpression = "0 9 * * 1-5"
-        }.ExecuteAsync(context, CancellationToken.None);
+        }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("0 9 * * 1-5", result.Output.Items[0].Data!["cronExpression"]!.GetValue<string>());

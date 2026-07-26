@@ -6,6 +6,7 @@ using FlowEngine.Core.Ai;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -18,13 +19,13 @@ namespace FlowEngine.Plugins.Standard;
 /// 调度器（WorkflowSchedulerKernel.EnqueueEntryNodesAsync）仅当节点存在输入端口时，才会把触发负载
 /// 写入 inputs[inputPorts[0]]。聊天消息须经 inputs["Input"] 进入节点，故保留 Input 端口。
 /// </remarks>
-public sealed class ChatInputNode : INodeType
+[NodeMeta(TypeName = "chatInput", DisplayName = "Chat Input", Category = NodeCategory.Trigger, Icon = "chat", DefaultIsEntry = true)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class ChatInputNode : NodeBase
 {
     /// <inheritdoc />
-    public string TypeName => "chatInput";
-
-    /// <inheritdoc />
-    AiNodeDefinition? INodeType.GetAiDefinition(NodeTypeDescriptor descriptor) =>
+    protected override AiNodeDefinition? GetAiDefinition(NodeTypeDescriptor descriptor) =>
         AiDefinitionHelpers.Def(
             "Chat Input", "Trigger", true,
             "聊天入口触发器：接收聊天窗口经 execute 端点投递的消息负载，聚合首个输入项为输出并附加触发时间、欢迎语与响应模式，是聊天型工作流的入口节点。",
@@ -33,18 +34,6 @@ public sealed class ChatInputNode : INodeType
             AiDefinitionHelpers.Example("聊天消息触发",
                 JsonNode.Parse("""{"chat":{"message":"你好","sessionId":"s1"}}"""),
                 JsonNode.Parse("""{"message":"你好","sessionId":"s1","triggeredAt":"2026-07-12T09:00:00Z"}""")));
-
-    /// <inheritdoc />
-    public string DisplayName => "Chat Input";
-
-    /// <inheritdoc />
-    public string Category => "Trigger";
-
-    /// <inheritdoc />
-    public string Icon => "chat";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
 
     /// <summary>
     /// 响应模式：Full = 完整返回；Streaming = 通过 WebSocket/SSE 增量推送（下游/流式层读取）。
@@ -60,21 +49,11 @@ public sealed class ChatInputNode : INodeType
     public string? WelcomeMessage { get; set; }
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => true;
-
-    /// <inheritdoc />
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
         try
         {
-            var batch = context.GetInputBatch();
+            var batch = input.InputBatch;
             var payload = new JsonObject();
 
             if (batch.Items.Count > 0)
@@ -113,13 +92,24 @@ public sealed class ChatInputNode : INodeType
                 payload["responseMode"] = ResponseMode.ToString();
             }
 
-            context.Logger?.LogInformation("Chat input triggered at {TriggeredAt}.", payload["triggeredAt"]!.GetValue<string>());
+            Logger?.LogInformation("Chat input triggered at {TriggeredAt}.", payload["triggeredAt"]!.GetValue<string>());
 
-            return Task.FromResult(context.Ok(payload));
+            return Task.FromResult(NodeHandlerOutput.Data(new DataBatch
+            {
+                Items =
+                [
+                    new DataItem
+                    {
+                        Data = payload,
+                        Success = true,
+                        SourceIndex = 0
+                    }
+                ]
+            }));
         }
         catch (Exception ex)
         {
-            return Task.FromResult(context.ErrorResult(FlowConstants.ErrorCodes.UnexpectedError, ex.Message));
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.UnexpectedError, ex.Message);
         }
     }
 }

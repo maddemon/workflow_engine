@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Plugins.Standard;
 using Xunit;
@@ -223,7 +224,7 @@ public sealed class CryptoNodeTests
     private static async Task<NodeExecutionResult> RunAsync(CryptoNode node)
     {
         var context = await NodeTestContextFactory.BuildAsync(new CryptoNode(), new Dictionary<string, object>());
-        return await node.ExecuteAsync(context, CancellationToken.None);
+        return await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
     }
 
     private static string Value(NodeExecutionResult result)

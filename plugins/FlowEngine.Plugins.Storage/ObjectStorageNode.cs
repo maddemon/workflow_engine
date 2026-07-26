@@ -7,6 +7,7 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 
 namespace FlowEngine.Plugins.Storage;
 
@@ -15,7 +16,10 @@ namespace FlowEngine.Plugins.Storage;
 /// 凭据使用内置 <c>s3</c> 类型（字段：endpoint/accessKey/secretKey/bucket/region）。
 /// 密钥（accessKey/secretKey）为 secret，绝不输出到日志或异常消息。
 /// </summary>
-public sealed class ObjectStorageNode : INodeType
+[NodeMeta(TypeName = "objectStorage", DisplayName = "Object Storage", Category = NodeCategory.Storage, Icon = "storage", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class ObjectStorageNode : NodeBase
 {
     /// <summary>
     /// S3 兼容存储操作类型。
@@ -80,43 +84,18 @@ public sealed class ObjectStorageNode : INodeType
     internal IAmazonS3? ClientOverride { get; set; }
 
     /// <inheritdoc />
-    public string TypeName => "objectStorage";
-
-    /// <inheritdoc />
-    public string DisplayName => "Object Storage";
-
-    /// <inheritdoc />
-    public string Category => "Storage";
-
-    /// <inheritdoc />
-    public string Icon => "storage";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
-    /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
         try
         {
             if (Connection is null)
             {
-                return context.ErrorResult(FlowConstants.ErrorCodes.MissingConnection, "S3 connection credential is required.");
+                throw new NodeExecutionException(FlowConstants.ErrorCodes.MissingConnection, "S3 connection credential is required.");
             }
 
             if (!Connection.Fields.TryGetValue("bucket", out var bucket) || string.IsNullOrWhiteSpace(bucket))
             {
-                return context.ErrorResult("MissingBucket", "S3 bucket is required in the connection credential.");
+                throw new NodeExecutionException("MissingBucket", "S3 bucket is required in the connection credential.");
             }
 
             var client = CreateClient();
@@ -125,11 +104,11 @@ public sealed class ObjectStorageNode : INodeType
             {
                 var result = Operation switch
                 {
-                    ObjectStorageOperation.Upload => await UploadAsync(client, bucket!, context, cancellationToken).ConfigureAwait(false),
-                    ObjectStorageOperation.Download => await DownloadAsync(client, bucket!, context, cancellationToken).ConfigureAwait(false),
-                    ObjectStorageOperation.Delete => await DeleteAsync(client, bucket!, context, cancellationToken).ConfigureAwait(false),
-                    ObjectStorageOperation.List => await ListAsync(client, bucket!, context, cancellationToken).ConfigureAwait(false),
-                    _ => context.ErrorResult(FlowConstants.ErrorCodes.UnexpectedError, $"Unsupported operation: {Operation}.")
+                    ObjectStorageOperation.Upload => await UploadAsync(client, bucket!, input, ct).ConfigureAwait(false),
+                    ObjectStorageOperation.Download => await DownloadAsync(client, bucket!, ct).ConfigureAwait(false),
+                    ObjectStorageOperation.Delete => await DeleteAsync(client, bucket!, ct).ConfigureAwait(false),
+                    ObjectStorageOperation.List => await ListAsync(client, bucket!, ct).ConfigureAwait(false),
+                    _ => throw new NodeExecutionException(FlowConstants.ErrorCodes.UnexpectedError, $"Unsupported operation: {Operation}.")
                 };
 
                 return result;
@@ -145,18 +124,23 @@ public sealed class ObjectStorageNode : INodeType
         }
         catch (OperationCanceledException)
         {
-            return context.ErrorResult(FlowConstants.ErrorCodes.Cancelled, "objectStorage was cancelled.");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.Cancelled, "objectStorage was cancelled.");
         }
         catch (AmazonS3Exception ex)
         {
             // 仅记录键信息，不记录凭据/密钥/桶级 secret。
-            context.Logger?.LogError(ex, "objectStorage 操作失败（操作 {Operation}，键 {Key}）。", Operation, Key);
-            return context.ErrorResult("StorageError", $"S3 operation failed: {ex.Message}");
+            Logger?.LogError(ex, "objectStorage 操作失败（操作 {Operation}，键 {Key}）。", Operation, Key);
+            throw new NodeExecutionException("StorageError", $"S3 operation failed: {ex.Message}");
         }
-        catch (Exception ex)
+        catch (NodeExecutionException)
         {
-            context.Logger?.LogError(ex, "objectStorage 未预期错误（操作 {Operation}）。", Operation);
-            return context.ErrorResult(FlowConstants.ErrorCodes.UnexpectedError, $"Unexpected error in objectStorage: {ex.Message}");
+            // 业务异常：保留原始错误码/消息，由 NodeBase 转换为失败结果。
+            throw;
+        }
+        catch (Exception ex) when (ex is not NodeExecutionException)
+        {
+            Logger?.LogError(ex, "objectStorage 未预期错误（操作 {Operation}）。", Operation);
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.UnexpectedError, $"Unexpected error in objectStorage: {ex.Message}");
         }
     }
 
@@ -195,20 +179,20 @@ public sealed class ObjectStorageNode : INodeType
     /// <summary>
     /// 上传：LocalPath 优先，否则从输入的 DataField 取 base64 字节。缺少来源 → MissingSource。
     /// </summary>
-    private async Task<NodeExecutionResult> UploadAsync(
-        IAmazonS3 client, string bucket, NodeExecutionContext context, CancellationToken cancellationToken)
+    private async Task<NodeHandlerOutput> UploadAsync(
+        IAmazonS3 client, string bucket, NodeInput input, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(Key))
         {
-            return context.ErrorResult("MissingKey", "Key is required for Upload.");
+            throw new NodeExecutionException("MissingKey", "Key is required for Upload.");
         }
 
         byte[]? bytes = !string.IsNullOrWhiteSpace(LocalPath)
             ? await File.ReadAllBytesAsync(LocalPath, cancellationToken).ConfigureAwait(false)
-            : ReadUploadBytesFromInput(context);
+            : ReadUploadBytesFromInput(input);
         if (bytes is null)
         {
-            return context.ErrorResult("MissingSource", "Upload requires LocalPath or a DataField with base64 content.");
+            throw new NodeExecutionException("MissingSource", "Upload requires LocalPath or a DataField with base64 content.");
         }
 
         using var stream = new MemoryStream(bytes);
@@ -222,9 +206,9 @@ public sealed class ObjectStorageNode : INodeType
 
         await client.PutObjectAsync(request, cancellationToken).ConfigureAwait(false);
 
-        context.Logger?.LogInformation("objectStorage 上传完成：键 {Key}，大小 {Size} 字节。", Key, bytes.Length);
+        Logger?.LogInformation("objectStorage 上传完成：键 {Key}，大小 {Size} 字节。", Key, bytes.Length);
 
-        return context.Ok(new JsonObject
+        return Single(new JsonObject
         {
             ["success"] = true,
             ["key"] = Key,
@@ -236,15 +220,15 @@ public sealed class ObjectStorageNode : INodeType
     /// <summary>
     /// 从输入批次首个 DataItem 的 <see cref="DataField"/> 读取 base64 字节；缺失或非法 → null。
     /// </summary>
-    private byte[]? ReadUploadBytesFromInput(NodeExecutionContext context)
+    private byte[]? ReadUploadBytesFromInput(NodeInput input)
     {
         if (string.IsNullOrWhiteSpace(DataField))
         {
             return null;
         }
 
-        var input = context.GetInputBatch();
-        if (input.Items.Count == 0 || input.Items[0].Data is not JsonObject obj)
+        var batch = input.InputBatch;
+        if (batch.Items.Count == 0 || batch.Items[0].Data is not JsonObject obj)
         {
             return null;
         }
@@ -267,12 +251,12 @@ public sealed class ObjectStorageNode : INodeType
     /// <summary>
     /// 下载：写入 LocalPath（若设置），否则将字节以 base64 输出到结果字段 <c>data</c>。
     /// </summary>
-    private async Task<NodeExecutionResult> DownloadAsync(
-        IAmazonS3 client, string bucket, NodeExecutionContext context, CancellationToken cancellationToken)
+    private async Task<NodeHandlerOutput> DownloadAsync(
+        IAmazonS3 client, string bucket, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(Key))
         {
-            return context.ErrorResult("MissingKey", "Key is required for Download.");
+            throw new NodeExecutionException("MissingKey", "Key is required for Download.");
         }
 
         using var response = await client.GetObjectAsync(
@@ -287,47 +271,45 @@ public sealed class ObjectStorageNode : INodeType
         if (LocalPath is { Length: > 0 })
         {
             await File.WriteAllBytesAsync(LocalPath, bytes, cancellationToken).ConfigureAwait(false);
-            context.Logger?.LogInformation("objectStorage 下载完成：键 {Key}，大小 {Size} 字节，写入 {LocalPath}。", Key, size, LocalPath);
-        }
-        else
-        {
-            var base64 = Convert.ToBase64String(bytes);
-            context.Logger?.LogInformation("objectStorage 下载完成：键 {Key}，大小 {Size} 字节。", Key, size);
+            Logger?.LogInformation("objectStorage 下载完成：键 {Key}，大小 {Size} 字节，写入 {LocalPath}。", Key, size, LocalPath);
 
-            return context.Ok(new JsonObject
+            return Single(new JsonObject
             {
                 ["success"] = true,
                 ["key"] = Key,
-                ["size"] = size,
-                ["data"] = base64
+                ["size"] = size
             });
         }
 
-        return context.Ok(new JsonObject
+        var base64 = Convert.ToBase64String(bytes);
+        Logger?.LogInformation("objectStorage 下载完成：键 {Key}，大小 {Size} 字节。", Key, size);
+
+        return Single(new JsonObject
         {
             ["success"] = true,
             ["key"] = Key,
-            ["size"] = size
+            ["size"] = size,
+            ["data"] = base64
         });
     }
 
     /// <summary>
     /// 删除：删除 bucket/Key 对象，输出 { success, key }。
     /// </summary>
-    private async Task<NodeExecutionResult> DeleteAsync(
-        IAmazonS3 client, string bucket, NodeExecutionContext context, CancellationToken cancellationToken)
+    private async Task<NodeHandlerOutput> DeleteAsync(
+        IAmazonS3 client, string bucket, CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(Key))
         {
-            return context.ErrorResult("MissingKey", "Key is required for Delete.");
+            throw new NodeExecutionException("MissingKey", "Key is required for Delete.");
         }
 
         await client.DeleteObjectAsync(
             new DeleteObjectRequest { BucketName = bucket, Key = Key }, cancellationToken).ConfigureAwait(false);
 
-        context.Logger?.LogInformation("objectStorage 删除完成：键 {Key}。", Key);
+        Logger?.LogInformation("objectStorage 删除完成：键 {Key}。", Key);
 
-        return context.Ok(new JsonObject
+        return Single(new JsonObject
         {
             ["success"] = true,
             ["key"] = Key
@@ -337,8 +319,8 @@ public sealed class ObjectStorageNode : INodeType
     /// <summary>
     /// 列出：以 bucket（可选 Prefix）列出对象，将每个对象映射为一条 DataItem { key, size, lastModified }。
     /// </summary>
-    private async Task<NodeExecutionResult> ListAsync(
-        IAmazonS3 client, string bucket, NodeExecutionContext context, CancellationToken cancellationToken)
+    private async Task<NodeHandlerOutput> ListAsync(
+        IAmazonS3 client, string bucket, CancellationToken cancellationToken)
     {
         var request = new ListObjectsV2Request
         {
@@ -365,8 +347,17 @@ public sealed class ObjectStorageNode : INodeType
             });
         }
 
-        context.Logger?.LogInformation("objectStorage 列出完成：桶 {Bucket}，返回 {Count} 个对象。", bucket, items.Count);
+        Logger?.LogInformation("objectStorage 列出完成：桶 {Bucket}，返回 {Count} 个对象。", bucket, items.Count);
 
-        return context.Ok(new DataBatch { Items = items });
+        return NodeHandlerOutput.Data(new DataBatch { Items = items });
     }
+
+    /// <summary>
+    /// 将单条 JSON 对象包装为单条 DataItem 的输出。
+    /// </summary>
+    private static NodeHandlerOutput Single(JsonObject obj) =>
+        NodeHandlerOutput.Data(new DataBatch
+        {
+            Items = [ new DataItem { Data = obj, Success = true, SourceIndex = 0 } ]
+        });
 }

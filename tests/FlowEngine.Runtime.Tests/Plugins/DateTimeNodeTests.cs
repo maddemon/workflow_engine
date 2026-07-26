@@ -1,4 +1,5 @@
 using System.Text.Json.Nodes;
+using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Plugins.Standard;
 using Xunit;
@@ -18,7 +19,7 @@ public sealed class DateTimeNodeTests
         var node = new DateTimeNode { Operation = DateTimeOperation.Now };
         var context = await NodeTestContextFactory.BuildAsync(new DateTimeNode(), new Dictionary<string, object>());
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success);
         var data = Assert.IsType<JsonObject>(result.Output.Items[0].Data);
@@ -37,7 +38,7 @@ public sealed class DateTimeNodeTests
         };
         var context = await NodeTestContextFactory.BuildAsync(new DateTimeNode(), new Dictionary<string, object>());
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success);
         var data = Assert.IsType<JsonObject>(result.Output.Items[0].Data);
@@ -58,7 +59,7 @@ public sealed class DateTimeNodeTests
         };
         var context = await NodeTestContextFactory.BuildAsync(new DateTimeNode(), new Dictionary<string, object>());
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success);
         var data = Assert.IsType<JsonObject>(result.Output.Items[0].Data);
@@ -76,7 +77,7 @@ public sealed class DateTimeNodeTests
         };
         var context = await NodeTestContextFactory.BuildAsync(new DateTimeNode(), new Dictionary<string, object>());
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success);
         var data = Assert.IsType<JsonObject>(result.Output.Items[0].Data);
@@ -96,7 +97,7 @@ public sealed class DateTimeNodeTests
         };
         var context = await NodeTestContextFactory.BuildAsync(new DateTimeNode(), new Dictionary<string, object>());
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success);
         var data = Assert.IsType<JsonObject>(result.Output.Items[0].Data);
@@ -115,7 +116,7 @@ public sealed class DateTimeNodeTests
         };
         var context = await NodeTestContextFactory.BuildAsync(new DateTimeNode(), new Dictionary<string, object>());
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("InvalidFormat", result.Error?.Code);
@@ -132,7 +133,7 @@ public sealed class DateTimeNodeTests
         };
         var context = await NodeTestContextFactory.BuildAsync(new DateTimeNode(), new Dictionary<string, object>());
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("InvalidTimezone", result.Error?.Code);
@@ -144,7 +145,7 @@ public sealed class DateTimeNodeTests
         var node = new DateTimeNode { Operation = (DateTimeOperation)999 };
         var context = await NodeTestContextFactory.BuildAsync(new DateTimeNode(), new Dictionary<string, object>());
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("UnknownOperation", result.Error?.Code);
@@ -160,7 +161,7 @@ public sealed class DateTimeNodeTests
         };
         var context = await NodeTestContextFactory.BuildAsync(new DateTimeNode(), new Dictionary<string, object>());
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("InvalidInput", result.Error?.Code);

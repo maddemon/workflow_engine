@@ -3,8 +3,10 @@ using System.Globalization;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -21,27 +23,15 @@ namespace FlowEngine.Plugins.Standard;
 ///   <item><description><see cref="ConvertTz"/> 省略 <see cref="BaseTimezone"/> 时，按 <see cref="Input"/> 自带偏移（或 UTC）解释源时刻。</description></item>
 /// </list>
 /// </remarks>
-public sealed class DateTimeNode : INodeType
+[NodeMeta(TypeName = "dateTime", DisplayName = "Date Time", Category = NodeCategory.Data, Icon = "calendar", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class DateTimeNode : NodeBase
 {
     /// <summary>
     /// 默认输出格式串（当 <see cref="Format"/> 为空时使用）。
     /// </summary>
     private const string DefaultFormat = "yyyy-MM-dd HH:mm:ss";
-
-    /// <inheritdoc />
-    public string TypeName => "dateTime";
-
-    /// <inheritdoc />
-    public string DisplayName => "Date Time";
-
-    /// <inheritdoc />
-    public string Category => "Data";
-
-    /// <inheritdoc />
-    public string Icon => "calendar";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
 
     /// <summary>
     /// 运算类型：now | format | add | diff | convertTz。
@@ -93,61 +83,45 @@ public sealed class DateTimeNode : INodeType
     public string? BaseTimezone { get; set; }
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
         try
         {
-            return Operation switch
+            var result = Operation switch
             {
-                DateTimeOperation.Now => Task.FromResult(HandleNow(context)),
-                DateTimeOperation.Format => Task.FromResult(HandleFormat(context)),
-                DateTimeOperation.Add => Task.FromResult(HandleAdd(context)),
-                DateTimeOperation.Diff => Task.FromResult(HandleDiff(context)),
-                DateTimeOperation.ConvertTz => Task.FromResult(HandleConvertTz(context)),
-                _ => Task.FromResult(context.ErrorResult("UnknownOperation", $"Unsupported Operation '{Operation}'."))
+                DateTimeOperation.Now => HandleNow(),
+                DateTimeOperation.Format => HandleFormat(),
+                DateTimeOperation.Add => HandleAdd(),
+                DateTimeOperation.Diff => HandleDiff(),
+                DateTimeOperation.ConvertTz => HandleConvertTz(),
+                _ => throw new NodeExecutionException("UnknownOperation", $"Unsupported Operation '{Operation}'.")
             };
+            return Task.FromResult(result);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not NodeExecutionException)
         {
-            return Task.FromResult(context.ErrorResult(FlowConstants.ErrorCodes.UnexpectedError, $"DateTime error: {ex.Message}"));
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.UnexpectedError, $"DateTime error: {ex.Message}");
         }
     }
 
     /// <summary>now：返回当前 UTC 时间戳。</summary>
-    private NodeExecutionResult HandleNow(NodeExecutionContext context)
+    private NodeHandlerOutput HandleNow()
     {
         var now = DateTimeOffset.UtcNow;
-        return CreateResult(context, now, now);
+        return CreateResult(now, now);
     }
 
     /// <summary>format：按 <see cref="Format"/> 格式化 <see cref="Input"/>。</summary>
-    private NodeExecutionResult HandleFormat(NodeExecutionContext context)
+    private NodeHandlerOutput HandleFormat()
     {
-        if (!TryParseInput(context, Input, out var parsed, out var error))
-        {
-            return error!;
-        }
-
-        return CreateResult(context, parsed, parsed);
+        var parsed = ParseInputOrThrow(Input);
+        return CreateResult(parsed, parsed);
     }
 
     /// <summary>add：按 <see cref="AddUnit"/> / <see cref="AddValue"/> 对 <see cref="Input"/>（或 now）增减。</summary>
-    private NodeExecutionResult HandleAdd(NodeExecutionContext context)
+    private NodeHandlerOutput HandleAdd()
     {
-        if (!TryParseInput(context, Input, out var parsed, out var error))
-        {
-            return error!;
-        }
+        var parsed = ParseInputOrThrow(Input);
 
         var result = AddUnit switch
         {
@@ -160,45 +134,46 @@ public sealed class DateTimeNode : INodeType
             _ => parsed
         };
 
-        return CreateResult(context, result, result);
+        return CreateResult(result, result);
     }
 
     /// <summary>diff：计算 <see cref="Input"/> 与 <see cref="SecondInput"/> 的差值（毫秒）。</summary>
-    private NodeExecutionResult HandleDiff(NodeExecutionContext context)
+    private NodeHandlerOutput HandleDiff()
     {
-        if (!TryParseInput(context, Input, out var start, out var startError))
-        {
-            return startError!;
-        }
-
-        if (!TryParseInput(context, SecondInput, out var end, out var endError))
-        {
-            return endError!;
-        }
+        var start = ParseInputOrThrow(Input);
+        var end = ParseInputOrThrow(SecondInput);
 
         // diff 没有"时间点"语义：timestamp 承载差值绝对值（毫秒），value 承载可读 TimeSpan。
         var diff = end - start;
         var absMilliseconds = (long)Math.Round(Math.Abs(diff.TotalMilliseconds));
 
-        return context.CreateSingleResult(new JsonObject
+        return NodeHandlerOutput.Data(new DataBatch
         {
-            ["value"] = diff.ToString(),
-            ["timestamp"] = absMilliseconds
-        }, true);
+            Items =
+            [
+                new DataItem
+                {
+                    Data = new JsonObject
+                    {
+                        ["value"] = diff.ToString(),
+                        ["timestamp"] = absMilliseconds
+                    },
+                    Success = true,
+                    SourceIndex = 0
+                }
+            ]
+        });
     }
 
     /// <summary>convertTz：将 <see cref="Input"/> 从 <see cref="BaseTimezone"/> 转换到 <see cref="Timezone"/>。</summary>
-    private NodeExecutionResult HandleConvertTz(NodeExecutionContext context)
+    private NodeHandlerOutput HandleConvertTz()
     {
         if (string.IsNullOrWhiteSpace(Timezone))
         {
-            return context.ErrorResult("MissingTimezone", "Timezone is required for the 'convertTz' operation.");
+            throw new NodeExecutionException("MissingTimezone", "Timezone is required for the 'convertTz' operation.");
         }
 
-        if (!TryParseInput(context, Input, out var input, out var inputError))
-        {
-            return inputError!;
-        }
+        var input = ParseInputOrThrow(Input);
 
         TimeZoneInfo targetTz;
         try
@@ -207,11 +182,11 @@ public sealed class DateTimeNode : INodeType
         }
         catch (TimeZoneNotFoundException)
         {
-            return context.ErrorResult("InvalidTimezone", $"Unknown target timezone '{Timezone}'.");
+            throw new NodeExecutionException("InvalidTimezone", $"Unknown target timezone '{Timezone}'.");
         }
         catch (InvalidTimeZoneException)
         {
-            return context.ErrorResult("InvalidTimezone", $"Invalid target timezone '{Timezone}'.");
+            throw new NodeExecutionException("InvalidTimezone", $"Invalid target timezone '{Timezone}'.");
         }
 
         DateTimeOffset instantUtc;
@@ -224,11 +199,11 @@ public sealed class DateTimeNode : INodeType
             }
             catch (TimeZoneNotFoundException)
             {
-                return context.ErrorResult("InvalidTimezone", $"Unknown base timezone '{BaseTimezone}'.");
+                throw new NodeExecutionException("InvalidTimezone", $"Unknown base timezone '{BaseTimezone}'.");
             }
             catch (InvalidTimeZoneException)
             {
-                return context.ErrorResult("InvalidTimezone", $"Invalid base timezone '{BaseTimezone}'.");
+                throw new NodeExecutionException("InvalidTimezone", $"Invalid base timezone '{BaseTimezone}'.");
             }
 
             // 将 Input 的"墙上时间"按源时区解释为 UTC 时刻（跳过模糊/无效时段由框架兜底）。
@@ -238,7 +213,7 @@ public sealed class DateTimeNode : INodeType
             }
             catch (ArgumentException ex)
             {
-                return context.ErrorResult("InvalidInput", $"Input is not a valid time in base timezone: {ex.Message}");
+                throw new NodeExecutionException("InvalidInput", $"Input is not a valid time in base timezone: {ex.Message}");
             }
         }
         else
@@ -250,14 +225,14 @@ public sealed class DateTimeNode : INodeType
         var targetOffset = targetTz.GetUtcOffset(instantUtc.UtcDateTime);
         var targetDisplay = new DateTimeOffset(targetLocal.Ticks, targetOffset);
 
-        return CreateResult(context, targetDisplay, instantUtc);
+        return CreateResult(targetDisplay, instantUtc);
     }
 
     /// <summary>
     /// 构造单条结果：<c>value</c> 为按格式化的字符串，<c>timestamp</c> 为 <paramref name="instant"/> 的 Unix 毫秒。
     /// 格式串非法时返回 <c>InvalidFormat</c> 错误结果。
     /// </summary>
-    private NodeExecutionResult CreateResult(NodeExecutionContext context, DateTimeOffset display, DateTimeOffset instant)
+    private NodeHandlerOutput CreateResult(DateTimeOffset display, DateTimeOffset instant)
     {
         string formatted;
         try
@@ -266,38 +241,43 @@ public sealed class DateTimeNode : INodeType
         }
         catch (FormatException ex)
         {
-            return context.ErrorResult("InvalidFormat", $"Invalid format string: {ex.Message}");
+            throw new NodeExecutionException("InvalidFormat", $"Invalid format string: {ex.Message}");
         }
 
-        return context.CreateSingleResult(new JsonObject
+        return NodeHandlerOutput.Data(new DataBatch
         {
-            ["value"] = formatted,
-            ["timestamp"] = instant.ToUnixTimeMilliseconds()
-        }, true);
+            Items =
+            [
+                new DataItem
+                {
+                    Data = new JsonObject
+                    {
+                        ["value"] = formatted,
+                        ["timestamp"] = instant.ToUnixTimeMilliseconds()
+                    },
+                    Success = true,
+                    SourceIndex = 0
+                }
+            ]
+        });
     }
 
-    /// <summary>解析输入时间；为空时回退到当前 UTC 时刻。</summary>
-    private static bool TryParseInput(
-        NodeExecutionContext context,
-        string? raw,
-        out DateTimeOffset parsed,
-        out NodeExecutionResult? error)
+    /// <summary>
+    /// 解析输入时间；为空时回退到当前 UTC 时刻；解析失败抛出 <see cref="NodeExecutionException"/>。
+    /// </summary>
+    private DateTimeOffset ParseInputOrThrow(string? raw)
     {
-        error = null;
-
         if (string.IsNullOrWhiteSpace(raw))
         {
-            parsed = DateTimeOffset.UtcNow;
-            return true;
+            return DateTimeOffset.UtcNow;
         }
 
-        if (!DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.None, out parsed))
+        if (!DateTimeOffset.TryParse(raw, CultureInfo.InvariantCulture, DateTimeStyles.None, out var parsed))
         {
-            error = context.ErrorResult("InvalidInput", $"Unable to parse datetime '{raw}'.");
-            return false;
+            throw new NodeExecutionException("InvalidInput", $"Unable to parse datetime '{raw}'.");
         }
 
-        return true;
+        return parsed;
     }
 
     /// <summary>解析输出格式串，为空时使用默认格式。</summary>

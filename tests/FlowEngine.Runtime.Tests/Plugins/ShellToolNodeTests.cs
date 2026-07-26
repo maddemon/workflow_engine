@@ -1,6 +1,7 @@
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Entities;
+using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Scripting;
 using FlowEngine.Plugins.Standard;
@@ -15,7 +16,7 @@ public class ShellToolNodeTests
         var node = new ShellToolNode { Command = "" };
         var context = CreateContext(new JsonObject { ["path"] = "test" });
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await ((INodeType)node).ExecuteAsync(context, TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
         Assert.Equal("MissingCommand", result.Error?.Code);
@@ -37,7 +38,7 @@ public class ShellToolNodeTests
         };
         var context = CreateContext(new JsonObject());
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await ((INodeType)node).ExecuteAsync(context, TestContext.Current.CancellationToken);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(0, result.Output.Items[0].Data?["exitCode"]?.GetValue<int>());
@@ -60,7 +61,7 @@ public class ShellToolNodeTests
         };
         var context = CreateContext(new JsonObject());
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await ((INodeType)node).ExecuteAsync(context, TestContext.Current.CancellationToken);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(0, result.Output.Items[0].Data?["exitCode"]?.GetValue<int>());
@@ -114,7 +115,7 @@ public class ShellToolNodeTests
         context.AllowShellExecution = false;
         context.IsAgentInvocation = false;
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("ShellExecutionDenied", result.Error?.Code);
@@ -133,7 +134,7 @@ public class ShellToolNodeTests
         context.AllowShellExecution = true;
         context.IsAgentInvocation = true;
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("ShellExecutionDenied", result.Error?.Code);
@@ -152,7 +153,7 @@ public class ShellToolNodeTests
         context.AllowShellExecution = true;
         context.IsAgentInvocation = false;
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Contains("SECURITY_OK", result.Output.Items[0].Data?["stdout"]?.GetValue<string>() ?? string.Empty);
@@ -172,7 +173,7 @@ public class ShellToolNodeTests
         var context = CreateContext(new JsonObject());
         context.AllowShellExecution = false;
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
     }

@@ -1,33 +1,22 @@
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Attributes;
+using FlowEngine.Core.Entities;
+using FlowEngine.Core.Enums;
 using FlowEngine.Core.Scripting;
 using System.ComponentModel;
 using System.Text.Json.Nodes;
-using FlowEngine.Core.Entities;
-using FlowEngine.Core.Enums;
 
 namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
 /// 聚合节点，将多个数据项合并为一个。
 /// </summary>
-public sealed class AggregateNode : INodeType
+[NodeMeta(TypeName = "aggregate", DisplayName = "Aggregate", Category = NodeCategory.Data, Icon = "layers", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class AggregateNode : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "aggregate";
-
-    /// <inheritdoc />
-    public string DisplayName => "Aggregate";
-
-    /// <inheritdoc />
-    public string Category => "Data";
-
-    /// <inheritdoc />
-    public string Icon => "layers";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
     /// <summary>
     /// 聚合模式。
     /// </summary>
@@ -47,19 +36,9 @@ public sealed class AggregateNode : INodeType
     public string OutputFieldName { get; set; } = "items";
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = nameof(FlowConstants.PortNames.Input), Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = nameof(FlowConstants.PortNames.Output), Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
-        var inputBatch = context.GetInputBatch();
+        var inputBatch = input.InputBatch;
 
         var result = Mode switch
         {
@@ -68,11 +47,7 @@ public sealed class AggregateNode : INodeType
             _ => throw new ArgumentOutOfRangeException(nameof(Mode), $"Unsupported aggregate mode: {Mode}")
         };
 
-        return Task.FromResult(new NodeExecutionResult
-        {
-            Success = true,
-            Output = result
-        });
+        return Task.FromResult(NodeHandlerOutput.Data(result));
     }
 
     private DataBatch AggregateConcatenate(DataBatch inputBatch)

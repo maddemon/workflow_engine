@@ -10,6 +10,7 @@ using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using FlowEngine.Core.Exceptions;
+using FlowEngine.Core.Http;
 using FlowEngine.Core.Scripting;
 
 namespace FlowEngine.Plugins.Standard;
@@ -19,22 +20,12 @@ namespace FlowEngine.Plugins.Standard;
 /// 二进制模式存 base64 字符串，文本模式解码为字符串。二进制一律以 base64/文本内嵌于 <c>Data</c>，
 /// 不依赖任何附件存储后端（本引擎当前无附件存储实现）。
 /// </summary>
-public sealed class ReadFileNode : INodeType
+[NodeMeta(TypeName = "readFile", DisplayName = "Read File", Category = NodeCategory.Storage, Icon = "file-read", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class ReadFileNode : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "readFile";
-
-    /// <inheritdoc />
-    public string DisplayName => "Read File";
-
-    /// <inheritdoc />
-    public string Category => "Storage";
-
-    /// <inheritdoc />
-    public string Icon => "file-read";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
+    private static readonly HttpExecutionService HttpService = new HttpExecutionService();
 
     /// <summary>
     /// 文件来源：本地磁盘路径或 http(s) URL。JS 表达式，支持 <c>$json</c> / <c>$input</c> 注入参数。必填。
@@ -62,65 +53,62 @@ public sealed class ReadFileNode : INodeType
     public string Encoding { get; set; } = "utf-8";
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
         try
         {
             if (Source is null)
             {
-                return context.ErrorResult("FileNotFound", "Source is required.");
+                throw new NodeExecutionException("FileNotFound", "Source is required.");
             }
 
             // 支持 $json/$input 注入：以首个输入项作为求值作用域（OnceForAll 仅读取单个来源）。
-            var inputBatch = context.GetInputBatch();
-            var firstItem = inputBatch.Items.Count > 0 ? inputBatch.Items[0].Data : null;
+            var inputBatch = input.InputBatch;
+            var evalItem = inputBatch.Items.Count > 0 ? inputBatch.Items[0].Data : null;
 
-            var source = await Source.EvaluateAsync<string>(context, firstItem, 0, cancellationToken: cancellationToken).ConfigureAwait(false);
+            var source = await EvaluateItemAsync<string>(Source, evalItem, 0, ct).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(source))
             {
-                return context.ErrorResult("FileNotFound", "Source is required.");
+                throw new NodeExecutionException("FileNotFound", "Source is required.");
             }
 
             byte[]? bytes = null;
             string? base64 = null;
-            string? fileName = Path.GetFileName(source);
+            string fileName = Path.GetFileName(source);
             string mime;
 
-            // URL 来源：复用 GuardSsrf 做 SSRF 预检与 HttpClientPool 取客户端，不重复 HTTP 认证/SSRF 逻辑。
+            // URL 来源：复用 GuardSsrf 做 SSRF 预检，并经 HttpExecutionService 取内容（复用其客户端池/异常处理）。
             if (source.StartsWith("http://", StringComparison.OrdinalIgnoreCase)
                 || source.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
             {
-                var ssrfBlock = context.GuardSsrf(source);
+                var ssrfBlock = GuardSsrf(source);
                 if (ssrfBlock is not null)
                 {
-                    return ssrfBlock;
+                    throw new NodeExecutionException(ssrfBlock.Error!.Code, ssrfBlock.Error.Message);
                 }
 
-                var client = context.HttpClientPool?.GetClient();
-                if (client is null)
+                var httpResult = await HttpService.ExecuteAsync(
+                    new HttpExecutionRequest { Url = source, Method = HttpMethod.Get },
+                    ExecutionContext,
+                    ct).ConfigureAwait(false);
+
+                if (!httpResult.Success)
                 {
-                    return context.ErrorResult(FlowConstants.ErrorCodes.HttpClientUnavailable, "HTTP client pool is not configured.");
+                    throw new NodeExecutionException(httpResult.Error!.Code, httpResult.Error.Message);
                 }
 
-                using var response = await client.GetAsync(source, cancellationToken).ConfigureAwait(false);
-                if (!response.IsSuccessStatusCode)
+                // HttpExecutionService 的响应体位于输出信封的 .body 下；二进制内容在此以字符串承载，
+                // 取字符串的 UTF-8 字节表示（与历史 ReadAsByteArrayAsync 在 <0x80 字节上等价，保持下游编码/输出不变）。
+                var envelope = httpResult.Output.Items.Count > 0 ? httpResult.Output.Items[0].Data as JsonObject : null;
+                var bodyNode = envelope?["body"];
+                var bodyText = bodyNode switch
                 {
-                    return context.ErrorResult("UrlFetchError",
-                        $"Failed to fetch '{fileName}' (status {(int)response.StatusCode} {response.StatusCode}).");
-                }
-
-                bytes = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
-                mime = response.Content.Headers.ContentType?.MediaType ?? InferMime(fileName);
+                    JsonValue jv => jv.GetValue<string>(),
+                    null => string.Empty,
+                    _ => bodyNode.ToJsonString()
+                };
+                bytes = System.Text.Encoding.UTF8.GetBytes(bodyText);
+                mime = InferMime(fileName);
             }
             else
             {
@@ -133,49 +121,49 @@ public sealed class ReadFileNode : INodeType
                     if (TextMode)
                     {
                         using var buffer = new MemoryStream();
-                        await fileStream.CopyToAsync(buffer, cancellationToken).ConfigureAwait(false);
+                        await fileStream.CopyToAsync(buffer, ct).ConfigureAwait(false);
                         bytes = buffer.ToArray();
                     }
                     else
                     {
                         using var base64Stream = new CryptoStream(fileStream, new ToBase64Transform(), CryptoStreamMode.Read);
                         using var base64Reader = new StreamReader(base64Stream, System.Text.Encoding.ASCII);
-                        base64 = await base64Reader.ReadToEndAsync(cancellationToken).ConfigureAwait(false);
+                        base64 = await base64Reader.ReadToEndAsync(ct).ConfigureAwait(false);
                     }
                 }
                 catch (FileNotFoundException)
                 {
-                    context.Logger?.LogWarning("readFile 未找到文件 {FileName}。", fileName);
-                    return context.ErrorResult("FileNotFound", $"File not found: '{fileName}'.");
+                    Logger?.LogWarning("readFile 未找到文件 {FileName}。", fileName);
+                    throw new NodeExecutionException("FileNotFound", $"File not found: '{fileName}'.");
                 }
                 catch (UnauthorizedAccessException)
                 {
-                    context.Logger?.LogWarning("readFile 无权限读取 {FileName}。", fileName);
-                    return context.ErrorResult("FileNotFound", $"Access denied reading file: '{fileName}'.");
+                    Logger?.LogWarning("readFile 无权限读取 {FileName}。", fileName);
+                    throw new NodeExecutionException("FileNotFound", $"Access denied reading file: '{fileName}'.");
                 }
                 catch (IOException)
                 {
-                    context.Logger?.LogWarning("readFile 读取 {FileName} 发生 IO 错误。", fileName);
-                    return context.ErrorResult("FileNotFound", $"Failed to read file: '{fileName}'.");
+                    Logger?.LogWarning("readFile 读取 {FileName} 发生 IO 错误。", fileName);
+                    throw new NodeExecutionException("FileNotFound", $"Failed to read file: '{fileName}'.");
                 }
 
                 mime = InferMime(fileName);
             }
 
-            context.Logger?.LogInformation("readFile 已读取 {FileName}（模式：{Mode}）。", fileName, TextMode ? "text" : "binary");
+            Logger?.LogInformation("readFile 已读取 {FileName}（模式：{Mode}）。", fileName, TextMode ? "text" : "binary");
 
             // 文本模式：将字节解码为字符串；编码名非法时返回 InvalidEncoding。
             JsonNode content;
             if (TextMode)
             {
-                Encoding enc;
+                System.Text.Encoding enc;
                 try
                 {
                     enc = System.Text.Encoding.GetEncoding(Encoding);
                 }
                 catch (ArgumentException)
                 {
-                    return context.ErrorResult("InvalidEncoding", $"Invalid text encoding: '{Encoding}'.");
+                    throw new NodeExecutionException("InvalidEncoding", $"Invalid text encoding: '{Encoding}'.");
                 }
 
                 content = JsonValue.Create(enc.GetString(bytes!));
@@ -194,25 +182,38 @@ public sealed class ReadFileNode : INodeType
                 ["mimeType"] = JsonValue.Create(mime)
             };
 
-            return context.Ok(obj);
+            return Single(obj);
         }
         catch (OperationCanceledException)
         {
-            return context.ErrorResult(FlowConstants.ErrorCodes.Cancelled, "readFile was cancelled.");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.Cancelled, "readFile was cancelled.");
         }
         catch (ScriptErrorException ex)
         {
-            return context.ErrorResult(FlowConstants.ErrorCodes.ScriptError, $"Source expression evaluation failed: {ex.Message}");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.ScriptError, $"Source expression evaluation failed: {ex.Message}");
         }
-        catch (HttpRequestException ex)
+        catch (Exception ex) when (ex is not NodeExecutionException)
         {
-            return context.ErrorResult("UrlFetchError", $"HTTP request failed: {ex.Message}");
-        }
-        catch (Exception ex)
-        {
-            return context.ErrorResult(FlowConstants.ErrorCodes.UnexpectedError, $"Unexpected error reading file: {ex.Message}");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.UnexpectedError, $"Unexpected error reading file: {ex.Message}");
         }
     }
+
+    /// <summary>
+    /// 构造单数据项的成功输出。
+    /// </summary>
+    private static NodeHandlerOutput Single(JsonNode? data) =>
+        NodeHandlerOutput.Data(new DataBatch
+        {
+            Items =
+            [
+                new DataItem
+                {
+                    Data = data,
+                    Success = true,
+                    SourceIndex = 0
+                }
+            ]
+        });
 
     /// <summary>
     /// 按文件扩展名简单推断 MIME 类型；未知扩展名回退为 <c>application/octet-stream</c>。

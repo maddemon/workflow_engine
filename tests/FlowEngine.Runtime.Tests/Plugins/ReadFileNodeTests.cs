@@ -27,7 +27,7 @@ public sealed class ReadFileNodeTests
         {
             var node = new ReadFileNode { Source = SourceOf(path) };
 
-            var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+            var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
             Assert.True(result.Success, result.Error?.Message);
             Assert.Single(result.Output.Items);
@@ -54,7 +54,7 @@ public sealed class ReadFileNodeTests
         {
             var node = new ReadFileNode { Source = SourceOf(path), TextMode = true };
 
-            var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+            var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
             Assert.True(result.Success, result.Error?.Message);
             Assert.Equal(text, GetString(result.Output.Items[0].Data, "data"));
@@ -73,7 +73,7 @@ public sealed class ReadFileNodeTests
 
         var node = new ReadFileNode { Source = SourceOf(path) };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("FileNotFound", result.Error?.Code);
@@ -84,7 +84,7 @@ public sealed class ReadFileNodeTests
     {
         var node = new ReadFileNode { Source = SourceOf("") };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("FileNotFound", result.Error?.Code);
@@ -95,7 +95,7 @@ public sealed class ReadFileNodeTests
     {
         var node = new ReadFileNode { Source = null };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("FileNotFound", result.Error?.Code);
@@ -110,7 +110,7 @@ public sealed class ReadFileNodeTests
 
         var node = new ReadFileNode { Source = SourceOf("http://example.com/file.bin") };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch(), pool), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch(), pool), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         var data = GetString(result.Output.Items[0].Data, "data");
@@ -126,7 +126,7 @@ public sealed class ReadFileNodeTests
 
         var node = new ReadFileNode { Source = SourceOf("http://localhost/secret") };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch(), pool), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch(), pool), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal(FlowConstants.ErrorCodes.SsrfBlocked, result.Error?.Code);
@@ -142,7 +142,7 @@ public sealed class ReadFileNodeTests
         {
             var node = new ReadFileNode { Source = SourceOf(path), BinaryField = "content" };
 
-            var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+            var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
             Assert.True(result.Success, result.Error?.Message);
             var data = GetString(result.Output.Items[0].Data, "content");
@@ -166,7 +166,7 @@ public sealed class ReadFileNodeTests
         {
             var node = new ReadFileNode { Source = SourceOf(path), TextMode = true, Encoding = "!!!not-a-real-encoding" };
 
-            var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+            var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
             Assert.False(result.Success);
             Assert.Equal("InvalidEncoding", result.Error?.Code);
@@ -183,7 +183,7 @@ public sealed class ReadFileNodeTests
         var node = new ReadFileNode { Source = SourceOf("http://example.com/x") };
 
         // HttpClientPool 为 null：外部地址通过 SSRF 预检后应报客户端不可用。
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch(), httpClientPool: null), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch(), httpClientPool: null), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal(FlowConstants.ErrorCodes.HttpClientUnavailable, result.Error?.Code);
@@ -213,7 +213,7 @@ public sealed class ReadFileNodeTests
                 },
                 httpClientPool: null);
 
-            var result = await node.ExecuteAsync(context, CancellationToken.None);
+            var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
             Assert.True(result.Success, result.Error?.Message);
             var data = GetString(result.Output.Items[0].Data, "data");

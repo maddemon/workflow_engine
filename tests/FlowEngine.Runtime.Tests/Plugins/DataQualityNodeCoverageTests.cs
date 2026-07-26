@@ -4,6 +4,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Plugins.Standard;
 using Xunit;
 
+using FlowEngine.Core.Abstractions;
 namespace FlowEngine.Runtime.Tests.Plugins;
 
 /// <summary>
@@ -57,7 +58,7 @@ public sealed class DataQualityNodeCoverageTests
         var input = BuildBatch(("email", "a@b.com"));
         var node = new DataQualityNode { Rules = "not-json" };
 
-        var result = await node.ExecuteAsync(CreateContext(input, "not-json"), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input, "not-json"), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("InvalidRules", result.Error?.Code);
@@ -69,7 +70,7 @@ public sealed class DataQualityNodeCoverageTests
         var input = BuildBatch(("email", "a@b.com"));
         var node = new DataQualityNode { Rules = "[]" };
 
-        var result = await node.ExecuteAsync(CreateContext(input, "[]"), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input, "[]"), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Output.Items);
@@ -82,7 +83,7 @@ public sealed class DataQualityNodeCoverageTests
         var rules = """[{"type":"fieldNotNull","field":"email"}]""";
         var node = new DataQualityNode { Rules = rules, PassOnFailure = false };
 
-        var result = await node.ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("DataQualityCheckFailed", result.Error?.Code);
@@ -95,7 +96,7 @@ public sealed class DataQualityNodeCoverageTests
         var rules = """[{"type":"fieldPattern","field":"email","pattern":"^[^@]+@[^@]+$"}]""";
         var node = new DataQualityNode { Rules = rules };
 
-        var result = await node.ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(2, result.Output.Items.Count);
@@ -108,7 +109,7 @@ public sealed class DataQualityNodeCoverageTests
         var rules = """[{"type":"fieldPattern","field":"email","pattern":"^[^@]+@[^@]+$"}]""";
         var node = new DataQualityNode { Rules = rules };
 
-        var result = await node.ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("DataQualityCheckFailed", result.Error?.Code);
@@ -121,7 +122,7 @@ public sealed class DataQualityNodeCoverageTests
         var rules = """[{"type":"fieldPattern","field":"email","pattern":"["}]""";
         var node = new DataQualityNode { Rules = rules };
 
-        var result = await node.ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("DataQualityCheckFailed", result.Error?.Code);
@@ -134,7 +135,7 @@ public sealed class DataQualityNodeCoverageTests
         var rules = """[{"type":"fieldRange","field":"age","min":0,"max":120}]""";
         var node = new DataQualityNode { Rules = rules };
 
-        var result = await node.ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
     }
@@ -146,7 +147,7 @@ public sealed class DataQualityNodeCoverageTests
         var rules = """[{"type":"fieldRange","field":"age","min":0,"max":120}]""";
         var node = new DataQualityNode { Rules = rules };
 
-        var result = await node.ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("DataQualityCheckFailed", result.Error?.Code);
@@ -159,7 +160,7 @@ public sealed class DataQualityNodeCoverageTests
         var rules = """[{"type":"fieldRange","field":"age","min":0,"max":120}]""";
         var node = new DataQualityNode { Rules = rules };
 
-        var result = await node.ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("DataQualityCheckFailed", result.Error?.Code);
@@ -172,7 +173,7 @@ public sealed class DataQualityNodeCoverageTests
         var rules = """[{"type":"rowCount","min":5}]""";
         var node = new DataQualityNode { Rules = rules, PassOnFailure = true };
 
-        var result = await node.ExecuteAsync(CreateContext(input, rules, true), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input, rules, true), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Single(result.Output.Items);
@@ -192,7 +193,7 @@ public sealed class DataQualityNodeCoverageTests
         var rules = """[{"type":"rowCount","min":1,"max":10}]""";
         var node = new DataQualityNode { Rules = rules };
 
-        var result = await node.ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input, rules), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("raw", result.Output.Items[0].Data!["_original"]!.GetValue<string>());

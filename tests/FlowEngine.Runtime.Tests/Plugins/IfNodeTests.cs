@@ -76,10 +76,13 @@ public sealed class IfNodeTests
         var config = new Dictionary<string, object> { ["condition"] = "$json.status === 'active'" };
         var context = await BuildContextAsync(factory, node, config, JsonNode.Parse("{\"status\":\"active\"}"));
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        // 经 NodeBase 桥接（INodeType.ExecuteAsync）执行，内部调用新的 ExecuteAsync(NodeInput, ct)。
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(0, result.BranchIndex); // True 端口
+        Assert.True(result.PortOutputs!.ContainsKey(FlowConstants.PortNames.True));
+        Assert.False(result.PortOutputs.ContainsKey(FlowConstants.PortNames.False));
         Assert.Single(result.Output.Items);
     }
 
@@ -91,10 +94,13 @@ public sealed class IfNodeTests
         var config = new Dictionary<string, object> { ["condition"] = "$json.status === 'active'" };
         var context = await BuildContextAsync(factory, node, config, JsonNode.Parse("{\"status\":\"inactive\"}"));
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        // 经 NodeBase 桥接（INodeType.ExecuteAsync）执行，内部调用新的 ExecuteAsync(NodeInput, ct)。
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(1, result.BranchIndex); // False 端口
+        Assert.True(result.PortOutputs!.ContainsKey(FlowConstants.PortNames.False));
+        Assert.False(result.PortOutputs.ContainsKey(FlowConstants.PortNames.True));
     }
 
     [Fact]
@@ -105,7 +111,8 @@ public sealed class IfNodeTests
         var config = new Dictionary<string, object>(); // 无 condition 键
         var context = await BuildContextAsync(factory, node, config, null);
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        // 经 NodeBase 桥接（INodeType.ExecuteAsync）执行，内部调用新的 ExecuteAsync(NodeInput, ct)。
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.NotNull(result.Error);
@@ -128,7 +135,8 @@ public sealed class IfNodeTests
         };
         var context = await BuildContextAsync(factory, node, config, JsonNode.Parse("{\"value\":15}"));
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        // 经 NodeBase 桥接（INodeType.ExecuteAsync）执行，内部调用新的 ExecuteAsync(NodeInput, ct)。
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(0, result.BranchIndex);

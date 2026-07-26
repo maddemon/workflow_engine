@@ -18,7 +18,7 @@ public class SubWorkflowToolNodeTests
         var node = new SubWorkflowToolNode { WorkflowJson = "" };
         var context = CreateContext(node);
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await ((INodeType)node).ExecuteAsync(context, TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
         Assert.Equal("MissingWorkflowJson", result.Error?.Code);
@@ -30,7 +30,7 @@ public class SubWorkflowToolNodeTests
         var node = new SubWorkflowToolNode { WorkflowJson = "not json" };
         var context = CreateContext(node);
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await ((INodeType)node).ExecuteAsync(context, TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
         Assert.Equal("InvalidWorkflowJson", result.Error?.Code);
@@ -46,7 +46,7 @@ public class SubWorkflowToolNodeTests
         };
         var context = CreateContext(node);
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await ((INodeType)node).ExecuteAsync(context, TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
         Assert.Equal("EmptyWorkflow", result.Error?.Code);
@@ -80,7 +80,7 @@ public class SubWorkflowToolNodeTests
         var context = CreateContext(node);
         context.NodeRegistry = CreateRegistry();
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await ((INodeType)node).ExecuteAsync(context, TestContext.Current.CancellationToken);
 
         Assert.True(result.Success, result.Error?.Message);
     }
@@ -130,8 +130,8 @@ public class SubWorkflowToolNodeTests
 
         // Execute concurrently — should not interfere with each other
         var results = await Task.WhenAll(
-            node1.ExecuteAsync(context1, TestContext.Current.CancellationToken),
-            node2.ExecuteAsync(context2, TestContext.Current.CancellationToken));
+            ((INodeType)node1).ExecuteAsync(context1, TestContext.Current.CancellationToken),
+            ((INodeType)node2).ExecuteAsync(context2, TestContext.Current.CancellationToken));
 
         Assert.True(results[0].Success, results[0].Error?.Message);
         Assert.True(results[1].Success, results[1].Error?.Message);
@@ -202,7 +202,7 @@ public class SubWorkflowToolNodeTests
         var context = CreateContext(node);
         context.NodeRegistry = CreateRegistry();
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await ((INodeType)node).ExecuteAsync(context, TestContext.Current.CancellationToken);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.NotNull(result.Output);
@@ -243,7 +243,7 @@ public class SubWorkflowToolNodeTests
         context.NestingDepth = 3; // Equals MaxNestingDepth → should be rejected
         context.NodeRegistry = CreateRegistry();
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await ((INodeType)node).ExecuteAsync(context, TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
         Assert.Equal("MaxNestingDepthExceeded", result.Error?.Code);
@@ -278,7 +278,7 @@ public class SubWorkflowToolNodeTests
         context.NestingDepth = 2; // Less than MaxNestingDepth → should succeed
         context.NodeRegistry = CreateRegistry();
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await ((INodeType)node).ExecuteAsync(context, TestContext.Current.CancellationToken);
 
         Assert.True(result.Success, result.Error?.Message);
     }

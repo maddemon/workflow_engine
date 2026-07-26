@@ -1,3 +1,4 @@
+using FlowEngine.Core.Abstractions;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Entities;
@@ -25,7 +26,7 @@ public sealed class DbUpsertNodeTests
             ["email"] = "$json.email"
         });
 
-        var first = await node.ExecuteAsync(
+        var first = await ((INodeType)node).ExecuteAsync(
             CreateContext(new DataBatch
             {
                 Items =
@@ -41,7 +42,7 @@ public sealed class DbUpsertNodeTests
         Assert.Equal(1, GetInt(firstData, "inserted"));
         Assert.Equal(0, GetInt(firstData, "updated"));
 
-        var second = await node.ExecuteAsync(
+        var second = await ((INodeType)node).ExecuteAsync(
             CreateContext(new DataBatch
             {
                 Items =
@@ -81,7 +82,7 @@ public sealed class DbUpsertNodeTests
             ["email"] = "$json.email"
         });
 
-        var result = await node.ExecuteAsync(
+        var result = await ((INodeType)node).ExecuteAsync(
             CreateContext(new DataBatch
             {
                 Items =
@@ -119,7 +120,7 @@ public sealed class DbUpsertNodeTests
             ["name"] = "$json.name"
         });
 
-        var result = await node.ExecuteAsync(
+        var result = await ((INodeType)node).ExecuteAsync(
             CreateContext(new DataBatch
             {
                 Items =
@@ -158,7 +159,7 @@ public sealed class DbUpsertNodeTests
             ["email"] = "$json.email"
         });
 
-        var result = await node.ExecuteAsync(
+        var result = await ((INodeType)node).ExecuteAsync(
             CreateContext(new DataBatch
             {
                 Items =
@@ -252,7 +253,7 @@ public sealed class DbUpsertNodeTests
             })
         };
 
-        var result = await node.ExecuteAsync(
+        var result = await ((INodeType)node).ExecuteAsync(
             CreateContext(new DataBatch
             {
                 Items =
@@ -278,7 +279,7 @@ public sealed class DbUpsertNodeTests
             Columns = ToScriptColumns(new Dictionary<string, string> { ["id"] = "$json.id" })
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("MissingConnection", result.Error?.Code);
@@ -300,7 +301,7 @@ public sealed class DbUpsertNodeTests
             Columns = ToScriptColumns(new Dictionary<string, string> { ["id"] = "$json.id" })
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("MissingConnection", result.Error?.Code);
@@ -316,7 +317,7 @@ public sealed class DbUpsertNodeTests
             Columns = ToScriptColumns(new Dictionary<string, string> { ["id"] = "$json.id" })
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("MissingTable", result.Error?.Code);
@@ -332,7 +333,7 @@ public sealed class DbUpsertNodeTests
             Mode = DbUpsertMode.Insert
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("MissingColumns", result.Error?.Code);
@@ -349,7 +350,7 @@ public sealed class DbUpsertNodeTests
             Columns = ToScriptColumns(new Dictionary<string, string> { ["id"] = "$json.id" })
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("InvalidTable", result.Error?.Code);
@@ -370,7 +371,7 @@ public sealed class DbUpsertNodeTests
             })
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("InvalidColumn", result.Error?.Code);
@@ -392,7 +393,7 @@ public sealed class DbUpsertNodeTests
             })
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("InvalidKeyColumn", result.Error?.Code);
@@ -414,7 +415,7 @@ public sealed class DbUpsertNodeTests
             })
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("MissingKeyColumn", result.Error?.Code);

@@ -1,31 +1,20 @@
 using FlowEngine.Core;
-using System.ComponentModel;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using System.ComponentModel;
 
 namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
 /// 限制节点，限制数据项数量。
 /// </summary>
-public sealed class LimitNode : INodeType
+[NodeMeta(TypeName = "limit", DisplayName = "Limit", Category = NodeCategory.Data, Icon = "hash", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class LimitNode : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "limit";
-
-    /// <inheritdoc />
-    public string DisplayName => "Limit";
-
-    /// <inheritdoc />
-    public string Category => "Data";
-
-    /// <inheritdoc />
-    public string Icon => "hash";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
     /// <summary>
     /// 最大项目数。
     /// </summary>
@@ -39,29 +28,15 @@ public sealed class LimitNode : INodeType
     public int Skip { get; set; } = 0;
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
-        var inputBatch = context.GetInputBatch();
+        var inputBatch = input.InputBatch;
 
         var items = inputBatch.Items
             .Skip(Skip)
             .Take(MaxItems)
             .ToList();
 
-        return Task.FromResult(new NodeExecutionResult
-        {
-            Success = true,
-            Output = new DataBatch { Items = items }
-        });
+        return Task.FromResult(NodeHandlerOutput.Data(new DataBatch { Items = items }));
     }
 }

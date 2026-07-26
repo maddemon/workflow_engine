@@ -76,7 +76,7 @@ public sealed class PaginateNodeTests
         };
 
         var node = new PaginateNode();
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message ?? "PaginateNode failed without error");
         // 3 页 × 2 条 = 6 条
@@ -149,7 +149,7 @@ public sealed class PaginateNodeTests
         };
 
         var node = new PaginateNode();
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message ?? "PaginateNode failed without error");
         // 第 0 页：items=[1,2] → terminateWhen($page=0) false → 继续
@@ -213,7 +213,7 @@ public sealed class PaginateNodeTests
         };
 
         var node = new PaginateNode();
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.NotNull(result.Error);
@@ -333,7 +333,7 @@ public sealed class PaginateNodeTests
                 ReturnType = ScriptReturnType.Bool
             }
         };
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.NotNull(result.Error);

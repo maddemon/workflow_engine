@@ -1,5 +1,6 @@
-﻿using System.Text.Json.Nodes;
+using System.Text.Json.Nodes;
 using FlowEngine.Core;
+using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Plugins.Storage;
 using Moq;
@@ -52,7 +53,7 @@ public sealed class RedisNodeTests
             Ttl = 60
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.True(GetBool(result.Output.Items[0].Data, "success"));
@@ -73,7 +74,7 @@ public sealed class RedisNodeTests
             Key = "k"
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.True(GetBool(result.Output.Items[0].Data, "deleted"));
@@ -101,7 +102,7 @@ public sealed class RedisNodeTests
             Key = "k"
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal(FlowConstants.ErrorCodes.MissingConnection, result.Error?.Code);
@@ -117,7 +118,7 @@ public sealed class RedisNodeTests
             Key = ""
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("MissingKey", result.Error?.Code);
@@ -155,7 +156,7 @@ public sealed class RedisNodeTests
             Ttl = 120
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(TimeSpan.FromSeconds(120), captured);
@@ -171,7 +172,7 @@ public sealed class RedisNodeTests
             Key = key,
             Value = value
         };
-        return await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        return await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
     }
 
     private static async Task<NodeExecutionResult> Get(Mock<IDatabase> db, string key)
@@ -183,7 +184,7 @@ public sealed class RedisNodeTests
             Operation = RedisOperation.Get,
             Key = key
         };
-        return await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        return await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
     }
 
     private static bool GetBool(JsonNode? node, string key)

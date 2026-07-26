@@ -19,7 +19,7 @@ public sealed class HttpToolNodeTests
         var node = new HttpToolNode { Url = "" };
         var context = CreateContext(new JsonObject { ["path"] = "test" });
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await ((INodeType)node).ExecuteAsync(context, TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
         Assert.Equal("MissingUrl", result.Error?.Code);
@@ -39,7 +39,7 @@ public sealed class HttpToolNodeTests
         };
         var context = CreateContext(new JsonObject(), pool);
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await ((INodeType)node).ExecuteAsync(context, TestContext.Current.CancellationToken);
 
         Assert.True(result.Success);
         Assert.Equal(1, handler.CallCount);
@@ -101,19 +101,19 @@ public sealed class HttpToolNodeTests
     public void ToolNode_HasCorrectMetadata()
     {
         var node = new HttpToolNode();
-        Assert.Equal("httpTool", node.TypeName);
-        Assert.Equal("HTTP Tool", node.DisplayName);
-        Assert.Equal("AI", node.Category);
-        Assert.False(node.DefaultIsEntry);
+        Assert.Equal("httpTool", ((INodeType)node).TypeName);
+        Assert.Equal("HTTP Tool", ((INodeType)node).DisplayName);
+        Assert.Equal("AI", ((INodeType)node).Category);
+        Assert.False(((INodeType)node).DefaultIsEntry);
     }
 
     [Fact]
     public void ToolNode_HasInputAndOutputPorts()
     {
         var node = new HttpToolNode();
-        Assert.Equal(3, node.Ports.Count);
-        Assert.Contains(node.Ports, p => p.Name == FlowConstants.PortNames.Input && p.Direction == PortDirection.Input);
-        Assert.Contains(node.Ports, p => p.Name == FlowConstants.PortNames.Output && p.Direction == PortDirection.Output);
+        Assert.Equal(3, ((INodeType)node).Ports.Count);
+        Assert.Contains(((INodeType)node).Ports, p => p.Name == FlowConstants.PortNames.Input && p.Direction == PortDirection.Input);
+        Assert.Contains(((INodeType)node).Ports, p => p.Name == FlowConstants.PortNames.Output && p.Direction == PortDirection.Output);
     }
 
     private static NodeExecutionContext CreateContext(JsonObject inputPayload, IHttpClientPool? pool = null)

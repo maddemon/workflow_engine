@@ -4,6 +4,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Plugins.Standard;
 using Xunit;
 
+using FlowEngine.Core.Abstractions;
 namespace FlowEngine.Runtime.Tests.Plugins;
 
 /// <summary>
@@ -26,7 +27,7 @@ public sealed class ChatInputNodeTests
         var node = new ChatInputNode();
         var context = await NodeTestContextFactory.BuildAsync(node, null, Inputs(payload));
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         var data = Assert.IsType<JsonObject>(result.Output.Items[0].Data);
@@ -49,7 +50,7 @@ public sealed class ChatInputNodeTests
         var node = new ChatInputNode();
         var context = await NodeTestContextFactory.BuildAsync(node, parameters, Inputs(payload));
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         var data = Assert.IsType<JsonObject>(result.Output.Items[0].Data);
@@ -65,7 +66,7 @@ public sealed class ChatInputNodeTests
         var node = new ChatInputNode();
         var context = await NodeTestContextFactory.BuildAsync(node, null, null);
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Null(result.Error);
@@ -83,7 +84,7 @@ public sealed class ChatInputNodeTests
         var node = new ChatInputNode();
         var context = await NodeTestContextFactory.BuildAsync(node, null, Inputs(JsonValue.Create("hi there")));
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         var data = Assert.IsType<JsonObject>(result.Output.Items[0].Data);
@@ -103,7 +104,7 @@ public sealed class ChatInputNodeTests
         var node = new ChatInputNode();
         var context = await NodeTestContextFactory.BuildAsync(node, parameters, Inputs(payload));
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         var data = Assert.IsType<JsonObject>(result.Output.Items[0].Data);

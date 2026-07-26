@@ -4,6 +4,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Plugins.Standard;
 using Xunit;
 
+using FlowEngine.Core.Abstractions;
 namespace FlowEngine.Runtime.Tests.Plugins;
 
 /// <summary>
@@ -35,7 +36,7 @@ public sealed class ChatManualNodeTests
 
         var context = await NodeTestContextFactory.BuildAsync(new ChatManualNode(), null, inputs);
 
-        var result = await new ChatManualNode().ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new ChatManualNode()).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         var data = result.Output.Items[0].Data as JsonObject;
@@ -51,7 +52,7 @@ public sealed class ChatManualNodeTests
     {
         var context = await NodeTestContextFactory.BuildAsync(new ChatManualNode(), null, null);
 
-        var result = await new ChatManualNode().ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new ChatManualNode()).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         var data = result.Output.Items[0].Data as JsonObject;
@@ -70,7 +71,7 @@ public sealed class ChatManualNodeTests
 
         var context = await NodeTestContextFactory.BuildAsync(new ChatManualNode(), null, inputs);
 
-        var result = await new ChatManualNode().ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new ChatManualNode()).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         var data = result.Output.Items[0].Data as JsonObject;

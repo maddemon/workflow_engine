@@ -6,40 +6,19 @@ using FlowEngine.Core.Ai;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 
 namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
 /// LLM 供应节点，集中管理模型配置并通过供应端口向消费节点提供 LLM 客户端实例。
+/// 在新模型中，LLM 客户端由框架依据凭据解析并经受保护属性 <see cref="NodeBase.LlmClient"/> 注入；
+/// 本节点负责校验模型/凭据并向执行上下文发布该客户端，供下游 LLM 消费节点复用。
 /// </summary>
-public sealed class LlmNode : INodeType
+[NodeMeta(TypeName = "llm", DisplayName = "LLM", Category = NodeCategory.AI, Icon = "brain", DefaultIsEntry = true)]
+[Port(FlowConstants.PortNames.Llm, "LLM", PortDirection.Output, PortType.LLM)]
+public sealed class LlmNode : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "llm";
-
-    /// <inheritdoc />
-    AiNodeDefinition? INodeType.GetAiDefinition(NodeTypeDescriptor descriptor) =>
-        AiDefinitionHelpers.Def(
-            "LLM", "AI", false,
-            "调用大语言模型处理文本/数据。常用于摘要、抽取、分类、翻译。非触发器节点，需放在触发器或上游节点之后。",
-            ["ai", "llm", "transform"],
-            JsonNode.Parse("""{"type":"object","properties":{"text":{"description":"模型输出文本"}}}"""),
-            AiDefinitionHelpers.Example("用 LLM 归类交易",
-                JsonNode.Parse("""{"prompt":"将以下流水按类型归类：工资/转账/消费","model":"gpt-4o"}"""),
-                JsonNode.Parse("""{"text":"工资: 2 笔; 消费: 5 笔"}""")));
-
-    /// <inheritdoc />
-    public string DisplayName => "LLM";
-
-    /// <inheritdoc />
-    public string Category => "AI";
-
-    /// <inheritdoc />
-    public string Icon => "brain";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
     /// <summary>
     /// 模型名称（如 gpt-4、gpt-3.5-turbo）。
     /// </summary>
@@ -72,67 +51,74 @@ public sealed class LlmNode : INodeType
     public string? BaseEndpoint { get; set; }
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Llm, DisplayName = "LLM", Direction = PortDirection.Output, Type = PortType.LLM }
-    ];
+    protected override AiNodeDefinition? GetAiDefinition(NodeTypeDescriptor descriptor) =>
+        AiDefinitionHelpers.Def(
+            "LLM", "AI", false,
+            "调用大语言模型处理文本/数据。常用于摘要、抽取、分类、翻译。非触发器节点，需放在触发器或上游节点之后。",
+            ["ai", "llm", "transform"],
+            JsonNode.Parse("{\"type\":\"object\",\"properties\":{\"text\":{\"description\":\"模型输出文本\"}}}"),
+            AiDefinitionHelpers.Example("用 LLM 归类交易",
+                JsonNode.Parse("{\"prompt\":\"将以下流水按类型归类：工资/转账/消费\",\"model\":\"gpt-4o\"}"),
+                JsonNode.Parse("{\"text\":\"工资: 2 笔; 消费: 5 笔\"}")));
 
     /// <inheritdoc />
-    public bool DefaultIsEntry => true;
-
-    /// <inheritdoc />
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(Model))
         {
-            return context.ErrorResult("MissingModel", "Model name is required.");
+            throw new NodeExecutionException("MissingModel", "Model name is required.");
         }
 
-        var credential = await context.ResolveCredentialAsync(CredentialId, cancellationToken).ConfigureAwait(false);
+        var credential = await GetCredentialAsync(CredentialId, ct).ConfigureAwait(false);
         var apiKey = credential?.Fields?.TryGetValue(FlowConstants.CredentialFields.ApiKey, out var key) == true ? key : null;
         if (apiKey is null)
         {
-            return context.ErrorResult("MissingApiKey", "API Key not available. Configure a valid credential.");
+            throw new NodeExecutionException("MissingApiKey", "API Key not available. Configure a valid credential.");
         }
 
         Uri? endpoint = null;
         if (!string.IsNullOrWhiteSpace(BaseEndpoint) && Uri.TryCreate(BaseEndpoint, UriKind.Absolute, out var uri))
         {
-            var ssrfGuard = context.GuardSsrf(BaseEndpoint);
-            if (ssrfGuard is not null) return ssrfGuard;
+            var ssrfBlock = GuardSsrf(BaseEndpoint);
+            if (ssrfBlock is not null)
+            {
+                throw new NodeExecutionException(ssrfBlock.Error!.Code, ssrfBlock.Error.Message);
+            }
 
             endpoint = uri;
         }
 
-        if (context.LlmClientFactory is null)
+        // 新模型：LLM 客户端由框架依据凭据解析并注入（受保护属性 LlmClient），
+        // 本节点负责校验其可用，并发布到执行上下文供下游 LLM 消费节点复用。
+        if (LlmClient is null)
         {
-            return context.ErrorResult(
-                "LlmClientFactoryUnavailable",
-                "LLM client factory is not available in the execution context.");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.MissingLlmClient, "LLM client not available.");
         }
 
-        ILlmClient llmClient;
-        try
-        {
-            llmClient = context.LlmClientFactory.Create(
-                apiKey: apiKey,
-                model: Model,
-                temperature: Temperature,
-                maxTokens: MaxTokens,
-                baseEndpoint: endpoint);
-        }
-        catch (Exception ex)
-        {
-            return context.ErrorResult("LlmClientCreationFailed", $"Failed to create LLM client: {ex.Message}");
-        }
+        // 发布到原始执行上下文（与历史 context.LlmClient = llmClient 语义一致）。
+        ExecutionContext.LlmClient = LlmClient;
 
-        context.LlmClient = llmClient;
-
-        return context.Ok(new JsonObject
+        return Single(new JsonObject
         {
             ["model"] = Model,
             ["status"] = "ready"
         });
     }
 
+    /// <summary>
+    /// 构造单数据项的成功输出。
+    /// </summary>
+    private static NodeHandlerOutput Single(JsonNode? data) =>
+        NodeHandlerOutput.Data(new DataBatch
+        {
+            Items =
+            [
+                new DataItem
+                {
+                    Data = data,
+                    Success = true,
+                    SourceIndex = 0
+                }
+            ]
+        });
 }

@@ -23,28 +23,16 @@ namespace FlowEngine.Plugins.Standard;
 /// <para>弱算法：<c>MD5</c> / <c>SHA1</c> 仍可实现（哈希校验等非安全场景可用），但文档标注不推荐用于安全敏感场景。</para>
 /// <para>安全：绝不向日志、异常消息或任何输出写入 <c>Key</c> / 凭据内容。</para>
 /// </remarks>
-public sealed class CryptoNode : INodeType
+[NodeMeta(TypeName = "crypto", DisplayName = "Crypto", Category = NodeCategory.Data, Icon = "lock", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class CryptoNode : NodeBase
 {
     /// <summary>AES-GCM 随机 Nonce 长度（字节）。</summary>
     private const int NonceSize = 12;
 
     /// <summary>AES-GCM 认证标签长度（字节）。</summary>
     private const int TagSize = 16;
-
-    /// <inheritdoc />
-    public string TypeName => "crypto";
-
-    /// <inheritdoc />
-    public string DisplayName => "Crypto";
-
-    /// <inheritdoc />
-    public string Category => "Data";
-
-    /// <inheritdoc />
-    public string Icon => "lock";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
 
     /// <summary>
     /// 运算类型：hash | base64Encode | base64Decode | aesEncrypt | aesDecrypt | hmacSign。
@@ -85,26 +73,13 @@ public sealed class CryptoNode : INodeType
     public CryptoOutputEncoding OutputEncoding { get; set; } = CryptoOutputEncoding.Base64;
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
         try
         {
-            if (!TryResolveEncoding(context, out var encoding, out var encodingError))
-            {
-                return encodingError!;
-            }
+            var encoding = ResolveEncoding();
 
-            var inputBatch = context.GetInputBatch();
+            var inputBatch = input.InputBatch;
             var items = inputBatch.Items.Count == 0
                 ? new List<DataItem> { new() { Data = null, SourceIndex = 0 } }
                 : inputBatch.Items;
@@ -112,58 +87,54 @@ public sealed class CryptoNode : INodeType
             var outputItems = new List<DataItem>();
             foreach (var item in items)
             {
-                var text = await ResolveInputTextAsync(context, item.Data, item.SourceIndex, cancellationToken)
+                var text = await ResolveInputTextAsync(item.Data, item.SourceIndex, ct)
                     .ConfigureAwait(false);
 
-                var result = Process(context, text ?? string.Empty, encoding!);
-                if (!result.Success)
+                var result = Process(text ?? string.Empty, encoding);
+                if (result.Error is not null)
                 {
                     return result;
                 }
 
-                outputItems.Add(result.Output.Items[0]);
+                outputItems.Add(result.Batch.Items[0]);
             }
 
-            return new NodeExecutionResult
-            {
-                Success = true,
-                Output = new DataBatch { Items = outputItems }
-            };
+            return NodeHandlerOutput.Data(new DataBatch { Items = outputItems });
         }
         catch (OperationCanceledException)
         {
-            return context.ErrorResult(FlowConstants.ErrorCodes.Cancelled, "Crypto operation was cancelled.");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.Cancelled, "Crypto operation was cancelled.");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not NodeExecutionException)
         {
             // 异常消息中不得包含 Key；仅描述操作失败。
-            return context.ErrorResult(FlowConstants.ErrorCodes.UnexpectedError, $"Crypto error: {ex.Message}");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.UnexpectedError, $"Crypto error: {ex.Message}");
         }
     }
 
     /// <summary>
-    /// 按 <see cref="Operation"/> 分发到具体运算；返回单条 <c>DataItem</c> 的成功结果或错误结果。
+    /// 按 <see cref="Operation"/> 分发到具体运算；返回单条 <c>DataItem</c> 的成功结果或失败输出。
     /// </summary>
-    private NodeExecutionResult Process(NodeExecutionContext context, string text, Encoding encoding)
+    private NodeHandlerOutput Process(string text, Encoding encoding)
     {
         return Operation switch
         {
-            CryptoOperation.Hash => HandleHash(context, text, encoding),
-            CryptoOperation.Base64Encode => HandleBase64Encode(context, text, encoding),
-            CryptoOperation.Base64Decode => HandleBase64Decode(context, text, encoding),
-            CryptoOperation.AesEncrypt => HandleAesEncrypt(context, text, encoding),
-            CryptoOperation.AesDecrypt => HandleAesDecrypt(context, text, encoding),
-            CryptoOperation.HmacSign => HandleHmacSign(context, text, encoding),
-            _ => context.ErrorResult("UnknownOperation", $"Unsupported Operation '{Operation}'.")
+            CryptoOperation.Hash => HandleHash(text, encoding),
+            CryptoOperation.Base64Encode => HandleBase64Encode(text, encoding),
+            CryptoOperation.Base64Decode => HandleBase64Decode(text, encoding),
+            CryptoOperation.AesEncrypt => HandleAesEncrypt(text, encoding),
+            CryptoOperation.AesDecrypt => HandleAesDecrypt(text, encoding),
+            CryptoOperation.HmacSign => HandleHmacSign(text, encoding),
+            _ => NodeHandlerOutput.Failure("UnknownOperation", $"Unsupported Operation '{Operation}'.")
         };
     }
 
     /// <summary>hash：对输入字节计算摘要，返回小写十六进制字符串。</summary>
-    private NodeExecutionResult HandleHash(NodeExecutionContext context, string text, Encoding encoding)
+    private NodeHandlerOutput HandleHash(string text, Encoding encoding)
     {
         if (Algorithm is not (CryptoAlgorithm.SHA256 or CryptoAlgorithm.SHA1 or CryptoAlgorithm.MD5))
         {
-            return context.ErrorResult("UnsupportedAlgorithm", $"Algorithm '{Algorithm}' is not valid for hash (use SHA256 | SHA1 | MD5).");
+            return NodeHandlerOutput.Failure("UnsupportedAlgorithm", $"Algorithm '{Algorithm}' is not valid for hash (use SHA256 | SHA1 | MD5).");
         }
 
         var bytes = encoding.GetBytes(text);
@@ -174,36 +145,69 @@ public sealed class CryptoNode : INodeType
             _ => SHA256.HashData(bytes)
         };
 
-        return context.Ok(new JsonObject { ["value"] = ToHex(digest) });
+        return NodeHandlerOutput.Data(new DataBatch
+        {
+            Items =
+            [
+                new DataItem
+                {
+                    Data = new JsonObject { ["value"] = ToHex(digest) },
+                    Success = true,
+                    SourceIndex = 0
+                }
+            ]
+        });
     }
 
     /// <summary>base64Encode：将输入文本按编码转为字节再做 Base64 编码。</summary>
-    private static NodeExecutionResult HandleBase64Encode(NodeExecutionContext context, string text, Encoding encoding)
+    private static NodeHandlerOutput HandleBase64Encode(string text, Encoding encoding)
     {
         var encoded = Convert.ToBase64String(encoding.GetBytes(text));
-        return context.Ok(new JsonObject { ["value"] = encoded });
+        return NodeHandlerOutput.Data(new DataBatch
+        {
+            Items =
+            [
+                new DataItem
+                {
+                    Data = new JsonObject { ["value"] = encoded },
+                    Success = true,
+                    SourceIndex = 0
+                }
+            ]
+        });
     }
 
     /// <summary>base64Decode：Base64 解码为字节，再按编码还原为文本。非法 Base64 返回错误结果。</summary>
-    private static NodeExecutionResult HandleBase64Decode(NodeExecutionContext context, string text, Encoding encoding)
+    private static NodeHandlerOutput HandleBase64Decode(string text, Encoding encoding)
     {
         try
         {
             var bytes = Convert.FromBase64String(text);
-            return context.Ok(new JsonObject { ["value"] = encoding.GetString(bytes) });
+            return NodeHandlerOutput.Data(new DataBatch
+            {
+                Items =
+                [
+                    new DataItem
+                    {
+                        Data = new JsonObject { ["value"] = encoding.GetString(bytes) },
+                        Success = true,
+                        SourceIndex = 0
+                    }
+                ]
+            });
         }
         catch (FormatException)
         {
-            return context.ErrorResult("InvalidInput", "Input is not valid Base64.");
+            return NodeHandlerOutput.Failure("InvalidInput", "Input is not valid Base64.");
         }
     }
 
     /// <summary>aesEncrypt：AES-GCM 加密，随机 12 字节 Nonce 与密文 + 标签拼接后按 <see cref="OutputEncoding"/> 编码输出。</summary>
-    private NodeExecutionResult HandleAesEncrypt(NodeExecutionContext context, string text, Encoding encoding)
+    private NodeHandlerOutput HandleAesEncrypt(string text, Encoding encoding)
     {
         if (string.IsNullOrEmpty(Key))
         {
-            return context.ErrorResult("MissingKey", "Key is required for aesEncrypt.");
+            return NodeHandlerOutput.Failure("MissingKey", "Key is required for aesEncrypt.");
         }
 
         var key = DeriveKey(Key!);
@@ -221,30 +225,38 @@ public sealed class CryptoNode : INodeType
             Buffer.BlockCopy(ciphertext, 0, combined, nonce.Length, ciphertext.Length);
             Buffer.BlockCopy(tag, 0, combined, nonce.Length + ciphertext.Length, tag.Length);
 
-            return context.Ok(new JsonObject { ["value"] = EncodeBytes(combined, OutputEncoding) });
+            return NodeHandlerOutput.Data(new DataBatch
+            {
+                Items =
+                [
+                    new DataItem
+                    {
+                        Data = new JsonObject { ["value"] = EncodeBytes(combined, OutputEncoding) },
+                        Success = true,
+                        SourceIndex = 0
+                    }
+                ]
+            });
         }
         catch (CryptographicException ex)
         {
-            return context.ErrorResult("EncryptFailed", $"AES encryption failed: {ex.Message}");
+            return NodeHandlerOutput.Failure("EncryptFailed", $"AES encryption failed: {ex.Message}");
         }
     }
 
     /// <summary>aesDecrypt：解析 Base64/hex 输入，拆分 Nonce/密文/标签后 AES-GCM 解密。密钥错误（标签不匹配）返回错误结果。</summary>
-    private NodeExecutionResult HandleAesDecrypt(NodeExecutionContext context, string text, Encoding encoding)
+    private NodeHandlerOutput HandleAesDecrypt(string text, Encoding encoding)
     {
         if (string.IsNullOrEmpty(Key))
         {
-            return context.ErrorResult("MissingKey", "Key is required for aesDecrypt.");
+            return NodeHandlerOutput.Failure("MissingKey", "Key is required for aesDecrypt.");
         }
 
-        if (!TryDecodeBytes(text, OutputEncoding, out var combined, out var decodeError))
-        {
-            return decodeError!;
-        }
+        var combined = DecodeBytesOrThrow(text, OutputEncoding);
 
         if (combined.Length < NonceSize + TagSize)
         {
-            return context.ErrorResult("InvalidInput", "Encrypted payload is too short.");
+            return NodeHandlerOutput.Failure("InvalidInput", "Encrypted payload is too short.");
         }
 
         var key = DeriveKey(Key!);
@@ -261,21 +273,32 @@ public sealed class CryptoNode : INodeType
             using var aes = new AesGcm(key, TagSize);
             aes.Decrypt(nonce, ciphertext, tag, plaintext);
 
-            return context.Ok(new JsonObject { ["value"] = encoding.GetString(plaintext) });
+            return NodeHandlerOutput.Data(new DataBatch
+            {
+                Items =
+                [
+                    new DataItem
+                    {
+                        Data = new JsonObject { ["value"] = encoding.GetString(plaintext) },
+                        Success = true,
+                        SourceIndex = 0
+                    }
+                ]
+            });
         }
         catch (CryptographicException)
         {
             // 标签不匹配：密钥错误或被篡改，不得泄露任何细节。
-            return context.ErrorResult("DecryptFailed", "Decryption failed: invalid key or corrupted payload.");
+            return NodeHandlerOutput.Failure("DecryptFailed", "Decryption failed: invalid key or corrupted payload.");
         }
     }
 
     /// <summary>hmacSign：以派生密钥计算 HMAC-SHA256，结果按 <see cref="OutputEncoding"/> 编码输出。</summary>
-    private NodeExecutionResult HandleHmacSign(NodeExecutionContext context, string text, Encoding encoding)
+    private NodeHandlerOutput HandleHmacSign(string text, Encoding encoding)
     {
         if (string.IsNullOrEmpty(Key))
         {
-            return context.ErrorResult("MissingKey", "Key is required for hmacSign.");
+            return NodeHandlerOutput.Failure("MissingKey", "Key is required for hmacSign.");
         }
 
         var key = DeriveKey(Key!);
@@ -283,11 +306,22 @@ public sealed class CryptoNode : INodeType
         {
             using var hmac = new HMACSHA256(key);
             var signature = hmac.ComputeHash(encoding.GetBytes(text));
-            return context.Ok(new JsonObject { ["value"] = EncodeBytes(signature, OutputEncoding) });
+            return NodeHandlerOutput.Data(new DataBatch
+            {
+                Items =
+                [
+                    new DataItem
+                    {
+                        Data = new JsonObject { ["value"] = EncodeBytes(signature, OutputEncoding) },
+                        Success = true,
+                        SourceIndex = 0
+                    }
+                ]
+            });
         }
         catch (CryptographicException ex)
         {
-            return context.ErrorResult("SignFailed", $"HMAC signing failed: {ex.Message}");
+            return NodeHandlerOutput.Failure("SignFailed", $"HMAC signing failed: {ex.Message}");
         }
     }
 
@@ -302,27 +336,18 @@ public sealed class CryptoNode : INodeType
             ? ToHex(data)
             : Convert.ToBase64String(data);
 
-    /// <summary>解析 base64 或十六进制字符串为字节；格式非法时返回错误结果。</summary>
-    private static bool TryDecodeBytes(string text, CryptoOutputEncoding outputEncoding, out byte[] bytes, out NodeExecutionResult? error)
+    /// <summary>解析 base64 或十六进制字符串为字节；格式非法时抛出 <see cref="NodeExecutionException"/>。</summary>
+    private static byte[] DecodeBytesOrThrow(string text, CryptoOutputEncoding outputEncoding)
     {
-        bytes = [];
-        error = null;
         try
         {
-            bytes = outputEncoding == CryptoOutputEncoding.Hex
+            return outputEncoding == CryptoOutputEncoding.Hex
                 ? FromHex(text)
                 : Convert.FromBase64String(text);
-
-            return true;
         }
         catch (FormatException)
         {
-            error = new NodeExecutionResult
-            {
-                Success = false,
-                Error = new NodeError { Code = "InvalidInput", Message = "Input is not valid Base64/hex for the configured OutputEncoding." }
-            };
-            return false;
+            throw new NodeExecutionException("InvalidInput", "Input is not valid Base64/hex for the configured OutputEncoding.");
         }
     }
 
@@ -356,25 +381,20 @@ public sealed class CryptoNode : INodeType
     }
 
     /// <summary>将 <see cref="Encoding"/> 枚举映射为 <see cref="System.Text.Encoding"/>。</summary>
-    private bool TryResolveEncoding(NodeExecutionContext context, out Encoding? encoding, out NodeExecutionResult? error)
+    private Encoding ResolveEncoding() => Encoding switch
     {
-        encoding = Encoding switch
-        {
-            CryptoEncoding.Utf16 => System.Text.Encoding.Unicode,
-            CryptoEncoding.Ascii => System.Text.Encoding.ASCII,
-            CryptoEncoding.Latin1 => System.Text.Encoding.Latin1,
-            _ => System.Text.Encoding.UTF8
-        };
-        error = null;
-        return true;
-    }
+        CryptoEncoding.Utf16 => System.Text.Encoding.Unicode,
+        CryptoEncoding.Ascii => System.Text.Encoding.ASCII,
+        CryptoEncoding.Latin1 => System.Text.Encoding.Latin1,
+        _ => System.Text.Encoding.UTF8
+    };
 
     /// <summary>
     /// 求值输入文本。表达式为 JS 表达式（如 <c>$json.text</c>）；若求值失败（如未加引号的字面量），
     /// 退化为将源文本作为字面量字符串，兼顾纯文本输入场景。
     /// </summary>
     private async Task<string?> ResolveInputTextAsync(
-        NodeExecutionContext context, JsonNode? item, int index, CancellationToken cancellationToken)
+        JsonNode? item, int index, CancellationToken cancellationToken)
     {
         if (Input is null || string.IsNullOrEmpty(Input.Source))
         {
@@ -383,11 +403,12 @@ public sealed class CryptoNode : INodeType
 
         try
         {
-            return await Input.EvaluateAsync<string>(context, item, index, cancellationToken: cancellationToken)
+            return await EvaluateItemAsync<string>(Input, item, index, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (ScriptErrorException)
         {
+            // 表达式求值失败：回退为字面量，不向上抛出（遵循"主动中止而非抛异常"的契约）。
             return Input.Source;
         }
     }

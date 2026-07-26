@@ -16,7 +16,7 @@ public sealed class OAuth2NodeTests
         var node = new OAuth2Node { CredentialName = "my-oauth2" };
         var context = CreateContext(new StubCredentialAccessor());
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await ((INodeType)node).ExecuteAsync(context, TestContext.Current.CancellationToken);
 
         Assert.True(result.Success);
         Assert.Single(result.Output.Items);
@@ -36,7 +36,7 @@ public sealed class OAuth2NodeTests
         var node = new OAuth2Node { CredentialName = "my-oauth2" };
         var context = CreateContext(wrappedAccessor);
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await ((INodeType)node).ExecuteAsync(context, TestContext.Current.CancellationToken);
 
         Assert.True(result.Success);
         var data = result.Output.Items[0].Data as JsonObject;
@@ -50,7 +50,7 @@ public sealed class OAuth2NodeTests
         var node = new OAuth2Node { CredentialName = "" };
         var context = CreateContext(new StubCredentialAccessor());
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await ((INodeType)node).ExecuteAsync(context, TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
         Assert.Equal("MissingCredentialName", result.Error?.Code);

@@ -6,6 +6,7 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -13,26 +14,15 @@ namespace FlowEngine.Plugins.Standard;
 /// 工作流工具节点，作为 Agent 的工具调用子工作流。
 /// 支持从数据库引用已有工作流或内嵌 JSON 定义。
 /// </summary>
-public sealed class SubWorkflowToolNode : INodeType
+[NodeMeta(TypeName = "workflowTool", DisplayName = "Workflow Tool", Category = NodeCategory.AI, Icon = "layers", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+[Port(FlowConstants.PortNames.Tools, "Tool Output", PortDirection.Output, PortType.AgentTool)]
+public sealed class SubWorkflowToolNode : NodeBase
 {
     private const int DefaultMaxNestingDepth = 5;
     private const int MinMaxNestingDepth = 1;
     private const int MaxMaxNestingDepth = 20;
-
-    /// <inheritdoc />
-    public string TypeName => "workflowTool";
-
-    /// <inheritdoc />
-    public string DisplayName => "Workflow Tool";
-
-    /// <inheritdoc />
-    public string Category => "AI";
-
-    /// <inheritdoc />
-    public string Icon => "layers";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
 
     /// <summary>
     /// 工作流来源。
@@ -80,26 +70,15 @@ public sealed class SubWorkflowToolNode : INodeType
     public int MaxNestingDepth { get; set; } = DefaultMaxNestingDepth;
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Tools, DisplayName = "Tool Output", Direction = PortDirection.Output, Type = PortType.AgentTool }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
-        var effectiveMaxNestingDepth = ResolveMaxNestingDepth(context);
+        var effectiveMaxNestingDepth = ResolveMaxNestingDepth();
 
-        if (context.NestingDepth >= effectiveMaxNestingDepth)
+        if (NestingLevel >= effectiveMaxNestingDepth)
         {
-            return context.ErrorResult(
+            throw new NodeExecutionException(
                 "MaxNestingDepthExceeded",
-                $"SubWorkflow nesting depth {context.NestingDepth} exceeds maximum allowed depth of {effectiveMaxNestingDepth}.");
+                $"SubWorkflow nesting depth {NestingLevel} exceeds maximum allowed depth of {effectiveMaxNestingDepth}.");
         }
 
         Workflow? workflow = null;
@@ -108,46 +87,41 @@ public sealed class SubWorkflowToolNode : INodeType
         {
             if (string.IsNullOrWhiteSpace(WorkflowId))
             {
-                return context.ErrorResult("MissingWorkflowId", "WorkflowId is required when Source is Database.");
+                throw new NodeExecutionException("MissingWorkflowId", "WorkflowId is required when Source is Database.");
             }
 
             if (!Guid.TryParse(WorkflowId, out var workflowId))
             {
-                return context.ErrorResult("InvalidWorkflowId", $"WorkflowId '{WorkflowId}' is not a valid GUID.");
+                throw new NodeExecutionException("InvalidWorkflowId", $"WorkflowId '{WorkflowId}' is not a valid GUID.");
             }
 
-            if (context.WorkflowLoader is null)
-            {
-                return context.ErrorResult("WorkflowLoaderNotAvailable", "Workflow loader is not available in the current execution context.");
-            }
-
-            workflow = await context.WorkflowLoader.LoadAsync(workflowId, cancellationToken).ConfigureAwait(false);
+            workflow = await LoadWorkflowAsync(workflowId, ct).ConfigureAwait(false);
             if (workflow is null)
             {
-                return context.ErrorResult("WorkflowNotFound", $"Workflow '{WorkflowId}' not found in database.");
+                throw new NodeExecutionException("WorkflowNotFound", $"Workflow '{WorkflowId}' not found in database.");
             }
         }
         else // Inline
         {
             if (string.IsNullOrWhiteSpace(WorkflowJson))
             {
-                return context.ErrorResult("MissingWorkflowJson", "WorkflowJson is required when Source is Inline.");
+                throw new NodeExecutionException("MissingWorkflowJson", "WorkflowJson is required when Source is Inline.");
             }
 
-            if (!context.TryParseJson<Workflow>(WorkflowJson, out workflow, out var parseError, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }))
+            if (!TryParseJson<Workflow>(WorkflowJson, out workflow, out var parseError, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }))
             {
-                return context.ErrorResult("InvalidWorkflowJson", $"Failed to parse workflow JSON: {parseError}");
+                throw new NodeExecutionException("InvalidWorkflowJson", $"Failed to parse workflow JSON: {parseError}");
             }
         }
 
         var validationError = WorkflowValidator.EnsureNonEmpty(workflow);
         if (validationError is not null)
         {
-            return context.ErrorResult("EmptyWorkflow", validationError);
+            throw new NodeExecutionException("EmptyWorkflow", validationError);
         }
 
         using var timeoutCts = TimeoutSeconds.HasValue
-            ? CancellationTokenSource.CreateLinkedTokenSource(cancellationToken)
+            ? CancellationTokenSource.CreateLinkedTokenSource(ct)
             : null;
 
         if (timeoutCts is not null && TimeoutSeconds.HasValue)
@@ -155,51 +129,61 @@ public sealed class SubWorkflowToolNode : INodeType
             timeoutCts.CancelAfter(TimeSpan.FromSeconds(TimeoutSeconds.Value));
         }
 
-        var effectiveToken = timeoutCts?.Token ?? cancellationToken;
+        var effectiveToken = timeoutCts?.Token ?? ct;
 
         try
         {
-            var executor = new SubWorkflowExecutor(context.NodeRegistry, context.NestingDepth + 1);
-            var inputBatch = context.GetInputBatch();
+            var executor = new SubWorkflowExecutor(Registry, NestingLevel + 1);
+            var inputBatch = input.InputBatch;
             var inputPayload = inputBatch.Items.Count > 0 ? inputBatch.Items[0].Data : null;
             var result = await executor.ExecuteAsync(workflow!, inputPayload, effectiveToken).ConfigureAwait(false);
-            return result;
+
+            if (!result.Success)
+            {
+                throw new NodeExecutionException(result.Error!.Code, result.Error!.Message);
+            }
+
+            return NodeHandlerOutput.Data(result.Output);
         }
         catch (OperationCanceledException) when (timeoutCts is not null)
         {
-            return context.ErrorResult("SubWorkflowTimeout", "Sub-workflow execution timed out.");
+            throw new NodeExecutionException("SubWorkflowTimeout", "Sub-workflow execution timed out.");
+        }
+        catch (NodeExecutionException)
+        {
+            throw;
         }
         catch (Exception ex)
         {
-            return context.ErrorResult("SubWorkflowError", $"Sub-workflow execution failed: {ex.Message}");
+            throw new NodeExecutionException("SubWorkflowError", $"Sub-workflow execution failed: {ex.Message}");
         }
     }
 
     /// <summary>
     /// 从节点参数解析最大嵌套深度，未配置时使用属性默认值，并校验范围 [1, 20]。
     /// </summary>
-    private int ResolveMaxNestingDepth(NodeExecutionContext context)
+    private int ResolveMaxNestingDepth()
     {
-        if (context.ResolvedParameters.TryGetValue("maxNestingDepth", out var val) &&
-            val is JsonValue jsonVal &&
-            jsonVal.TryGetValue<int>(out var depth))
+        var depth = CoerceInt(GetResolvedParameter("maxNestingDepth"));
+        if (depth.HasValue)
         {
-            if (depth < MinMaxNestingDepth)
-            {
-                return MinMaxNestingDepth;
-            }
-
-            if (depth > MaxMaxNestingDepth)
-            {
-                return MaxMaxNestingDepth;
-            }
-
-            return depth;
+            if (depth.Value < MinMaxNestingDepth) return MinMaxNestingDepth;
+            if (depth.Value > MaxMaxNestingDepth) return MaxMaxNestingDepth;
+            return depth.Value;
         }
 
         return MaxNestingDepth;
     }
 
+    /// <summary>
+    /// 将可能的 JsonValue 或已解析的 CLR 值安全转换为 int。
+    /// </summary>
+    private static int? CoerceInt(object? raw)
+    {
+        if (raw is int i) return i;
+        if (raw is JsonValue jv && jv.TryGetValue<int>(out var ji)) return ji;
+        return null;
+    }
 }
 
 /// <summary>

@@ -28,7 +28,7 @@ public sealed class SubWorkflowExecutorTests
         var context = CreateContext(node);
         context.NodeRegistry = null;
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("NoNodeRegistry", result.Error?.Code);
@@ -65,7 +65,7 @@ public sealed class SubWorkflowExecutorTests
         var context = CreateContext(node);
         context.NodeRegistry = CreateRegistry();
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("NoEntryNode", result.Error?.Code);
@@ -93,7 +93,7 @@ public sealed class SubWorkflowExecutorTests
         var context = CreateContext(node);
         context.NodeRegistry = CreateRegistry();
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("InvalidOperationException", result.Error?.Code);
@@ -151,7 +151,7 @@ public sealed class SubWorkflowExecutorTests
         var context = CreateContext(node);
         context.NodeRegistry = CreateRegistry();
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("true", result.Output.Items[0].Data?["branch"]?.GetValue<string>());
@@ -209,7 +209,7 @@ public sealed class SubWorkflowExecutorTests
         var context = CreateContext(node);
         context.NodeRegistry = CreateRegistry();
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("false", result.Output.Items[0].Data?["branch"]?.GetValue<string>());
@@ -239,7 +239,7 @@ public sealed class SubWorkflowExecutorTests
         var context = CreateContext(node);
         context.NodeRegistry = CreateRegistry();
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         var data = result.Output.Items[0].Data!;
@@ -273,7 +273,7 @@ public sealed class SubWorkflowExecutorTests
         var context = CreateContext(node);
         context.NodeRegistry = CreateRegistry();
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         var data = result.Output.Items[0].Data!;

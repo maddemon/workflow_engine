@@ -4,6 +4,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Plugins.Standard;
 using Xunit;
 
+using FlowEngine.Core.Abstractions;
 namespace FlowEngine.Runtime.Tests.Plugins;
 
 /// <summary>
@@ -37,7 +38,7 @@ public sealed class LimitNodeTests
     {
         var context = await BuildContextAsync(1, 2, 3, 4, 5);
 
-        var result = await new LimitNode { MaxItems = 2 }.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new LimitNode { MaxItems = 2 }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(2, result.Output.Items.Count);
@@ -50,7 +51,7 @@ public sealed class LimitNodeTests
     {
         var context = await BuildContextAsync(1, 2, 3, 4, 5);
 
-        var result = await new LimitNode { Skip = 2, MaxItems = 2 }.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new LimitNode { Skip = 2, MaxItems = 2 }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(2, result.Output.Items.Count);
@@ -63,7 +64,7 @@ public sealed class LimitNodeTests
     {
         var context = await BuildContextAsync(1, 2);
 
-        var result = await new LimitNode { Skip = 5 }.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new LimitNode { Skip = 5 }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Empty(result.Output.Items);
@@ -74,7 +75,7 @@ public sealed class LimitNodeTests
     {
         var context = await BuildContextAsync();
 
-        var result = await new LimitNode { MaxItems = 10 }.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new LimitNode { MaxItems = 10 }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Empty(result.Output.Items);

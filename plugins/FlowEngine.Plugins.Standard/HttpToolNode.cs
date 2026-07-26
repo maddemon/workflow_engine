@@ -4,6 +4,7 @@ using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Scripting;
 
 namespace FlowEngine.Plugins.Standard;
@@ -12,23 +13,12 @@ namespace FlowEngine.Plugins.Standard;
 /// HTTP 工具节点，作为 Agent 的工具被调用。
 /// 支持静态配置（method、URL、authentication）和占位符机制。
 /// </summary>
-public sealed class HttpToolNode : INodeType
+[NodeMeta(TypeName = "httpTool", DisplayName = "HTTP Tool", Category = NodeCategory.AI, Icon = "globe", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+[Port(FlowConstants.PortNames.Tools, "Tool Output", PortDirection.Output, PortType.AgentTool)]
+public sealed class HttpToolNode : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "httpTool";
-
-    /// <inheritdoc />
-    public string DisplayName => "HTTP Tool";
-
-    /// <inheritdoc />
-    public string Category => "AI";
-
-    /// <inheritdoc />
-    public string Icon => "globe";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
     /// <summary>
     /// HTTP 方法。
     /// </summary>
@@ -98,32 +88,15 @@ public sealed class HttpToolNode : INodeType
     public Script? BodyExpression { get; set; }
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Tools, DisplayName = "Tool Output", Direction = PortDirection.Output, Type = PortType.AgentTool }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
-        return HttpNodeExecution.ExecuteAsync(
-            context,
-            Url,
-            Method,
-            Authentication,
-            CredentialId,
-            QueryParameterName,
-            SendHeaders,
-            HeadersExpression,
-            SendBody,
-            BodyExpression,
-            null,
-            cancellationToken);
+        var result = await HttpNodeExecution.ExecuteAsync(ExecutionContext, Url, Method, Authentication, CredentialId, QueryParameterName, SendHeaders, HeadersExpression, SendBody, BodyExpression, null, ct).ConfigureAwait(false);
+        if (!result.Success)
+        {
+            throw new NodeExecutionException(result.Error!.Code, result.Error.Message);
+        }
+
+        return NodeHandlerOutput.Data(result.Output);
     }
 }
 

@@ -1,6 +1,7 @@
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Ai;
+using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
 using System.Text.Json.Nodes;
@@ -10,13 +11,12 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// 手动触发器节点，用于手动测试工作流。
 /// </summary>
-public sealed class ManualTriggerNode : INodeType
+[NodeMeta(TypeName = "manualTrigger", DisplayName = "Manual Trigger", Category = NodeCategory.Trigger, Icon = "play", DefaultIsEntry = true)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class ManualTriggerNode : NodeBase
 {
     /// <inheritdoc />
-    public string TypeName => "manualTrigger";
-
-    /// <inheritdoc />
-    AiNodeDefinition? INodeType.GetAiDefinition(NodeTypeDescriptor descriptor) =>
+    protected override AiNodeDefinition? GetAiDefinition(NodeTypeDescriptor descriptor) =>
         AiDefinitionHelpers.Def(
             "Manual Trigger", "Trigger", true,
             "人工手动触发工作流，是工作流的入口节点。常用于测试、调试或在 UI 中点击执行。",
@@ -27,33 +27,23 @@ public sealed class ManualTriggerNode : INodeType
                 JsonNode.Parse("""{"triggeredAt":"2026-07-12T09:00:00Z"}""")));
 
     /// <inheritdoc />
-    public string DisplayName => "Manual Trigger";
-
-    /// <inheritdoc />
-    public string Category => "Trigger";
-
-    /// <inheritdoc />
-    public string Icon => "play";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
-    /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => true;
-
-    /// <inheritdoc />
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
         // Manual trigger just outputs an empty object
-        return Task.FromResult(context.Ok(new System.Text.Json.Nodes.JsonObject
+        return Task.FromResult(NodeHandlerOutput.Data(new DataBatch
         {
-            ["triggeredAt"] = DateTime.UtcNow.ToString("o")
+            Items =
+            [
+                new DataItem
+                {
+                    Data = new JsonObject
+                    {
+                        ["triggeredAt"] = DateTime.UtcNow.ToString("o")
+                    },
+                    Success = true,
+                    SourceIndex = 0
+                }
+            ]
         }));
     }
 }

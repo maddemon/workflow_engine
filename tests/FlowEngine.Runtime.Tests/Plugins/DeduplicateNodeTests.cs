@@ -4,6 +4,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Plugins.Standard;
 using Xunit;
 
+using FlowEngine.Core.Abstractions;
 namespace FlowEngine.Runtime.Tests.Plugins;
 
 /// <summary>
@@ -33,7 +34,7 @@ public sealed class DeduplicateNodeTests
         var dup = JsonNode.Parse("{\"id\":1}");
         var context = await BuildContextAsync(dup, dup, JsonNode.Parse("{\"id\":2}"));
 
-        var result = await new DeduplicateNode { KeepFirst = true }.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new DeduplicateNode { KeepFirst = true }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(2, result.Output.Items.Count);
@@ -49,7 +50,7 @@ public sealed class DeduplicateNodeTests
             JsonNode.Parse("{\"group\":\"a\",\"seq\":2}"),
             JsonNode.Parse("{\"group\":\"b\",\"seq\":3}"));
 
-        var result = await new DeduplicateNode { CompareField = "group", KeepFirst = true }.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new DeduplicateNode { CompareField = "group", KeepFirst = true }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(2, result.Output.Items.Count);
@@ -65,7 +66,7 @@ public sealed class DeduplicateNodeTests
             JsonNode.Parse("{\"group\":\"a\",\"seq\":2}"),
             JsonNode.Parse("{\"group\":\"b\",\"seq\":3}"));
 
-        var result = await new DeduplicateNode { CompareField = "group", KeepFirst = false }.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new DeduplicateNode { CompareField = "group", KeepFirst = false }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(2, result.Output.Items.Count);
@@ -81,7 +82,7 @@ public sealed class DeduplicateNodeTests
             JsonNode.Parse("{\"id\":2}"),
             JsonNode.Parse("{\"id\":3}"));
 
-        var result = await new DeduplicateNode().ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new DeduplicateNode()).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(3, result.Output.Items.Count);
@@ -92,7 +93,7 @@ public sealed class DeduplicateNodeTests
     {
         var context = await BuildContextAsync(null, null, JsonNode.Parse("{\"id\":1}"));
 
-        var result = await new DeduplicateNode { KeepFirst = true }.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new DeduplicateNode { KeepFirst = true }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(2, result.Output.Items.Count);

@@ -12,13 +12,12 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// Webhook 节点，接收外部 HTTP 请求并触发工作流。
 /// </summary>
-public sealed class WebhookNode : INodeType
+[NodeMeta(TypeName = "webhook", DisplayName = "Webhook", Category = NodeCategory.Trigger, Icon = "webhook", DefaultIsEntry = true)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class WebhookNode : NodeBase
 {
     /// <inheritdoc />
-    public string TypeName => "webhook";
-
-    /// <inheritdoc />
-    AiNodeDefinition? INodeType.GetAiDefinition(NodeTypeDescriptor descriptor) =>
+    protected override AiNodeDefinition? GetAiDefinition(NodeTypeDescriptor descriptor) =>
         AiDefinitionHelpers.Def(
             "Webhook Trigger", "Trigger", true,
             "通过 HTTP Webhook 触发工作流，是工作流的入口节点。外部系统向本节点分配的 URL 发送请求即触发，请求体作为工作流输入。",
@@ -27,18 +26,6 @@ public sealed class WebhookNode : INodeType
             AiDefinitionHelpers.Example("Webhook 触发",
                 JsonNode.Parse("{}"),
                 JsonNode.Parse("""{"triggeredAt":"2026-07-12T09:00:00Z"}""")));
-
-    /// <inheritdoc />
-    public string DisplayName => "Webhook";
-
-    /// <inheritdoc />
-    public string Category => "Trigger";
-
-    /// <inheritdoc />
-    public string Icon => "webhook";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
 
     /// <summary>
     /// HTTP 方法。
@@ -66,21 +53,12 @@ public sealed class WebhookNode : INodeType
     public string ResponseData { get; set; } = string.Empty;
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => true;
-
-    /// <inheritdoc />
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
         // In a real implementation, this node would be triggered by an HTTP request
         // For now, we'll simulate receiving data from the trigger payload
 
-        var triggerPayload = GetTriggerPayload(context);
+        var triggerPayload = GetTriggerPayload(input);
 
         var outputBatch = new DataBatch
         {
@@ -102,17 +80,13 @@ public sealed class WebhookNode : INodeType
             ]
         };
 
-        return Task.FromResult(new NodeExecutionResult
-        {
-            Success = true,
-            Output = outputBatch
-        });
+        return Task.FromResult(NodeHandlerOutput.Data(outputBatch));
     }
 
-    private JsonNode? GetTriggerPayload(NodeExecutionContext context)
+    private JsonNode? GetTriggerPayload(NodeInput input)
     {
         // Check if there's trigger data in the context
-        if (context.Inputs.TryGetValue("trigger", out var triggerBatch) && triggerBatch.Items.Count > 0)
+        if (input.AllInputs.TryGetValue("trigger", out var triggerBatch) && triggerBatch.Items.Count > 0)
         {
             return triggerBatch.Items[0].Data;
         }

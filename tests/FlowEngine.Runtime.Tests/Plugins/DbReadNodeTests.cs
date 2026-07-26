@@ -1,3 +1,4 @@
+using FlowEngine.Core.Abstractions;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Entities;
@@ -23,7 +24,7 @@ public sealed class DbReadNodeTests
 
         var node = CreateNode(connectionString, "SELECT \"id\", \"name\", \"email\" FROM users ORDER BY \"id\"");
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(2, result.Output.Items.Count);
@@ -45,7 +46,7 @@ public sealed class DbReadNodeTests
 
         var node = CreateNode(connectionString, "SELECT * FROM users WHERE 1 = 0");
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Empty(result.Output.Items);
@@ -59,7 +60,7 @@ public sealed class DbReadNodeTests
             Sql = Literal("SELECT 1")
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("MissingConnection", result.Error?.Code);
@@ -74,7 +75,7 @@ public sealed class DbReadNodeTests
 
         var node = CreateNode(connectionString, "DELETE FROM users");
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("ReadOnlyViolation", result.Error?.Code);
@@ -90,7 +91,7 @@ public sealed class DbReadNodeTests
 
         var node = CreateNode(connectionString, "WITH cte AS (SELECT \"name\" FROM users WHERE \"id\" = 7) SELECT * FROM cte");
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Output.Items);
@@ -106,7 +107,7 @@ public sealed class DbReadNodeTests
 
         var node = CreateNode(connectionString, "SELECT * FROM nonexistent_table_xyz");
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("DbError", result.Error?.Code);
@@ -127,7 +128,7 @@ public sealed class DbReadNodeTests
             Sql = (Script)sqlSrc
         };
 
-        var result = await node.ExecuteAsync(
+        var result = await ((INodeType)node).ExecuteAsync(
             CreateContext(new DataBatch
             {
                 Items =
@@ -162,7 +163,7 @@ public sealed class DbReadNodeTests
             }
         };
 
-        var result = await node.ExecuteAsync(
+        var result = await ((INodeType)node).ExecuteAsync(
             CreateContext(new DataBatch
             {
                 Items =
@@ -197,7 +198,7 @@ public sealed class DbReadNodeTests
             }
         };
 
-        var result = await node.ExecuteAsync(
+        var result = await ((INodeType)node).ExecuteAsync(
             CreateContext(new DataBatch
             {
                 Items =
@@ -292,7 +293,7 @@ public sealed class DbReadNodeTests
 
         var node = CreateNode(connectionString, "SELECT \"id\" INTO other_table FROM users");
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("ReadOnlyViolation", result.Error?.Code);
@@ -307,7 +308,7 @@ public sealed class DbReadNodeTests
 
         var node = CreateNode(connectionString, "SELECT 1; DROP TABLE users");
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("ReadOnlyViolation", result.Error?.Code);

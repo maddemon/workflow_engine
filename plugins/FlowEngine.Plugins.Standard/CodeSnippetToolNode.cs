@@ -16,23 +16,12 @@ namespace FlowEngine.Plugins.Standard;
 /// 代码执行工具节点，作为 Agent 的工具被调用。
 /// 用户预定义代码，LLM 只提供输入参数。
 /// </summary>
-public sealed class CodeSnippetToolNode : INodeType
+[NodeMeta(TypeName = "codeTool", DisplayName = "Code Tool", Category = NodeCategory.AI, Icon = "code", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+[Port(FlowConstants.PortNames.Tools, "Tool Output", PortDirection.Output, PortType.AgentTool)]
+public sealed class CodeSnippetToolNode : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "codeTool";
-
-    /// <inheritdoc />
-    public string DisplayName => "Code Tool";
-
-    /// <inheritdoc />
-    public string Category => "AI";
-
-    /// <inheritdoc />
-    public string Icon => "code";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
     /// <summary>
     /// 预定义代码。
     /// </summary>
@@ -47,41 +36,33 @@ public sealed class CodeSnippetToolNode : INodeType
     public string ToolDescription { get; set; } = string.Empty;
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Tools, DisplayName = "Tool Output", Direction = PortDirection.Output, Type = PortType.AgentTool }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
         if (Code is null || string.IsNullOrWhiteSpace(Code.Source))
         {
-            return context.ErrorResult(FlowConstants.ErrorCodes.MissingCode, "Code is required. Please define the code to execute.");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.MissingCode, "Code is required. Please define the code to execute.");
         }
 
-        return await context.CatchToResult(async ct =>
+        try
         {
-            // Get input from LLM
-            var inputPayload = context.GetInputPayload();
+            var inputPayload = input.InputBatch.Items.Count > 0 ? input.InputBatch.Items[0].Data : null;
             var inputData = GetInputData(inputPayload);
 
             var result = inputData is not null
-                ? await Code.ExecuteAsync(context, ct, ("input", inputData)).ConfigureAwait(false)
-                : await Code.ExecuteAsync(context, ct).ConfigureAwait(false);
+                ? await Code.ExecuteAsync(ExecutionContext, ct, ("input", inputData)).ConfigureAwait(false)
+                : await Code.ExecuteAsync(ExecutionContext, ct).ConfigureAwait(false);
             var outputItem = ToDataItem(result);
 
-            return new NodeExecutionResult
-            {
-                Success = true,
-                Output = new DataBatch { Items = [outputItem] }
-            };
-        }, cancellationToken).ConfigureAwait(false);
+            return NodeHandlerOutput.Data(new DataBatch { Items = [outputItem] });
+        }
+        catch (ScriptErrorException ex)
+        {
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.ScriptError, $"Script execution failed: {ex.Message}");
+        }
+        catch (Exception ex) when (ex is not NodeExecutionException)
+        {
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.UnexpectedError, ex.Message);
+        }
     }
 
     private static object? GetInputData(JsonNode? payload)

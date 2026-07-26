@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
+using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Plugins.Standard;
 using Xunit;
@@ -49,7 +50,7 @@ public sealed class MergeNodeCoverageTests
             CombineOperation = CombineOperation.CombineByPosition
         };
 
-        var result = await node.ExecuteAsync(CreateContext(batch1, batch2), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(batch1, batch2), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Output.Items);
@@ -71,7 +72,7 @@ public sealed class MergeNodeCoverageTests
             CombineOperation = CombineOperation.CombineByPosition
         };
 
-        var result = await node.ExecuteAsync(CreateContext(batch1, batch2), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(batch1, batch2), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Output.Items);
@@ -94,7 +95,7 @@ public sealed class MergeNodeCoverageTests
             MatchField = ""
         };
 
-        var result = await node.ExecuteAsync(CreateContext(batch1, batch2), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(batch1, batch2), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(2, result.Output.Items.Count);
@@ -112,7 +113,7 @@ public sealed class MergeNodeCoverageTests
             CombineOperation = CombineOperation.MergeByPosition
         };
 
-        var result = await node.ExecuteAsync(CreateContext(batch1, batch2), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(batch1, batch2), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Output.Items);
@@ -127,7 +128,7 @@ public sealed class MergeNodeCoverageTests
 
         var node = new MergeNode { Mode = MergeMode.Multiplex };
 
-        var result = await node.ExecuteAsync(CreateContext(batch1, batch2), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(batch1, batch2), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(4, result.Output.Items.Count);

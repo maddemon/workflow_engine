@@ -26,14 +26,14 @@ public sealed class CompressNodeTests
     public async Task ZipThenUnzip_RoundTrip_BytesMatch()
     {
         var zipNode = new CompressNode { Operation = CompressOperation.Zip };
-        var zipResult = await zipNode.ExecuteAsync(
+        var zipResult = await ((INodeType)zipNode).ExecuteAsync(
             CreateContext(InputWith("data", Convert.ToBase64String(SampleBytes))),
             CancellationToken.None);
         Assert.True(zipResult.Success, zipResult.Error?.Message);
         Assert.Equal("content.zip", GetString(zipResult.Output.Items[0].Data, "fileName"));
 
         var unzipNode = new CompressNode { Operation = CompressOperation.Unzip };
-        var unzipResult = await unzipNode.ExecuteAsync(
+        var unzipResult = await ((INodeType)unzipNode).ExecuteAsync(
             CreateContext(InputWith("data", GetString(zipResult.Output.Items[0].Data, "data")!)),
             CancellationToken.None);
 
@@ -49,13 +49,13 @@ public sealed class CompressNodeTests
     public async Task GzipThenGunzip_RoundTrip_BytesMatch()
     {
         var gzipNode = new CompressNode { Operation = CompressOperation.Gzip };
-        var gzipResult = await gzipNode.ExecuteAsync(
+        var gzipResult = await ((INodeType)gzipNode).ExecuteAsync(
             CreateContext(InputWith("data", Convert.ToBase64String(SampleBytes))),
             CancellationToken.None);
         Assert.True(gzipResult.Success, gzipResult.Error?.Message);
 
         var gunzipNode = new CompressNode { Operation = CompressOperation.Gunzip };
-        var gunzipResult = await gunzipNode.ExecuteAsync(
+        var gunzipResult = await ((INodeType)gunzipNode).ExecuteAsync(
             CreateContext(InputWith("data", GetString(gzipResult.Output.Items[0].Data, "data")!)),
             CancellationToken.None);
 
@@ -70,14 +70,14 @@ public sealed class CompressNodeTests
     public async Task TarThenUntar_RoundTrip_BytesMatch()
     {
         var tarNode = new CompressNode { Operation = CompressOperation.Tar };
-        var tarResult = await tarNode.ExecuteAsync(
+        var tarResult = await ((INodeType)tarNode).ExecuteAsync(
             CreateContext(InputWith("data", Convert.ToBase64String(SampleBytes))),
             CancellationToken.None);
         Assert.True(tarResult.Success, tarResult.Error?.Message);
         Assert.Equal("content.tar", GetString(tarResult.Output.Items[0].Data, "fileName"));
 
         var untarNode = new CompressNode { Operation = CompressOperation.Untar };
-        var untarResult = await untarNode.ExecuteAsync(
+        var untarResult = await ((INodeType)untarNode).ExecuteAsync(
             CreateContext(InputWith("data", GetString(tarResult.Output.Items[0].Data, "data")!)),
             CancellationToken.None);
 
@@ -93,7 +93,7 @@ public sealed class CompressNodeTests
     public async Task Unzip_CorruptArchive_ReturnsCorruptArchive()
     {
         var node = new CompressNode { Operation = CompressOperation.Unzip };
-        var result = await node.ExecuteAsync(
+        var result = await ((INodeType)node).ExecuteAsync(
             CreateContext(InputWith("data", Convert.ToBase64String(Encoding.UTF8.GetBytes("this is not a zip archive")))),
             CancellationToken.None);
 
@@ -105,7 +105,7 @@ public sealed class CompressNodeTests
     public async Task Gunzip_CorruptArchive_ReturnsCorruptArchive()
     {
         var node = new CompressNode { Operation = CompressOperation.Gunzip };
-        var result = await node.ExecuteAsync(
+        var result = await ((INodeType)node).ExecuteAsync(
             CreateContext(InputWith("data", Convert.ToBase64String(Encoding.UTF8.GetBytes("this is not gz data")))),
             CancellationToken.None);
 
@@ -117,7 +117,7 @@ public sealed class CompressNodeTests
     public async Task Untar_CorruptArchive_ReturnsCorruptArchive()
     {
         var node = new CompressNode { Operation = CompressOperation.Untar };
-        var result = await node.ExecuteAsync(
+        var result = await ((INodeType)node).ExecuteAsync(
             CreateContext(InputWith("data", Convert.ToBase64String(Encoding.UTF8.GetBytes("this is not a tar archive")))),
             CancellationToken.None);
 
@@ -131,7 +131,7 @@ public sealed class CompressNodeTests
     public async Task MissingInputItem_ReturnsMissingInput()
     {
         var node = new CompressNode { Operation = CompressOperation.Zip };
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("MissingInput", result.Error?.Code);
@@ -141,7 +141,7 @@ public sealed class CompressNodeTests
     public async Task NonBase64Input_ReturnsMissingInput()
     {
         var node = new CompressNode { Operation = CompressOperation.Zip };
-        var result = await node.ExecuteAsync(
+        var result = await ((INodeType)node).ExecuteAsync(
             CreateContext(InputWith("data", "!!!not-valid-base64!!!")),
             CancellationToken.None);
 
@@ -163,7 +163,7 @@ public sealed class CompressNodeTests
             InputField = inField,
             OutputField = outField
         };
-        var zipResult = await zipNode.ExecuteAsync(
+        var zipResult = await ((INodeType)zipNode).ExecuteAsync(
             CreateContext(InputWith(inField, Convert.ToBase64String(SampleBytes))),
             CancellationToken.None);
         Assert.True(zipResult.Success, zipResult.Error?.Message);
@@ -175,7 +175,7 @@ public sealed class CompressNodeTests
             InputField = outField,
             OutputField = outField
         };
-        var unzipResult = await unzipNode.ExecuteAsync(
+        var unzipResult = await ((INodeType)unzipNode).ExecuteAsync(
             CreateContext(InputWith(outField, GetString(zipResult.Output.Items[0].Data, outField)!)),
             CancellationToken.None);
 
@@ -193,7 +193,7 @@ public sealed class CompressNodeTests
             Operation = CompressOperation.Tar,
             EntryName = new string('a', 101)
         };
-        var result = await node.ExecuteAsync(
+        var result = await ((INodeType)node).ExecuteAsync(
             CreateContext(InputWith("data", Convert.ToBase64String(SampleBytes))),
             CancellationToken.None);
 

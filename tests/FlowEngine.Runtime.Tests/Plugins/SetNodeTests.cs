@@ -28,7 +28,7 @@ public sealed class SetNodeTests
         };
 
         var context = CreateContext(new JsonObject { ["id"] = 1 });
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success);
         var data = Assert.IsType<JsonObject>(result.Output.Items[0].Data);
@@ -51,7 +51,7 @@ public sealed class SetNodeTests
         };
 
         var context = CreateContext(new JsonObject { ["id"] = 1 });
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success);
         var data = Assert.IsType<JsonObject>(result.Output.Items[0].Data);
@@ -74,7 +74,7 @@ public sealed class SetNodeTests
         };
 
         var context = CreateContext(new JsonObject { ["userid"] = "u-123" });
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success);
         var data = Assert.IsType<JsonObject>(result.Output.Items[0].Data);
@@ -97,7 +97,7 @@ public sealed class SetNodeTests
         };
 
         var context = CreateContext(new JsonObject { ["name"] = "Alice", ["dept"] = "Eng" });
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success);
         var data = Assert.IsType<JsonObject>(result.Output.Items[0].Data);
@@ -117,7 +117,7 @@ public sealed class SetNodeTests
         };
 
         var context = CreateContext(new JsonObject { ["userid"] = "u-9" });
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success);
         var data = Assert.IsType<JsonObject>(result.Output.Items[0].Data);
@@ -141,7 +141,7 @@ public sealed class SetNodeTests
         };
 
         var context = CreateContext(new JsonObject { ["city"] = "Shanghai" });
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success);
         var data = Assert.IsType<JsonObject>(result.Output.Items[0].Data);
@@ -160,7 +160,7 @@ public sealed class SetNodeTests
         };
 
         var context = CreateContext(new JsonObject { ["id"] = 1 });
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success);
         var data = Assert.IsType<JsonObject>(result.Output.Items[0].Data);
@@ -178,7 +178,7 @@ public sealed class SetNodeTests
         Assert.Equal("hello", node.Fields[0].Value.Source);
 
         var context = CreateContext(new JsonObject { ["id"] = 1 });
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success);
         var data = Assert.IsType<JsonObject>(result.Output.Items[0].Data);
@@ -202,7 +202,7 @@ public sealed class SetNodeTests
         };
 
         var context = CreateContext(new JsonObject { ["id"] = 1 }, logger);
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success);
         var data = Assert.IsType<JsonObject>(result.Output.Items[0].Data);

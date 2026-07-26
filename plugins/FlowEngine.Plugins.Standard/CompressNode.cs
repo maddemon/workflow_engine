@@ -5,7 +5,9 @@ using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
+using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Tools;
 
 namespace FlowEngine.Plugins.Standard;
@@ -16,23 +18,11 @@ namespace FlowEngine.Plugins.Standard;
 /// （本引擎当前无附件存储实现）。Zip/Gzip 使用 BCL <see cref="System.IO.Compression"/>；
 /// Tar/Untar 为最小化 POSIX ustar（无压缩、单常规文件、短名）手写实现，避免引入第三方依赖。
 /// </summary>
-public sealed class CompressNode : INodeType
+[NodeMeta(TypeName = "compress", DisplayName = "Compress", Category = NodeCategory.Storage, Icon = "compress", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class CompressNode : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "compress";
-
-    /// <inheritdoc />
-    public string DisplayName => "Compress";
-
-    /// <inheritdoc />
-    public string Category => "Storage";
-
-    /// <inheritdoc />
-    public string Icon => "compress";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
     /// <summary>
     /// 压缩或解压操作。
     /// </summary>
@@ -58,71 +48,61 @@ public sealed class CompressNode : INodeType
     public string EntryName { get; set; } = "content";
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
         try
         {
             // OnceForAll：仅取首个输入项；缺项或字段缺失/非字符串/null 均视为缺输入。
-            var inputBatch = context.GetInputBatch();
+            var inputBatch = input.InputBatch;
             var item = inputBatch.Items.Count > 0 ? inputBatch.Items[0].Data : null;
             if (item is null)
             {
-                return context.ErrorResult("MissingInput", "No input item available to read base64 content from.");
+                throw new NodeExecutionException("MissingInput", "No input item available to read base64 content from.");
             }
             // Read base64 from the given field and decode; missing field or invalid base64 both fall back to MissingInput.
             byte[] bytes;
             var status = NodeDataHelpers.TryGetBase64Field(item, InputField, out bytes);
             if (status is not NodeDataHelpers.Base64FieldResult.Success)
             {
-                return status == NodeDataHelpers.Base64FieldResult.Invalid
-                    ? context.ErrorResult("MissingInput", $"Field '{InputField}' is not valid base64.")
-                    : context.ErrorResult("MissingInput", $"Input item is missing a string value at field '{InputField}'.");
+                throw status == NodeDataHelpers.Base64FieldResult.Invalid
+                    ? new NodeExecutionException("MissingInput", $"Field '{InputField}' is not valid base64.")
+                    : new NodeExecutionException("MissingInput", $"Input item is missing a string value at field '{InputField}'.");
             }
 
             // 条目名：缺省回退 "content"（用于 zip/tar 单条目名称）。
             var entryName = string.IsNullOrEmpty(EntryName) ? "content" : EntryName;
 
-            return Operation switch
+            return Task.FromResult(Operation switch
             {
-                CompressOperation.Zip => Zip(context, bytes, entryName, OutputField),
-                CompressOperation.Unzip => Unzip(context, bytes, OutputField),
-                CompressOperation.Gzip => Gzip(context, bytes, OutputField),
-                CompressOperation.Gunzip => Gunzip(context, bytes, OutputField),
-                CompressOperation.Tar => Tar(context, bytes, entryName, OutputField),
-                CompressOperation.Untar => Untar(context, bytes, OutputField),
-                _ => context.ErrorResult("InvalidOperation", $"Unsupported operation: {Operation}.")
-            };
+                CompressOperation.Zip => Zip(bytes, entryName, OutputField),
+                CompressOperation.Unzip => Unzip(bytes, OutputField),
+                CompressOperation.Gzip => Gzip(bytes, OutputField),
+                CompressOperation.Gunzip => Gunzip(bytes, OutputField),
+                CompressOperation.Tar => Tar(bytes, entryName, OutputField),
+                CompressOperation.Untar => Untar(bytes, OutputField),
+                _ => throw new NodeExecutionException("InvalidOperation", $"Unsupported operation: {Operation}.")
+            });
         }
         catch (OperationCanceledException)
         {
-            return context.ErrorResult(FlowConstants.ErrorCodes.Cancelled, "compress was cancelled.");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.Cancelled, "compress was cancelled.");
         }
         catch (InvalidDataException ex)
         {
             // BCL 在解析损坏的 zip/gz/tar 时抛出。
-            context.Logger?.LogWarning("compress 解析损坏归档失败：{Message}。", ex.Message);
-            return context.ErrorResult("CorruptArchive", $"Archive is corrupt or not in the expected format: {ex.Message}");
+            Logger?.LogWarning("compress 解析损坏归档失败：{Message}。", ex.Message);
+            throw new NodeExecutionException("CorruptArchive", $"Archive is corrupt or not in the expected format: {ex.Message}");
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not NodeExecutionException)
         {
-            context.Logger?.LogError(ex, "compress 执行出错。");
-            return context.ErrorResult(FlowConstants.ErrorCodes.UnexpectedError, $"Unexpected error compressing/decompressing: {ex.Message}");
+            Logger?.LogError(ex, "compress 执行出错。");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.UnexpectedError, $"Unexpected error compressing/decompressing: {ex.Message}");
         }
     }
 
     // ---- Zip / Unzip ----
 
-    private static NodeExecutionResult Zip(NodeExecutionContext context, byte[] source, string entryName, string outputField)
+    private NodeHandlerOutput Zip(byte[] source, string entryName, string outputField)
     {
         using var outStream = new MemoryStream();
         using (var archive = new ZipArchive(outStream, ZipArchiveMode.Create, leaveOpen: true))
@@ -133,17 +113,17 @@ public sealed class CompressNode : INodeType
         }
 
         var zipBytes = outStream.ToArray();
-        context.Logger?.LogInformation("compress Zip 已写入单条目 {Entry}（字节：{Bytes}）。", entryName, zipBytes.Length);
+        Logger?.LogInformation("compress Zip 已写入单条目 {Entry}（字节：{Bytes}）。", entryName, zipBytes.Length);
 
         var obj = new JsonObject
         {
             [outputField] = JsonValue.Create(Convert.ToBase64String(zipBytes)),
             ["fileName"] = JsonValue.Create(entryName + ".zip")
         };
-        return context.Ok(obj);
+        return Single(obj);
     }
 
-    private static NodeExecutionResult Unzip(NodeExecutionContext context, byte[] archiveBytes, string outputField)
+    private NodeHandlerOutput Unzip(byte[] archiveBytes, string outputField)
     {
         var batch = new DataBatch();
         using var inStream = new MemoryStream(archiveBytes, writable: false);
@@ -165,13 +145,13 @@ public sealed class CompressNode : INodeType
             });
         }
 
-        context.Logger?.LogInformation("compress Unzip 解出 {Count} 个条目。", batch.Items.Count);
-        return context.Ok(batch);
+        Logger?.LogInformation("compress Unzip 解出 {Count} 个条目。", batch.Items.Count);
+        return NodeHandlerOutput.Data(batch);
     }
 
     // ---- Gzip / Gunzip ----
 
-    private static NodeExecutionResult Gzip(NodeExecutionContext context, byte[] source, string outputField)
+    private NodeHandlerOutput Gzip(byte[] source, string outputField)
     {
         using var outStream = new MemoryStream();
         using (var gzip = new GZipStream(outStream, CompressionMode.Compress, leaveOpen: true))
@@ -180,28 +160,28 @@ public sealed class CompressNode : INodeType
         }
 
         var gzipBytes = outStream.ToArray();
-        context.Logger?.LogInformation("compress Gzip 完成（字节：{Bytes}）。", gzipBytes.Length);
+        Logger?.LogInformation("compress Gzip 完成（字节：{Bytes}）。", gzipBytes.Length);
 
         var obj = new JsonObject
         {
             [outputField] = JsonValue.Create(Convert.ToBase64String(gzipBytes))
         };
-        return context.Ok(obj);
+        return Single(obj);
     }
 
-    private static NodeExecutionResult Gunzip(NodeExecutionContext context, byte[] gzipBytes, string outputField)
+    private NodeHandlerOutput Gunzip(byte[] gzipBytes, string outputField)
     {
         using var inStream = new MemoryStream(gzipBytes, writable: false);
         using var gzip = new GZipStream(inStream, CompressionMode.Decompress);
         var outBytes = ReadAll(gzip);
 
-        context.Logger?.LogInformation("compress Gunzip 完成（字节：{Bytes}）。", outBytes.Length);
+        Logger?.LogInformation("compress Gunzip 完成（字节：{Bytes}）。", outBytes.Length);
 
         var obj = new JsonObject
         {
             [outputField] = JsonValue.Create(Convert.ToBase64String(outBytes))
         };
-        return context.Ok(obj);
+        return Single(obj);
     }
 
     // ---- Tar / Untar (minimal POSIX ustar, uncompressed) ----
@@ -209,11 +189,11 @@ public sealed class CompressNode : INodeType
     private const int UstarBlockSize = 512;
     private const int UstarMaxNameLength = 100;
 
-    private static NodeExecutionResult Tar(NodeExecutionContext context, byte[] source, string entryName, string outputField)
+    private NodeHandlerOutput Tar(byte[] source, string entryName, string outputField)
     {
         if (entryName.Length > UstarMaxNameLength)
         {
-            return context.ErrorResult("EntryNameTooLong", $"Tar entry name exceeds {UstarMaxNameLength} characters: '{entryName}'.");
+            throw new NodeExecutionException("EntryNameTooLong", $"Tar entry name exceeds {UstarMaxNameLength} characters: '{entryName}'.");
         }
 
         using var outStream = new MemoryStream();
@@ -228,17 +208,17 @@ public sealed class CompressNode : INodeType
         }
 
         var tarBytes = outStream.ToArray();
-        context.Logger?.LogInformation("compress Tar 已写入单条目 {Entry}（字节：{Bytes}）。", entryName, tarBytes.Length);
+        Logger?.LogInformation("compress Tar 已写入单条目 {Entry}（字节：{Bytes}）。", entryName, tarBytes.Length);
 
         var obj = new JsonObject
         {
             [outputField] = JsonValue.Create(Convert.ToBase64String(tarBytes)),
             ["fileName"] = JsonValue.Create(entryName + ".tar")
         };
-        return context.Ok(obj);
+        return Single(obj);
     }
 
-    private static NodeExecutionResult Untar(NodeExecutionContext context, byte[] tarBytes, string outputField)
+    private NodeHandlerOutput Untar(byte[] tarBytes, string outputField)
     {
         var batch = new DataBatch();
         using var inStream = new MemoryStream(tarBytes, writable: false);
@@ -295,9 +275,18 @@ public sealed class CompressNode : INodeType
             }
         }
 
-        context.Logger?.LogInformation("compress Untar 解出 {Count} 个常规文件条目。", batch.Items.Count);
-        return context.Ok(batch);
+        Logger?.LogInformation("compress Untar 解出 {Count} 个常规文件条目。", batch.Items.Count);
+        return NodeHandlerOutput.Data(batch);
     }
+
+    /// <summary>
+    /// 将单条 JSON 对象包装为单条 DataItem 的输出。
+    /// </summary>
+    private static NodeHandlerOutput Single(JsonObject obj) =>
+        NodeHandlerOutput.Data(new DataBatch
+        {
+            Items = [ new DataItem { Data = obj, Success = true, SourceIndex = 0 } ]
+        });
 
     /// <summary>
     /// 读取一个 512 字节块；遇到全零块（归档结束标记）或流结束返回 null；部分/非对齐数据视为损坏。

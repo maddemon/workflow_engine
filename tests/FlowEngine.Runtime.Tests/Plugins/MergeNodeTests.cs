@@ -1,5 +1,6 @@
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
+using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Plugins.Standard;
 using Xunit;
@@ -59,7 +60,7 @@ public sealed class MergeNodeTests
             MatchField = "id"
         };
 
-        var result = await node.ExecuteAsync(CreateContext(batch1, batch2), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(batch1, batch2), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Output.Items);
@@ -82,7 +83,7 @@ public sealed class MergeNodeTests
             MatchField = "id"
         };
 
-        var result = await node.ExecuteAsync(CreateContext(batch1, batch2), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(batch1, batch2), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(2, result.Output.Items.Count);
@@ -105,7 +106,7 @@ public sealed class MergeNodeTests
             MatchField = "id"
         };
 
-        var result = await node.ExecuteAsync(CreateContext(batch1, batch2), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(batch1, batch2), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Output.Items);
@@ -123,7 +124,7 @@ public sealed class MergeNodeTests
             Mode = MergeMode.Append
         };
 
-        var result = await node.ExecuteAsync(CreateContext(batch1, batch2), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(batch1, batch2), CancellationToken.None);
 
         Assert.True(result.Success);
         Assert.Equal(2, result.Output.Items.Count);

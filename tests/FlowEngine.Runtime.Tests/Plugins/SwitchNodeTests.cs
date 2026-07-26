@@ -11,6 +11,7 @@ using FlowEngine.Runtime.Executor;
 using FlowEngine.Runtime.Registry;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
+using Xunit;
 
 namespace FlowEngine.Runtime.Tests.Plugins;
 
@@ -36,10 +37,12 @@ public class SwitchNodeTests
 
         var context = CreateContext(JsonNode.Parse("{\"category\":\"b\"}")!);
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
-        Assert.Equal(1, result.BranchIndex);
+        Assert.True(result.PortOutputs!.ContainsKey("case1"));
+        Assert.False(result.PortOutputs.ContainsKey("case0"));
+        Assert.False(result.PortOutputs.ContainsKey(FlowConstants.PortNames.Default));
     }
 
     [Fact]
@@ -62,10 +65,11 @@ public class SwitchNodeTests
 
         var context = CreateContext(JsonNode.Parse("{\"category\":\"a\"}")!);
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
-        Assert.Equal(0, result.BranchIndex);
+        Assert.True(result.PortOutputs!.ContainsKey("case0"));
+        Assert.False(result.PortOutputs.ContainsKey("case1"));
     }
 
     [Fact]
@@ -87,10 +91,11 @@ public class SwitchNodeTests
 
         var context = CreateContext(JsonNode.Parse("{\"category\":\"z\"}")!);
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
-        Assert.Equal(1, result.BranchIndex); // default port index == Cases.Count
+        Assert.True(result.PortOutputs!.ContainsKey(FlowConstants.PortNames.Default));
+        Assert.False(result.PortOutputs.ContainsKey("case0"));
     }
 
     [Fact]
@@ -122,10 +127,10 @@ public class SwitchNodeTests
         };
         var context = await BuildContextAsync(factory, node, config, JsonNode.Parse("{\"category\":\"b\"}"));
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
-        Assert.Equal(1, result.BranchIndex);
+        Assert.True(result.PortOutputs!.ContainsKey("case1"));
     }
 
     [Fact]
@@ -133,11 +138,11 @@ public class SwitchNodeTests
     {
         // CON-3：两个并发 SwitchNode 各持独立 Cases，互不篡改；断言各自路由至自身匹配的 case。
         const int pairs = 40;
-        var tasks = new List<Task<int>>();
+        var tasks = new List<Task<string>>();
 
         for (var i = 0; i < pairs; i++)
         {
-            // 节点 A：cases=[a,b]，输入命中 "a" → BranchIndex 0
+            // 节点 A：cases=[a,b]，输入命中 "a" → case0
             var nodeA = new SwitchNode
             {
                 Expression = new Script
@@ -153,9 +158,13 @@ public class SwitchNodeTests
                 ]
             };
             var ctxA = CreateContext(JsonNode.Parse("{\"category\":\"a\"}")!);
-            tasks.Add(Task.Run(async () => (await nodeA.ExecuteAsync(ctxA, CancellationToken.None)).BranchIndex ?? -1));
+            tasks.Add(Task.Run(async () =>
+            {
+                var r = await ((INodeType)nodeA).ExecuteAsync(ctxA, CancellationToken.None);
+                return r.PortOutputs!.ContainsKey("case0") ? "case0" : "other";
+            }));
 
-            // 节点 B：cases=[x,y]，输入命中 "y" → BranchIndex 1
+            // 节点 B：cases=[x,y]，输入命中 "y" → case1
             var nodeB = new SwitchNode
             {
                 Expression = new Script
@@ -171,14 +180,18 @@ public class SwitchNodeTests
                 ]
             };
             var ctxB = CreateContext(JsonNode.Parse("{\"category\":\"y\"}")!);
-            tasks.Add(Task.Run(async () => (await nodeB.ExecuteAsync(ctxB, CancellationToken.None)).BranchIndex ?? -1));
+            tasks.Add(Task.Run(async () =>
+            {
+                var r = await ((INodeType)nodeB).ExecuteAsync(ctxB, CancellationToken.None);
+                return r.PortOutputs!.ContainsKey("case1") ? "case1" : "other";
+            }));
         }
 
         var results = await Task.WhenAll(tasks);
         for (var i = 0; i < results.Length; i++)
         {
-            // 偶数位为节点 A（期望 0），奇数位为节点 B（期望 1）。
-            Assert.Equal(i % 2 == 0 ? 0 : 1, results[i]);
+            // 偶数位为节点 A（期望 case0），奇数位为节点 B（期望 case1）。
+            Assert.Equal(i % 2 == 0 ? "case0" : "case1", results[i]);
         }
     }
 

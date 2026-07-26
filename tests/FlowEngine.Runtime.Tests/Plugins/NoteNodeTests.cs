@@ -17,7 +17,7 @@ public sealed class NoteNodeTests
     {
         var node = new NoteNode();
 
-        Assert.Empty(node.Ports);
+        Assert.Empty(((INodeType)node).Ports);
     }
 
     [Fact]
@@ -26,7 +26,7 @@ public sealed class NoteNodeTests
         var node = new NoteNode();
         var context = await NodeTestContextFactory.BuildAsync(node);
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.NotNull(result.Output);
@@ -38,11 +38,11 @@ public sealed class NoteNodeTests
     {
         INodeType node = new NoteNode();
 
-        Assert.Equal("note", node.TypeName);
-        Assert.Equal("Note", node.DisplayName);
-        Assert.Equal("Utility", node.Category);
-        Assert.Equal("note", node.Icon);
-        Assert.Equal(ExecutionMode.OnceForAll, node.ExecutionMode);
-        Assert.False(node.DefaultIsEntry);
+        Assert.Equal("note", ((INodeType)node).TypeName);
+        Assert.Equal("Note", ((INodeType)node).DisplayName);
+        Assert.Equal("Utility", ((INodeType)node).Category);
+        Assert.Equal("note", ((INodeType)node).Icon);
+        Assert.Equal(ExecutionMode.OnceForAll, ((INodeType)node).ExecutionMode);
+        Assert.False(((INodeType)node).DefaultIsEntry);
     }
 }

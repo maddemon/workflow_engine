@@ -31,21 +31,21 @@ public class LlmNodeTests
     public void LlmNode_Has_Correct_TypeName()
     {
         var node = new LlmNode();
-        Assert.Equal("llm", node.TypeName);
+        Assert.Equal("llm", ((INodeType)node).TypeName);
     }
 
     [Fact]
     public void LlmNode_Has_Correct_DisplayName()
     {
         var node = new LlmNode();
-        Assert.Equal("LLM", node.DisplayName);
+        Assert.Equal("LLM", ((INodeType)node).DisplayName);
     }
 
     [Fact]
     public void LlmNode_Has_Correct_Category()
     {
         var node = new LlmNode();
-        Assert.Equal("AI", node.Category);
+        Assert.Equal("AI", ((INodeType)node).Category);
     }
 
     [Fact]
@@ -53,8 +53,8 @@ public class LlmNodeTests
     {
         var node = new LlmNode();
 
-        Assert.Single(node.Ports);
-        Assert.Contains(node.Ports, p =>
+        Assert.Single(((INodeType)node).Ports);
+        Assert.Contains(((INodeType)node).Ports, p =>
             p.Name == FlowConstants.PortNames.Llm
             && p.Type == PortType.LLM
             && p.Direction == PortDirection.Output);
@@ -75,7 +75,7 @@ public class LlmNodeTests
     public void LlmNode_Is_Entry_Node()
     {
         var node = new LlmNode();
-        Assert.True(node.DefaultIsEntry);
+        Assert.True(((INodeType)node).DefaultIsEntry);
     }
 
     [Fact]
@@ -84,7 +84,7 @@ public class LlmNodeTests
         var node = new LlmNode { Model = "" };
         var context = CreateContext();
 
-        var result = await node.ExecuteAsync(context);
+        var result = await ((INodeType)node).ExecuteAsync(context);
 
         Assert.False(result.Success);
         Assert.Equal("MissingModel", result.Error?.Code);
@@ -100,7 +100,7 @@ public class LlmNodeTests
         };
         var context = CreateContext();
 
-        var result = await node.ExecuteAsync(context);
+        var result = await ((INodeType)node).ExecuteAsync(context);
 
         Assert.False(result.Success);
         Assert.Equal("MissingApiKey", result.Error?.Code);
@@ -116,7 +116,7 @@ public class LlmNodeTests
         };
         var context = CreateContext(credentialExists: false);
 
-        var result = await node.ExecuteAsync(context);
+        var result = await ((INodeType)node).ExecuteAsync(context);
 
         Assert.False(result.Success);
         Assert.Equal("MissingApiKey", result.Error?.Code);
@@ -132,7 +132,7 @@ public class LlmNodeTests
         };
         var context = CreateContext(credentialHasApiKey: false);
 
-        var result = await node.ExecuteAsync(context);
+        var result = await ((INodeType)node).ExecuteAsync(context);
 
         Assert.False(result.Success);
         Assert.Equal("MissingApiKey", result.Error?.Code);
@@ -150,7 +150,7 @@ public class LlmNodeTests
         };
         var context = CreateContext(apiKey: "test-api-key");
 
-        var result = await node.ExecuteAsync(context);
+        var result = await ((INodeType)node).ExecuteAsync(context);
 
         Assert.True(result.Success);
         Assert.NotNull(context.LlmClient);
@@ -168,7 +168,7 @@ public class LlmNodeTests
         };
         var context = CreateContext(apiKey: "test-api-key");
 
-        var result = await node.ExecuteAsync(context);
+        var result = await ((INodeType)node).ExecuteAsync(context);
 
         Assert.True(result.Success);
         Assert.NotNull(context.LlmClient);
@@ -185,7 +185,7 @@ public class LlmNodeTests
         };
         var context = CreateContext(apiKey: "test-api-key");
 
-        var result = await node.ExecuteAsync(context);
+        var result = await ((INodeType)node).ExecuteAsync(context);
 
         Assert.True(result.Success);
         Assert.NotNull(context.LlmClient);
@@ -201,7 +201,7 @@ public class LlmNodeTests
         };
         var context = CreateContext(apiKey: "sk-test");
 
-        var result = await node.ExecuteAsync(context);
+        var result = await ((INodeType)node).ExecuteAsync(context);
 
         Assert.True(result.Success);
         Assert.NotNull(context.LlmClient);
@@ -238,7 +238,7 @@ public class LlmNodeTests
         };
         var context = CreateContext(apiKey: "test-api-key");
 
-        var result = await node.ExecuteAsync(context);
+        var result = await ((INodeType)node).ExecuteAsync(context);
 
         Assert.True(result.Success);
         Assert.NotNull(context.LlmClient);
@@ -272,7 +272,7 @@ public class LlmNodeTests
             ResolvedParameters = new Dictionary<string, object>(),
             Credentials = new TestCredentialAccessor(apiKey, credentialExists, credentialHasApiKey),
             Logger = NullExecutionLogger.Instance,
-            LlmClientFactory = new OpenAiLlmClientFactory(),
+            LlmClient = apiKey is not null ? new OpenAiLlmClientFactory().Create(apiKey, "gpt-4") : null,
             CancellationToken = CancellationToken.None
         };
     }

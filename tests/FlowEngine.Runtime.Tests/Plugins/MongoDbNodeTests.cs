@@ -1,4 +1,5 @@
-﻿using System.Text.Json.Nodes;
+using FlowEngine.Core.Abstractions;
+using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Entities;
 using FlowEngine.Plugins.Storage;
@@ -35,7 +36,7 @@ public sealed class MongoDbNodeTests
             CollectionOverride = collMock.Object
         };
 
-        var result = await node.ExecuteAsync(CreateContext(), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         var data = result.Output.Items[0].Data as JsonObject;
@@ -85,7 +86,7 @@ public sealed class MongoDbNodeTests
             CollectionOverride = clientMock.Object.GetDatabase("testdb").GetCollection<BsonDocument>("users")
         };
 
-        var result = await node.ExecuteAsync(CreateContext(), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(2, result.Output.Items.Count);
@@ -132,7 +133,7 @@ public sealed class MongoDbNodeTests
             CollectionOverride = collMock.Object
         };
 
-        var result = await node.ExecuteAsync(CreateContext(), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Output.Items);
@@ -163,7 +164,7 @@ public sealed class MongoDbNodeTests
             CollectionOverride = collMock.Object
         };
 
-        var result = await node.ExecuteAsync(CreateContext(), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         var data = result.Output.Items[0].Data as JsonObject;
@@ -194,7 +195,7 @@ public sealed class MongoDbNodeTests
             CollectionOverride = collMock.Object
         };
 
-        var result = await node.ExecuteAsync(CreateContext(), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         var data = result.Output.Items[0].Data as JsonObject;
@@ -211,7 +212,7 @@ public sealed class MongoDbNodeTests
             Operation = MongoDbNode.MongoOperation.Find
         };
 
-        var result = await node.ExecuteAsync(CreateContext(), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal(FlowConstants.ErrorCodes.MissingConnection, result.Error?.Code);
@@ -227,7 +228,7 @@ public sealed class MongoDbNodeTests
             Operation = MongoDbNode.MongoOperation.Find
         };
 
-        var result = await node.ExecuteAsync(CreateContext(), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("MissingCollection", result.Error?.Code);
@@ -246,7 +247,7 @@ public sealed class MongoDbNodeTests
             CollectionOverride = collMock.Object
         };
 
-        var result = await node.ExecuteAsync(CreateContext(), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("InvalidJson", result.Error?.Code);
@@ -271,7 +272,7 @@ public sealed class MongoDbNodeTests
             CollectionOverride = collMock.Object
         };
 
-        var result = await node.ExecuteAsync(CreateContext(), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("MongoError", result.Error?.Code);
@@ -298,7 +299,7 @@ public sealed class MongoDbNodeTests
             CollectionOverride = collMock.Object
         };
 
-        var result = await node.ExecuteAsync(CreateContext(), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("InvalidJson", result.Error?.Code);

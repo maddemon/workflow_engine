@@ -23,7 +23,7 @@ public class CodeSnippetToolNodeTests
         var node = new CodeSnippetToolNode { Code = "" };
         var context = CreateContext(new JsonObject());
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await ((INodeType)node).ExecuteAsync(context, TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
         Assert.Equal("MissingCode", result.Error?.Code);
@@ -38,7 +38,7 @@ public class CodeSnippetToolNodeTests
         };
         var context = CreateContext(new JsonObject());
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await ((INodeType)node).ExecuteAsync(context, TestContext.Current.CancellationToken);
 
         Assert.True(result.Success, result.Error?.Message);
         var data = result.Output.Items[0].Data;
@@ -56,7 +56,7 @@ public class CodeSnippetToolNodeTests
         var input = new JsonObject { ["name"] = "Alice" };
         var context = CreateContext(input);
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await ((INodeType)node).ExecuteAsync(context, TestContext.Current.CancellationToken);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.NotEmpty(result.Output.Items);
@@ -72,7 +72,7 @@ public class CodeSnippetToolNodeTests
         };
         var context = CreateContext(new JsonObject());
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await ((INodeType)node).ExecuteAsync(context, TestContext.Current.CancellationToken);
 
         Assert.True(result.Success, result.Error?.Message);
         var json = result.Output.Items[0].Data?.ToJsonString();
@@ -89,7 +89,7 @@ public class CodeSnippetToolNodeTests
         };
         var context = CreateContext(new JsonObject());
 
-        var result = await node.ExecuteAsync(context, TestContext.Current.CancellationToken);
+        var result = await ((INodeType)node).ExecuteAsync(context, TestContext.Current.CancellationToken);
 
         Assert.False(result.Success);
         Assert.Equal("ScriptError", result.Error?.Code);
@@ -106,7 +106,7 @@ public class CodeSnippetToolNodeTests
         };
         var context = await BuildContextAsync(factory, node, config, JsonNode.Parse("{\"value\":21}"));
 
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         var data = result.Output.Items[0].Data;

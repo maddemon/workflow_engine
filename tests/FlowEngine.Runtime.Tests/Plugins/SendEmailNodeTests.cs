@@ -2,6 +2,7 @@ using System.Net.Mail;
 using System.Text;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
+using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Scripting;
 using FlowEngine.Plugins.Standard;
@@ -28,7 +29,7 @@ public sealed class SendEmailNodeTests
             PickupDirectory = pickup
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("a@example.com", GetString(result.Output.Items[0].Data, "to"));
@@ -54,7 +55,7 @@ public sealed class SendEmailNodeTests
             PickupDirectory = pickup
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         var eml = ReadSingleEml(pickup);
@@ -77,7 +78,7 @@ public sealed class SendEmailNodeTests
             PickupDirectory = pickup
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         var eml = ReadSingleEml(pickup);
@@ -95,7 +96,7 @@ public sealed class SendEmailNodeTests
             Body = Lit("B")
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal(FlowConstants.ErrorCodes.MissingConnection, result.Error?.Code);
@@ -112,7 +113,7 @@ public sealed class SendEmailNodeTests
             Body = Lit("B")
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("MissingTo", result.Error?.Code);
@@ -130,7 +131,7 @@ public sealed class SendEmailNodeTests
             Body = Lit("B")
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("MissingFrom", result.Error?.Code);
@@ -148,7 +149,7 @@ public sealed class SendEmailNodeTests
             Body = Lit("B")
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("SmtpError", result.Error?.Code);
@@ -181,7 +182,7 @@ public sealed class SendEmailNodeTests
             ]
         };
 
-        var result = await node.ExecuteAsync(CreateContext(input), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(Directory.GetFiles(pickup, "*.eml"));
@@ -212,7 +213,7 @@ public sealed class SendEmailNodeTests
             ]
         };
 
-        var result = await node.ExecuteAsync(CreateContext(input), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("InvalidAttachment", result.Error?.Code);

@@ -4,6 +4,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Plugins.Standard;
 using Xunit;
 
+using FlowEngine.Core.Abstractions;
 namespace FlowEngine.Runtime.Tests.Plugins;
 
 /// <summary>
@@ -54,7 +55,7 @@ public sealed class BatchSplitNodeTests
         var nodeContext = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         var node = new BatchSplitNode { BatchSize = 0 };
 
-        var result = await node.ExecuteAsync(CreateStatefulContext(BuildBatch(3), nodeContext), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateStatefulContext(BuildBatch(3), nodeContext), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         // BatchSize<=0 钳制为 1：首批 1 项，走 Loop 输出口（BranchIndex = 0）。
@@ -68,7 +69,7 @@ public sealed class BatchSplitNodeTests
         var nodeContext = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         var node = new BatchSplitNode { BatchSize = -5 };
 
-        var result = await node.ExecuteAsync(CreateStatefulContext(BuildBatch(3), nodeContext), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateStatefulContext(BuildBatch(3), nodeContext), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Output.Items);
@@ -81,7 +82,7 @@ public sealed class BatchSplitNodeTests
         var nodeContext = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         var node = new BatchSplitNode { BatchSize = 2 };
 
-        var result = await node.ExecuteAsync(CreateStatefulContext(BuildBatch(5), nodeContext), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateStatefulContext(BuildBatch(5), nodeContext), CancellationToken.None);
 
         Assert.True(result.Success);
         // 首批 K=2 项从 Loop 输出口（BranchIndex = 0）发出。
@@ -97,7 +98,7 @@ public sealed class BatchSplitNodeTests
         var nodeContext = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         var node = new BatchSplitNode { BatchSize = 10 };
 
-        var result = await node.ExecuteAsync(CreateStatefulContext(BuildBatch(3), nodeContext), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateStatefulContext(BuildBatch(3), nodeContext), CancellationToken.None);
 
         Assert.True(result.Success);
         // 批次大于输入数：全部 3 项从 Loop 输出口发出。
@@ -111,7 +112,7 @@ public sealed class BatchSplitNodeTests
         var nodeContext = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         var node = new BatchSplitNode { BatchSize = 2 };
 
-        var result = await node.ExecuteAsync(CreateStatefulContext(new DataBatch { Items = [] }, nodeContext), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateStatefulContext(new DataBatch { Items = [] }, nodeContext), CancellationToken.None);
 
         Assert.True(result.Success);
         // 输入为空：首调即走 Done 输出口（BranchIndex = 1）且输出为空批次。
@@ -126,23 +127,23 @@ public sealed class BatchSplitNodeTests
         var node = new BatchSplitNode { BatchSize = 1 };
         var ct = CancellationToken.None;
 
-        var r1 = await node.ExecuteAsync(CreateStatefulContext(BuildBatch(3), nodeContext), ct);
+        var r1 = await ((INodeType)node).ExecuteAsync(CreateStatefulContext(BuildBatch(3), nodeContext), ct);
         Assert.Equal(0, r1.BranchIndex);
         Assert.Single(r1.Output.Items);
         Assert.Equal(0, r1.Output.Items[0].SourceIndex);
 
-        var r2 = await node.ExecuteAsync(CreateStatefulContext(r1.Output, nodeContext), ct);
+        var r2 = await ((INodeType)node).ExecuteAsync(CreateStatefulContext(r1.Output, nodeContext), ct);
         Assert.Equal(0, r2.BranchIndex);
         Assert.Single(r2.Output.Items);
         Assert.Equal(1, r2.Output.Items[0].SourceIndex);
 
-        var r3 = await node.ExecuteAsync(CreateStatefulContext(r2.Output, nodeContext), ct);
+        var r3 = await ((INodeType)node).ExecuteAsync(CreateStatefulContext(r2.Output, nodeContext), ct);
         Assert.Equal(0, r3.BranchIndex);
         Assert.Single(r3.Output.Items);
         Assert.Equal(2, r3.Output.Items[0].SourceIndex);
 
         // 第 4 次：全部发完 → Done（空批次）。
-        var r4 = await node.ExecuteAsync(CreateStatefulContext(r3.Output, nodeContext), ct);
+        var r4 = await ((INodeType)node).ExecuteAsync(CreateStatefulContext(r3.Output, nodeContext), ct);
         Assert.Equal(1, r4.BranchIndex);
         Assert.Empty(r4.Output.Items);
     }
@@ -155,25 +156,25 @@ public sealed class BatchSplitNodeTests
         var ct = CancellationToken.None;
 
         // Call 1：发首批 [0,1]（Loop）。
-        var r1 = await node.ExecuteAsync(CreateStatefulContext(BuildBatch(5), nodeContext), ct);
+        var r1 = await ((INodeType)node).ExecuteAsync(CreateStatefulContext(BuildBatch(5), nodeContext), ct);
         Assert.Equal(0, r1.BranchIndex);
         Assert.Equal(2, r1.Output.Items.Count);
 
         // Call 2：发第二批 [2,3]（Loop）。
-        var r2 = await node.ExecuteAsync(CreateStatefulContext(r1.Output, nodeContext), ct);
+        var r2 = await ((INodeType)node).ExecuteAsync(CreateStatefulContext(r1.Output, nodeContext), ct);
         Assert.Equal(0, r2.BranchIndex);
         Assert.Equal(2, r2.Output.Items.Count);
         Assert.Equal(2, r2.Output.Items[0].SourceIndex);
         Assert.Equal(3, r2.Output.Items[1].SourceIndex);
 
         // Call 3：发末批 [4]（Loop）。
-        var r3 = await node.ExecuteAsync(CreateStatefulContext(r2.Output, nodeContext), ct);
+        var r3 = await ((INodeType)node).ExecuteAsync(CreateStatefulContext(r2.Output, nodeContext), ct);
         Assert.Equal(0, r3.BranchIndex);
         Assert.Single(r3.Output.Items);
         Assert.Equal(4, r3.Output.Items[0].SourceIndex);
 
         // Call 4：全部发完 → Done（空批次，不回收回流数据）。
-        var r4 = await node.ExecuteAsync(CreateStatefulContext(r3.Output, nodeContext), ct);
+        var r4 = await ((INodeType)node).ExecuteAsync(CreateStatefulContext(r3.Output, nodeContext), ct);
         Assert.Equal(1, r4.BranchIndex);
         Assert.Empty(r4.Output.Items);
     }
@@ -187,20 +188,20 @@ public sealed class BatchSplitNodeTests
         var node = new BatchSplitNode { BatchSize = 2 };
         var ct = CancellationToken.None;
 
-        var r1 = await node.ExecuteAsync(CreateStatefulContext(BuildBatch(4), nodeContext), ct);
+        var r1 = await ((INodeType)node).ExecuteAsync(CreateStatefulContext(BuildBatch(4), nodeContext), ct);
         Assert.Equal(0, r1.BranchIndex);
         Assert.Equal(2, r1.Output.Items.Count);
 
         // 回环输入：下游仅回灌 1 个与 allItems 无关的项；节点应忽略，继续发 [2,3]。
         var feedback = new DataBatch { Items = { new DataItem { Data = new JsonObject { ["x"] = "ignored" }, Success = true, SourceIndex = 99 } } };
-        var r2 = await node.ExecuteAsync(CreateStatefulContext(feedback, nodeContext), ct);
+        var r2 = await ((INodeType)node).ExecuteAsync(CreateStatefulContext(feedback, nodeContext), ct);
         Assert.Equal(0, r2.BranchIndex);
         Assert.Equal(2, r2.Output.Items.Count);
         Assert.Equal(2, r2.Output.Items[0].SourceIndex);
         Assert.Equal(3, r2.Output.Items[1].SourceIndex);
 
         // 回环输入：再回灌无关项；节点忽略 → Done（空批次）。
-        var r3 = await node.ExecuteAsync(CreateStatefulContext(feedback, nodeContext), ct);
+        var r3 = await ((INodeType)node).ExecuteAsync(CreateStatefulContext(feedback, nodeContext), ct);
         Assert.Equal(1, r3.BranchIndex);
         Assert.Empty(r3.Output.Items);
     }
@@ -212,8 +213,8 @@ public sealed class BatchSplitNodeTests
         var node = new BatchSplitNode { BatchSize = 2 };
         var ct = CancellationToken.None;
 
-        var r1 = await node.ExecuteAsync(CreateStatefulContext(BuildBatch(5), new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)), ct);
-        var r2 = await node.ExecuteAsync(CreateStatefulContext(BuildBatch(5), new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)), ct);
+        var r1 = await ((INodeType)node).ExecuteAsync(CreateStatefulContext(BuildBatch(5), new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)), ct);
+        var r2 = await ((INodeType)node).ExecuteAsync(CreateStatefulContext(BuildBatch(5), new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase)), ct);
 
         Assert.Equal(0, r1.BranchIndex);
         Assert.Equal(0, r2.BranchIndex);

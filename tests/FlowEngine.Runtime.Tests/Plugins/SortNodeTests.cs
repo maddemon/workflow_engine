@@ -4,6 +4,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Plugins.Standard;
 using Xunit;
 
+using FlowEngine.Core.Abstractions;
 namespace FlowEngine.Runtime.Tests.Plugins;
 
 /// <summary>
@@ -58,7 +59,7 @@ public sealed class SortNodeTests
             SortFields = [new SortField { FieldName = "val", Direction = SortDirection.Asc }]
         };
 
-        var result = await node.ExecuteAsync(CreateContext(input), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(4, result.Output.Items.Count);
@@ -83,7 +84,7 @@ public sealed class SortNodeTests
             SortFields = [new SortField { FieldName = "val", Direction = SortDirection.Asc }]
         };
 
-        var result = await node.ExecuteAsync(CreateContext(input), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input), CancellationToken.None);
 
         Assert.True(result.Success);
         Assert.Equal("1", GetValue(result.Output.Items[0]));
@@ -104,7 +105,7 @@ public sealed class SortNodeTests
             SortFields = [new SortField { FieldName = "val", Direction = SortDirection.Asc }]
         };
 
-        var result = await node.ExecuteAsync(CreateContext(input), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input), CancellationToken.None);
 
         Assert.True(result.Success);
         Assert.Equal("apple", GetValue(result.Output.Items[0]));
@@ -125,7 +126,7 @@ public sealed class SortNodeTests
             SortFields = [new SortField { FieldName = "val", Direction = SortDirection.Asc }]
         };
 
-        var result = await node.ExecuteAsync(CreateContext(input), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(3, result.Output.Items.Count);
@@ -144,7 +145,7 @@ public sealed class SortNodeTests
             SortFields = [new SortField { FieldName = "val", Direction = SortDirection.Desc }]
         };
 
-        var result = await node.ExecuteAsync(CreateContext(input), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input), CancellationToken.None);
 
         Assert.True(result.Success);
         Assert.Equal("3", GetValue(result.Output.Items[0]));

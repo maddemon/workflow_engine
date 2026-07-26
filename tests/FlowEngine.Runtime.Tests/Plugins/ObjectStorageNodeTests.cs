@@ -1,3 +1,4 @@
+using FlowEngine.Core.Abstractions;
 using System.Text;
 using System.Text.Json.Nodes;
 using Amazon.S3;
@@ -42,7 +43,7 @@ public sealed class ObjectStorageNodeTests
             LocalPath = file
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("docs/report.txt", GetString(result.Output.Items[0].Data, "key"));
@@ -86,7 +87,7 @@ public sealed class ObjectStorageNodeTests
             ]
         };
 
-        var result = await node.ExecuteAsync(CreateContext(input), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(input), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("obj/key1", GetString(result.Output.Items[0].Data, "key"));
@@ -118,7 +119,7 @@ public sealed class ObjectStorageNodeTests
             LocalPath = dest
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("obj/key2", GetString(result.Output.Items[0].Data, "key"));
@@ -148,7 +149,7 @@ public sealed class ObjectStorageNodeTests
             Key = "obj/key3"
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         var data = GetString(result.Output.Items[0].Data, "data");
@@ -171,7 +172,7 @@ public sealed class ObjectStorageNodeTests
             Key = "obj/to-delete"
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("obj/to-delete", GetString(result.Output.Items[0].Data, "key"));
@@ -201,7 +202,7 @@ public sealed class ObjectStorageNodeTests
             Prefix = "a"
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(2, result.Output.Items.Count);
@@ -221,7 +222,7 @@ public sealed class ObjectStorageNodeTests
             Key = "x"
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal(FlowConstants.ErrorCodes.MissingConnection, result.Error?.Code);
@@ -240,7 +241,7 @@ public sealed class ObjectStorageNodeTests
             Operation = op
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("MissingKey", result.Error?.Code);
@@ -263,7 +264,7 @@ public sealed class ObjectStorageNodeTests
             LocalPath = source
         };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("StorageError", result.Error?.Code);

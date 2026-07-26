@@ -4,6 +4,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Plugins.Standard;
 using Xunit;
 
+using FlowEngine.Core.Abstractions;
 namespace FlowEngine.Runtime.Tests.Plugins;
 
 /// <summary>
@@ -29,7 +30,7 @@ public sealed class AggregateNodeTests
             new JsonObject { ["id"] = 1 },
             new JsonObject { ["id"] = 2 });
 
-        var result = await new AggregateNode { Mode = AggregateMode.Concatenate, OutputFieldName = "items" }.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new AggregateNode { Mode = AggregateMode.Concatenate, OutputFieldName = "items" }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Output.Items);
@@ -47,7 +48,7 @@ public sealed class AggregateNodeTests
             new JsonObject { ["group"] = "a", ["v"] = 2 },
             new JsonObject { ["group"] = "b", ["v"] = 3 });
 
-        var result = await new AggregateNode { Mode = AggregateMode.GroupBy, GroupByField = "group", OutputFieldName = "items" }.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new AggregateNode { Mode = AggregateMode.GroupBy, GroupByField = "group", OutputFieldName = "items" }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(2, result.Output.Items.Count);
@@ -63,7 +64,7 @@ public sealed class AggregateNodeTests
             new JsonObject { ["id"] = 1 },
             new JsonObject { ["id"] = 2 });
 
-        var result = await new AggregateNode { Mode = AggregateMode.GroupBy, GroupByField = "", OutputFieldName = "items" }.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new AggregateNode { Mode = AggregateMode.GroupBy, GroupByField = "", OutputFieldName = "items" }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Output.Items);
@@ -75,7 +76,7 @@ public sealed class AggregateNodeTests
     {
         var context = await BuildContextAsync();
 
-        var result = await new AggregateNode { Mode = AggregateMode.Concatenate }.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new AggregateNode { Mode = AggregateMode.Concatenate }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Single(result.Output.Items);

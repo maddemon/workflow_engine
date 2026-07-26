@@ -1,10 +1,11 @@
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Ai;
+using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
-using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Scripting;
+using FlowEngine.Core.Exceptions;
 using System.ComponentModel;
 using System.Text.Json.Nodes;
 
@@ -13,13 +14,13 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// 编辑字段节点，用于添加、修改或删除数据字段。
 /// </summary>
-public sealed class SetNode : INodeType
+[NodeMeta(TypeName = "set", DisplayName = "Edit Fields (Set)", Category = NodeCategory.Data, Icon = "edit", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class SetNode : NodeBase
 {
     /// <inheritdoc />
-    public string TypeName => "set";
-
-    /// <inheritdoc />
-    AiNodeDefinition? INodeType.GetAiDefinition(NodeTypeDescriptor descriptor) =>
+    protected override AiNodeDefinition? GetAiDefinition(NodeTypeDescriptor descriptor) =>
         AiDefinitionHelpers.Def(
             "Edit Fields (Set)", "Core", false,
             "编辑数据字段：新增、修改或删除字段，支持点号表示嵌套字段（如 address.city）。常用于为下游节点准备/重命名数据。默认保留全部字段。",
@@ -28,18 +29,6 @@ public sealed class SetNode : INodeType
             AiDefinitionHelpers.Example("写入 greeting 与 count 字段",
                 JsonNode.Parse("""{"fields":[{"name":"greeting","value":"hello"},{"name":"count","value":3}]}"""),
                 JsonNode.Parse("""{"greeting":"hello","count":3}""")));
-
-    /// <inheritdoc />
-    public string DisplayName => "Edit Fields (Set)";
-
-    /// <inheritdoc />
-    public string Category => "Data";
-
-    /// <inheritdoc />
-    public string Icon => "edit";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
 
     /// <summary>
     /// 要设置的字段列表。
@@ -54,19 +43,9 @@ public sealed class SetNode : INodeType
     public SetIncludeMode Include { get; set; } = SetIncludeMode.All;
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main },
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
-        var inputBatch = context.GetInputBatch();
+        var inputBatch = input.InputBatch;
 
         var outputItems = new List<DataItem>();
 
@@ -93,7 +72,7 @@ public sealed class SetNode : INodeType
 
             foreach (var field in Fields ?? [])
             {
-                var value = await EvaluateFieldValueAsync(field.Value, context, inputItem.Data, inputItem.SourceIndex, cancellationToken)
+                var value = await EvaluateFieldValueAsync(field.Value, inputItem.Data, inputItem.SourceIndex, ct)
                     .ConfigureAwait(false);
 
                 if (Include == SetIncludeMode.Exclude)
@@ -114,11 +93,7 @@ public sealed class SetNode : INodeType
             });
         }
 
-        return new NodeExecutionResult
-        {
-            Success = true,
-            Output = new DataBatch { Items = outputItems }
-        };
+        return NodeHandlerOutput.Data(new DataBatch { Items = outputItems });
     }
 
     /// <summary>
@@ -126,8 +101,8 @@ public sealed class SetNode : INodeType
     /// 保持旧版纯字符串值与脚本简写语义；否则作为 JS 表达式按当前 item 逐项求值（如 <c>$json.userid</c>）。
     /// 表达式求值失败时退化为字面量字符串（容错）。
     /// </summary>
-    private static async Task<JsonNode?> EvaluateFieldValueAsync(
-        Script? script, NodeExecutionContext context, JsonNode? item, int index, CancellationToken cancellationToken)
+    private async Task<JsonNode?> EvaluateFieldValueAsync(
+        Script? script, JsonNode? item, int index, CancellationToken cancellationToken)
     {
         var source = script?.Source;
         if (string.IsNullOrEmpty(source))
@@ -142,12 +117,12 @@ public sealed class SetNode : INodeType
 
         try
         {
-            return await script!.EvaluateAsync<JsonNode>(context, item, index, cancellationToken: cancellationToken)
+            return await EvaluateItemAsync<JsonNode>(script!, item, index, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (ScriptErrorException ex)
         {
-            context.Logger?.LogWarning(
+            Logger?.LogWarning(
                 "SetNode 字段值表达式求值失败，已回退为字面量字符串。Source: {Source}, Error: {Error}",
                 source,
                 ex.Message);

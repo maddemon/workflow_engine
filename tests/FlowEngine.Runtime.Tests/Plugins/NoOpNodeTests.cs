@@ -32,7 +32,7 @@ public sealed class NoOpNodeTests
         };
 
         var context = await NodeTestContextFactory.BuildAsync(node, null, inputs);
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success);
         Assert.NotNull(result.Output);
@@ -54,7 +54,7 @@ public sealed class NoOpNodeTests
         };
 
         var context = await NodeTestContextFactory.BuildAsync(node, null, inputs);
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success);
         Assert.Null(result.Error);
@@ -69,7 +69,7 @@ public sealed class NoOpNodeTests
 
         // 不注入任何 inputs，GetInputBatch 应回退为空批次。
         var context = await NodeTestContextFactory.BuildAsync(node, null, null);
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success);
         Assert.Null(result.Error);
@@ -82,9 +82,9 @@ public sealed class NoOpNodeTests
     {
         var node = new NoOpNode();
 
-        Assert.Equal(2, node.Ports.Count);
-        Assert.Contains(node.Ports, p => p.Name == FlowConstants.PortNames.Input && p.Direction == PortDirection.Input && p.Type == PortType.Main);
-        Assert.Contains(node.Ports, p => p.Name == FlowConstants.PortNames.Output && p.Direction == PortDirection.Output && p.Type == PortType.Main);
+        Assert.Equal(2, ((INodeType)node).Ports.Count);
+        Assert.Contains(((INodeType)node).Ports, p => p.Name == FlowConstants.PortNames.Input && p.Direction == PortDirection.Input && p.Type == PortType.Main);
+        Assert.Contains(((INodeType)node).Ports, p => p.Name == FlowConstants.PortNames.Output && p.Direction == PortDirection.Output && p.Type == PortType.Main);
     }
 
     [Fact]
@@ -92,11 +92,11 @@ public sealed class NoOpNodeTests
     {
         var node = new NoOpNode();
 
-        Assert.Equal("noOp", node.TypeName);
-        Assert.Equal("No Op", node.DisplayName);
-        Assert.Equal("Flow", node.Category);
-        Assert.Equal("noop", node.Icon);
-        Assert.Equal(ExecutionMode.OnceForAll, node.ExecutionMode);
-        Assert.False(node.DefaultIsEntry);
+        Assert.Equal("noOp", ((INodeType)node).TypeName);
+        Assert.Equal("No Op", ((INodeType)node).DisplayName);
+        Assert.Equal("Flow", ((INodeType)node).Category);
+        Assert.Equal("noop", ((INodeType)node).Icon);
+        Assert.Equal(ExecutionMode.OnceForAll, ((INodeType)node).ExecutionMode);
+        Assert.False(((INodeType)node).DefaultIsEntry);
     }
 }

@@ -77,7 +77,7 @@ public sealed class ScriptIntegrationTests
         Assert.NotNull(nodeInstance.Condition.ResolvedValue);
         Assert.True(nodeInstance.Condition.GetResult<bool>());
 
-        var result = await nodeInstance.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)nodeInstance).ExecuteAsync(context, CancellationToken.None);
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(0, result.BranchIndex);
     }
@@ -122,7 +122,7 @@ public sealed class ScriptIntegrationTests
         Assert.NotNull(context.ScriptCache);
 
         var node = new FilterNode { Condition = new Script { Source = "$json.value > 1", ReturnType = ScriptReturnType.Bool } };
-        var result = await node.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal(2, result.Output.Items.Count);
@@ -265,9 +265,9 @@ public sealed class ScriptIntegrationTests
         Assert.NotNull(nodeInstance.Expression.ResolvedValue);
         Assert.Equal("b", nodeInstance.Expression.GetResult<string>());
 
-        var result = await nodeInstance.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)nodeInstance).ExecuteAsync(context, CancellationToken.None);
         Assert.True(result.Success, result.Error?.Message);
-        Assert.Equal(1, result.BranchIndex);
+        Assert.True(result.PortOutputs!.ContainsKey("case1"));
     }
 
     private sealed class NullCredentialAccessor : ICredentialAccessor

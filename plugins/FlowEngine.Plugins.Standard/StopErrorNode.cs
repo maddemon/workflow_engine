@@ -11,26 +11,13 @@ using FlowEngine.Core.Scripting;
 namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
-/// 停止并报错节点：主动中止当前执行分支，向上返回携带错误码与消息的 <see cref="NodeExecutionResult"/>。
+/// 停止并报错节点：主动中止当前执行分支，向上返回携带错误码与消息的失败结果。
 /// <para>该节点仅含输入端口、无输出端口——执行即中止，下游节点不会被执行。</para>
 /// </summary>
-public sealed class StopErrorNode : INodeType
+[NodeMeta(TypeName = "stopError", DisplayName = "Stop and Error", Category = NodeCategory.Flow, Icon = "alert", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+public sealed class StopErrorNode : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "stopError";
-
-    /// <inheritdoc />
-    public string DisplayName => "Stop and Error";
-
-    /// <inheritdoc />
-    public string Category => "Flow";
-
-    /// <inheritdoc />
-    public string Icon => "alert";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
     /// <summary>
     /// 停止时返回的错误消息，可为字面量或 JS 表达式（支持 <c>$json</c> / <c>$input</c> 等注入）。
     /// </summary>
@@ -45,28 +32,19 @@ public sealed class StopErrorNode : INodeType
     public string ErrorCode { get; set; } = "StopAndError";
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
     /// <remarks>
-    /// 通过返回 <see cref="NodeExecutionContext.ErrorResult"/> 主动中止当前分支，不抛出异常（§backend-code-rules §10：
+    /// 通过抛出 <see cref="NodeExecutionException"/> 主动中止当前分支（§backend-code-rules §10：
     /// 不向日志输出消息内容，避免泄露凭据等敏感信息）。<see cref="ErrorMessage"/> 表达式求值失败时同样返回错误结果而非抛出。
     /// </remarks>
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
-        var message = await ResolveMessageAsync(context, cancellationToken).ConfigureAwait(false);
+        var message = await ResolveMessageAsync(input, ct).ConfigureAwait(false);
         var code = string.IsNullOrWhiteSpace(ErrorCode) ? "StopAndError" : ErrorCode;
 
-        return context.ErrorResult(code, message);
+        throw new NodeExecutionException(code, message);
     }
 
-    private async Task<string> ResolveMessageAsync(NodeExecutionContext context, CancellationToken cancellationToken)
+    private async Task<string> ResolveMessageAsync(NodeInput input, CancellationToken cancellationToken)
     {
         var source = ErrorMessage.Source;
         if (string.IsNullOrWhiteSpace(source))
@@ -84,8 +62,8 @@ public sealed class StopErrorNode : INodeType
 
         try
         {
-            var item = context.GetInputBatch().Items.Count > 0 ? context.GetInputBatch().Items[0].Data : null;
-            return await ErrorMessage.EvaluateAsync<string>(context, item, 0, null, cancellationToken).ConfigureAwait(false) ?? source;
+            var item = input.InputBatch.Items.Count > 0 ? input.InputBatch.Items[0].Data : null;
+            return await EvaluateItemAsync<string>(ErrorMessage, item, 0, cancellationToken).ConfigureAwait(false) ?? source;
         }
         catch (ScriptErrorException)
         {

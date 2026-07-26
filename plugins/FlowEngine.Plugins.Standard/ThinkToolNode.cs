@@ -2,64 +2,48 @@ using System.ComponentModel;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
+using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 
 namespace FlowEngine.Plugins.Standard;
 
 /// <summary>
 /// 思考工具节点，作为 Agent 的工具记录推理过程。
 /// </summary>
-public sealed class ThinkToolNode : INodeType
+[NodeMeta(TypeName = "thinkTool", DisplayName = "Think Tool", Category = NodeCategory.AI, Icon = "brain", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+[Port(FlowConstants.PortNames.Tools, "Tool Output", PortDirection.Output, PortType.AgentTool)]
+public sealed class ThinkToolNode : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "thinkTool";
-
-    /// <inheritdoc />
-    public string DisplayName => "Think Tool";
-
-    /// <inheritdoc />
-    public string Category => "AI";
-
-    /// <inheritdoc />
-    public string Icon => "brain";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
     /// <summary>
     /// 工具描述（帮助 LLM 理解何时使用）。
     /// </summary>
     [Description("Tool description that helps LLM understand when to use this tool for thinking.")]
     public string ToolDescription { get; set; } = "Use this tool to think about something. It will not obtain new information or change the database, but just append the thought to the log. Use it when complex reasoning or some cache memory is needed.";
 
-    /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Tools, DisplayName = "Tool Output", Direction = PortDirection.Output, Type = PortType.AgentTool }
-    ];
+    /// <summary>
+    /// 待记录的思考内容。JS 表达式，支持 <c>$json</c> / <c>$input</c>。
+    /// 输入批次读取之后回退到此属性（不再读取被合规规则禁止的已解析参数字典）。
+    /// </summary>
+    [Description("Thought content to record. JS expression; supports $json/$input. Falls back to the Thought property when no input is provided.")]
+    public string Thought { get; set; } = string.Empty;
 
     /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
         try
         {
-            // Get thinking content from LLM input
-            var thought = GetThought(context);
+            var thought = GetThought(input);
             if (string.IsNullOrWhiteSpace(thought))
             {
-                return Task.FromResult(context.ErrorResult("MissingThought", "Thinking content is required."));
+                throw new NodeExecutionException("MissingThought", "Thinking content is required.");
             }
 
-            // Log the thought
-            context.Logger?.LogInformation("[Think] {Thought}", thought);
+            Logger?.LogInformation("[Think] {Thought}", thought);
 
-            // Return the thought as output
             var outputBatch = new DataBatch
             {
                 Items =
@@ -77,21 +61,17 @@ public sealed class ThinkToolNode : INodeType
                 ]
             };
 
-            return Task.FromResult(new NodeExecutionResult
-            {
-                Success = true,
-                Output = outputBatch
-            });
+            return NodeHandlerOutput.Data(outputBatch);
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not NodeExecutionException)
         {
-            return Task.FromResult(context.ErrorResult("ThinkError", $"Thinking failed: {ex.Message}"));
+            throw new NodeExecutionException("ThinkError", $"Thinking failed: {ex.Message}");
         }
     }
 
-    private string? GetThought(NodeExecutionContext context)
+    private string? GetThought(NodeInput input)
     {
-        var batch = context.GetInputBatch();
+        var batch = input.InputBatch;
         if (batch.Items.Count > 0)
         {
             var data = batch.Items[0].Data;
@@ -120,10 +100,10 @@ public sealed class ThinkToolNode : INodeType
             }
         }
 
-        // Check ResolvedParameters
-        if (context.ResolvedParameters.TryGetValue("thought", out var paramThought))
+        // 回退到绑定属性（不读取被合规规则禁止的已解析参数字典）。
+        if (!string.IsNullOrWhiteSpace(Thought))
         {
-            return paramThought?.ToString();
+            return Thought;
         }
 
         return null;

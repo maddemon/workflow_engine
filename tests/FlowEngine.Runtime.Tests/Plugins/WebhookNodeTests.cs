@@ -4,6 +4,7 @@ using FlowEngine.Core.Entities;
 using FlowEngine.Plugins.Standard;
 using Xunit;
 
+using FlowEngine.Core.Abstractions;
 namespace FlowEngine.Runtime.Tests.Plugins;
 
 /// <summary>
@@ -46,7 +47,7 @@ public sealed class WebhookNodeTests
         };
         var context = CreateContext(batch);
 
-        var result = await new WebhookNode { Method = WebhookMethod.Post, Path = "events" }.ExecuteAsync(context, CancellationToken.None);
+        var result = await ((INodeType)new WebhookNode { Method = WebhookMethod.Post, Path = "events" }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("user.created", result.Output.Items[0].Data!["event"]!.GetValue<string>());
@@ -57,12 +58,12 @@ public sealed class WebhookNodeTests
     {
         var context = CreateContext();
 
-        var result = await new WebhookNode
+        var result = await ((INodeType)new WebhookNode
         {
             Method = WebhookMethod.Get,
             Path = "my-webhook",
             ResponseMode = WebhookResponseMode.LastNode
-        }.ExecuteAsync(context, CancellationToken.None);
+        }).ExecuteAsync(context, CancellationToken.None);
 
         Assert.True(result.Success, result.Error?.Message);
         var data = result.Output.Items[0].Data as JsonObject;

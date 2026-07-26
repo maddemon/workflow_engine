@@ -30,7 +30,7 @@ public sealed class WriteFileNodeTests
                 WriteMode = FileWriteMode.Overwrite
             };
 
-            var result = await node.ExecuteAsync(CreateContext(InputWith("data", base64)), CancellationToken.None);
+            var result = await ((INodeType)node).ExecuteAsync(CreateContext(InputWith("data", base64)), CancellationToken.None);
 
             Assert.True(result.Success, result.Error?.Message);
             Assert.Equal(bytes, await File.ReadAllBytesAsync(target, CancellationToken.None));
@@ -55,10 +55,10 @@ public sealed class WriteFileNodeTests
         {
             var node = new WriteFileNode { FileName = FileNameOf(target), WriteMode = FileWriteMode.Append };
 
-            var first = await node.ExecuteAsync(CreateContext(InputWith("data", Convert.ToBase64String(bytesA))), CancellationToken.None);
+            var first = await ((INodeType)node).ExecuteAsync(CreateContext(InputWith("data", Convert.ToBase64String(bytesA))), CancellationToken.None);
             Assert.True(first.Success, first.Error?.Message);
 
-            var second = await node.ExecuteAsync(CreateContext(InputWith("data", Convert.ToBase64String(bytesB))), CancellationToken.None);
+            var second = await ((INodeType)node).ExecuteAsync(CreateContext(InputWith("data", Convert.ToBase64String(bytesB))), CancellationToken.None);
             Assert.True(second.Success, second.Error?.Message);
 
             Assert.Equal(bytesA.Length + bytesB.Length, new FileInfo(target).Length);
@@ -88,7 +88,7 @@ public sealed class WriteFileNodeTests
                 WriteMode = FileWriteMode.Overwrite
             };
 
-            var result = await node.ExecuteAsync(CreateContext(InputWith("data", Convert.ToBase64String(bytes))), CancellationToken.None);
+            var result = await ((INodeType)node).ExecuteAsync(CreateContext(InputWith("data", Convert.ToBase64String(bytes))), CancellationToken.None);
 
             Assert.True(result.Success, result.Error?.Message);
             Assert.True(Directory.Exists(dir));
@@ -116,7 +116,7 @@ public sealed class WriteFileNodeTests
                 WriteMode = FileWriteMode.Overwrite
             };
 
-            var result = await node.ExecuteAsync(
+            var result = await ((INodeType)node).ExecuteAsync(
                 CreateContext(InputWith("content", Convert.ToBase64String(bytes))),
                 CancellationToken.None);
 
@@ -134,7 +134,7 @@ public sealed class WriteFileNodeTests
     {
         var node = new WriteFileNode { FileName = FileNameOf("x.bin") };
 
-        var result = await node.ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(new DataBatch()), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("MissingBinaryField", result.Error?.Code);
@@ -146,7 +146,7 @@ public sealed class WriteFileNodeTests
         var node = new WriteFileNode { FileName = FileNameOf("x.bin") };
 
         // 输入项存在，但缺少默认 data 字段。
-        var result = await node.ExecuteAsync(
+        var result = await ((INodeType)node).ExecuteAsync(
             CreateContext(new DataBatch { Items = [new DataItem { Data = new JsonObject { ["other"] = "y" }, Success = true }] }),
             CancellationToken.None);
 
@@ -159,7 +159,7 @@ public sealed class WriteFileNodeTests
     {
         var node = new WriteFileNode { FileName = FileNameOf("") };
 
-        var result = await node.ExecuteAsync(CreateContext(InputWith("data", Convert.ToBase64String([1, 2, 3]))), CancellationToken.None);
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(InputWith("data", Convert.ToBase64String([1, 2, 3]))), CancellationToken.None);
 
         Assert.False(result.Success);
         Assert.Equal("MissingFileName", result.Error?.Code);
@@ -170,7 +170,7 @@ public sealed class WriteFileNodeTests
     {
         var node = new WriteFileNode { FileName = FileNameOf("x.bin") };
 
-        var result = await node.ExecuteAsync(
+        var result = await ((INodeType)node).ExecuteAsync(
             CreateContext(InputWith("data", "!!!not-valid-base64!!!")),
             CancellationToken.None);
 

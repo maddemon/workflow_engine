@@ -30,23 +30,12 @@ public enum ShellType
 /// Shell 工具节点，作为 Agent 的工具执行 shell 命令。
 /// 支持 bash/powershell/cmd。
 /// </summary>
-public sealed class ShellToolNode : INodeType
+[NodeMeta(TypeName = "shellTool", DisplayName = "Shell Tool", Category = NodeCategory.AI, Icon = "terminal", DefaultIsEntry = false)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+[Port(FlowConstants.PortNames.Tools, "Tool Output", PortDirection.Output, PortType.AgentTool)]
+public sealed class ShellToolNode : NodeBase
 {
-    /// <inheritdoc />
-    public string TypeName => "shellTool";
-
-    /// <inheritdoc />
-    public string DisplayName => "Shell Tool";
-
-    /// <inheritdoc />
-    public string Category => "AI";
-
-    /// <inheritdoc />
-    public string Icon => "terminal";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
     /// <summary>
     /// 要执行的命令，支持 JS 表达式（如 <c>'ls -la ' + $json.path</c>）。
     /// 纯命令需用引号包裹为 JS 字符串（如 <c>'echo hello'</c>）。
@@ -89,22 +78,11 @@ public sealed class ShellToolNode : INodeType
     public List<ShellPlaceholder>? Placeholders { get; set; }
 
     /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Tools, DisplayName = "Tool Output", Direction = PortDirection.Output, Type = PortType.AgentTool }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => false;
-
-    /// <inheritdoc />
-    public async Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken cancellationToken)
     {
         if (Command is null || string.IsNullOrWhiteSpace(Command.Source))
         {
-            return context.ErrorResult(FlowConstants.ErrorCodes.MissingCommand, "Command is required.");
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.MissingCommand, "Command is required.");
         }
 
         // SEC-1：RunInShell=true 经 shell 解释器执行命令（命令注入高危路径）。
@@ -112,30 +90,30 @@ public sealed class ShellToolNode : INodeType
         // 任一项不满足即拒绝，避免 LLM 诱导执行任意 shell 或未授权命令注入。
         if (RunInShell)
         {
-            if (context.IsAgentInvocation)
+            if (IsInvokedByAgent)
             {
-                return context.ErrorResult(
+                throw new NodeExecutionException(
                     "ShellExecutionDenied",
                     "RunInShell is disabled for commands invoked by an Agent/LLM tool.");
             }
 
-            if (!context.AllowShellExecution)
+            if (!ShellExecutionEnabled)
             {
-                return context.ErrorResult(
+                throw new NodeExecutionException(
                     "ShellExecutionDenied",
                     "RunInShell requires the Shell:AllowShellExecution feature to be enabled and an authorized (admin) role.");
             }
         }
 
-        return await context.CatchToResult(async ct =>
+        try
         {
-            var resolvedCommand = await Command.EvaluateAsync<string>(context, cancellationToken: ct);
+            var resolvedCommand = await EvaluateContextAsync<string>(Command, cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(resolvedCommand))
             {
-                return context.ErrorResult(FlowConstants.ErrorCodes.MissingCommand, "Command resolution failed.");
+                throw new NodeExecutionException(FlowConstants.ErrorCodes.MissingCommand, "Command resolution failed.");
             }
 
-            var result = await ExecuteCommandAsync(resolvedCommand, ct).ConfigureAwait(false);
+            var result = await ExecuteCommandAsync(resolvedCommand, cancellationToken).ConfigureAwait(false);
 
             var outputObj = new JsonObject
             {
@@ -144,8 +122,17 @@ public sealed class ShellToolNode : INodeType
                 ["exitCode"] = result.ExitCode
             };
 
-            return context.CreateSingleResult(outputObj, result.ExitCode == 0);
-        }, cancellationToken).ConfigureAwait(false);
+            // 业务成功与否由进程退出码决定，写入 DataItem.Success 供下游分支判断。
+            return Single(outputObj, result.ExitCode == 0);
+        }
+        catch (OperationCanceledException)
+        {
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.Cancelled, "Shell command was cancelled.");
+        }
+        catch (Exception ex) when (ex is not NodeExecutionException)
+        {
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.UnexpectedError, $"Unexpected error executing shell command: {ex.Message}");
+        }
     }
 
     private async Task<CommandResult> ExecuteCommandAsync(string command, CancellationToken cancellationToken)
@@ -251,6 +238,23 @@ public sealed class ShellToolNode : INodeType
             };
         }
     }
+
+    /// <summary>
+    /// 构造单数据项的成功输出；<paramref name="success"/> 由进程退出码决定。
+    /// </summary>
+    private static NodeHandlerOutput Single(JsonNode? data, bool success = true) =>
+        NodeHandlerOutput.Data(new DataBatch
+        {
+            Items =
+            [
+                new DataItem
+                {
+                    Data = data,
+                    Success = success,
+                    SourceIndex = 0
+                }
+            ]
+        });
 
     /// <summary>
     /// 将命令字符串拆分为程序与参数数组（支持单/双引号与反斜杠转义），用于去 shell 化直接执行。

@@ -3,8 +3,10 @@ using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Ai;
+using FlowEngine.Core.Attributes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
+using FlowEngine.Core.Exceptions;
 
 namespace FlowEngine.Plugins.Standard;
 
@@ -18,13 +20,13 @@ namespace FlowEngine.Plugins.Standard;
 /// 写入 inputs[inputPorts[0]]。手动输入的聊天消息须经 inputs["Input"] 进入节点，故保留 Input 端口。
 /// 本节点是 <c>ChatInputNode</c> 的手动变体：不暴露外部端点，不引入 ResponseMode/WelcomeMessage 参数。
 /// </remarks>
-public sealed class ChatManualNode : INodeType
+[NodeMeta(TypeName = "chatManual", DisplayName = "Chat Manual", Category = NodeCategory.Trigger, Icon = "chat", DefaultIsEntry = true)]
+[Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
+[Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
+public sealed class ChatManualNode : NodeBase
 {
     /// <inheritdoc />
-    public string TypeName => "chatManual";
-
-    /// <inheritdoc />
-    AiNodeDefinition? INodeType.GetAiDefinition(NodeTypeDescriptor descriptor) =>
+    protected override AiNodeDefinition? GetAiDefinition(NodeTypeDescriptor descriptor) =>
         AiDefinitionHelpers.Def(
             "Chat Manual", "Trigger", true,
             "聊天手动输入触发器：接收编辑器在聊天窗口手动输入的聊天消息，经 execute 端点投递为触发负载，聚合首个输入项为输出并附加触发时间，是聊天型工作流的入口节点。",
@@ -35,33 +37,11 @@ public sealed class ChatManualNode : INodeType
                 JsonNode.Parse("""{"message":"帮我查下天气","triggeredAt":"2026-07-12T09:00:00Z"}""")));
 
     /// <inheritdoc />
-    public string DisplayName => "Chat Manual";
-
-    /// <inheritdoc />
-    public string Category => "Trigger";
-
-    /// <inheritdoc />
-    public string Icon => "chat";
-
-    /// <inheritdoc />
-    public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
-
-    /// <inheritdoc />
-    public IReadOnlyList<PortDefinition> Ports { get; } =
-    [
-        new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
-        new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
-    ];
-
-    /// <inheritdoc />
-    public bool DefaultIsEntry => true;
-
-    /// <inheritdoc />
-    public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+    public override Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
         try
         {
-            var batch = context.GetInputBatch();
+            var batch = input.InputBatch;
             var payload = new JsonObject();
 
             if (batch.Items.Count > 0)
@@ -90,13 +70,24 @@ public sealed class ChatManualNode : INodeType
             }
 
             // 仅记录触发事件，不记录消息原文（敏感信息避免落日志）。
-            context.Logger?.LogInformation("Chat manual triggered.");
+            Logger?.LogInformation("Chat manual triggered.");
 
-            return Task.FromResult(context.Ok(payload));
+            return Task.FromResult(NodeHandlerOutput.Data(new DataBatch
+            {
+                Items =
+                [
+                    new DataItem
+                    {
+                        Data = payload,
+                        Success = true,
+                        SourceIndex = 0
+                    }
+                ]
+            }));
         }
         catch (Exception ex)
         {
-            return Task.FromResult(context.ErrorResult(FlowConstants.ErrorCodes.UnexpectedError, ex.Message));
+            throw new NodeExecutionException(FlowConstants.ErrorCodes.UnexpectedError, ex.Message);
         }
     }
 }

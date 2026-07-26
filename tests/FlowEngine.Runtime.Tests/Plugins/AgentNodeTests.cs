@@ -31,14 +31,14 @@ public class AgentNodeTests
     [Fact]
     public void TypeName_Default_ReturnsAgent()
     {
-        var node = new AgentNode();
+        INodeType node = new AgentNode();
         Assert.Equal("agent", node.TypeName);
     }
 
     [Fact]
     public void Ports_Default_ReturnsExpectedPorts()
     {
-        var node = new AgentNode();
+        INodeType node = new AgentNode();
 
         Assert.Equal(4, node.Ports.Count);
         Assert.Contains(node.Ports, p => p.Name == FlowConstants.PortNames.Input && p.Type == PortType.Main && p.Direction == PortDirection.Input);
@@ -62,7 +62,7 @@ public class AgentNodeTests
         var node = new AgentNode();
         var context = CreateContext();
 
-        var result = await node.ExecuteAsync(context);
+        var result = await ((INodeType)node).ExecuteAsync(context);
 
         Assert.False(result.Success);
         Assert.Equal("MissingLlmClient", result.Error?.Code);
@@ -76,7 +76,7 @@ public class AgentNodeTests
         var workflow = CreateWorkflow();
         var context = CreateContext(workflow: workflow, llmClient: llmClient);
 
-        var result = await node.ExecuteAsync(context);
+        var result = await ((INodeType)node).ExecuteAsync(context);
 
         Assert.True(result.Success);
         Assert.Equal("Done", GetResultContent(result));
@@ -117,7 +117,7 @@ public class AgentNodeTests
         var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNode.Id);
         var agent = new AgentNode();
 
-        await agent.ExecuteAsync(context);
+        await ((INodeType)agent).ExecuteAsync(context);
 
         Assert.NotNull(capturedTools);
         Assert.Single(capturedTools);
@@ -149,7 +149,7 @@ public class AgentNodeTests
         var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNode.Id);
         var agent = new AgentNode();
 
-        await agent.ExecuteAsync(context);
+        await ((INodeType)agent).ExecuteAsync(context);
 
         Assert.NotNull(capturedTools);
         Assert.Empty(capturedTools);
@@ -206,7 +206,7 @@ public class AgentNodeTests
         var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNode.Id);
         var agent = new AgentNode();
 
-        var result = await agent.ExecuteAsync(context);
+        var result = await ((INodeType)agent).ExecuteAsync(context);
 
         Assert.True(result.Success);
         Assert.Equal("Final answer", GetResultContent(result));
@@ -249,7 +249,7 @@ public class AgentNodeTests
         var agent = new AgentNode { MaxIterations = 3 };
         var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNode.Id);
 
-        var result = await agent.ExecuteAsync(context);
+        var result = await ((INodeType)agent).ExecuteAsync(context);
 
         Assert.False(result.Success);
         Assert.Equal("AgentTimeout", result.Error?.Code);
@@ -275,7 +275,7 @@ public class AgentNodeTests
         var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNode.Id);
         var agent = new AgentNode();
 
-        var result = await agent.ExecuteAsync(context);
+        var result = await ((INodeType)agent).ExecuteAsync(context);
 
         Assert.False(result.Success);
         Assert.Equal("LlmError", result.Error?.Code);
@@ -324,7 +324,7 @@ public class AgentNodeTests
         var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNode.Id);
         var agent = new AgentNode();
 
-        var result = await agent.ExecuteAsync(context);
+        var result = await ((INodeType)agent).ExecuteAsync(context);
 
         Assert.True(result.Success);
         Assert.Equal("Done", GetResultContent(result));
@@ -366,7 +366,7 @@ public class AgentNodeTests
             inputs: new Dictionary<string, DataBatch> { [FlowConstants.PortNames.Input] = inputBatch });
 
         var agent = new AgentNode();
-        await agent.ExecuteAsync(context);
+        await ((INodeType)agent).ExecuteAsync(context);
 
         var messages = llmClient.LastMessages;
         Assert.NotNull(messages);
@@ -397,7 +397,7 @@ public class AgentNodeTests
         var llmClient = new MockLlmClient(_ => new LlmResponse { Content = "Done" });
         var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNodeInst.Id);
 
-        await agentNode.ExecuteAsync(context);
+        await ((INodeType)agentNode).ExecuteAsync(context);
 
         var messages = llmClient.LastMessages;
         Assert.NotNull(messages);
@@ -455,7 +455,7 @@ public class AgentNodeTests
         var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNode.Id);
         var agent = new AgentNode();
 
-        await agent.ExecuteAsync(context);
+        await ((INodeType)agent).ExecuteAsync(context);
 
         var messages = llmClient.LastMessages;
         Assert.NotNull(messages);
@@ -500,7 +500,7 @@ public class AgentNodeTests
             llmClient: llmClient,
             currentNodeId: agentNodeInst.Id);
 
-        var result = await agentNode.ExecuteAsync(context, timeoutCts.Token);
+        var result = await ((INodeType)agentNode).ExecuteAsync(context, timeoutCts.Token);
 
         Assert.False(result.Success);
         Assert.Equal("AgentTimeout", result.Error?.Code);
@@ -561,7 +561,7 @@ public class AgentNodeTests
             currentNodeId: agentNode.Id);
 
         var agent = new AgentNode();
-        var result = await agent.ExecuteAsync(context);
+        var result = await ((INodeType)agent).ExecuteAsync(context);
 
         Assert.True(result.Success);
         Assert.Equal("Final answer", GetResultContent(result));
@@ -700,7 +700,7 @@ public class AgentNodeTests
         var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNode.Id);
         var agent = new AgentNode();
 
-        var result = await agent.ExecuteAsync(context);
+        var result = await ((INodeType)agent).ExecuteAsync(context);
 
         Assert.True(result.Success);
         var dto = GetResultDto(result);
@@ -799,7 +799,7 @@ public class AgentNodeTests
         };
 
         var agent = new AgentNode();
-        var result = await agent.ExecuteAsync(context);
+        var result = await ((INodeType)agent).ExecuteAsync(context);
 
         Assert.True(result.Success);
         Assert.True(callbackErrorCount > 0);
@@ -836,7 +836,7 @@ public class AgentNodeTests
         context.Logger = logger;
 
         var agent = new AgentNode();
-        await agent.ExecuteAsync(context);
+        await ((INodeType)agent).ExecuteAsync(context);
 
         Assert.Contains(logger.Warnings, m => m.Contains("2 条输入数据") || m.Contains("仅处理第一条"));
     }
@@ -887,7 +887,7 @@ public class AgentNodeTests
         var context = CreateContext(workflow: workflow, llmClient: llmClient, currentNodeId: agentNode.Id);
         var agent = new AgentNode { MemoryEnabled = true, MemoryWindowSize = 10 };
 
-        var result = await agent.ExecuteAsync(context);
+        var result = await ((INodeType)agent).ExecuteAsync(context);
 
         Assert.True(result.Success);
         Assert.Equal(3, callCount);

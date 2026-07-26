@@ -12,6 +12,10 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\backend\FlowEngine.Core\FlowEngine.Core.csproj" />
+    <!-- 编译期合规守卫：禁止 NodeBase 派生节点引用服务定位器/索取式 API（见 FE0001）。 -->
+    <ProjectReference Include="..\..\backend\FlowEngine.Analyzers\FlowEngine.Analyzers.csproj"
+                      OutputItemType="Analyzer"
+                      ReferenceOutputAssembly="false" />
   </ItemGroup>
 
   <ItemGroup>
