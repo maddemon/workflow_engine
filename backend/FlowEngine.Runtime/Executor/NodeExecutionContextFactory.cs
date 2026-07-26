@@ -17,6 +17,7 @@ namespace FlowEngine.Runtime.Executor;
 /// <summary>
 /// 构造节点执行上下文。
 /// </summary>
+[Obsolete("阶段五：NodeExecutionContextFactory 已降级为轻量适配壳。新代码应优先经管线阶段与独立 DI 服务（IHttpExecutionService / ICredentialService / ISubExecutionService 等）获取能力，而非经此工厂产出的上帝对象索取。", false)]
 public sealed class NodeExecutionContextFactory(
     INodeRegistry registry,
     ScriptCache scriptCache,

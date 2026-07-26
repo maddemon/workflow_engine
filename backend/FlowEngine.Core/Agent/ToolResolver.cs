@@ -6,7 +6,7 @@ namespace FlowEngine.Core.Agent;
 /// <summary>
 /// 工具解析结果，包含工具定义、节点定义、节点类型实例及可能的错误信息。
 /// </summary>
-internal sealed record ToolResolution(
+public sealed record ToolResolution(
     ToolDefinition? Tool,
     NodeDefinition? Node,
     INodeType? NodeType,
@@ -17,10 +17,11 @@ internal sealed record ToolResolution(
 
 /// <summary>
 /// 工具解析器，封装工具查找、节点查找、节点类型查找逻辑。
+/// 实现 <see cref="IToolResolver"/>，使迁移后的 AgentNode 仅依赖接口而非内部类。
 /// </summary>
 internal sealed class ToolResolver(
     IReadOnlyList<ToolDefinition> tools,
-    NodeExecutionContext parentContext)
+    NodeExecutionContext parentContext) : IToolResolver
 {
     /// <summary>
     /// 解析工具调用所需的三级查找：工具定义 → 节点定义 → 节点类型。

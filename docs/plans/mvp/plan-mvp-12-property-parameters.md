@@ -1,5 +1,11 @@
 # 开发计划：属性驱动参数系统（plan-mvp-12-property-parameters）
 
+> 关联计划：本计划与 `docs/plans/plan-node-execution-pipeline.md`（节点执行管线化重构）**互补，不重复、不冲突**。
+> - 本计划（mvp-12）负责**节点侧属性驱动参数**：自定义 Attribute（`[DisplayCondition]`/`[Credential]`/`[IgnoreParameter]`/`[Hint]`/`[OptionsProvider]`/`[Item]`）、`ParameterDiscoverer`/`ParameterHydrator`，以及将 `HttpRequestNode`/`IfNode`/`JSNode` 等迁移为属性驱动、移除 `GetParameter<>` 调用。
+> - `plan-node-execution-pipeline.md` 负责**执行管线框架层**：`NodePipeline` 有序 Stage、`NodePipelineContext`（管线共享上下文，已与节点级 `NodeContext` 区分命名）、`NodeBase` 基类、最小上下文原则、独立 DI 服务边界（`HttpClientPool` 等）。
+> - 边界：本计划的节点迁移以“属性声明 → 绑定”为主；`NodeBase` 基类的引入与管线接入由 `plan-node-execution-pipeline.md` 统一收口。实现时以该计划的命名与禁令（禁止 `context.GetParameter`/服务定位器、消费 `Script.ResolvedValue` 等）为准。
+> - 注：`[Hint]`/`[Credential]` 等 Attribute **当前已存在于 `FlowEngine.Core/Attributes/`**，本阶段为**审核接续而非从零新建**（避免重复实现）。
+
 ## 1. 概述
 
 用 C# 属性 + Attribute 方案替换当前的 `ParameterDefinition` 对象列表方案，消除 n8n 风格痕迹，充分利用 C# 类型系统和 .NET 生态。

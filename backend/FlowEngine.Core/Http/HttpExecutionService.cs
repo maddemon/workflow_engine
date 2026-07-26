@@ -11,8 +11,9 @@ namespace FlowEngine.Core.Http;
 
 /// <summary>
 /// HTTP 执行服务实现，统一处理客户端池获取、SSRF 预检、认证注入、请求发送与异常映射。
+/// 同时实现 <see cref="FlowEngine.Core.Abstractions.IHttpExecutionService"/>，供节点经抽象接口调用。
 /// </summary>
-public class HttpExecutionService
+public class HttpExecutionService : FlowEngine.Core.Abstractions.IHttpExecutionService
 {
     /// <inheritdoc />
     public async Task<NodeExecutionResult> ExecuteAsync(

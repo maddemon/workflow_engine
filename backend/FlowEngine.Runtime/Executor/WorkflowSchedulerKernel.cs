@@ -49,7 +49,8 @@ public sealed class WorkflowSchedulerKernel
         ErrorStrategyHandler errorHandler,
         SecretMasker secretMasker,
         ILogger<WorkflowSchedulerKernel> logger,
-        IOptions<EngineDefaultsOptions>? defaultsOptions = null)
+        IOptions<EngineDefaultsOptions>? defaultsOptions = null,
+        IHttpExecutionService? httpExecutionService = null)
     {
         _nodeRegistry = nodeRegistry;
         _defaults = defaultsOptions?.Value ?? new EngineDefaultsOptions();
@@ -59,7 +60,7 @@ public sealed class WorkflowSchedulerKernel
         // 协作者统一接受非泛型 ILogger，从而无需额外日志工厂即可继承内核的日志通道。
         _outputRouter = new OutputRouter(nodeRegistry, logger);
         _retryExecutor = new RetryExecutor(_defaults, errorHandler, logger);
-        _nodeProcessor = new NodeProcessor(nodeRegistry, contextFactory, secretMasker, _retryExecutor, _outputRouter, _defaults);
+        _nodeProcessor = new NodeProcessor(nodeRegistry, contextFactory, secretMasker, _retryExecutor, _outputRouter, _defaults, httpExecutionService);
         _timeoutProcessor = new TimeoutProcessor(nodeRegistry, errorHandler, secretMasker, _outputRouter);
     }
 
