@@ -10,6 +10,7 @@ using FlowEngine.Core.Scripting;
 using FlowEngine.Core.ValueObjects;
 using FlowEngine.Runtime.Security;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
@@ -34,7 +35,8 @@ public sealed class WorkflowExecutor : IEngine
         ILogger<WorkflowSchedulerKernel> kernelLogger,
         SecretMasker secretMasker,
         IEventBus? eventBus = null,
-        IOptions<EngineDefaultsOptions>? defaultsOptions = null)
+        IOptions<EngineDefaultsOptions>? defaultsOptions = null,
+        IServiceProvider serviceProvider = null!)
     {
         _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
         _nodeRegistry = nodeRegistry ?? throw new ArgumentNullException(nameof(nodeRegistry));
@@ -47,7 +49,8 @@ public sealed class WorkflowExecutor : IEngine
             errorHandler ?? throw new ArgumentNullException(nameof(errorHandler)),
             secretMasker ?? throw new ArgumentNullException(nameof(secretMasker)),
             kernelLogger ?? throw new ArgumentNullException(nameof(kernelLogger)),
-            defaultsOptions);
+            defaultsOptions,
+            serviceProvider: serviceProvider);
     }
 
     /// <summary>

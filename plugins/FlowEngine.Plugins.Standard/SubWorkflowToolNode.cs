@@ -1,4 +1,5 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
@@ -20,6 +21,8 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Tools, "Tool Output", PortDirection.Output, PortType.AgentTool)]
 public sealed class SubWorkflowToolNode : NodeBase
 {
+    [Inject] public INodeRegistry? Registry { get; private set; }
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
     private const int DefaultMaxNestingDepth = 5;
     private const int MinMaxNestingDepth = 1;
     private const int MaxMaxNestingDepth = 20;
@@ -67,18 +70,17 @@ public sealed class SubWorkflowToolNode : NodeBase
     /// 最大嵌套深度，防止无限递归。
     /// </summary>
     [Description("Maximum nesting depth to prevent infinite recursion.")]
+    [Range(MinMaxNestingDepth, MaxMaxNestingDepth)]
     public int MaxNestingDepth { get; set; } = DefaultMaxNestingDepth;
 
     /// <inheritdoc />
     public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
-        var effectiveMaxNestingDepth = ResolveMaxNestingDepth();
-
-        if (NestingLevel >= effectiveMaxNestingDepth)
+        if (Ctx.NestingDepth >= MaxNestingDepth)
         {
             throw new NodeExecutionException(
                 "MaxNestingDepthExceeded",
-                $"SubWorkflow nesting depth {NestingLevel} exceeds maximum allowed depth of {effectiveMaxNestingDepth}.");
+                $"SubWorkflow nesting depth {Ctx.NestingDepth} exceeds maximum allowed depth of {MaxNestingDepth}.");
         }
 
         Workflow? workflow = null;
@@ -95,7 +97,7 @@ public sealed class SubWorkflowToolNode : NodeBase
                 throw new NodeExecutionException("InvalidWorkflowId", $"WorkflowId '{WorkflowId}' is not a valid GUID.");
             }
 
-            workflow = await LoadWorkflowAsync(workflowId, ct).ConfigureAwait(false);
+            workflow = Ctx.WorkflowLoader is null ? null : await Ctx.WorkflowLoader.LoadAsync(workflowId, ct).ConfigureAwait(false);
             if (workflow is null)
             {
                 throw new NodeExecutionException("WorkflowNotFound", $"Workflow '{WorkflowId}' not found in database.");
@@ -108,7 +110,7 @@ public sealed class SubWorkflowToolNode : NodeBase
                 throw new NodeExecutionException("MissingWorkflowJson", "WorkflowJson is required when Source is Inline.");
             }
 
-            if (!TryParseJson<Workflow>(WorkflowJson, out workflow, out var parseError, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }))
+            if (!JsonHelper.TryParse<Workflow>(WorkflowJson, out workflow, out var parseError, new JsonSerializerOptions { PropertyNameCaseInsensitive = true }))
             {
                 throw new NodeExecutionException("InvalidWorkflowJson", $"Failed to parse workflow JSON: {parseError}");
             }
@@ -133,7 +135,7 @@ public sealed class SubWorkflowToolNode : NodeBase
 
         try
         {
-            var executor = new SubWorkflowExecutor(Registry, NestingLevel + 1);
+            var executor = new SubWorkflowExecutor(Registry, Ctx.NestingDepth + 1);
             var inputBatch = input.InputBatch;
             var inputPayload = inputBatch.Items.Count > 0 ? inputBatch.Items[0].Data : null;
             var result = await executor.ExecuteAsync(workflow!, inputPayload, effectiveToken).ConfigureAwait(false);
@@ -159,31 +161,6 @@ public sealed class SubWorkflowToolNode : NodeBase
         }
     }
 
-    /// <summary>
-    /// 从节点参数解析最大嵌套深度，未配置时使用属性默认值，并校验范围 [1, 20]。
-    /// </summary>
-    private int ResolveMaxNestingDepth()
-    {
-        var depth = CoerceInt(GetResolvedParameter("maxNestingDepth"));
-        if (depth.HasValue)
-        {
-            if (depth.Value < MinMaxNestingDepth) return MinMaxNestingDepth;
-            if (depth.Value > MaxMaxNestingDepth) return MaxMaxNestingDepth;
-            return depth.Value;
-        }
-
-        return MaxNestingDepth;
-    }
-
-    /// <summary>
-    /// 将可能的 JsonValue 或已解析的 CLR 值安全转换为 int。
-    /// </summary>
-    private static int? CoerceInt(object? raw)
-    {
-        if (raw is int i) return i;
-        if (raw is JsonValue jv && jv.TryGetValue<int>(out var ji)) return ji;
-        return null;
-    }
 }
 
 /// <summary>

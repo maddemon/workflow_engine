@@ -33,6 +33,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\backend\FlowEngine.Runtime\FlowEngine.Runtime.csproj" />
     <ProjectReference Include="..\..\backend\FlowEngine.Infrastructure\FlowEngine.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\backend\FlowEngine.Analyzers\FlowEngine.Analyzers.csproj" />
     <ProjectReference Include="..\..\plugins\FlowEngine.Plugins.Standard\FlowEngine.Plugins.Standard.csproj" />
     <ProjectReference Include="..\..\plugins\FlowEngine.Plugins.Storage\FlowEngine.Plugins.Storage.csproj" />
     <ProjectReference Include="..\FlowEngine.TestPlugin\FlowEngine.TestPlugin.csproj" />

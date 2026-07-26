@@ -1,3 +1,4 @@
+using System;
 using System.Net;
 using System.Text;
 using System.Text.Json.Nodes;
@@ -16,8 +17,9 @@ public sealed class HttpRequestNodeTests
 {
     private static Task<NodeExecutionResult> RunAsync(HttpRequestNode node, NodeExecutionContext context, CancellationToken ct = default)
     {
-        // 模拟框架经 ResolutionStage 注入的 HTTP 执行服务（真实管线由 DI 提供）。
-        node.BindServices(new HttpExecutionService(), null, null);
+        // 模拟框架经 NodeCapabilityInjector 注入的 HTTP 执行服务（真实管线由 DI 提供）。
+        var services = new SingleServiceProvider(typeof(IHttpExecutionService), new HttpExecutionService());
+        NodeCapabilityInjector.Inject(node, services, context);
         return ((INodeType)node).ExecuteAsync(context, ct);
     }
 
@@ -275,6 +277,16 @@ public sealed class HttpRequestNodeTests
             Language = ScriptLanguage.JavaScript,
             ReturnType = ScriptReturnType.String
         }.WithResolvedValue(JsonValue.Create(url));
+    }
+
+    /// <summary>极简 <see cref="IServiceProvider"/>：仅返回预置的单一服务实例（测试中模拟 DI 容器）。</summary>
+    private sealed class SingleServiceProvider : IServiceProvider
+    {
+        private readonly Dictionary<Type, object?> _map = new();
+
+        public SingleServiceProvider(Type type, object instance) => _map[type] = instance;
+
+        public object? GetService(Type serviceType) => _map.TryGetValue(serviceType, out var value) ? value : null;
     }
 
     private sealed class NullCredentialAccessor : ICredentialAccessor

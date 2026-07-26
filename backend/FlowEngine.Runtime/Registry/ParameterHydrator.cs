@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Reflection;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Attributes;
@@ -89,6 +90,24 @@ public sealed class ParameterHydrator(ICredentialAccessor? credentialAccessor = 
             try
             {
                 var converted = await ConvertValueAsync(value, property.PropertyType, property).ConfigureAwait(false);
+
+                // 绑定期校验（§4.3）：在写入属性前对数值类型 clamp 到 [Range]，
+                // [Required] 仅记录 warning 不抛异常，以保持现有节点既有行为优先。
+                if (converted is not null)
+                {
+                    var rangeAttr = property.GetCustomAttribute<RangeAttribute>();
+                    if (rangeAttr is not null)
+                    {
+                        converted = ClampToRange(converted, property.PropertyType, rangeAttr);
+                    }
+
+                    var requiredAttr = property.GetCustomAttribute<RequiredAttribute>();
+                    if (requiredAttr is not null && IsMissingForRequired(converted))
+                    {
+                        logger?.LogWarning("ParameterHydrator: 属性 {PropertyName} 标注 [Required] 但值为空，已忽略", property.Name);
+                    }
+                }
+
                 // 跳过非可空值类型赋 null，否则一律写入（包括可空值类型赋 null）
                 if (converted is null && property.PropertyType.IsValueType
                     && Nullable.GetUnderlyingType(property.PropertyType) is null)
@@ -132,5 +151,80 @@ public sealed class ParameterHydrator(ICredentialAccessor? credentialAccessor = 
         }
 
         return await _fallbackConverter.ConvertAsync(value, underlying, _context).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 将数值类型的值 clamp 到 <see cref="RangeAttribute"/> 指定的 [Minimum, Maximum] 区间。
+    /// 仅对 int/long/double/float（含其可空形式）生效；非数值类型原样返回。
+    /// </summary>
+    /// <param name="value">已转换的属性值（非 null）。</param>
+    /// <param name="propertyType">属性声明类型（可能为可空值类型）。</param>
+    /// <param name="range">[Range] 特性。</param>
+    /// <returns>clamp 后的数值，或原值（非数值/无法转换上下界时）。</returns>
+    private static object? ClampToRange(object? value, Type propertyType, RangeAttribute range)
+    {
+        if (value is null)
+        {
+            return value;
+        }
+
+        var underlying = Nullable.GetUnderlyingType(propertyType) ?? propertyType;
+        if (underlying != typeof(int) && underlying != typeof(long) && underlying != typeof(double) && underlying != typeof(float))
+        {
+            return value;
+        }
+
+        if (!TryConvertNumeric(range.Minimum, underlying, out var min) || !TryConvertNumeric(range.Maximum, underlying, out var max))
+        {
+            return value;
+        }
+
+        var comparable = (IComparable)value;
+        if (comparable.CompareTo(min) < 0)
+        {
+            return min;
+        }
+
+        if (comparable.CompareTo(max) > 0)
+        {
+            return max;
+        }
+
+        return value;
+    }
+
+    /// <summary>
+    /// 将 <see cref="RangeAttribute"/> 的 Minimum/Maximum（多为 int）安全转换为目标数值类型。
+    /// </summary>
+    private static bool TryConvertNumeric(object? raw, Type targetType, out object? result)
+    {
+        try
+        {
+            result = Convert.ChangeType(raw, targetType);
+            return true;
+        }
+        catch (Exception)
+        {
+            result = 0;
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// 判定值是否视为 [Required] 缺失：null 或空白字符串视为缺失；枚举默认值不视为缺失（避免过度严格）。
+    /// </summary>
+    private static bool IsMissingForRequired(object? value)
+    {
+        if (value is null)
+        {
+            return true;
+        }
+
+        if (value is string s && string.IsNullOrWhiteSpace(s))
+        {
+            return true;
+        }
+
+        return false;
     }
 }

@@ -29,6 +29,7 @@ public sealed class NodeProcessor
     private readonly EngineDefaultsOptions _defaults;
     private readonly IHttpExecutionService? _httpExecutionService;
     private readonly ISubExecutionService? _subExecutionService;
+    private readonly IServiceProvider? _serviceProvider;
 
     /// <summary>
     /// 构造节点处理器。
@@ -49,7 +50,8 @@ public sealed class NodeProcessor
         OutputRouter outputRouter,
         EngineDefaultsOptions defaults,
         IHttpExecutionService? httpExecutionService = null,
-        ISubExecutionService? subExecutionService = null)
+        ISubExecutionService? subExecutionService = null,
+        IServiceProvider serviceProvider = null!)
     {
         _nodeRegistry = nodeRegistry;
         _contextFactory = contextFactory;
@@ -59,6 +61,7 @@ public sealed class NodeProcessor
         _defaults = defaults;
         _httpExecutionService = httpExecutionService;
         _subExecutionService = subExecutionService;
+        _serviceProvider = serviceProvider;
     }
 
     /// <summary>
@@ -81,8 +84,8 @@ public sealed class NodeProcessor
         {
             new InitializeStage(_nodeRegistry, _defaults),
             new ValidationStage(_nodeRegistry),
-            new ResolutionStage(_httpExecutionService, _subExecutionService),
-            new ExecutionStage(_contextFactory, _retryExecutor, _secretMasker, _defaults),
+            new ResolutionStage(),
+            new ExecutionStage(_contextFactory, _retryExecutor, _secretMasker, _defaults, _serviceProvider),
             new PostProcessStage(),
             new RoutingStage(_outputRouter),
             new PersistenceStage(_secretMasker),

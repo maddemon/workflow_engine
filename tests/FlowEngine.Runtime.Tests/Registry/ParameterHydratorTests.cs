@@ -1,3 +1,4 @@
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core.Abstractions;
@@ -121,6 +122,38 @@ public class ParameterHydratorTests
         Assert.Equal("2 + 2", node.Mappings["b"].Source);
     }
 
+    [Fact]
+    public async Task Hydrate_RangeAttribute_Clamps_NumericValue_ToInterval()
+    {
+        var node = new RangeNode();
+        var resolved = new Dictionary<string, object>
+        {
+            ["maxItems"] = 50,
+            ["minItems"] = -5,
+            ["kept"] = 7
+        };
+
+        await _hydrator.HydrateAsync(node, resolved);
+
+        Assert.Equal(10, node.MaxItems);   // 50 被 clamp 到 [1,10]
+        Assert.Equal(1, node.MinItems);    // -5 被 clamp 到 [1,100]
+        Assert.Equal(7, node.Kept);        // 区间内的原值保持不变
+    }
+
+    [Fact]
+    public async Task Hydrate_NullableRangeAttribute_Clamps_NullableValue()
+    {
+        var node = new RangeNode();
+        var resolved = new Dictionary<string, object>
+        {
+            ["optional"] = 999
+        };
+
+        await _hydrator.HydrateAsync(node, resolved);
+
+        Assert.Equal(100, node.Optional);  // 999 被 clamp 到 [0,100]
+    }
+
     private class ScriptTestNode : INodeType
     {
         public string TypeName => "scriptTest";
@@ -132,6 +165,23 @@ public class ParameterHydratorTests
         public bool DefaultIsEntry => false;
         public Script Expression { get; set; } = Script.Empty;
         public Dictionary<string, Script> Mappings { get; set; } = [];
+        public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+            => Task.FromResult(new NodeExecutionResult { Success = true });
+    }
+
+    private class RangeNode : INodeType
+    {
+        public string TypeName => "rangeTest";
+        public string DisplayName => "Range Test";
+        public string Category => "Test";
+        public string Icon => "test";
+        public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
+        public IReadOnlyList<PortDefinition> Ports { get; } = [];
+        public bool DefaultIsEntry => false;
+        [Range(1, 10)] public int MaxItems { get; set; } = 3;
+        [Range(1, 100)] public int MinItems { get; set; } = 5;
+        [Range(0, 100)] public int Optional { get; set; }
+        [Range(1, 20)] public int Kept { get; set; } = 1;
         public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
             => Task.FromResult(new NodeExecutionResult { Success = true });
     }

@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Text.Json.Nodes;
 using Amazon.S3;
 using Amazon.S3.Model;
@@ -21,6 +21,7 @@ namespace FlowEngine.Plugins.Storage;
 [Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
 public sealed class ObjectStorageNode : NodeBase
 {
+    [Inject] public IExecutionLogger? Logger { get; private set; }
     /// <summary>
     /// S3 兼容存储操作类型。
     /// </summary>

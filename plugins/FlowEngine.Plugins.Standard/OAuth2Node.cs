@@ -18,6 +18,8 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
 public sealed class OAuth2Node : NodeBase
 {
+    [Inject] public ICredentialAccessor Creds { get; private set; } = null!;
+
     /// <summary>
     /// 凭据名称。
     /// </summary>
@@ -33,7 +35,7 @@ public sealed class OAuth2Node : NodeBase
             throw new NodeExecutionException("MissingCredentialName", "CredentialName is required.");
         }
 
-        var credential = await GetCredentialAsync(CredentialName, ct)
+        var credential = await Creds.ResolveAsync(CredentialName, ct)
             .ConfigureAwait(false);
 
         if (credential is null)

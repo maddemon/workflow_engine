@@ -36,6 +36,8 @@ public enum ShellType
 [Port(FlowConstants.PortNames.Tools, "Tool Output", PortDirection.Output, PortType.AgentTool)]
 public sealed class ShellToolNode : NodeBase
 {
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
+
     /// <summary>
     /// 要执行的命令，支持 JS 表达式（如 <c>'ls -la ' + $json.path</c>）。
     /// 纯命令需用引号包裹为 JS 字符串（如 <c>'echo hello'</c>）。
@@ -90,14 +92,14 @@ public sealed class ShellToolNode : NodeBase
         // 任一项不满足即拒绝，避免 LLM 诱导执行任意 shell 或未授权命令注入。
         if (RunInShell)
         {
-            if (IsInvokedByAgent)
+            if (Ctx.IsAgentInvocation)
             {
                 throw new NodeExecutionException(
                     "ShellExecutionDenied",
                     "RunInShell is disabled for commands invoked by an Agent/LLM tool.");
             }
 
-            if (!ShellExecutionEnabled)
+            if (!Ctx.AllowShellExecution)
             {
                 throw new NodeExecutionException(
                     "ShellExecutionDenied",
@@ -107,7 +109,7 @@ public sealed class ShellToolNode : NodeBase
 
         try
         {
-            var resolvedCommand = await EvaluateContextAsync<string>(Command, cancellationToken).ConfigureAwait(false);
+            var resolvedCommand = await Command.EvaluateAsync<string>(Ctx, cancellationToken: cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(resolvedCommand))
             {
                 throw new NodeExecutionException(FlowConstants.ErrorCodes.MissingCommand, "Command resolution failed.");

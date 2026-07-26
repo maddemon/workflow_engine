@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Data.Common;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
@@ -20,6 +20,8 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
 public sealed class DbReadNode : NodeBase
 {
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
+    [Inject] public IExecutionLogger? Logger { get; private set; }
     /// <summary>
     /// 数据库连接凭据（类型为 <c>connectionString</c>）。凭据按结构化字段（dbType/host/port/database/userid/password 等）
     /// 配置，运行时由对应方言的 <see cref="IConnectionStringBuilder"/> 生成 ADO.NET 连接字符串。
@@ -105,7 +107,7 @@ public sealed class DbReadNode : NodeBase
                 }
             }
 
-            await using var executor = await DbExecutor.CreateAsync(dialect, connectionString, cancellationToken, ExecutionContext.EngineLogger).ConfigureAwait(false);
+            await using var executor = await DbExecutor.CreateAsync(dialect, connectionString, cancellationToken, Ctx.EngineLogger).ConfigureAwait(false);
 
             var output = new DataBatch();
             foreach (var (item, index, sql) in sqlStatements)
@@ -179,7 +181,7 @@ public sealed class DbReadNode : NodeBase
                 "dbRead 不允许将上游数据（$json/$input/$item/$items）直接拼入 SQL 文本；请改用 @name 命名参数（Parameters）。"));
         }
 
-        var sql = await EvaluateItemAsync<string>(Sql!, item, itemIndex, cancellationToken).ConfigureAwait(false);
+        var sql = await Sql!.EvaluateAsync<string>(Ctx, item: item, itemIndex: itemIndex, cancellationToken: cancellationToken).ConfigureAwait(false);
 
         if (string.IsNullOrWhiteSpace(sql))
         {
@@ -232,7 +234,7 @@ public sealed class DbReadNode : NodeBase
         {
             if (script is null) continue;
 
-            resolved[name] = await EvaluateItemAsync<object?>(script, item, itemIndex, cancellationToken)
+            resolved[name] = await script.EvaluateAsync<object?>(Ctx, item: item, itemIndex: itemIndex, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         }
 

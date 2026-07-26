@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Dynamic;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -22,6 +22,7 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Tools, "Tool Output", PortDirection.Output, PortType.AgentTool)]
 public sealed class CodeSnippetToolNode : NodeBase
 {
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
     /// <summary>
     /// 预定义代码。
     /// </summary>
@@ -49,8 +50,8 @@ public sealed class CodeSnippetToolNode : NodeBase
             var inputData = GetInputData(inputPayload);
 
             var result = inputData is not null
-                ? await Code.ExecuteAsync(ExecutionContext, ct, ("input", inputData)).ConfigureAwait(false)
-                : await Code.ExecuteAsync(ExecutionContext, ct).ConfigureAwait(false);
+                ? await Code.ExecuteAsync(Ctx, ct, ("input", inputData)).ConfigureAwait(false)
+                : await Code.ExecuteAsync(Ctx, ct).ConfigureAwait(false);
             var outputItem = ToDataItem(result);
 
             return NodeHandlerOutput.Data(new DataBatch { Items = [outputItem] });

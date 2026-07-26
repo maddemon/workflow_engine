@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
@@ -25,6 +25,7 @@ namespace FlowEngine.Plugins.Storage;
 [Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
 public sealed class RedisNode : NodeBase
 {
+    [Inject] public IExecutionLogger? Logger { get; private set; }
     /// <summary>
     /// 注入的 Redis 数据库（测试用内部接缝）。非空时跳过凭据连接，直接使用该实例。
     /// </summary>

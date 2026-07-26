@@ -18,6 +18,8 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Input, "Input", PortDirection.Input, PortType.Main)]
 public sealed class StopErrorNode : NodeBase
 {
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
+
     /// <summary>
     /// 停止时返回的错误消息，可为字面量或 JS 表达式（支持 <c>$json</c> / <c>$input</c> 等注入）。
     /// </summary>
@@ -63,7 +65,7 @@ public sealed class StopErrorNode : NodeBase
         try
         {
             var item = input.InputBatch.Items.Count > 0 ? input.InputBatch.Items[0].Data : null;
-            return await EvaluateItemAsync<string>(ErrorMessage, item, 0, cancellationToken).ConfigureAwait(false) ?? source;
+            return await ErrorMessage.EvaluateAsync<string>(Ctx, item: item, itemIndex: 0, cancellationToken: cancellationToken).ConfigureAwait(false) ?? source;
         }
         catch (ScriptErrorException)
         {

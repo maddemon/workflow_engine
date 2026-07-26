@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
@@ -23,6 +23,7 @@ namespace FlowEngine.Plugins.Storage;
 [Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
 public sealed class MongoDbNode : NodeBase
 {
+    [Inject] public IExecutionLogger? Logger { get; private set; }
     /// <summary>
     /// MongoDB operation selector.
     /// </summary>

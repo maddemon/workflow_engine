@@ -80,7 +80,7 @@ public class PipelineOverheadBenchmark
             new InitializeStage(_registry, defaults),
             new ValidationStage(_registry),
             new ResolutionStage(),
-            new ExecutionStage(_contextFactory, retryExecutor, secretMasker, defaults),
+            new ExecutionStage(_contextFactory, retryExecutor, secretMasker, defaults, null),
             new PostProcessStage(),
             new RoutingStage(outputRouter),
             new PersistenceStage(secretMasker),

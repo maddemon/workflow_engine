@@ -11,6 +11,7 @@ using FlowEngine.Core.Exceptions;
 using FlowEngine.Core.Scripting;
 using FlowEngine.Runtime.Executor;
 using FlowEngine.Runtime.Security;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 
 namespace FlowEngine.Application.Workflows;
@@ -24,7 +25,8 @@ public sealed class WorkflowDryRunService(
     ILogger<WorkflowSchedulerKernel> kernelLogger,
     SecretMasker secretMasker,
     IAuthorizationGuard authGuard,
-    ICredentialAccessor realCredentialAccessor)
+    ICredentialAccessor realCredentialAccessor,
+    IServiceProvider serviceProvider = null!)
 {
     /// <summary>
     /// 对传入的 DSL 工作流执行 Dry-Run。
@@ -66,7 +68,8 @@ public sealed class WorkflowDryRunService(
             contextFactory,
             new ErrorStrategyHandler(),
             secretMasker,
-            kernelLogger);
+            kernelLogger,
+            serviceProvider: serviceProvider);
         var sideEffects = new DryRunSideEffects();
 
         await kernel.RunAsync(session, sideEffects, request.Inputs, cancellationToken).ConfigureAwait(false);

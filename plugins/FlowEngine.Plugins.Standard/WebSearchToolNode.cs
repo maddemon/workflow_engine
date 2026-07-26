@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
@@ -42,6 +42,8 @@ public enum SearchEngineType
 [Port(FlowConstants.PortNames.Tools, "Tool Output", PortDirection.Output, PortType.AgentTool)]
 public sealed class WebSearchToolNode : NodeBase
 {
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
+    [Inject] public ICredentialAccessor Creds { get; private set; } = null!;
     private static readonly HttpExecutionService HttpService = new HttpExecutionService();
 
     /// <summary>
@@ -72,6 +74,12 @@ public sealed class WebSearchToolNode : NodeBase
     [DisplayName("Language")]
     [Description("Search language (e.g. 'en', 'zh-CN').")]
     public string Language { get; set; } = "en";
+
+    /// <summary>
+    /// 静态搜索查询（当输入未提供 query 时作为回退）。
+    /// </summary>
+    [Description("Static search query used as fallback when the input does not provide one.")]
+    public string? Query { get; set; }
 
     /// <summary>
     /// 最大结果数。
@@ -114,7 +122,7 @@ public sealed class WebSearchToolNode : NodeBase
             if (SearchEngine == SearchEngineType.Custom && !string.IsNullOrWhiteSpace(CustomEndpoint))
             {
                 var customUrl = BuildCustomSearchUrl(query);
-                var ssrfBlock = GuardSsrf(customUrl);
+                var ssrfBlock = Ctx.GuardSsrf(customUrl);
                 if (ssrfBlock is not null)
                 {
                     throw new NodeExecutionException(ssrfBlock.Error!.Code, ssrfBlock.Error.Message);
@@ -182,14 +190,13 @@ public sealed class WebSearchToolNode : NodeBase
             }
         }
 
-        // Check ResolvedParameters
-        var paramQuery = GetResolvedParameter("query");
-        return paramQuery?.ToString();
+        // 回退到节点静态查询参数（已由 ParameterHydrator 注入到 typed property）
+        return Query;
     }
 
     private async Task<string?> GetApiKeyAsync(CancellationToken cancellationToken)
     {
-        var credential = await GetCredentialAsync(ApiKeyCredentialId, cancellationToken).ConfigureAwait(false);
+        var credential = await Creds.ResolveAsync(ApiKeyCredentialId, cancellationToken).ConfigureAwait(false);
         if (credential?.Fields?.TryGetValue(FlowConstants.CredentialFields.ApiKey, out var apiKey) == true)
         {
             return apiKey;
@@ -209,7 +216,7 @@ public sealed class WebSearchToolNode : NodeBase
             Method = HttpMethod.Get
         };
 
-        return await HttpService.ExecuteAsync(request, ExecutionContext, cancellationToken).ConfigureAwait(false);
+        return await HttpService.ExecuteAsync(request, Ctx, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<NodeExecutionResult> SearchBingAsync(string query, string? apiKey, CancellationToken cancellationToken)
@@ -230,7 +237,7 @@ public sealed class WebSearchToolNode : NodeBase
             Headers = headers
         };
 
-        return await HttpService.ExecuteAsync(request, ExecutionContext, cancellationToken).ConfigureAwait(false);
+        return await HttpService.ExecuteAsync(request, Ctx, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<NodeExecutionResult> SearchDuckDuckGoAsync(string query, CancellationToken cancellationToken)
@@ -244,7 +251,7 @@ public sealed class WebSearchToolNode : NodeBase
             Method = HttpMethod.Get
         };
 
-        return await HttpService.ExecuteAsync(request, ExecutionContext, cancellationToken).ConfigureAwait(false);
+        return await HttpService.ExecuteAsync(request, Ctx, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<NodeExecutionResult> SearchSerpApiAsync(string query, string? apiKey, CancellationToken cancellationToken)
@@ -265,7 +272,7 @@ public sealed class WebSearchToolNode : NodeBase
             Headers = headers
         };
 
-        return await HttpService.ExecuteAsync(request, ExecutionContext, cancellationToken).ConfigureAwait(false);
+        return await HttpService.ExecuteAsync(request, Ctx, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<NodeExecutionResult> SearchCustomAsync(string query, string? apiKey, CancellationToken cancellationToken)
@@ -293,7 +300,7 @@ public sealed class WebSearchToolNode : NodeBase
             Headers = headers
         };
 
-        return await HttpService.ExecuteAsync(request, ExecutionContext, cancellationToken).ConfigureAwait(false);
+        return await HttpService.ExecuteAsync(request, Ctx, cancellationToken).ConfigureAwait(false);
     }
 
     private string BuildCustomSearchUrl(string query)

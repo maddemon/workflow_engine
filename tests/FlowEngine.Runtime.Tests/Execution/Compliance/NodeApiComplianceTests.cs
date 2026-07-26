@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using FlowEngine.Analyzers;
 using FlowEngine.Core.Abstractions;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -24,12 +25,8 @@ public sealed class NodeApiComplianceTests
         "HttpClientPool",
         "NodeRegistry",
         "ContextFactory",
-        "WorkflowLoader",
         "LlmClientFactory",
         "ScriptCache",
-        "NestingDepth",
-        "AllowShellExecution",
-        "IsAgentInvocation",
         "ResolveCredentialAsync",
         "ResolvedParameters",
         "RawParameters",
@@ -131,5 +128,55 @@ public sealed class NodeApiComplianceTests
         }
 
         throw new InvalidOperationException("无法定位插件源码目录 plugins/FlowEngine.Plugins.Standard。");
+    }
+
+    /// <summary>从代码片段中提取首个调用表达式。</summary>
+    private static InvocationExpressionSyntax FirstInvocation(string statement)
+    {
+        var tree = CSharpSyntaxTree.ParseText($"class C {{ void M() {{ {statement} }} }}");
+        return tree.GetRoot().DescendantNodes().OfType<InvocationExpressionSyntax>().First();
+    }
+
+    [Theory]
+    [InlineData("registry.GetAll().ExecuteAsync(default)")]
+    [InlineData("registry.GetAll().ExecuteAsync(cancellationToken: default)")]
+    [InlineData("registry.GetAll().Foo().ExecuteAsync(default)")]
+    public void DetectsGetAllExecuteAsync_GetAllResult_ReturnsTrue(string statement)
+    {
+        var invocation = FirstInvocation(statement);
+        Assert.True(NodeApiComplianceAnalyzer.DetectsGetAllExecuteAsync(invocation));
+    }
+
+    [Theory]
+    [InlineData("registry.Get().ExecuteAsync(default)")]
+    [InlineData("x.Foo().ExecuteAsync(default)")]
+    [InlineData("registry.CreateInstance(\"t\").ExecuteAsync(default)")]
+    public void DetectsGetAllExecuteAsync_NonGetAllResult_ReturnsFalse(string statement)
+    {
+        var invocation = FirstInvocation(statement);
+        Assert.False(NodeApiComplianceAnalyzer.DetectsGetAllExecuteAsync(invocation));
+    }
+
+    [Fact]
+    public void Plugins_DoNotCallExecuteAsyncOnGetAllResult_NoViolations()
+    {
+        var pluginsDir = FindPluginsDir();
+        var files = Directory.GetFiles(pluginsDir, "*.cs", SearchOption.AllDirectories);
+
+        var violations = new List<string>();
+        foreach (var file in files)
+        {
+            var code = File.ReadAllText(file);
+            var tree = CSharpSyntaxTree.ParseText(code);
+            foreach (var invocation in tree.GetRoot().DescendantNodes().OfType<InvocationExpressionSyntax>())
+            {
+                if (NodeApiComplianceAnalyzer.DetectsGetAllExecuteAsync(invocation))
+                {
+                    violations.Add($"{Path.GetFileName(file)}:{invocation.GetLocation().GetLineSpan().StartLinePosition.Line + 1}");
+                }
+            }
+        }
+
+        Assert.Empty(violations);
     }
 }

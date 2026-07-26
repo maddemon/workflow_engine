@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Net.Http;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
@@ -17,7 +17,7 @@ namespace FlowEngine.Plugins.Standard;
 /// <summary>
 /// HTTP 请求节点，支持静态配置和占位符。
 /// 新写法继承 <see cref="NodeBase"/>，通过 [NodeMeta]/[Port]/[Hint] 声明式描述元信息与参数；
-/// URL/Headers/Body 经 <see cref="NodeBase.EvaluateContextAsync{T}"/> 在整批作用域求值，
+/// URL/Headers/Body 经 <see cref="ScriptEvaluationExtensions.EvaluateAsync{T}"/> 在整批作用域求值，
 /// 业务失败统一抛 <see cref="NodeExecutionException"/>（不再使用 context.ErrorResult），
 /// 真正的 HTTP 收发与凭据解析委派给注入的 <see cref="IHttpExecutionService"/>（取代经 context 直接依赖）。
 /// </summary>
@@ -26,6 +26,8 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output)]
 public sealed class HttpRequestNode : NodeBase
 {
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
+    [Inject] public IHttpExecutionService? Http { get; private set; }
     /// <inheritdoc />
     protected override AiNodeDefinition? GetAiDefinition(NodeTypeDescriptor descriptor) =>
         AiDefinitionHelpers.Def(
@@ -123,7 +125,7 @@ public sealed class HttpRequestNode : NodeBase
             throw new NodeExecutionException(FlowConstants.ErrorCodes.MissingUrl, "URL is required.");
         }
 
-        var resolvedUrl = await EvaluateContextAsync<string>(Url, ct).ConfigureAwait(false);
+        var resolvedUrl = await Url.EvaluateAsync<string>(Ctx, cancellationToken: ct).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(resolvedUrl))
         {
             throw new NodeExecutionException(FlowConstants.ErrorCodes.MissingUrl, "URL resolution failed.");
@@ -133,7 +135,7 @@ public sealed class HttpRequestNode : NodeBase
         Dictionary<string, string>? headers = null;
         if (SendHeaders && HeadersExpression is not null && !string.IsNullOrWhiteSpace(HeadersExpression.Source))
         {
-            headers = await EvaluateContextAsync<Dictionary<string, string>>(HeadersExpression, ct).ConfigureAwait(false);
+            headers = await HeadersExpression.EvaluateAsync<Dictionary<string, string>>(Ctx, cancellationToken: ct).ConfigureAwait(false);
         }
 
         // 3. 求值请求体（脚本表达式 → JSON 字符串）
@@ -141,12 +143,12 @@ public sealed class HttpRequestNode : NodeBase
         if (SendBody && BodyExpression is not null && !string.IsNullOrWhiteSpace(BodyExpression.Source) &&
             Method is HttpMethodOption.Post or HttpMethodOption.Put or HttpMethodOption.Patch)
         {
-            var bodyJson = (await EvaluateContextAsync<JsonNode>(BodyExpression, ct).ConfigureAwait(false))?.ToJsonString() ?? string.Empty;
+            var bodyJson = (await BodyExpression.EvaluateAsync<JsonNode>(Ctx, cancellationToken: ct).ConfigureAwait(false))?.ToJsonString() ?? string.Empty;
             bodyContent = bodyJson;
         }
 
         // 4. 构建请求参数并委派给注入的 IHttpExecutionService（内部处理客户端池、SSRF 预检、凭据解析、成功条件判定）
-        if (HttpExecutionService is null)
+        if (Http is null)
         {
             throw new NodeExecutionException("HttpServiceUnavailable", "HTTP execution service is not available.");
         }
@@ -163,7 +165,7 @@ public sealed class HttpRequestNode : NodeBase
             SuccessWhen = SuccessWhen
         };
 
-        var result = await HttpExecutionService.ExecuteAsync(httpRequest, ExecutionContext, ct).ConfigureAwait(false);
+        var result = await Http.ExecuteAsync(httpRequest, Ctx, ct).ConfigureAwait(false);
 
         // 5. 业务失败统一转换为 NodeExecutionException，由框架适配层映射为失败结果（保持错误码/消息一致）
         if (!result.Success)

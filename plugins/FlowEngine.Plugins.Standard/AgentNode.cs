@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.ComponentModel;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -26,6 +26,11 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Llm, "LLM", PortDirection.Input, PortType.LLM)]
 public sealed class AgentNode : NodeBase
 {
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
+    [Inject] public IExecutionLogger? Logger { get; private set; }
+    [Inject] public ILlmClient? LlmClient { get; private set; }
+    [Inject] public INodeRegistry? Registry { get; private set; }
+    [Inject] public ISubExecutionService? Sub { get; private set; }
     /// <summary>
     /// 最大 LLM 迭代次数。
     /// </summary>
@@ -64,10 +69,10 @@ public sealed class AgentNode : NodeBase
             throw new NodeExecutionException(FlowConstants.ErrorCodes.MissingLlmClient, "LLM client not available. Connect an LLM supply node.");
         }
 
-        // 生产路径经注入的 SubExecutionService 解析工具；仅当 DI 未注入（遗留/直接实例化测试）时回退到直接读取上下文。
-        var tools = SubExecutionService is not null
-            ? await SubExecutionService.ResolveAgentToolsAsync(ExecutionContext, ct).ConfigureAwait(false)
-            : CollectTools(ExecutionContext);
+        // 生产路径经注入的 SubExecutionService（ISubExecutionService）解析工具；仅当 DI 未注入（遗留/直接实例化测试）时回退到直接读取上下文。
+        var tools = Sub is not null
+            ? await Sub.ResolveAgentToolsAsync(Ctx, ct).ConfigureAwait(false)
+            : CollectTools(Ctx);
 
         var messages = BuildMessages(input);
 
@@ -89,11 +94,11 @@ public sealed class AgentNode : NodeBase
             memory = new AgentMemory(MemoryWindowSize > 0 ? MemoryWindowSize : 20);
         }
 
-        // ExecutionContext 作为受控上下文传给注入的解析器（符合 NodeBase 设计：原始上下文仅委派给注入的基础设施服务）。
+        // Ctx 作为受控上下文传给注入的解析器（符合 NodeBase 设计：原始上下文仅委派给注入的基础设施服务）。
         var resolver = new InlineResolver(
             LlmClient,
             tools,
-            ExecutionContext,
+            Ctx,
             maxIterations,
             memory: memory,
             logger: Logger);
@@ -109,7 +114,7 @@ public sealed class AgentNode : NodeBase
                 "AgentTimeout",
                 "LLM call timed out.",
                 BuildFailedBatch(FlowConstants.ErrorCodes.Cancelled, "LLM call timed out."),
-                ExecutionContext.Node?.Id);
+                Ctx.Node?.Id);
         }
         catch (Exception)
         {
@@ -118,7 +123,7 @@ public sealed class AgentNode : NodeBase
                 "LlmError",
                 NodeErrorFactory.SafeMessage,
                 BuildFailedBatch("Failed", NodeErrorFactory.SafeMessage),
-                ExecutionContext.Node?.Id);
+                Ctx.Node?.Id);
         }
     }
 
@@ -134,17 +139,17 @@ public sealed class AgentNode : NodeBase
                 "AgentTimeout",
                 $"Maximum iterations ({maxIterations}) reached.",
                 BuildFailedBatch(FlowConstants.ErrorCodes.Cancelled, $"Maximum iterations ({maxIterations}) reached."),
-                ExecutionContext.Node?.Id),
+                Ctx.Node?.Id),
             InlineResolverStopReason.Cancelled => NodeHandlerOutput.Failure(
                 "AgentTimeout",
                 "LLM call timed out or was cancelled.",
                 BuildFailedBatch(FlowConstants.ErrorCodes.Cancelled, "LLM call timed out or was cancelled."),
-                ExecutionContext.Node?.Id),
+                Ctx.Node?.Id),
             _ => NodeHandlerOutput.Failure(
                 "AgentTimeout",
                 "Agent execution stopped.",
                 BuildFailedBatch(FlowConstants.ErrorCodes.Cancelled, "Agent execution stopped."),
-                ExecutionContext.Node?.Id)
+                Ctx.Node?.Id)
         };
     }
 
@@ -175,7 +180,7 @@ public sealed class AgentNode : NodeBase
             }
 
             INodeType? nodeType = null;
-            if (ToolRegistry?.TryGet(toolNode.TypeName, out var resolvedType) == true)
+            if (Registry?.TryGet(toolNode.TypeName, out var resolvedType) == true)
             {
                 nodeType = resolvedType;
             }
@@ -188,7 +193,7 @@ public sealed class AgentNode : NodeBase
             NodeTypeDescriptor? descriptor = null;
             try
             {
-                descriptor = ToolRegistry?.GetDescriptor(toolNode.TypeName);
+                descriptor = Registry?.GetDescriptor(toolNode.TypeName);
             }
             catch (InvalidOperationException)
             {

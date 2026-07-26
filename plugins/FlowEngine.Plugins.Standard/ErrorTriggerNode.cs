@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
@@ -25,6 +25,8 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
 public sealed class ErrorTriggerNode : NodeBase
 {
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
+    [Inject] public IExecutionLogger? Logger { get; private set; }
     /// <inheritdoc />
     protected override AiNodeDefinition? GetAiDefinition(NodeTypeDescriptor descriptor) =>
         AiDefinitionHelpers.Def(
@@ -108,7 +110,7 @@ public sealed class ErrorTriggerNode : NodeBase
     /// </summary>
     private string? GetNodeParameter(string key)
     {
-        var node = ExecutionContext.Node;
+        var node = Ctx.Node;
         if (node is null)
         {
             return null;

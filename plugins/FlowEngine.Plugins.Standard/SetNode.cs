@@ -1,4 +1,4 @@
-using FlowEngine.Core;
+﻿using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
 using FlowEngine.Core.Ai;
 using FlowEngine.Core.Attributes;
@@ -19,6 +19,8 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
 public sealed class SetNode : NodeBase
 {
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
+    [Inject] public IExecutionLogger? Logger { get; private set; }
     /// <inheritdoc />
     protected override AiNodeDefinition? GetAiDefinition(NodeTypeDescriptor descriptor) =>
         AiDefinitionHelpers.Def(
@@ -117,7 +119,7 @@ public sealed class SetNode : NodeBase
 
         try
         {
-            return await EvaluateItemAsync<JsonNode>(script!, item, index, cancellationToken)
+            return await script!.EvaluateAsync<JsonNode>(Ctx, item: item, itemIndex: index, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (ScriptErrorException ex)

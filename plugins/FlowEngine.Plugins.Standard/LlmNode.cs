@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
 using FlowEngine.Core.Abstractions;
@@ -19,6 +19,9 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Llm, "LLM", PortDirection.Output, PortType.LLM)]
 public sealed class LlmNode : NodeBase
 {
+    [Inject] public ILlmClient? LlmClient { get; private set; }
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
+    [Inject] public ICredentialAccessor Creds { get; private set; } = null!;
     /// <summary>
     /// 模型名称（如 gpt-4、gpt-3.5-turbo）。
     /// </summary>
@@ -69,7 +72,7 @@ public sealed class LlmNode : NodeBase
             throw new NodeExecutionException("MissingModel", "Model name is required.");
         }
 
-        var credential = await GetCredentialAsync(CredentialId, ct).ConfigureAwait(false);
+        var credential = await Creds.ResolveAsync(CredentialId, ct).ConfigureAwait(false);
         var apiKey = credential?.Fields?.TryGetValue(FlowConstants.CredentialFields.ApiKey, out var key) == true ? key : null;
         if (apiKey is null)
         {
@@ -79,7 +82,7 @@ public sealed class LlmNode : NodeBase
         Uri? endpoint = null;
         if (!string.IsNullOrWhiteSpace(BaseEndpoint) && Uri.TryCreate(BaseEndpoint, UriKind.Absolute, out var uri))
         {
-            var ssrfBlock = GuardSsrf(BaseEndpoint);
+            var ssrfBlock = Ctx.GuardSsrf(BaseEndpoint);
             if (ssrfBlock is not null)
             {
                 throw new NodeExecutionException(ssrfBlock.Error!.Code, ssrfBlock.Error.Message);
@@ -95,9 +98,7 @@ public sealed class LlmNode : NodeBase
             throw new NodeExecutionException(FlowConstants.ErrorCodes.MissingLlmClient, "LLM client not available.");
         }
 
-        // 发布到原始执行上下文（与历史 context.LlmClient = llmClient 语义一致）。
-        ExecutionContext.LlmClient = LlmClient;
-
+        // 框架已在 ExecutionStage 解析并经 [Inject] 注入 LlmClient，并写入 Ctx.LlmClient 供下游复用，此处无需回写。
         return Single(new JsonObject
         {
             ["model"] = Model,

@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -22,6 +22,8 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
 public sealed class WriteFileNode : NodeBase
 {
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
+    [Inject] public IExecutionLogger? Logger { get; private set; }
     /// <summary>
     /// 输入 JSON 字段名，承载待写入的 base64 内容。默认 <c>data</c>。
     /// </summary>
@@ -65,7 +67,7 @@ public sealed class WriteFileNode : NodeBase
                 throw new NodeExecutionException("MissingFileName", "FileName is required.");
             }
 
-            var fileName = await EvaluateItemAsync<string>(FileName, item, 0, ct).ConfigureAwait(false);
+            var fileName = await FileName.EvaluateAsync<string>(Ctx, item: item, itemIndex: 0, cancellationToken: ct).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(fileName))
             {
                 throw new NodeExecutionException("MissingFileName", "FileName must evaluate to a non-empty string.");

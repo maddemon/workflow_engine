@@ -54,7 +54,15 @@ public sealed class NodeRegistry : INodeRegistry
         _logger.LogDebug("已注册节点类型 {TypeName}", nodeType.TypeName);
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// 按类型名获取节点类型实例（每调用返回<b>新克隆实例</b>）。
+    /// 仅用于读取类型级元数据（端口 / 描述符），<b>禁止用于执行</b>：
+    /// 执行必须走 <see cref="CreateInstance"/> + 管线注入，否则跳过服务注入导致能力缺失。
+    /// 实现见基类 <see cref="TryGet"/>（Activator.CreateInstance 返回隔离工作实例）。
+    /// </summary>
+    /// <param name="typeName">节点类型名。</param>
+    /// <returns>节点类型实例（全新克隆）。</returns>
+    /// <exception cref="InvalidOperationException">节点类型未注册时抛出。</exception>
     public INodeType Get(string typeName)
     {
         if (!TryGet(typeName, out var nodeType) || nodeType is null)
@@ -84,7 +92,12 @@ public sealed class NodeRegistry : INodeRegistry
         return false;
     }
 
-    /// <inheritdoc />
+    /// <summary>
+    /// 获取所有已注册的节点类型实例（注册期缓存的<b>共享单例</b>，非克隆）。
+    /// <b>绝不可用于执行</b>：在其结果上调用 <c>ExecuteAsync</c> 是真正的共享单例数据竞争，
+    /// 已被 <c>NodeApiComplianceAnalyzer</c> 的 FE0002 规则静态拦截。仅用于框架层枚举 / 目录。
+    /// </summary>
+    /// <returns>共享单例节点类型实例集合。</returns>
     public IReadOnlyCollection<INodeType> GetAll()
     {
         return _instances.Values.ToList();

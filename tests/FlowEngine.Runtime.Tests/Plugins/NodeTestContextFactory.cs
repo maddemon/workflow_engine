@@ -6,6 +6,7 @@ using FlowEngine.Core.Scripting;
 using FlowEngine.Runtime.Expressions;
 using FlowEngine.Runtime.Executor;
 using FlowEngine.Runtime.Registry;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 
@@ -59,6 +60,18 @@ internal static class NodeTestContextFactory
         if (memory is not null)
         {
             context.Memory = memory;
+        }
+
+        // 模拟生产管线 ExecutionStage 的能力注入：将上下文派生能力（Ctx / Logger / NodeContext /
+        // ILlmClient / Engine）注入节点，使直接执行节点的单测与经管线执行行为一致。
+        // Registry 经 DI 解析，故构建包含 INodeRegistry 的 ServiceProvider（其余 DI 能力暂未注册，解析为 null）。
+        if (nodeInstance is NodeBase nb)
+        {
+            var sp = new ServiceCollection()
+                .AddSingleton<INodeRegistry>(registry)
+                .AddSingleton<INodeExecutionContextFactory>(factory)
+                .BuildServiceProvider();
+            NodeCapabilityInjector.Inject(nb, sp, context);
         }
 
         return context;

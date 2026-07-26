@@ -1,4 +1,4 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
 using System.Globalization;
 using System.IO.Compression;
 using System.Text;
@@ -28,6 +28,7 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
 public sealed class SpreadsheetNode : NodeBase
 {
+    [Inject] public IExecutionLogger? Logger { get; private set; }
     /// <summary>
     /// 操作：将表格读入 <see cref="DataBatch"/>，或将 <see cref="DataBatch"/> 写为表格文件。
     /// </summary>

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.ComponentModel;
 using System.Data.Common;
 using System.Text.Json.Nodes;
@@ -21,6 +21,7 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Output, "Output", PortDirection.Output, PortType.Main)]
 public sealed class DbUpsertNode : NodeBase
 {
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
     /// <summary>
     /// 数据库连接凭据（类型为 <c>connectionString</c>）。凭据按结构化字段（dbType/host/port/database/userid/password 等）
     /// 配置，运行时由对应方言的 <see cref="IConnectionStringBuilder"/> 生成 ADO.NET 连接字符串。
@@ -108,7 +109,7 @@ public sealed class DbUpsertNode : NodeBase
                 return CreateResult(true, 0, 0, 0);
             }
 
-            await using var executor = await DbExecutor.CreateAsync(dialect, connectionString, ct, ExecutionContext.EngineLogger).ConfigureAwait(false);
+            await using var executor = await DbExecutor.CreateAsync(dialect, connectionString, ct, Ctx.EngineLogger).ConfigureAwait(false);
 
             var affectedRows = 0;
             var inserted = 0;
@@ -254,7 +255,7 @@ public sealed class DbUpsertNode : NodeBase
         var values = new List<object?>();
         foreach (var (_, columnScript) in columns)
         {
-            var value = await EvaluateItemAsync<object>(columnScript, currentItem, itemIndex, ct).ConfigureAwait(false);
+            var value = await columnScript.EvaluateAsync<object>(Ctx, item: currentItem, itemIndex: itemIndex, cancellationToken: ct).ConfigureAwait(false);
             values.Add(value);
         }
 

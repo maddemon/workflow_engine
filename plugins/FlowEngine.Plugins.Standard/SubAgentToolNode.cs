@@ -1,4 +1,5 @@
-using System.ComponentModel;
+﻿using System.ComponentModel;
+using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FlowEngine.Core;
@@ -22,6 +23,10 @@ namespace FlowEngine.Plugins.Standard;
 [Port(FlowConstants.PortNames.Llm, "LLM (required - connect an LLM provider node)", PortDirection.Input, PortType.LLM)]
 public sealed class SubAgentToolNode : NodeBase
 {
+    [Inject] public NodeExecutionContext Ctx { get; private set; } = null!;
+    [Inject] public IExecutionLogger? Logger { get; private set; }
+    [Inject] public ILlmClient? LlmClient { get; private set; }
+    [Inject] public INodeRegistry? Registry { get; private set; }
     private const int DefaultMaxNestingDepth = 3;
     private const int DefaultMaxIterations = 10;
     private const int MinMaxNestingDepth = 1;
@@ -40,7 +45,15 @@ public sealed class SubAgentToolNode : NodeBase
     /// 最大嵌套深度。
     /// </summary>
     [Description("Maximum nesting depth to prevent infinite recursion.")]
+    [Range(MinMaxNestingDepth, MaxMaxNestingDepth)]
     public int MaxNestingDepth { get; set; } = DefaultMaxNestingDepth;
+
+    /// <summary>
+    /// 最大 LLM 迭代次数。
+    /// </summary>
+    [Description("Maximum number of LLM iterations for the nested agent.")]
+    [Range(MinMaxIterations, MaxMaxIterations)]
+    public int MaxIterations { get; set; } = DefaultMaxIterations;
 
     /// <summary>
     /// 是否启用对话记忆。
@@ -52,18 +65,17 @@ public sealed class SubAgentToolNode : NodeBase
     /// 记忆窗口大小（保留最近 N 条消息）。
     /// </summary>
     [Description("Number of recent messages to keep in memory window.")]
+    [Range(1, 1000)]
     public int MemoryWindowSize { get; set; } = DefaultMemoryWindowSize;
 
     /// <inheritdoc />
     public override async Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
     {
-        var effectiveMaxNestingDepth = ResolveMaxNestingDepth();
-
-        if (NestingLevel >= effectiveMaxNestingDepth)
+        if (Ctx.NestingDepth >= MaxNestingDepth)
         {
             throw new NodeExecutionException(
                 "MaxNestingDepthExceeded",
-                $"Agent nesting depth {NestingLevel} exceeds maximum allowed depth of {effectiveMaxNestingDepth}.");
+                $"Agent nesting depth {Ctx.NestingDepth} exceeds maximum allowed depth of {MaxNestingDepth}.");
         }
 
         if (LlmClient is null)
@@ -73,13 +85,13 @@ public sealed class SubAgentToolNode : NodeBase
 
         var tools = CollectTools();
         var messages = BuildMessages(input);
-        var maxIterations = ResolveMaxIterations();
-        var memoryEnabled = ResolveMemoryEnabled();
-        var memoryWindowSize = ResolveMemoryWindowSize();
+        var maxIterations = MaxIterations;
+        var memoryEnabled = MemoryEnabled;
+        var memoryWindowSize = MemoryWindowSize;
 
-        var parentRecordId = ExecutionContext.NodeExecutionRecordId != Guid.Empty
-            ? ExecutionContext.NodeExecutionRecordId
-            : ExecutionContext.ExecutionId;
+        var parentRecordId = Ctx.NodeExecutionRecordId != Guid.Empty
+            ? Ctx.NodeExecutionRecordId
+            : Ctx.ExecutionId;
 
         AgentMemory? memory = null;
         if (memoryEnabled)
@@ -90,7 +102,7 @@ public sealed class SubAgentToolNode : NodeBase
         var resolver = new Core.Agent.InlineResolver(
             LlmClient,
             tools,
-            ExecutionContext,
+            Ctx,
             maxIterations,
             parentRecordId: parentRecordId,
             memory: memory,
@@ -140,21 +152,21 @@ public sealed class SubAgentToolNode : NodeBase
                         FlowConstants.ErrorCodes.Cancelled,
                         $"Sub-Agent reached maximum iterations ({maxIterations}).",
                         BuildFailureBatch(result),
-                        ExecutionContext.Node?.Id);
+                        Ctx.Node?.Id);
 
                 case Core.Agent.InlineResolverStopReason.Cancelled:
                     return NodeHandlerOutput.Failure(
                         FlowConstants.ErrorCodes.Cancelled,
                         "Sub-Agent execution was cancelled.",
                         BuildFailureBatch(result),
-                        ExecutionContext.Node?.Id);
+                        Ctx.Node?.Id);
 
                 default:
                     return NodeHandlerOutput.Failure(
                         FlowConstants.ErrorCodes.Cancelled,
                         "Sub-Agent execution stopped.",
                         BuildFailureBatch(result),
-                        ExecutionContext.Node?.Id);
+                        Ctx.Node?.Id);
             }
         }
         catch (OperationCanceledException)
@@ -163,7 +175,7 @@ public sealed class SubAgentToolNode : NodeBase
                 FlowConstants.ErrorCodes.Cancelled,
                 "Sub-Agent execution was cancelled.",
                 null,
-                ExecutionContext.Node?.Id);
+                Ctx.Node?.Id);
         }
         catch (Exception ex)
         {
@@ -171,7 +183,7 @@ public sealed class SubAgentToolNode : NodeBase
                 "LlmError",
                 $"Sub-Agent LLM call failed: {ex.Message}",
                 null,
-                ExecutionContext.Node?.Id);
+                Ctx.Node?.Id);
         }
     }
 
@@ -211,75 +223,10 @@ public sealed class SubAgentToolNode : NodeBase
         };
     }
 
-    /// <summary>
-    /// 从节点参数解析最大嵌套深度，未配置时使用属性默认值，并校验范围 [1, 10]。
-    /// </summary>
-    private int ResolveMaxNestingDepth()
-    {
-        var depth = CoerceInt(GetResolvedParameter("maxNestingDepth"));
-        if (depth.HasValue)
-        {
-            if (depth.Value < MinMaxNestingDepth) return MinMaxNestingDepth;
-            if (depth.Value > MaxMaxNestingDepth) return MaxMaxNestingDepth;
-            return depth.Value;
-        }
-
-        return MaxNestingDepth;
-    }
-
-    /// <summary>
-    /// 从节点参数解析最大 LLM 迭代次数，未配置时使用默认值，并校验范围 [1, 100]。
-    /// </summary>
-    private int ResolveMaxIterations()
-    {
-        var iterations = CoerceInt(GetResolvedParameter("maxIterations"));
-        if (iterations.HasValue)
-        {
-            if (iterations.Value < MinMaxIterations) return MinMaxIterations;
-            if (iterations.Value > MaxMaxIterations) return MaxMaxIterations;
-            return iterations.Value;
-        }
-
-        return DefaultMaxIterations;
-    }
-
-    /// <summary>
-    /// 从节点参数解析是否启用记忆，未配置时使用属性默认值。
-    /// </summary>
-    private bool ResolveMemoryEnabled()
-    {
-        var enabled = GetResolvedParameter("memoryEnabled");
-        if (enabled is bool b) return b;
-        if (enabled is JsonValue jv && jv.TryGetValue<bool>(out var jb)) return jb;
-
-        return MemoryEnabled;
-    }
-
-    /// <summary>
-    /// 从节点参数解析记忆窗口大小，未配置时使用属性默认值，最小为 1。
-    /// </summary>
-    private int ResolveMemoryWindowSize()
-    {
-        var size = CoerceInt(GetResolvedParameter("memoryWindowSize"));
-        if (size.HasValue) return Math.Max(1, size.Value);
-
-        return Math.Max(1, MemoryWindowSize);
-    }
-
-    /// <summary>
-    /// 将可能的 JsonValue 或已解析的 CLR 值安全转换为 int。
-    /// </summary>
-    private static int? CoerceInt(object? raw)
-    {
-        if (raw is int i) return i;
-        if (raw is JsonValue jv && jv.TryGetValue<int>(out var ji)) return ji;
-        return null;
-    }
-
     private IReadOnlyList<ToolDefinition> CollectTools()
     {
-        var workflow = ExecutionContext.Workflow;
-        var currentNodeId = ExecutionContext.Node.Id;
+        var workflow = Ctx.Workflow;
+        var currentNodeId = Ctx.Node.Id;
 
         var toolConnections = workflow.Connections
             .Where(c => c.TargetNodeId == currentNodeId && c.TargetPortName == FlowConstants.PortNames.Tools)
