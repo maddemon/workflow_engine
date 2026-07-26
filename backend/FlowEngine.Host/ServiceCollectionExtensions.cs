@@ -433,6 +433,9 @@ public static class ServiceCollectionExtensions
                 shellExecutionGate: provider.GetService<Core.Abstractions.IShellExecutionGate>(),
                 eventBus: provider.GetService<IEventBus>());
         });
+
+        // 同时以接口暴露工厂，供 SubExecutionService（ISubExecutionService 实现）经 DI 构造。
+        services.AddScoped<INodeExecutionContextFactory>(provider => provider.GetRequiredService<NodeExecutionContextFactory>());
     }
 
     /// <summary>
