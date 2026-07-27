@@ -4,17 +4,15 @@ using FlowEngine.Core.Entities;
 namespace FlowEngine.Runtime.Executor;
 
 /// <summary>
-/// 工作流执行队列工作项。
+/// 工作流执行队列工作项。仅携带工作流定义 ID，不携带任何已加载的工作流实体。
+/// 后台 worker 在各自独立的执行作用域内依据 <see cref="WorkflowDefinitionId"/> 重新加载工作流，
+/// 避免复用来自请求作用域（不同 <see cref="FlowEngineDbContext"/> ChangeTracker）的实体，
+/// 从而消除跨 DbContext 作用域共享实体导致的重复插入 / Detached 异常。
 /// </summary>
 public sealed record WorkflowExecutionWorkItem(
     Guid ExecutionRecordId,
     Guid WorkflowDefinitionId,
-    object? TriggerPayload,
-    /// <summary>
-    /// 调用方随同携带的已加载工作流定义；非空时后台 worker 直接复用，省去一次数据库查询。
-    /// 队列仅驻留内存，工作项按引用持有，故携带实体引用安全。
-    /// </summary>
-    Workflow? PreloadedWorkflow = null);
+    object? TriggerPayload);
 
 /// <summary>
 /// 跨进程共享的工作流执行队列（Singleton），解耦请求入口与后台执行。

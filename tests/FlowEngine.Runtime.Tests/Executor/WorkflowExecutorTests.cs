@@ -465,7 +465,7 @@ public class WorkflowExecutorTests
     }
 
     [Fact]
-    public async Task StartAsync_WithPreloadedWorkflow_EnqueuesItemCarryingWorkflow()
+    public async Task StartAsync_EnqueuesWorkItemCarryingOnlyWorkflowDefinitionId()
     {
         var nodeA = CreateNode("a", "passThrough", isEntry: true);
         var workflow = new Workflow
@@ -480,16 +480,16 @@ public class WorkflowExecutorTests
         _dbContext.Workflows.Add(workflow);
         await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        // 复用调用方已加载的工作流，触发透传路径（绕过引擎内部第二次查询）。
-        var executionId = await _executor.StartAsync(workflow.Id, workflow, null, TestContext.Current.CancellationToken);
+        // 即使调用方传入已加载的工作流，工作项也只携带 Id，不跨作用域携带实体。
+        var executionId = await _executor.StartAsync(workflow.Id, workflow, 5, TestContext.Current.CancellationToken);
 
-        // 出队工作项，断言携带了同一工作流实例引用（证明第 2 次 DB 加载被消除）。
+        // 出队工作项，断言仅携带工作流定义 ID 与触发负载，未携带任何工作流实体。
         var item = await _executionQueue.DequeueAsync(TestContext.Current.CancellationToken);
-        Assert.NotNull(item.PreloadedWorkflow);
-        Assert.Equal(workflow.Id, item.PreloadedWorkflow.Id);
-        Assert.Same(workflow, item.PreloadedWorkflow);
+        Assert.Equal(workflow.Id, item.WorkflowDefinitionId);
+        Assert.Equal(executionId.Value, item.ExecutionRecordId);
+        Assert.Equal(5, item.TriggerPayload);
 
-        // 放回队列，交由 DrainAndExecuteAsync 实际执行，验证运行路径仍正常落库。
+        // 放回队列，交由 DrainAndExecuteAsync 实际执行，验证执行作用域重新加载路径仍正常落库。
         await _executionQueue.EnqueueAsync(item, TestContext.Current.CancellationToken);
         var record = await WaitForExecutionAsync(executionId.Value, cancellationToken: TestContext.Current.CancellationToken);
         Assert.Equal(ExecutionStatus.Completed, record.Status);
@@ -513,13 +513,12 @@ public class WorkflowExecutorTests
         await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
         // 传入 Id 不匹配的预加载工作流：应回退内部加载，不抛异常且正确启动。
+        // 无论哪条路径，工作项均只携带 Id（不携带实体）。
         var other = new Workflow { Id = Guid.NewGuid(), Name = "other", CreatedBy = "test", Nodes = [], Connections = [] };
         var executionId = await _executor.StartAsync(workflow.Id, other, null, TestContext.Current.CancellationToken);
 
         var item = await _executionQueue.DequeueAsync(TestContext.Current.CancellationToken);
-        // 回退路径下，预加载工作流被丢弃（改为引擎内部加载并携带实际工作流实例）。
-        Assert.NotNull(item.PreloadedWorkflow);
-        Assert.Equal(workflow.Id, item.PreloadedWorkflow.Id);
+        Assert.Equal(workflow.Id, item.WorkflowDefinitionId);
 
         await _executionQueue.EnqueueAsync(item, TestContext.Current.CancellationToken);
         var record = await WaitForExecutionAsync(executionId.Value, cancellationToken: TestContext.Current.CancellationToken);

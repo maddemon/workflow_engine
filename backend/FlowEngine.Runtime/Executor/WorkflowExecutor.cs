@@ -80,10 +80,11 @@ public sealed class WorkflowExecutor : IEngine
     }
 
     /// <summary>
-    /// 启动指定工作流（复用调用方已加载的工作流定义，避免重复查询）。
+    /// 启动指定工作流（调用方已加载的工作流定义仅用于本地读取 <see cref="Workflow.ProjectId"/> 以构建执行记录，
+    /// 不会随工作项跨 DbContext 作用域传递；后台 worker 在执行作用域内依据 ID 重新加载工作流）。
     /// </summary>
     /// <param name="workflowDefinitionId">工作流定义 ID。</param>
-    /// <param name="preloadedWorkflow">调用方已加载的工作流定义；其 Id 须等于 workflowDefinitionId，否则改回内部加载。</param>
+    /// <param name="preloadedWorkflow">调用方已加载的工作流定义；其 Id 须等于 workflowDefinitionId，否则改回内部加载。仅作本地读取用途。</param>
     /// <param name="triggerPayload">触发负载。</param>
     /// <param name="cancellationToken">取消令牌。</param>
     /// <returns>执行 ID。</returns>
@@ -93,7 +94,8 @@ public sealed class WorkflowExecutor : IEngine
         object? triggerPayload = null,
         CancellationToken cancellationToken = default)
     {
-        // 复用调用方已加载的工作流；Id 不匹配时回退内部加载，避免误用。
+        // 复用调用方已加载的工作流以读取 ProjectId；Id 不匹配时回退内部加载，避免误用。
+        // 注意：该实体仅在请求作用域（本 DbContext）内本地使用，绝不经队列传入执行作用域。
         var workflow = (preloadedWorkflow is not null && preloadedWorkflow.Id == workflowDefinitionId)
             ? preloadedWorkflow
             : await _dbContext.Workflows.AsNoTracking()
@@ -136,7 +138,7 @@ public sealed class WorkflowExecutor : IEngine
         await _dbContext.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
 
         await _executionQueue.EnqueueAsync(
-            new WorkflowExecutionWorkItem(executionRecord.Id, workflowDefinitionId, triggerPayload, workflow),
+            new WorkflowExecutionWorkItem(executionRecord.Id, workflowDefinitionId, triggerPayload),
             cancellationToken).ConfigureAwait(false);
 
         _logger.LogInformation("执行 {ExecutionId} 已加入队列。", executionRecord.Id);
