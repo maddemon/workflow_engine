@@ -187,6 +187,7 @@ public sealed class PollTriggerJob(
                     newItems.Count, triggerId);
 
                 // 为每个新数据项触发工作流
+                var triggeredItems = new List<DataItem>();
                 foreach (var item in newItems)
                 {
                     try
@@ -234,6 +235,9 @@ public sealed class PollTriggerJob(
                         logger.LogInformation(
                             "轮询触发器触发工作流成功: TriggerId={TriggerId}, ExecutionId={ExecutionId}",
                             triggerId, executionId);
+
+                        // 仅记录成功触发项，失败项不能推进去重游标（避免下一轮被永久跳过）
+                        triggeredItems.Add(item);
                     }
                     catch (Exception ex)
                     {
@@ -243,8 +247,8 @@ public sealed class PollTriggerJob(
                     }
                 }
 
-                // 更新去重状态
-                var updatedSettings = PollDeduplication.UpdateState(newItems, settings);
+                // 更新去重状态：仅基于成功触发项推进游标，失败项下一轮会重试
+                var updatedSettings = PollDeduplication.UpdateState(triggeredItems, settings);
                 trigger.Settings = updatedSettings;
                 trigger.LastTriggeredAt = DateTime.UtcNow;
                 trigger.NextTriggerAt = context.Trigger.GetNextFireTimeUtc()?.UtcDateTime;
