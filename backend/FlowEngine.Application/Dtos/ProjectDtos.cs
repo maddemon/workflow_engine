@@ -25,7 +25,7 @@ public sealed record ProjectDto
     /// <summary>
     /// 创建人用户 ID。
     /// </summary>
-    public Guid CreatedBy { get; init; }
+    public string CreatedBy { get; init; } = string.Empty;
 
     /// <summary>
     /// 创建时间。

@@ -43,7 +43,7 @@ public sealed class ProjectCascadeScheduleTests : IDisposable
         var triggerService = new TriggerService(
             _dbContext, _eventBus, auditFactory, _scheduleManager, authGuard, new WebhookRouteService(_dbContext), NullLogger<TriggerService>.Instance);
         var cascadeDeleter = new ProjectCascadeDeleter(_dbContext, triggerService, NullLogger<ProjectCascadeDeleter>.Instance);
-        _service = new ProjectService(_dbContext, _userContext, authGuard, _eventBus, auditFactory, handler, cascadeDeleter);
+        _service = new ProjectService(_dbContext, _userContext, _eventBus, auditFactory, handler, cascadeDeleter);
     }
 
     public void Dispose() => _dbContext.Dispose();
@@ -52,7 +52,7 @@ public sealed class ProjectCascadeScheduleTests : IDisposable
     public async Task DeleteAsync_Cascade_UnregistersProjectTriggerSchedules()
     {
         var ct = TestContext.Current.CancellationToken;
-        var project = new Project { Name = "P", CreatedBy = _userContext.UserId!.Value };
+        var project = new Project { Name = "P", CreatedBy = _userContext.UserId!.Value.ToString() };
         _dbContext.Projects.Add(project);
         await _dbContext.SaveChangesAsync(ct);
 
@@ -108,7 +108,7 @@ public sealed class ProjectCascadeScheduleTests : IDisposable
         var ct = TestContext.Current.CancellationToken;
         _scheduleManager.ThrowOnUnregister = true;
 
-        var project = new Project { Name = "P", CreatedBy = _userContext.UserId!.Value };
+        var project = new Project { Name = "P", CreatedBy = _userContext.UserId!.Value.ToString() };
         _dbContext.Projects.Add(project);
         await _dbContext.SaveChangesAsync(ct);
 

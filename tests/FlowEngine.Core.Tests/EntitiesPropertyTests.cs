@@ -38,7 +38,7 @@ public class EntitiesPropertyTests
     public void Project_Properties_RoundTrip()
     {
         var id = Guid.CreateVersion7();
-        var createdBy = Guid.NewGuid();
+        var createdBy = Guid.NewGuid().ToString();
         var project = new Project
         {
             Id = id,
@@ -67,7 +67,7 @@ public class EntitiesPropertyTests
 
         Assert.Equal(string.Empty, project.Name);
         Assert.Null(project.Description);
-        Assert.Equal(Guid.Empty, project.CreatedBy);
+        Assert.Equal(string.Empty, project.CreatedBy);
     }
 
     [Fact]

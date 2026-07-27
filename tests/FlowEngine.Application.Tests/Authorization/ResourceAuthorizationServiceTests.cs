@@ -273,7 +273,7 @@ public sealed class ResourceAuthorizationServiceTests : IDisposable
         var project = new Project
         {
             Name = "Test Project",
-            CreatedBy = createdBy,
+            CreatedBy = createdBy.ToString(),
         };
         _dbContext.Projects.Add(project);
         await _dbContext.SaveChangesAsync(ct);

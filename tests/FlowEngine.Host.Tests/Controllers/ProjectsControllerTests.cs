@@ -172,7 +172,7 @@ public class ProjectsControllerTests : HostIntegrationTestBase
         {
             Name = "Test Project",
             Description = "Test Description",
-            CreatedBy = user.Id,
+            CreatedBy = user.Id.ToString(),
         };
         dbContext.Projects.Add(project);
         await dbContext.SaveChangesAsync(ct);

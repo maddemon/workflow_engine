@@ -57,7 +57,7 @@ public sealed class SoftDeleteQueryFilterTests : IDisposable
     [Fact]
     public async Task Filter_AppliesToAllEntityDerivedTypes()
     {
-        var project = new Project { Name = "p", CreatedBy = Guid.NewGuid() };
+        var project = new Project { Name = "p", CreatedBy = Guid.NewGuid().ToString() };
         var cred = new Credential { Name = "c", Type = "t", KeyVersion = "kv" };
         var trigger = new Trigger
         {

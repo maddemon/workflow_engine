@@ -37,5 +37,5 @@ public class Project : Entity
     [Required]
     [Column("created_by")]
     [Comment("创建人")]
-    public Guid CreatedBy { get; set; }
+    public string CreatedBy { get; set; } = string.Empty;
 }

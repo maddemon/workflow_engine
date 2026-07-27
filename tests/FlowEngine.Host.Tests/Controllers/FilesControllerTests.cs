@@ -209,7 +209,7 @@ public class FilesControllerTests : HostIntegrationTestBase
         {
             Name = "Test Project",
             Description = "Test Description",
-            CreatedBy = user.Id,
+            CreatedBy = user.Id.ToString(),
         };
         dbContext.Projects.Add(project);
         await dbContext.SaveChangesAsync(ct);
@@ -226,7 +226,7 @@ public class FilesControllerTests : HostIntegrationTestBase
         var project = new Project
         {
             Name = "Test Project",
-            CreatedBy = user.Id,
+            CreatedBy = user.Id.ToString(),
         };
         dbContext.Projects.Add(project);
         await dbContext.SaveChangesAsync(ct);

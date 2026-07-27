@@ -19,7 +19,6 @@ namespace FlowEngine.Application.Projects;
 public sealed class ProjectService(
     FlowEngineDbContext dbContext,
     IUserContext userContext,
-    IAuthorizationGuard authGuard,
     IEventBus eventBus,
     AuditEventFactory auditFactory,
     AuthorizedOperationHandler handler,
@@ -43,7 +42,7 @@ public sealed class ProjectService(
         {
             Name = dto.Name,
             Description = dto.Description,
-            CreatedBy = userId,
+            CreatedBy = userId.ToString(),
         };
 
         dbContext.Projects.Add(project);
@@ -71,7 +70,7 @@ public sealed class ProjectService(
 
         if (!IsSystemAdmin())
         {
-            query = query.Where(p => p.CreatedBy == userId);
+            query = query.Where(p => p.CreatedBy == userId.ToString());
         }
 
         var projects = await query
@@ -96,7 +95,8 @@ public sealed class ProjectService(
             return null;
         }
 
-        await EnsureCanAccessProjectAsync(id, Operation.Read, cancellationToken).ConfigureAwait(false);
+        // D3：读取授权统一收敛到 handler（与 Update/Delete 一致），保留「加载实体后再校验」的顺序。
+        await handler.AuthorizeProjectAccessAsync(id, Operation.Read, cancellationToken).ConfigureAwait(false);
 
         return project.Adapt<ProjectDto>();
     }
@@ -166,11 +166,6 @@ public sealed class ProjectService(
         return true;
     }
 
-
-    private async Task EnsureCanAccessProjectAsync(Guid projectId, Operation operation, CancellationToken cancellationToken)
-    {
-        await authGuard.RequireAccessAsync(ResourceKind.Project, projectId, operation, cancellationToken).ConfigureAwait(false);
-    }
 
     private bool IsSystemAdmin()
     {

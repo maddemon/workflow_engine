@@ -245,7 +245,7 @@ public class CredentialsControllerTests : HostIntegrationTestBase
         var project = new Project
         {
             Name = "Test Project",
-            CreatedBy = user.Id,
+            CreatedBy = user.Id.ToString(),
         };
         dbContext.Projects.Add(project);
         await dbContext.SaveChangesAsync(ct);

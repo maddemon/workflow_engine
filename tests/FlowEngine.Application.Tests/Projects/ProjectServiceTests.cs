@@ -21,6 +21,10 @@ public sealed class ProjectServiceTests : IDisposable
     private readonly FlowEngineDbContext _dbContext;
     private readonly InMemoryEventBus _eventBus;
     private readonly FakeUserContext _userContext;
+    private readonly AuditEventFactory _auditFactory;
+    private readonly IAuthorizationGuard _authGuard;
+    private readonly RecordingAuthorizationGuard _recordingGuard;
+    private readonly AuthorizedOperationHandler _handler;
     private readonly ProjectService _service;
 
     public ProjectServiceTests()
@@ -31,12 +35,16 @@ public sealed class ProjectServiceTests : IDisposable
         _dbContext = new FlowEngineDbContext(options);
         _eventBus = new InMemoryEventBus();
         _userContext = new FakeUserContext();
-        var auditFactory = new AuditEventFactory(_userContext);
-        var authGuard = AuthorizationGuardFactory.Create(_userContext, new FakeResourceAuthorizationService(_dbContext, _userContext));
-        var handler = new AuthorizedOperationHandler(authGuard, _eventBus, auditFactory);
-        var triggerService = new TriggerService(_dbContext, _eventBus, auditFactory, new FakeScheduleManager(), authGuard, new WebhookRouteService(_dbContext), NullLogger<TriggerService>.Instance);
+        _auditFactory = new AuditEventFactory(_userContext);
+        var resourceAuth = new FakeResourceAuthorizationService(_dbContext, _userContext);
+        _authGuard = AuthorizationGuardFactory.Create(_userContext, resourceAuth);
+        // 包裹真实守卫，记录 ProjectService 经由 handler 触发的授权调用（验证 D3）。
+        _recordingGuard = new RecordingAuthorizationGuard(_authGuard);
+        _handler = new AuthorizedOperationHandler(_recordingGuard, _eventBus, _auditFactory);
+        var triggerService = new TriggerService(_dbContext, _eventBus, _auditFactory, new FakeScheduleManager(), _authGuard, new WebhookRouteService(_dbContext), NullLogger<TriggerService>.Instance);
         var cascadeDeleter = new ProjectCascadeDeleter(_dbContext, triggerService, NullLogger<ProjectCascadeDeleter>.Instance);
-        _service = new ProjectService(_dbContext, _userContext, authGuard, _eventBus, auditFactory, handler, cascadeDeleter);
+        // D3：ProjectService 不再直接注入 authGuard，全部授权经 handler。
+        _service = new ProjectService(_dbContext, _userContext, _eventBus, _auditFactory, _handler, cascadeDeleter);
     }
 
     public void Dispose()
@@ -56,7 +64,22 @@ public sealed class ProjectServiceTests : IDisposable
         Assert.NotEqual(Guid.Empty, result.Id);
         Assert.Equal("Test Project", result.Name);
         Assert.Equal("A test project", result.Description);
-        Assert.Equal(userId, result.CreatedBy);
+        Assert.Equal(userId.ToString(), result.CreatedBy);
+    }
+
+    [Fact]
+    public async Task CreateAsync_PersistsCreatedBy_AsStringForm()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        var userId = _userContext.UserId!.Value;
+        var dto = new CreateProjectDto { Name = "Persist String" };
+
+        var result = await _service.CreateAsync(dto, ct);
+
+        Assert.Equal(userId.ToString(), result.CreatedBy);
+        var persisted = await _dbContext.Projects.FindAsync([result.Id], ct);
+        Assert.NotNull(persisted);
+        Assert.Equal(userId.ToString(), persisted!.CreatedBy);
     }
 
     [Fact]
@@ -90,8 +113,8 @@ public sealed class ProjectServiceTests : IDisposable
         _userContext.Roles = ["Admin"];
         var userId = _userContext.UserId!.Value;
 
-        var project1 = new Project { Name = "Project 1", CreatedBy = userId };
-        var project2 = new Project { Name = "Project 2", CreatedBy = Guid.NewGuid() };
+        var project1 = new Project { Name = "Project 1", CreatedBy = userId.ToString() };
+        var project2 = new Project { Name = "Project 2", CreatedBy = Guid.NewGuid().ToString() };
         _dbContext.Projects.AddRange(project1, project2);
         await _dbContext.SaveChangesAsync(ct);
 
@@ -105,7 +128,7 @@ public sealed class ProjectServiceTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
         _userContext.Roles = ["Editor"];
-        var project = new Project { Name = "Test", CreatedBy = _userContext.UserId!.Value };
+        var project = new Project { Name = "Test", CreatedBy = _userContext.UserId!.Value.ToString() };
         _dbContext.Projects.Add(project);
         await _dbContext.SaveChangesAsync(ct);
 
@@ -114,6 +137,44 @@ public sealed class ProjectServiceTests : IDisposable
         Assert.NotNull(result);
         Assert.Equal(project.Id, result.Id);
         Assert.Equal("Test", result.Name);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_EnforcesAuthorization_ViaHandler()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        _userContext.Roles = ["Editor"];
+        var project = new Project { Name = "Owned", CreatedBy = _userContext.UserId!.Value.ToString() };
+        _dbContext.Projects.Add(project);
+        await _dbContext.SaveChangesAsync(ct);
+
+        _recordingGuard.Clear();
+
+        var result = await _service.GetByIdAsync(project.Id, ct);
+
+        Assert.NotNull(result);
+        var call = Assert.Single(_recordingGuard.AccessCalls);
+        Assert.Equal(ResourceKind.Project, call.Kind);
+        Assert.Equal(project.Id, call.ResourceId);
+        Assert.Equal(Operation.Read, call.Operation);
+    }
+
+    [Fact]
+    public async Task GetAllAsync_NonAdmin_FiltersByCurrentUserAsString()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        _userContext.Roles = ["Editor"];
+        var me = _userContext.UserId!.Value;
+        var mine = new Project { Name = "Mine", CreatedBy = me.ToString() };
+        var others = new Project { Name = "Others", CreatedBy = Guid.NewGuid().ToString() };
+        _dbContext.Projects.AddRange(mine, others);
+        await _dbContext.SaveChangesAsync(ct);
+
+        var result = await _service.GetAllAsync(ct);
+
+        var only = Assert.Single(result);
+        Assert.Equal("Mine", only.Name);
+        Assert.Equal(me.ToString(), only.CreatedBy);
     }
 
     [Fact]
@@ -129,7 +190,7 @@ public sealed class ProjectServiceTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
         _userContext.Roles = ["Editor"];
-        var project = new Project { Name = "Test", CreatedBy = Guid.NewGuid() };
+        var project = new Project { Name = "Test", CreatedBy = Guid.NewGuid().ToString() };
         _dbContext.Projects.Add(project);
         await _dbContext.SaveChangesAsync(ct);
 
@@ -141,7 +202,7 @@ public sealed class ProjectServiceTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
         _userContext.Roles = ["Editor"];
-        var project = new Project { Name = "Original", CreatedBy = _userContext.UserId!.Value };
+        var project = new Project { Name = "Original", CreatedBy = _userContext.UserId!.Value.ToString() };
         _dbContext.Projects.Add(project);
         await _dbContext.SaveChangesAsync(ct);
 
@@ -169,7 +230,7 @@ public sealed class ProjectServiceTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
         _userContext.Roles = ["Admin"];
-        var project = new Project { Name = "To Delete", CreatedBy = Guid.NewGuid() };
+        var project = new Project { Name = "To Delete", CreatedBy = Guid.NewGuid().ToString() };
         _dbContext.Projects.Add(project);
         await _dbContext.SaveChangesAsync(ct);
 
@@ -186,7 +247,7 @@ public sealed class ProjectServiceTests : IDisposable
     {
         var ct = TestContext.Current.CancellationToken;
         _userContext.Roles = ["Editor"];
-        var project = new Project { Name = "To Delete", CreatedBy = Guid.NewGuid() };
+        var project = new Project { Name = "To Delete", CreatedBy = Guid.NewGuid().ToString() };
         _dbContext.Projects.Add(project);
         await _dbContext.SaveChangesAsync(ct);
 
@@ -251,7 +312,7 @@ public sealed class ProjectServiceTests : IDisposable
                 .AsNoTracking()
                 .FirstOrDefault(p => p.Id == projectId && !p.Deleted);
 
-            return Task.FromResult(project is not null && project.CreatedBy == userId);
+            return Task.FromResult(project is not null && project.CreatedBy == userId.ToString());
         }
 
         public Task<bool> CanAccessWorkflowAsync(Guid userId, Guid workflowId, Operation operation, CancellationToken ct = default)
@@ -267,5 +328,31 @@ public sealed class ProjectServiceTests : IDisposable
             => Task.FromResult(true);
 
         public bool ShouldMaskCredentialValues(IReadOnlyList<string> roles) => false;
+    }
+
+    /// <summary>
+    /// 记录授权调用次数的 <see cref="IAuthorizationGuard"/> 装饰器，用于验证
+    /// <see cref="ProjectService"/> 的读取授权经由 <see cref="AuthorizedOperationHandler"/> 进入（D3）。
+    /// 实际权限判定委托给内部真实守卫。
+    /// </summary>
+    private sealed class RecordingAuthorizationGuard(IAuthorizationGuard inner) : IAuthorizationGuard
+    {
+        public sealed record AccessCall(ResourceKind Kind, Guid ResourceId, Operation Operation);
+
+        public List<AccessCall> AccessCalls { get; } = [];
+
+        public void Clear() => AccessCalls.Clear();
+
+        public Task RequireAccessAsync(ResourceKind kind, Guid resourceId, Operation operation, CancellationToken ct = default)
+        {
+            AccessCalls.Add(new AccessCall(kind, resourceId, operation));
+            return inner.RequireAccessAsync(kind, resourceId, operation, ct);
+        }
+
+        public Task RequireScopeAsync(Scope scope, Operation operation, CancellationToken ct = default)
+            => inner.RequireScopeAsync(scope, operation, ct);
+
+        public Task RequireAdminAsync(Operation operation, CancellationToken ct = default)
+            => inner.RequireAdminAsync(operation, ct);
     }
 }

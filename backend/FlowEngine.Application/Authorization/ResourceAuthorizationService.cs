@@ -144,6 +144,6 @@ public sealed class ResourceAuthorizationService(FlowEngineDbContext dbContext, 
             .FirstOrDefaultAsync(p => p.Id == projectId.Value && !p.Deleted, ct)
             .ConfigureAwait(false);
 
-        return project is not null && project.CreatedBy == userId;
+        return project is not null && project.CreatedBy == userId.ToString();
     }
 }
