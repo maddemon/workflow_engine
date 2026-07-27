@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { notifications } from '@mantine/notifications';
-import { Select, Group, Text, Button, Modal, Stack, TextInput, PasswordInput } from '@mantine/core';
+import { Select, Group, Text, Button, Modal, Stack, TextInput, PasswordInput, Box } from '@mantine/core';
 import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
 import { useRequest } from 'ahooks';
@@ -99,7 +99,7 @@ export function CredentialField({ definition, value, onChange, error }: Credenti
   };
 
   return (
-    <div>
+    <Box>
       <Group gap={4} mb={4} justify="space-between" wrap="nowrap">
         <Group gap={4} wrap="nowrap">
           <Text size="xs" fw={400}>
@@ -175,6 +175,6 @@ export function CredentialField({ definition, value, onChange, error }: Credenti
           </Group>
         </Stack>
       </Modal>
-    </div>
+    </Box>
   );
 }

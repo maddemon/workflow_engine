@@ -1,5 +1,5 @@
 import { useRef, useMemo } from 'react';
-import { Group, Text, ActionIcon, Tooltip } from '@mantine/core';
+import { Group, Text, ActionIcon, Tooltip, Box } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { Upload, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -78,7 +78,7 @@ export function FileField({ definition, value, onChange, error, projectId }: Fil
   }, [strVal, projectFiles]);
 
   return (
-    <div>
+    <Box>
       <Group gap={4} mb={4}>
         <Text size="xs" fw={400}>
           {label}
@@ -120,6 +120,6 @@ export function FileField({ definition, value, onChange, error, projectId }: Fil
       {error && (
         <Text size="xs" c="red" mt={4}>{error}</Text>
       )}
-    </div>
+    </Box>
   );
 }

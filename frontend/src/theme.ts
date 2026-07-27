@@ -213,6 +213,11 @@ export const theme = createTheme({
     shadowCardHover: '0 4px 12px rgba(0, 0, 0, 0.12)',
     shadowNode: '0 1px 4px rgba(0, 0, 0, 0.06)',
     shadowNodeHover: '0 4px 12px rgba(0, 0, 0, 0.1)',
+    // 执行面板错误横幅配色。沿用 index.css 中按明暗主题定义的同名 CSS 变量，
+    // 以保证明暗两套配色完全一致（不可在此硬编码单一值，否则会破坏暗色主题）。
+    execErrBg: 'var(--exec-err-bg)',
+    execErrBorder: 'var(--exec-err-border)',
+    execErrColor: 'var(--exec-err-color)',
   },
 });
 
@@ -222,5 +227,8 @@ declare module '@mantine/core' {
     shadowCardHover: string;
     shadowNode: string;
     shadowNodeHover: string;
+    execErrBg: string;
+    execErrBorder: string;
+    execErrColor: string;
   }
 }

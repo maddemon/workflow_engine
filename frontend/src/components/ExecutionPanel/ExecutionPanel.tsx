@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Stack, Text, Group, ActionIcon, Divider, Box, Loader, Badge, Button } from '@mantine/core';
+import { Stack, Text, Group, ActionIcon, Divider, Box, Loader, Badge, Button, useMantineTheme } from '@mantine/core';
 import { X, AlertCircle, Check, Clock, Loader as LoaderIcon, Square } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/shallow';
@@ -50,6 +50,7 @@ function useLiveDuration(startedAt: string | null, completedAt: string | null): 
 
 export function ExecutionPanel({ execution, onClose, onCancel, error }: ExecutionPanelProps) {
   const { t } = useTranslation('execution');
+  const theme = useMantineTheme();
   const nodeExecutionRecords = useCanvasStore((s) => s.nodeExecutionRecords);
   const records = Object.values(nodeExecutionRecords);
   const [cancelling, setCancelling] = useState(false);
@@ -100,14 +101,14 @@ export function ExecutionPanel({ execution, onClose, onCancel, error }: Executio
         <Box
           p="sm"
           style={{
-            background: 'var(--exec-err-bg)',
-            border: '1px solid var(--exec-err-border)',
+            background: theme.other.execErrBg,
+            border: `1px solid ${theme.other.execErrBorder}`,
             borderRadius: 6,
           }}
         >
           <Group gap={6} wrap="nowrap" align="flex-start">
-            <AlertCircle size={16} color="var(--exec-err-color)" style={{ flexShrink: 0, marginTop: 1 }} />
-            <Text size="sm" style={{ color: 'var(--exec-err-color)', lineHeight: 1.5, wordBreak: 'break-word' }}>{error}</Text>
+            <AlertCircle size={16} color={theme.other.execErrColor} style={{ flexShrink: 0, marginTop: 1 }} />
+            <Text size="sm" style={{ color: theme.other.execErrColor, lineHeight: 1.5, wordBreak: 'break-word' }}>{error}</Text>
           </Group>
         </Box>
       </Stack>
@@ -161,14 +162,14 @@ export function ExecutionPanel({ execution, onClose, onCancel, error }: Executio
         <Box
           p="xs"
           style={{
-            background: 'var(--exec-err-bg)',
-            border: '1px solid var(--exec-err-border)',
+            background: theme.other.execErrBg,
+            border: `1px solid ${theme.other.execErrBorder}`,
             borderRadius: 6,
           }}
         >
           <Group gap={6} wrap="nowrap" align="flex-start">
-            <AlertCircle size={14} color="var(--exec-err-color)" style={{ flexShrink: 0, marginTop: 1 }} />
-            <Text size="xs" style={{ color: 'var(--exec-err-color)', lineHeight: 1.5, wordBreak: 'break-word' }}>{error}</Text>
+            <AlertCircle size={14} color={theme.other.execErrColor} style={{ flexShrink: 0, marginTop: 1 }} />
+            <Text size="xs" style={{ color: theme.other.execErrColor, lineHeight: 1.5, wordBreak: 'break-word' }}>{error}</Text>
           </Group>
         </Box>
       )}
