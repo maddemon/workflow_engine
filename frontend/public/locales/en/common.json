@@ -2,6 +2,7 @@
   "save": "Save",
   "saveSuccess": "Saved successfully",
   "saveFailed": "Save failed",
+  "saveBlockedByValidation": "Save blocked: fix node configuration errors before saving.",
   "cancel": "Cancel",
   "close": "Close",
   "delete": "Delete",

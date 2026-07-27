@@ -5,15 +5,21 @@ import type { NodeTypeDescriptor, Workflow } from '../../types/workflow.ts';
 import type { WorkflowNode } from '../../components/Canvas/stores/canvasStore.ts';
 import * as api from '../../services/api.ts';
 import * as serializer from '../../utils/workflowSerializer.ts';
+import { notifications } from '@mantine/notifications';
 
 const mockedApi = vi.mocked(api);
 const mockedSerializer = vi.mocked(serializer);
+const mockedNotifications = vi.mocked(notifications);
 
 vi.mock('../../services/api.ts', () => ({
   getWorkflow: vi.fn(),
   updateWorkflow: vi.fn(),
   createWorkflow: vi.fn(),
   deleteWorkflow: vi.fn(),
+}));
+
+vi.mock('@mantine/notifications', () => ({
+  notifications: { show: vi.fn() },
 }));
 
 vi.mock('../../utils/workflowSerializer.ts', async (importOriginal) => {
@@ -159,6 +165,25 @@ describe('workflowStore', () => {
       const result = await useWorkflowStore.getState().saveWorkflow();
       expect(result).toBe(false);
       expect(mockedApi.updateWorkflow).not.toHaveBeenCalled();
+    });
+
+    it('saveWorkflow - validation fails - shows error notification and does not call api', async () => {
+      const paramDef = { name: 'url', displayName: 'URL', type: 'String', required: true, defaultValue: '', validationRules: [], displayRule: null, credentialType: null, options: [] } as unknown as NodeTypeDescriptor['parameters'][0];
+      const desc = { ...descriptor, parameters: [paramDef] };
+      useCanvasStore.setState({ nodeTypes: [desc] });
+      useCanvasStore.getState().setNodes([{
+        ...makeNode('n1'),
+        data: { ...makeNode('n1').data, descriptor: desc, parameters: {} },
+      }]);
+
+      const result = await useWorkflowStore.getState().saveWorkflow();
+
+      expect(result).toBe(false);
+      expect(mockedNotifications.show).toHaveBeenCalled();
+      const shown = mockedNotifications.show.mock.calls[0]?.[0] as { color?: string } | undefined;
+      expect(shown?.color).toBe('red');
+      expect(mockedApi.updateWorkflow).not.toHaveBeenCalled();
+      expect(mockedApi.createWorkflow).not.toHaveBeenCalled();
     });
 
     it('creates workflow when workflowId is null', async () => {

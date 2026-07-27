@@ -5,6 +5,8 @@ import { deserializeWorkflow, serializeWorkflow } from '../utils/workflowSeriali
 import { computeAutoLayout } from '../utils/workflowLayout.ts';
 import * as api from '../services/api.ts';
 import { useCanvasStore } from '../components/Canvas/stores/canvasStore.ts';
+import { notifications } from '@mantine/notifications';
+import i18n from '../i18n.ts';
 
 // 画布相关类型（WorkflowNode/WorkflowEdge/WorkflowNodeData）定义在 canvasStore，
 // 此处重新导出以保持既有导入路径兼容。
@@ -104,7 +106,15 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
   saveWorkflow: async () => {
     const canvas = useCanvasStore.getState();
     canvas.flushPositions();
-    if (!canvas.validateAllNodes()) return false;
+    if (!canvas.validateAllNodes()) {
+      notifications.show({
+        title: i18n.t('common:saveFailed'),
+        message: i18n.t('common:saveBlockedByValidation'),
+        color: 'red',
+        autoClose: 3000,
+      });
+      return false;
+    }
 
     const { workflowId, workflowName, isActive, projectId } = get();
     const { nodes, edges, styleSettings } = canvas;

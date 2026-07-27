@@ -2,6 +2,7 @@
   "save": "保存",
   "saveSuccess": "保存成功",
   "saveFailed": "保存失败",
+  "saveBlockedByValidation": "保存已被阻止：请先修正节点配置错误后再保存。",
   "cancel": "取消",
   "close": "关闭",
   "delete": "删除",
