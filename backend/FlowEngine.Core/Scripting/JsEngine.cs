@@ -21,11 +21,24 @@ public sealed class JsEngine : IDisposable
     private readonly SemaphoreSlim _gate = new(1, 1);
     private bool _disposed;
 
+    // 统计 JsEngine.Create 调用次数，供测试验证"逐 item 复用单一引擎"而非每次新建。
+    private static int s_createCount;
+
     private JsEngine(Engine engine, ILogger? logger)
     {
         _engine = engine;
         _logger = logger;
     }
+
+    /// <summary>
+    /// 当前进程内 <see cref="Create"/> 的累计调用次数（仅用于测试断言）。
+    /// </summary>
+    internal static int CreateCallCount => Volatile.Read(ref s_createCount);
+
+    /// <summary>
+    /// 将累计创建计数重置为 0（仅用于测试断言前的基准对齐）。
+    /// </summary>
+    internal static void ResetCreateCallCount() => Interlocked.Exchange(ref s_createCount, 0);
 
     /// <summary>
     /// 创建 JsEngine 实例。每个实例有独立的沙箱。
@@ -59,7 +72,35 @@ public sealed class JsEngine : IDisposable
         InjectJmespath(engine, logger);
         InjectWhitelistFunctions(engine);
 
+        Interlocked.Increment(ref s_createCount);
         return new JsEngine(engine, logger);
+    }
+
+    /// <summary>
+    /// 获取全局对象当前所有自有属性名（含引擎注入的辅助函数与脚本新增的全局）。
+    /// 用于逐 item 复用同一引擎时快照/恢复全局状态，避免跨 item 作用域泄漏。
+    /// </summary>
+    internal IReadOnlyCollection<string> GetGlobalOwnKeys()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        var keys = new List<string>();
+        foreach (var property in _engine.Global.GetOwnProperties())
+        {
+            keys.Add(property.Key.ToString());
+        }
+
+        return keys;
+    }
+
+    /// <summary>
+    /// 删除全局对象上的指定自有属性。
+    /// 用于逐 item 复用引擎后，清除脚本在本 item 求值期间新增的全局键，
+    /// 使其不会污染后续 item（同时保留引擎创建时注入的辅助函数与逐项作用域变量）。
+    /// </summary>
+    internal void DeleteGlobal(string name)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        _engine.Global.Delete(JsValue.FromObject(_engine, name));
     }
 
     /// <summary>

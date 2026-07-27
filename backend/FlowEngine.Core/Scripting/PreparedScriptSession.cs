@@ -49,7 +49,12 @@ public sealed class PreparedScriptSession : IDisposable
                 using (await _engine.LockAsync(cancellationToken).ConfigureAwait(false))
                 {
                     PreparedScript.InjectScope(_engine, context);
+
+                    // 快照注入后的全局自有键（含辅助函数与本次作用域），求值后仅删除脚本新增的键，
+                    // 避免跨次调用（同一会话复用引擎）作用域泄漏。
+                    var snapshot = _engine.GetGlobalOwnKeys();
                     var raw = _engine.EvaluatePreparedCore(prepared.Inner);
+                    RestoreGlobalSnapshot(_engine, snapshot);
                     return new ScriptResult(prepared.Original, raw);
                 }
             }
@@ -101,7 +106,12 @@ public sealed class PreparedScriptSession : IDisposable
                         }
                     }
 
+                    // 快照注入后的全局自有键（含辅助函数与本 item 逐项作用域），
+                    // 求值后仅删除脚本在本 item 新增的键（如 globalThis.x = 1），
+                    // 避免污染后续 item；逐项注入的作用域变量会被重新设置，故予保留。
+                    var snapshot = _engine.GetGlobalOwnKeys();
                     var raw = _engine.EvaluatePreparedCore(prepared.Inner);
+                    RestoreGlobalSnapshot(_engine, snapshot);
                     return new ScriptResult(prepared.Original, raw);
                 }
             }
@@ -131,6 +141,23 @@ public sealed class PreparedScriptSession : IDisposable
         }
 
         return allItems;
+    }
+
+    /// <summary>
+    /// 求值结束后，删除快照之后新增的全局自有键，恢复至注入作用域后的状态。
+    /// 保留快照内的键（引擎辅助函数 console/now/jmespath/length/trim、逐项作用域变量 $json/$input 等、
+    /// 以及 <see cref="ExecutionScope.ApplyGlobalVariables"/> / <see cref="ExecutionScope.ApplyItemScope"/> 注入的全局变量），
+    /// 仅清除脚本在求值期间自行写入的全局（如 <c>globalThis.x = 1</c>），避免跨 item 泄漏。
+    /// </summary>
+    private static void RestoreGlobalSnapshot(JsEngine engine, IReadOnlyCollection<string> snapshot)
+    {
+        foreach (var key in engine.GetGlobalOwnKeys())
+        {
+            if (!snapshot.Contains(key))
+            {
+                engine.DeleteGlobal(key);
+            }
+        }
     }
 
     /// <inheritdoc />

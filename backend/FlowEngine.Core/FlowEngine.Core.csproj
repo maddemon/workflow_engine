@@ -6,6 +6,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="FlowEngine.Core.Tests" />
+    <InternalsVisibleTo Include="FlowEngine.Runtime" />
     <InternalsVisibleTo Include="FlowEngine.Runtime.Tests" />
     <InternalsVisibleTo Include="FlowEngine.Application" />
   </ItemGroup>

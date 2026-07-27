@@ -60,8 +60,6 @@ public sealed class NodeExecutionContextFactory(
         // CodeEditor/Script 的非 Script 字符串参数仍由节点自己执行，先抽出避免被 ParameterResolver 误求值
         var rawCodeParams = CodeParameterExtractor.Extract(rawParameters, descriptor);
 
-        using var js = JsEngine.Create(options: jsEngineOptions, logger: jsLogger);
-
         var currentInput = GetCurrentInput(inputs, runIndex);
         var inputItems = GetInputItemList(inputs);
         var inputContext = new Dictionary<string, object?>
@@ -119,6 +117,46 @@ public sealed class NodeExecutionContextFactory(
             ["$credentials"] = credentialsDict,
             ["parameter"] = rawParameters,
         };
+
+        // 基础全局变量（供节点 body 经由 ExecutionScope.ApplyGlobalVariables 复用），
+        // 须先于节点执行上下文构造，以便引擎复用与逐项作用域注入。
+        var globalVariables = ExecutionContextGlobalsBuilder.BuildBase(
+            credentialsDict, workflow, execution.Id, rawParameters, environmentWhitelist);
+        if (nodeContext is not null)
+        {
+            globalVariables["$nodeContext"] = nodeContext;
+        }
+
+        // 提前构造节点执行上下文：EngineOptions/EngineLogger 已就绪，
+        // 使 GetOrCreateEngine 创建/复用单次执行托管的单一引擎，避免每个 item 额外新建引擎。
+        var nodeExecContext = new NodeExecutionContext
+        {
+            Workflow = workflow,
+            ExecutionId = execution.Id,
+            Node = nodeDefinition,
+            RunIndex = runIndex,
+            Inputs = inputs,
+            RawParameters = rawParameters,
+            Credentials = credsAccessor,
+            Logger = NullExecutionLogger.Instance,
+            CancellationToken = cancellationToken,
+            LlmClient = llmClient,
+            LlmClientFactory = _llmClientFactory,
+            HttpClientPool = httpClientPool,
+            NodeRegistry = registry,
+            ContextFactory = this,
+            WorkflowLoader = workflowLoader,
+            ScriptCache = scriptCache,
+            EngineOptions = jsEngineOptions,
+            EngineLogger = jsLogger,
+            GlobalVariables = globalVariables,
+            NodeContext = nodeContext ?? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase),
+        };
+
+        // 复用同一引擎完成参数预求值：捕获引擎创建时的全局基线，求值结束后据此还原，
+        // 既消除逐 item 的额外引擎创建/销毁开销，又避免预求值专用全局泄漏到节点执行体。
+        var js = nodeExecContext.GetOrCreateEngine();
+        var engineBaseline = new HashSet<string>(js.GetGlobalOwnKeys(), StringComparer.OrdinalIgnoreCase);
 
         // 统一全局变量表：既注入 JsEngine（供 ParameterResolver 与 Script 管线复用），
         // 也作为 ScriptContext.ExtraGlobals 传入，保证两种求值路径变量集一致。
@@ -180,46 +218,24 @@ public sealed class NodeExecutionContextFactory(
         var hydrator = new ParameterHydrator(credsAccessor, hydratorLogger);
         await hydrator.HydrateAsync(nodeInstance, resolvedParameters).ConfigureAwait(false);
 
-        // 节点级持久化上下文注入运行时全局变量 $nodeContext（节点 body 表达式经
-        // ExecutionScope.ApplyGlobalVariables 读取 context.GlobalVariables，与此处同源）。
-        // 注入 session.NodeContexts 中的同一实例：JS 写回即反映到 C# 侧。
-        var globalVariables = ExecutionContextGlobalsBuilder.BuildBase(
-            credentialsDict, workflow, execution.Id, rawParameters, environmentWhitelist);
-        if (nodeContext is not null)
-        {
-            globalVariables["$nodeContext"] = nodeContext;
-        }
-
         // SEC-1：依据 Shell 执行门禁（配置开关 + 当前用户角色）计算是否允许 RunInShell。
         // 门禁未注册时（如测试或精简宿主）一律视为禁止，遵循默认安全。
         var allowShellExecution = shellExecutionGate is not null
             && await shellExecutionGate.IsShellExecutionAllowedAsync(cancellationToken).ConfigureAwait(false);
+        nodeExecContext.AllowShellExecution = allowShellExecution;
 
-        return new NodeExecutionContext
+        // 还原引擎至基线：删除参数预求值期间注入的专用全局（extraGlobals/$items 等），
+        // 节点执行体会经 ExecutionScope 自行注入逐项作用域，二者互不干扰。
+        foreach (var key in js.GetGlobalOwnKeys())
         {
-            Workflow = workflow,
-            ExecutionId = execution.Id,
-            Node = nodeDefinition,
-            RunIndex = runIndex,
-            Inputs = inputs,
-            RawParameters = rawParameters,
-            ResolvedParameters = resolvedParameters,
-            Credentials = credsAccessor,
-            Logger = NullExecutionLogger.Instance,
-            CancellationToken = cancellationToken,
-            LlmClient = llmClient,
-            LlmClientFactory = _llmClientFactory,
-            HttpClientPool = httpClientPool,
-            NodeRegistry = registry,
-            ContextFactory = this,
-            WorkflowLoader = workflowLoader,
-            ScriptCache = scriptCache,
-            EngineOptions = jsEngineOptions,
-            EngineLogger = jsLogger,
-            GlobalVariables = globalVariables,
-            NodeContext = nodeContext ?? new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase),
-            AllowShellExecution = allowShellExecution,
-        };
+            if (!engineBaseline.Contains(key))
+            {
+                js.DeleteGlobal(key);
+            }
+        }
+
+        nodeExecContext.ResolvedParameters = resolvedParameters;
+        return nodeExecContext;
     }
 
     private static object? GetCurrentInput(IReadOnlyDictionary<string, DataBatch> inputs, int runIndex)
