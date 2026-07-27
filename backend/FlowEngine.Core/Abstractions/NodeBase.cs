@@ -161,21 +161,15 @@ public abstract class NodeBase : INodeType, INodeHandler
 
     /// <summary>
     /// 按节点声明的 <see cref="InjectAttribute"/> 注入能力，覆盖直接执行（测试/非管线）场景：
-    /// 上下文派生能力取自 <paramref name="context"/>，DI 能力仅在 <see cref="NodeExecutionContext.NodeRegistry"/>
-    /// 非空时映射（避免清空已由管线注入的 Http / Sub / Tools 等）。生产管线已先行注入，本次为等价补注入。
+    /// 所有上下文派生的能力（含 <see cref="INodeRegistry"/>、<see cref="INodeExecutionContextFactory"/> 等）
+    /// 均经 <see cref="NodeCapabilityInjector"/> 的 <c>ContextProviders</c> 从 <paramref name="context"/> 解析，
+    /// DI 能力（如 Http / Sub / Tools）若已由生产管线注入则保持原值。不再为每次执行创建
+    /// <see cref="ServiceCollection"/> + <see cref="IServiceProvider"/>，避免规模执行下的重复建容器开销。
     /// </summary>
     /// <param name="context">节点执行上下文。</param>
     private void InjectCapabilities(NodeExecutionContext context)
     {
-        IServiceProvider? sp = null;
-        if (context.NodeRegistry is not null)
-        {
-            sp = new ServiceCollection()
-                .AddSingleton<INodeRegistry>(context.NodeRegistry)
-                .BuildServiceProvider();
-        }
-
-        NodeCapabilityInjector.Inject(this, sp, context);
+        NodeCapabilityInjector.Inject(this, null, context);
     }
 
     /// <summary>返回 AI-native 节点定义；默认 null，由子类重写以提供更丰富语义。</summary>

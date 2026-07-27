@@ -141,4 +141,40 @@ public sealed class NodeCapabilityInjectorTests
 
         Assert.Null(node.Capability);
     }
+
+    /// <summary>声明上下文派生的 <see cref="INodeRegistry"/> 能力（与 AgentNode / PaginateNode 等插件节点一致）。</summary>
+    [NodeMeta(TypeName = "capRegistryNode", DisplayName = "CapRegistry", Category = NodeCategory.Test, Icon = "capRegistry")]
+    private sealed class RegistryNode : NodeBase
+    {
+        [Inject] public INodeRegistry? Registry { get; private set; }
+
+        public override Task<NodeHandlerOutput> ExecuteAsync(NodeInput input, CancellationToken ct)
+            => Task.FromResult(NodeHandlerOutput.Data(new DataBatch()));
+    }
+
+    /// <summary>极简 <see cref="INodeRegistry"/> 假实现：仅用于验证上下文能力注入，方法体不调用。</summary>
+    private sealed class FakeNodeRegistry : INodeRegistry
+    {
+        public void Register(INodeType nodeType) => throw new NotImplementedException();
+        public INodeType Get(string typeName) => throw new NotImplementedException();
+        public bool TryGet(string typeName, out INodeType? nodeType) => throw new NotImplementedException();
+        public IReadOnlyCollection<INodeType> GetAll() => throw new NotImplementedException();
+        public INodeType CreateInstance(string typeName) => throw new NotImplementedException();
+        public IReadOnlyCollection<NodeTypeDescriptor> GetDescriptors() => throw new NotImplementedException();
+        public NodeTypeDescriptor GetDescriptor(string typeName) => throw new NotImplementedException();
+    }
+
+    [Fact]
+    public void Inject_NodeRegistry_ResolvesFromContext_NotFromServiceProvider()
+    {
+        // INodeRegistry 已改为上下文能力：即便不提供 DI 容器，也应从 ctx.NodeRegistry 注入，
+        // 从而 NodeBase 直接执行路径无需每次 new ServiceCollection + BuildServiceProvider。
+        var node = new RegistryNode();
+        var registry = new FakeNodeRegistry();
+        var context = new NodeExecutionContext { NodeRegistry = registry };
+
+        NodeCapabilityInjector.Inject(node, null, context);
+
+        Assert.Same(registry, node.Registry);
+    }
 }

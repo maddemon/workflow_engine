@@ -29,6 +29,10 @@ public static class NodeCapabilityInjector
         [typeof(ILlmClient)] = ctx => ctx.LlmClient,
         [typeof(IExecutionLogger)] = ctx => ctx.Logger,
         [typeof(ICredentialAccessor)] = ctx => ctx.Credentials,
+        // INodeRegistry 经 ctx.NodeRegistry 解析：NodeExecutionContextFactory.CreateAsync 在构造上下文时
+        // 写入 NodeRegistry = registry，故生产/测试（手动置 NodeRegistry）均可用。改为上下文能力后，
+        // NodeBase 的直接执行路径不再需要为注入 INodeRegistry 而每次执行 new ServiceCollection + BuildServiceProvider。
+        [typeof(INodeRegistry)] = ctx => ctx.NodeRegistry,
         // INodeExecutionContextFactory 经 ctx.ContextFactory 解析：NodeExecutionContextFactory.CreateAsync
         // 在构造上下文时写入 ContextFactory = this，故生产/测试（手动置 ContextFactory）均可用。
         [typeof(INodeExecutionContextFactory)] = ctx => ctx.ContextFactory,
