@@ -151,4 +151,82 @@ public sealed class ScriptResultTests
         Assert.Throws<ScriptErrorException>(() => result.ToJson());
         Assert.Throws<ScriptErrorException>(() => result.To<int>());
     }
+
+    [Fact]
+    public void ToClr_LargeIntegerViaResolvedNode_PreservesLong()
+    {
+        var script = new Script { Source = "x" }.WithResolvedValue(JsonNode.Parse("9007199254740993"));
+        var result = ScriptResult.FromResolved(script);
+
+        var clr = result.ToClr();
+
+        Assert.IsType<long>(clr);
+        Assert.Equal(9007199254740993L, (long)clr!);
+    }
+
+    [Fact]
+    public void ToJson_LargeIntegerViaResolvedNode_EmitsIntegerLiteral()
+    {
+        var script = new Script { Source = "x" }.WithResolvedValue(JsonNode.Parse("9007199254740993"));
+        var result = ScriptResult.FromResolved(script);
+
+        var json = result.ToJson();
+
+        Assert.Equal("9007199254740993", json?.ToJsonString());
+    }
+
+    [Fact]
+    public void To_Long_LargeIntegerViaResolvedNode_PreservesPrecision()
+    {
+        var script = new Script { Source = "x" }.WithResolvedValue(JsonNode.Parse("9007199254740993"));
+        var result = ScriptResult.FromResolved(script);
+
+        Assert.Equal(9007199254740993L, result.To<long>());
+    }
+
+    [Fact]
+    public void ToClr_LargeIntegerViaScript_PreservesLong()
+    {
+        // 5e9 在 double 的精确整数范围内（<= 2^53），可经 Jint 无损失表达，验证脚本路径整数优先 long。
+        var result = Evaluate("5000000000");
+
+        var clr = result.ToClr();
+
+        Assert.IsType<long>(clr);
+        Assert.Equal(5000000000L, (long)clr!);
+    }
+
+    [Fact]
+    public void ToJson_LargeIntegerViaScript_EmitsIntegerLiteral()
+    {
+        var result = Evaluate("5000000000");
+
+        Assert.Equal("5000000000", result.ToJson()?.ToJsonString());
+    }
+
+    [Fact]
+    public void ToClr_SmallInteger_StillInt()
+    {
+        var result = Evaluate("42");
+
+        Assert.IsType<int>(result.ToClr());
+        Assert.Equal(42, result.ToClr());
+    }
+
+    [Fact]
+    public void ToClr_Double_StillDouble()
+    {
+        var result = Evaluate("3.14");
+
+        Assert.IsType<double>(result.ToClr());
+        Assert.Equal(3.14, result.ToClr());
+    }
+
+    [Fact]
+    public void ToJson_Double_EmitsDecimalForm()
+    {
+        var result = Evaluate("3.14");
+
+        Assert.Equal("3.14", result.ToJson()?.ToJsonString());
+    }
 }

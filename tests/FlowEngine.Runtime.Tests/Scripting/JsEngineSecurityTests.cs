@@ -112,7 +112,7 @@ public class JsEngineSecurityTests
         js.SetValue("a", 10);
         js.SetValue("b", 20);
         var result = new ScriptResult(Script.Empty, js.Evaluate("a + b")).ToClr();
-        Assert.Equal(30d, result);
+        Assert.Equal(30, result);
     }
 
     [Fact]

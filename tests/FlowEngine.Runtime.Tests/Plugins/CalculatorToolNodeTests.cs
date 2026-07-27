@@ -39,7 +39,7 @@ public sealed class CalculatorToolNodeTests
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("1 + 2", result.Output.Items[0].Data?["expression"]?.GetValue<string>());
-        Assert.Equal(3d, result.Output.Items[0].Data?["result"]?.GetValue<double>());
+        Assert.Equal(3, result.Output.Items[0].Data?["result"]?.GetValue<int>());
     }
 
     [Fact]
@@ -51,7 +51,7 @@ public sealed class CalculatorToolNodeTests
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("10 / 2", result.Output.Items[0].Data?["expression"]?.GetValue<string>());
-        Assert.Equal(5d, result.Output.Items[0].Data?["result"]?.GetValue<double>());
+        Assert.Equal(5, result.Output.Items[0].Data?["result"]?.GetValue<int>());
     }
 
     [Fact]
@@ -63,7 +63,7 @@ public sealed class CalculatorToolNodeTests
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("4 * 2", result.Output.Items[0].Data?["expression"]?.GetValue<string>());
-        Assert.Equal(8d, result.Output.Items[0].Data?["result"]?.GetValue<double>());
+        Assert.Equal(8, result.Output.Items[0].Data?["result"]?.GetValue<int>());
     }
 
     [Fact]
@@ -75,7 +75,7 @@ public sealed class CalculatorToolNodeTests
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("7 - 3", result.Output.Items[0].Data?["expression"]?.GetValue<string>());
-        Assert.Equal(4d, result.Output.Items[0].Data?["result"]?.GetValue<double>());
+        Assert.Equal(4, result.Output.Items[0].Data?["result"]?.GetValue<int>());
     }
 
     [Fact]
@@ -88,7 +88,7 @@ public sealed class CalculatorToolNodeTests
 
         Assert.True(result.Success, result.Error?.Message);
         Assert.Equal("5", result.Output.Items[0].Data?["expression"]?.GetValue<string>());
-        Assert.Equal(5d, result.Output.Items[0].Data?["result"]?.GetValue<double>());
+        Assert.Equal(5, result.Output.Items[0].Data?["result"]?.GetValue<int>());
     }
 
     [Fact]

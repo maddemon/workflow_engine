@@ -25,7 +25,9 @@ public class ScriptResultTests
 
         var result = ScriptResult.FromResolved(script);
 
-        Assert.Equal(42.0, result.ToClr());
+        // 普通整数应保留 int 类型（而非被统一装箱为 double）。
+        Assert.IsType<int>(result.ToClr());
+        Assert.Equal(42, result.ToClr());
     }
 
     [Fact]
