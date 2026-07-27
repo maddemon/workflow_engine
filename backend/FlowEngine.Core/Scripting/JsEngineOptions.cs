@@ -24,7 +24,7 @@ public sealed class JsEngineOptions
     private static readonly HashSet<string> s_defaultAllowedGlobals = new(StringComparer.OrdinalIgnoreCase)
     {
         // ── 安全 JS 内置（仅保留工作流脚本常用的纯计算/数据结构 API）──
-        "Array", "Boolean", "Date", "Error", "EvalError", "Function", "Infinity", "JSON", "Map",
+        "Array", "Boolean", "Date", "Error", "EvalError", "Infinity", "JSON", "Map",
         "Math", "NaN", "Number", "Object", "Promise", "Proxy", "RangeError", "ReferenceError",
         "RegExp", "Set", "String", "Symbol", "SyntaxError", "TypeError", "URIError", "WeakMap",
         "WeakSet", "parseInt", "parseFloat", "isNaN", "isFinite", "decodeURI", "encodeURI",
