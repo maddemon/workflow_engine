@@ -12,6 +12,7 @@ const descriptor: NodeTypeDescriptor = {
   typeName: 'custom',
   displayName: 'Custom',
   category: 'Test',
+  categoryKey: 'logic',
   icon: '',
   executionMode: 'Sync',
   parameters: [],

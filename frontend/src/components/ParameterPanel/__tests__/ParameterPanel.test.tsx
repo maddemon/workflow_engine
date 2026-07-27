@@ -27,6 +27,7 @@ const descriptor: NodeTypeDescriptor = {
   typeName: 'TestNode',
   displayName: 'Test Node',
   category: 'Test',
+  categoryKey: 'logic',
   icon: '',
   executionMode: 'Sync',
   parameters: [stringParam],

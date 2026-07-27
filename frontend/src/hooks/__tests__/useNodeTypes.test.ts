@@ -16,6 +16,7 @@ const descriptor: NodeTypeDescriptor = {
   typeName: 'httpRequest',
   displayName: 'HTTP Request',
   category: 'Http',
+  categoryKey: 'logic',
   icon: 'globe',
   executionMode: 'Sync',
   parameters: [],

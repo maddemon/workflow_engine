@@ -119,6 +119,7 @@ function fallbackDescriptor(ni: NodeDefinition): NodeTypeDescriptor {
     typeName: ni.typeName,
     displayName: ni.name || ni.typeName,
     category: 'Unknown',
+    categoryKey: 'unknown',
     icon: '',
     executionMode: 'Sync',
     parameters: [],

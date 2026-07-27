@@ -13,6 +13,7 @@ function makeData(overrides: Partial<WorkflowNodeData> = {}): WorkflowNodeData {
     typeName: 'test',
     displayName: 'Test',
     category: 'Core',
+    categoryKey: 'logic',
     icon: 'box',
     executionMode: 'Sync',
     parameters: [],
@@ -49,6 +50,7 @@ describe('computeDynamicPorts', () => {
         typeName: 'switch',
         displayName: 'Switch',
         category: 'Core',
+        categoryKey: 'logic',
         icon: 'git-branch',
         executionMode: 'Sync',
         parameters: [
@@ -114,6 +116,7 @@ describe('computeDynamicPorts', () => {
         typeName: 'set',
         displayName: 'Edit Fields (Set)',
         category: 'Core',
+        categoryKey: 'logic',
         icon: 'edit',
         executionMode: 'Sync',
         parameters: [

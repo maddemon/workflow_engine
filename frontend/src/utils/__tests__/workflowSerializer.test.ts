@@ -9,6 +9,7 @@ function makeNodeType(typeName: string, portNames: { name: string; direction: 'I
     typeName,
     displayName: typeName,
     category: 'Test',
+    categoryKey: 'logic',
     icon: '',
     executionMode: 'Sync',
     parameters: [],

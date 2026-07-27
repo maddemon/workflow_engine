@@ -95,6 +95,7 @@ describe('messageHandlers', () => {
           typeName: 'test',
           displayName: 'Test',
           category: 'Test',
+          categoryKey: 'logic',
           icon: '',
           executionMode: 'Sync',
           parameters: [],
