@@ -28,18 +28,18 @@ public sealed class CredentialTools(CredentialService credentialService)
                 projectGuid = pid;
             }
 
-            var credentials = await credentialService.GetAllAsync(projectGuid, cancellationToken)
+            var result = await credentialService.GetAllAsync(projectGuid, cancellationToken: cancellationToken)
                 .ConfigureAwait(false);
 
             return new
             {
-                credentials = credentials.Select(c => new
+                credentials = result.Items.Select(c => new
                 {
                     id = c.Id,
                     name = c.Name,
                     type = c.Type,
                 }).ToList(),
-                total = credentials.Count,
+                total = result.TotalCount,
             };
         }
         catch (Exception ex)
