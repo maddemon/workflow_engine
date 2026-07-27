@@ -117,7 +117,7 @@ public sealed class WorkflowCredentialUsageInterceptorTests : IDisposable
         _dbContext.Workflows.Add(wfA);
         await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
 
-        // 仅修改 wfA，验证 wfB 的引用行不被波及（增量维护）。
+        // 新增 wfB，验证 wfA 的引用行不被波及（增量维护）。
         var wfB = BuildWorkflow(credB);
         _dbContext.Workflows.Add(wfB);
         await _dbContext.SaveChangesAsync(TestContext.Current.CancellationToken);
