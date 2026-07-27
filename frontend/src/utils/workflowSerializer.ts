@@ -6,7 +6,7 @@ import type {
   NodeTypeDescriptor,
   PortDefinition,
 } from '../types/workflow.ts';
-import type { WorkflowNodeData, WorkflowNode } from '../stores/workflowStore.ts';
+import type { WorkflowNodeData, WorkflowNode } from '../types/canvas.ts';
 import { encodeHandleId, decodeHandleId } from './handleId.ts';
 import { computeDynamicPorts } from './computeDynamicPorts.ts';
 

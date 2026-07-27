@@ -8,10 +8,6 @@ import { useCanvasStore } from '../components/Canvas/stores/canvasStore.ts';
 import { notifications } from '@mantine/notifications';
 import i18n from '../i18n.ts';
 
-// 画布相关类型（WorkflowNode/WorkflowEdge/WorkflowNodeData）定义在 canvasStore，
-// 此处重新导出以保持既有导入路径兼容。
-export type { WorkflowNode, WorkflowEdge, WorkflowNodeData } from '../components/Canvas/stores/canvasStore.ts';
-
 interface WorkflowState {
   workflowId: string | null;
   projectId: string | null;

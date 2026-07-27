@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useWorkflowStore } from '../workflowStore.ts';
 import { useCanvasStore } from '../../components/Canvas/stores/canvasStore.ts';
 import type { NodeTypeDescriptor, Workflow } from '../../types/workflow.ts';
-import type { WorkflowNode } from '../../components/Canvas/stores/canvasStore.ts';
+import type { WorkflowNode } from '../../types/canvas.ts';
 import * as api from '../../services/api.ts';
 import * as serializer from '../../utils/workflowSerializer.ts';
 import { notifications } from '@mantine/notifications';

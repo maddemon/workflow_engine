@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { serializeWorkflow, deserializeWorkflow } from '../workflowSerializer.ts';
 import type { Edge } from '@xyflow/react';
 import type { Workflow, NodeTypeDescriptor } from '../../types/workflow.ts';
-import type { WorkflowNode } from '../../stores/workflowStore.ts';
+import type { WorkflowNode } from '../../types/canvas.ts';
 import { encodeHandleId } from '../handleId.ts';
 
 function makeNodeType(typeName: string, portNames: { name: string; direction: 'Input' | 'Output' }[]): NodeTypeDescriptor {

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { applyNodeChanges, applyEdgeChanges } from '@xyflow/react';
-import type { Node, Edge, NodeChange, EdgeChange } from '@xyflow/react';
+import type { NodeChange, EdgeChange } from '@xyflow/react';
 import type {
   NodeTypeDescriptor,
   ParameterDefinition,
@@ -12,21 +12,7 @@ import { DEFAULT_STYLE_SETTINGS } from '../../../types/workflow.ts';
 import { validateParameters } from '../../../utils/validateParameters.ts';
 import { computeAutoLayout } from '../../../utils/workflowLayout.ts';
 import { useWorkflowStore } from '../../../stores/workflowStore.ts';
-
-export type WorkflowNodeData = {
-  typeName: string;
-  name: string;
-  parameters: Record<string, unknown>;
-  isEntry: boolean;
-  descriptor: NodeTypeDescriptor;
-  errorStrategy: string;
-  retryPolicy: RetryPolicyDto | null;
-  timeout: number | null;
-  executionStatus?: 'idle' | 'running' | 'success' | 'error' | 'waiting';
-};
-
-export type WorkflowNode = Node<WorkflowNodeData, 'workflow'>;
-export type WorkflowEdge = Edge;
+import type { WorkflowNode, WorkflowEdge, WorkflowNodeData } from '../../../types/canvas.ts';
 
 interface HistorySnapshot {
   nodes: WorkflowNode[];

@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { computeDynamicPorts } from '../computeDynamicPorts';
-import type { WorkflowNodeData } from '../../stores/workflowStore';
+import type { WorkflowNodeData } from '../../types/canvas.ts';
 import type { NodeTypeDescriptor, PortDefinition } from '../../types/workflow';
 
 function makeData(overrides: Partial<WorkflowNodeData> = {}): WorkflowNodeData {

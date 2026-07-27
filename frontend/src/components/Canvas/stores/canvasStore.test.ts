@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useCanvasStore } from './canvasStore.ts';
 import { useWorkflowStore } from '../../../stores/workflowStore.ts';
 import type { NodeTypeDescriptor, NodeExecutionRecordDto } from '../../../types/workflow.ts';
-import type { WorkflowNode } from './canvasStore.ts';
+import type { WorkflowNode } from '../../../types/canvas.ts';
 
 const descriptor: NodeTypeDescriptor = {
   typeName: 'httpRequest',

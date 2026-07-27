@@ -7,7 +7,7 @@ import { WorkflowCanvas } from '../WorkflowCanvas.tsx';
 import { useWorkflowStore } from '../../../stores/workflowStore.ts';
 import { useCanvasStore } from '../stores/canvasStore.ts';
 import type { NodeTypeDescriptor, PortDefinition } from '../../../types/workflow.ts';
-import type { WorkflowNode } from '../stores/canvasStore.ts';
+import type { WorkflowNode } from '../../types/canvas.ts';
 import { CustomNode, portLayouts } from '../CustomNode.tsx';
 import { ConnectedHandlesContext } from '../connectedHandlesContext.ts';
 
