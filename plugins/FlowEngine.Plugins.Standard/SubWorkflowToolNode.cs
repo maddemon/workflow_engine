@@ -135,7 +135,7 @@ public sealed class SubWorkflowToolNode : NodeBase
 
         try
         {
-            var executor = new SubWorkflowExecutor(Registry, Ctx.NestingDepth + 1);
+            var executor = new SubWorkflowExecutor(Registry, Ctx.NestingDepth + 1, Ctx.Logger);
             var inputBatch = input.InputBatch;
             var inputPayload = inputBatch.Items.Count > 0 ? inputBatch.Items[0].Data : null;
             var result = await executor.ExecuteAsync(workflow!, inputPayload, effectiveToken).ConfigureAwait(false);
