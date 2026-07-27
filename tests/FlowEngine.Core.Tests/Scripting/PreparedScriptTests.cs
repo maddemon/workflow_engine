@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text.Json.Nodes;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Scripting;
@@ -140,5 +141,37 @@ public sealed class PreparedScriptTests
 
         Assert.False(result.Success);
         Assert.NotNull(result.Error);
+    }
+
+    [Fact]
+    public async Task Session_RunForItemAsync_DoesNotLeakGlobalsAcrossItems()
+    {
+        // Task 5-B：同一引擎跨 item 复用时，item1 经 globalThis 写入的全局不应在 item2 可见。
+        // 默认沙箱移除 globalThis，故此处显式放行以构造真实泄漏场景（与运行时若放开 globalThis 一致）。
+        var options = new JsEngineOptions();
+        var allowed = new HashSet<string>(options.AllowedGlobals, StringComparer.OrdinalIgnoreCase);
+        allowed.Add("globalThis");
+        options.AllowedGlobals = allowed;
+        var forbidden = new HashSet<string>(options.ForbiddenIdentifiers, StringComparer.OrdinalIgnoreCase);
+        forbidden.Remove("globalThis");
+        options.ForbiddenIdentifiers = forbidden;
+
+        var cache = new ScriptCache(Microsoft.Extensions.Options.Options.Create(options));
+        var leakScript = cache.GetOrPrepare(new Script { Source = "globalThis.__leak = 1" });
+        var readScript = cache.GetOrPrepare(new Script { Source = "return typeof globalThis.__leak === 'undefined'" });
+
+        var context = ScriptContext.From(new NodeExecutionContext());
+
+        using var engine = JsEngine.Create(options);
+        using var session = leakScript.CreateSession(engine);
+
+        var item1 = await session.RunForItemAsync(leakScript, context, JsonNode.Parse("{}"), 0, TestContext.Current.CancellationToken);
+        Assert.True(item1.Success, "item1 写入 globalThis.__leak 应成功");
+        Assert.Equal(1, item1.To<int>());
+
+        var item2 = await session.RunForItemAsync(readScript, context, JsonNode.Parse("{}"), 1, TestContext.Current.CancellationToken);
+        Assert.True(item2.Success, "item2 读取 globalThis.__leak 应成功");
+        // 修复后：item1 求值期间新增的全局已被清除，item2 不应再看到 item1 写入的 __leak。
+        Assert.True(item2.To<bool>(), "跨 item 全局泄漏防护：item2 不应看到 item1 写入的 globalThis.__leak");
     }
 }

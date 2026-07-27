@@ -107,4 +107,15 @@ public class Workflow : Entity
     [Comment("样式设置")]
     [JsonColumn]
     public WorkflowStyleSettings? StyleSettings { get; set; }
+
+    /// <summary>
+    /// 乐观并发令牌（行版本）。每次新增或变更由 <c>FlowEngineDbContext</c> 在保存前自增，
+    /// 用于跨 DbContext 的更新丢失检测（lost update）。类型为 <see cref="long"/> 而非
+    /// <see cref="byte"/>[]，因为 SQLite/PostgreSQL/MySQL 不会自动递增 rowversion，
+    /// 由应用层统一维护以保证多提供程序行为一致。
+    /// </summary>
+    [ConcurrencyCheck]
+    [Column("row_version")]
+    [Comment("乐观并发行版本")]
+    public long RowVersion { get; set; }
 }

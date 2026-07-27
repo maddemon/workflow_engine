@@ -280,6 +280,137 @@ public sealed class SubWorkflowExecutorTests
         Assert.Equal(3, data["resolved"]?.GetValue<int>());
     }
 
+    [Fact]
+    public async Task ExecuteAsync_NumericParameter_HydratesToCorrectLongNotGerNull()
+    {
+        // 问题 A：数值参数经 JSON 反序列化为 JsonElement，旧反射路径 Convert.ChangeType 失败返回 null；
+        // 修复后子节点应收到正确的 long/int 值（非 null）。
+        var workflow = new Workflow
+        {
+            Nodes =
+            [
+                new NodeDefinition
+                {
+                    Id = "n1",
+                    TypeName = "intParam",
+                    Name = "n1",
+                    IsEntry = true,
+                    Parameters = new Dictionary<string, object> { ["count"] = 42 }
+                }
+            ],
+            Connections = []
+        };
+
+        var node = new SubWorkflowToolNode { WorkflowJson = JsonSerializer.Serialize(workflow) };
+        var context = CreateContext(node);
+        context.NodeRegistry = CreateRegistry();
+
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
+
+        Assert.True(result.Success, result.Error?.Message);
+        var data = result.Output.Items[0].Data!;
+        Assert.Equal(42, data["received"]?.GetValue<int>());
+        Assert.Equal(42L, data["receivedLong"]?.GetValue<long>());
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_IfWithEmptySourcePortName_RoutesToDownstream()
+    {
+        // 问题 B：If 节点到下游的连接 SourcePortName 为空，旧连接 lookup 用原始空名作键，
+        // 而查询用解析后的 "true"/"false"，导致命中不到、下游收不到数据。修复后空名应解析为首输出端口并路由。
+        var workflow = new Workflow
+        {
+            Nodes =
+            [
+                new NodeDefinition
+                {
+                    Id = "if",
+                    TypeName = "if",
+                    Name = "if",
+                    Parameters = new Dictionary<string, object> { ["condition"] = "true" }
+                },
+                new NodeDefinition
+                {
+                    Id = "trueNode",
+                    TypeName = "branchResult",
+                    Name = "trueNode",
+                    Parameters = new Dictionary<string, object> { ["branchName"] = "true" }
+                }
+            ],
+            Connections =
+            [
+                // 注意：SourcePortName 为空（模拟未解析的分支端口）
+                new Connection
+                {
+                    SourceNodeId = "if",
+                    SourcePortName = string.Empty,
+                    TargetNodeId = "trueNode",
+                    TargetPortName = FlowConstants.PortNames.Input
+                }
+            ]
+        };
+
+        var node = new SubWorkflowToolNode { WorkflowJson = JsonSerializer.Serialize(workflow) };
+        var context = CreateContext(node);
+        context.NodeRegistry = CreateRegistry();
+
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
+
+        Assert.True(result.Success, result.Error?.Message);
+        Assert.Equal("true", result.Output.Items[0].Data?["branch"]?.GetValue<string>());
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_UnconvertibleParameter_LogsAndFailsInsteadOfSilentNull()
+    {
+        // 问题 A 边界：参数值无法转换为目标类型时，应记录日志并让节点失败，而非静默吞掉产出 null。
+        var logger = new SpyExecutionLogger();
+        var workflow = new Workflow
+        {
+            Nodes =
+            [
+                new NodeDefinition
+                {
+                    Id = "bad",
+                    TypeName = "intParam",
+                    Name = "bad",
+                    IsEntry = true,
+                    // 复杂对象无法转换为 int
+                    Parameters = new Dictionary<string, object> { ["count"] = new Dictionary<string, object> { ["x"] = 1 } }
+                }
+            ],
+            Connections = []
+        };
+
+        var node = new SubWorkflowToolNode { WorkflowJson = JsonSerializer.Serialize(workflow) };
+        var context = CreateContext(node);
+        context.NodeRegistry = CreateRegistry();
+        context.Logger = logger;
+
+        var result = await ((INodeType)node).ExecuteAsync(context, CancellationToken.None);
+
+        Assert.False(result.Success);
+        Assert.True(logger.WarningCount > 0, "转换失败时应当记录警告日志（而非静默吞掉）。");
+    }
+
+    private sealed class SpyExecutionLogger : IExecutionLogger
+    {
+        public int WarningCount { get; private set; }
+
+        public void LogInformation(string message, params object?[] args)
+        {
+        }
+
+        public void LogWarning(string message, params object?[] args)
+        {
+            WarningCount++;
+        }
+
+        public void LogError(Exception? exception, string message, params object?[] args)
+        {
+        }
+    }
+
     private static NodeExecutionContext CreateContext(SubWorkflowToolNode node)
     {
         return new NodeExecutionContext
@@ -319,7 +450,7 @@ public sealed class SubWorkflowExecutorTests
     private static INodeRegistry CreateRegistry()
     {
         return new NodeRegistry(
-            new INodeType[] { new IfNode(), new BranchResultNode(), new ThrowingNode(), new CaptureInputNode(), new ExprNode() },
+            new INodeType[] { new IfNode(), new BranchResultNode(), new ThrowingNode(), new CaptureInputNode(), new ExprNode(), new IntParamNode() },
             NullLogger<NodeRegistry>.Instance);
     }
 
@@ -451,6 +582,35 @@ public sealed class SubWorkflowExecutorTests
                 ? script.ResolvedValue.GetValue<int>()
                 : -1;
             return Task.FromResult(context.Ok(new JsonObject { ["resolved"] = resolved }));
+        }
+    }
+
+    /// <summary>
+    /// 含 int 类型参数的节点，用于断言子工作流数值参数水合正确性（问题 A）。
+    /// </summary>
+    private sealed class IntParamNode : INodeType
+    {
+        public string TypeName => "intParam";
+        public string DisplayName => "Int Param";
+        public string Category => "Test";
+        public string Icon => "test";
+        public ExecutionMode ExecutionMode => ExecutionMode.OnceForAll;
+        public IReadOnlyList<PortDefinition> Ports { get; } =
+        [
+            new PortDefinition { Name = FlowConstants.PortNames.Input, DisplayName = "Input", Direction = PortDirection.Input, Type = PortType.Main },
+            new PortDefinition { Name = FlowConstants.PortNames.Output, DisplayName = "Output", Direction = PortDirection.Output, Type = PortType.Main }
+        ];
+        public bool DefaultIsEntry => false;
+
+        public int Count { get; set; }
+
+        public Task<NodeExecutionResult> ExecuteAsync(NodeExecutionContext context, CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(context.Ok(new JsonObject
+            {
+                ["received"] = Count,
+                ["receivedLong"] = (long)Count
+            }));
         }
     }
 }

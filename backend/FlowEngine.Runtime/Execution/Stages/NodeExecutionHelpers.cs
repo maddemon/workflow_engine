@@ -55,21 +55,23 @@ internal static class NodeExecutionHelpers
     /// <summary>
     /// 限制单节点保留输出项数（CON-5）：超过上限时仅保留最新 N 项，作用于
     /// <see cref="ExecutionSession.SuccessfulOutputs"/> 与 <see cref="ExecutionSession.LatestBatches"/>。
+    /// 键为节点 <see cref="FlowEngine.Core.Entities.NodeDefinition.Id"/>（稳定唯一标识），
+    /// 而非 <see cref="FlowEngine.Core.Entities.NodeDefinition.Name"/>，避免同名不同节点互相覆盖。
     /// </summary>
     /// <param name="session">执行会话。</param>
-    /// <param name="nodeName">节点名。</param>
-    /// <param name="maxRetainedOutputItems">保留项数上限（&gt;0）。</param>
-    public static void CapRetainedOutput(ExecutionSession session, string nodeName, int maxRetainedOutputItems)
+    /// <param name="nodeId">节点定义 ID（累积键）。</param>
+    /// <param name="maxRetainedOutputItems">保留项数上限（&gt;0，已解析 0/负值回退为默认上限）。</param>
+    public static void CapRetainedOutput(ExecutionSession session, string nodeId, int maxRetainedOutputItems)
     {
         var max = maxRetainedOutputItems;
-        if (session.SuccessfulOutputs.TryGetValue(nodeName, out var so) && so.Items.Count > max)
+        if (session.SuccessfulOutputs.TryGetValue(nodeId, out var so) && so.Items.Count > max)
         {
-            session.SuccessfulOutputs[nodeName] = Cap(so, max);
+            session.SuccessfulOutputs[nodeId] = Cap(so, max);
         }
 
-        if (session.LatestBatches.TryGetValue(nodeName, out var lb) && lb.Items.Count > max)
+        if (session.LatestBatches.TryGetValue(nodeId, out var lb) && lb.Items.Count > max)
         {
-            session.LatestBatches[nodeName] = Cap(lb, max);
+            session.LatestBatches[nodeId] = Cap(lb, max);
         }
     }
 

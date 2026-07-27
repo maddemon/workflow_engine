@@ -129,7 +129,7 @@ public sealed class NodeProcessor
     /// 限制单节点保留输出项数（CON-5）。透传至 <see cref="NodeExecutionHelpers.CapRetainedOutput"/>。
     /// </summary>
     /// <param name="session">执行会话。</param>
-    /// <param name="nodeName">节点名。</param>
-    private void CapRetainedOutput(ExecutionSession session, string nodeName)
-        => NodeExecutionHelpers.CapRetainedOutput(session, nodeName, _defaults.MaxRetainedOutputItems);
+    /// <param name="nodeId">节点定义 ID（累积键）。</param>
+    private void CapRetainedOutput(ExecutionSession session, string nodeId)
+        => NodeExecutionHelpers.CapRetainedOutput(session, nodeId, _defaults.MaxRetainedOutputItems);
 }

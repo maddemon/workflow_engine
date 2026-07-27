@@ -57,7 +57,15 @@ public sealed class CalculatorToolNode : NodeBase
                         Data = new JsonObject
                         {
                             ["expression"] = expression,
-                            ["result"] = value is double d ? JsonValue.Create(d) : JsonValue.Create(value?.ToString() ?? string.Empty)
+                            ["result"] = value switch
+                            {
+                                double d => JsonValue.Create(d),
+                                int i => JsonValue.Create(i),
+                                long l => JsonValue.Create(l),
+                                decimal m => JsonValue.Create(m),
+                                float f => JsonValue.Create(f),
+                                _ => JsonValue.Create(value?.ToString() ?? string.Empty)
+                            }
                         },
                         Success = true,
                         SourceIndex = 0

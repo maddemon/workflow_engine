@@ -113,6 +113,102 @@ public sealed class MergeNodeTests
         Assert.Equal("Updated", result.Output.Items[0].Data!["name"]!.GetValue<string>());
     }
 
+    private static DataBatch BuildBatchWithStatus(bool success, string message, params (string id, string name)[] rows)
+    {
+        var items = new List<DataItem>();
+        for (var i = 0; i < rows.Length; i++)
+        {
+            items.Add(new DataItem
+            {
+                Data = new JsonObject { ["id"] = rows[i].id, ["name"] = rows[i].name },
+                Success = success,
+                Error = success ? null : new NodeError { Code = "UpstreamError", Message = message },
+                SourceIndex = i
+            });
+        }
+        return new DataBatch { Items = items };
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_CombineByPosition_FailedSourceItem_PropagatesSuccessAndError()
+    {
+        var failedItem = new DataItem
+        {
+            Data = new JsonObject { ["id"] = "1", ["name"] = "Alice" },
+            Success = false,
+            Error = new NodeError { Code = "UpstreamError", Message = "上游失败" },
+            SourceIndex = 0
+        };
+        var succeededItem = new DataItem
+        {
+            Data = new JsonObject { ["id"] = "2", ["name"] = "Bob" },
+            Success = true,
+            SourceIndex = 1
+        };
+        var batch1 = new DataBatch { Items = new List<DataItem> { failedItem, succeededItem } };
+        var batch2 = BuildBatch(("1", "Alpha"), ("2", "Beta"));
+
+        var node = new MergeNode
+        {
+            Mode = MergeMode.Combine,
+            CombineOperation = CombineOperation.CombineByPosition
+        };
+
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(batch1, batch2), CancellationToken.None);
+
+        Assert.True(result.Success, result.Error?.Message);
+        Assert.Equal(2, result.Output.Items.Count);
+        // First merged item derives from a failed source -> must remain failed with error
+        Assert.False(result.Output.Items[0].Success);
+        Assert.NotNull(result.Output.Items[0].Error);
+        Assert.Equal("上游失败", result.Output.Items[0].Error!.Message);
+        // Second merged item derives from a successful source -> remains successful
+        Assert.True(result.Output.Items[1].Success);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_CombineByField_FailedSourceItem_PropagatesSuccessAndError()
+    {
+        var batch1 = BuildBatchWithStatus(false, "上游失败", ("1", "Alice"));
+        var batch2 = BuildBatch(("1", "Updated"));
+
+        var node = new MergeNode
+        {
+            Mode = MergeMode.Combine,
+            CombineOperation = CombineOperation.CombineByField,
+            MatchField = "id"
+        };
+
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(batch1, batch2), CancellationToken.None);
+
+        Assert.True(result.Success, result.Error?.Message);
+        Assert.Single(result.Output.Items);
+        Assert.False(result.Output.Items[0].Success);
+        Assert.NotNull(result.Output.Items[0].Error);
+        Assert.Equal("上游失败", result.Output.Items[0].Error!.Message);
+    }
+
+    [Fact]
+    public async Task ExecuteAsync_Multiplex_FailedSourceItem_PropagatesSuccessAndError()
+    {
+        var batch1 = BuildBatchWithStatus(false, "上游失败", ("1", "Alice"));
+        var batch2 = BuildBatch(("2", "Beta"), ("3", "Gamma"));
+
+        var node = new MergeNode { Mode = MergeMode.Multiplex };
+
+        var result = await ((INodeType)node).ExecuteAsync(CreateContext(batch1, batch2), CancellationToken.None);
+
+        Assert.True(result.Success, result.Error?.Message);
+        Assert.Equal(2, result.Output.Items.Count);
+        // Every multiplexed output derives from the failed source -> all must remain failed
+        foreach (var item in result.Output.Items)
+        {
+            Assert.False(item.Success);
+            Assert.NotNull(item.Error);
+            Assert.Equal("上游失败", item.Error!.Message);
+        }
+    }
+
     [Fact]
     public async Task ExecuteAsync_Append_CombinesAllItems()
     {

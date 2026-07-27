@@ -264,6 +264,66 @@ public sealed class PollTriggerJobExecutionTests : IDisposable
              e.Payload["reason"]?.ToString() == "node_failed"));
     }
 
+    [Fact]
+    public async Task ExecuteAsync_PartialTriggerFailure_DedupCursorStopsBeforeFailedItem()
+    {
+        // RED: 当部分 newItems 触发失败（StartAsync 抛异常）时，去重游标必须只推进到
+        // 成功触发项的最大位置，失败的（最高 id）项下一轮必须被重试（不被游标永久跳过）。
+        var ct = TestContext.Current.CancellationToken;
+        var trigger = CreateTrigger(isActive: true);
+        trigger.Settings = new TriggerSettings
+        {
+            PollNodeId = "WorkingNode",
+            DedupStrategy = "Id",
+            LastPollId = null,
+        };
+        _dbContext.Triggers.Add(trigger);
+        await _dbContext.SaveChangesAsync(ct);
+
+        var nodeMock = new Mock<INodeType>();
+        INodeType? outNode = nodeMock.Object;
+        _nodeRegistryMock.Setup(r => r.TryGet("WorkingNode", out outNode))
+            .Returns(true);
+
+        var item1 = new DataItem { Data = new System.Text.Json.Nodes.JsonObject { ["id"] = "1" }, Success = true, SourceIndex = 0 };
+        var item2 = new DataItem { Data = new System.Text.Json.Nodes.JsonObject { ["id"] = "2" }, Success = true, SourceIndex = 1 };
+        var item3 = new DataItem { Data = new System.Text.Json.Nodes.JsonObject { ["id"] = "3" }, Success = true, SourceIndex = 2 };
+        nodeMock.Setup(n => n.ExecuteAsync(It.IsAny<NodeExecutionContext>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(new NodeExecutionResult
+            {
+                Success = true,
+                Output = new DataBatch { Items = [item1, item2, item3] }
+            });
+
+        _idempotencyMock.Setup(s => s.TryGetOrRegisterAsync(It.IsAny<string>(), It.IsAny<Guid>(), It.IsAny<TimeSpan?>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Guid?)null);
+
+        // id="3" 的项触发失败，id="1"/"2" 的成功
+        _engineMock
+            .Setup(e => e.StartAsync(It.IsAny<Guid>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()))
+            .Returns<Guid, object?, CancellationToken>((_, payloadObj, _) =>
+            {
+                var dataProp = payloadObj?.GetType().GetProperty("data");
+                var data = dataProp?.GetValue(payloadObj) as string ?? string.Empty;
+                if (data.Contains("\"id\":\"3\""))
+                {
+                    throw new InvalidOperationException("Simulated trigger failure");
+                }
+
+                return Task.FromResult(ExecutionId.From(Guid.NewGuid()));
+            });
+
+        var context = CreateJobExecutionContext(trigger.Id, trigger.WorkflowDefinitionId);
+        await _job.Execute(context);
+
+        // 三项都尝试触发
+        _engineMock.Verify(e => e.StartAsync(It.IsAny<Guid>(), It.IsAny<object?>(), It.IsAny<CancellationToken>()), Times.Exactly(3));
+
+        // 游标应只推进到成功项的最大 id "2"，失败的 "3" 下一轮仍会被 ShouldProcess 判定为待处理
+        Assert.NotNull(trigger.Settings);
+        Assert.Equal("2", trigger.Settings.LastPollId);
+    }
+
     private static Trigger CreateTrigger(bool isActive)
     {
         return new Trigger

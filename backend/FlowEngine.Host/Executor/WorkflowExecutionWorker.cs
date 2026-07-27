@@ -113,26 +113,17 @@ public sealed class WorkflowExecutionWorker : BackgroundService
             var dbContext = executionScope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
             var executor = executionScope.ServiceProvider.GetRequiredService<WorkflowExecutor>();
 
-            Workflow workflow;
-            var preloaded = item.PreloadedWorkflow;
-            if (preloaded is not null && preloaded.Id == item.WorkflowDefinitionId)
-            {
-                // 复用调用方随工作项携带的已加载工作流，省去一次数据库查询。
-                workflow = preloaded;
-            }
-            else
-            {
-                var loaded = await dbContext.Workflows
-                    .FirstOrDefaultAsync(w => w.Id == item.WorkflowDefinitionId, stoppingToken)
-                    .ConfigureAwait(false);
+            // 在执行作用域内依据工作流定义 ID 重新加载工作流。工作项仅携带 Id，
+            // 不携带来自请求作用域（不同 DbContext ChangeTracker）的实体，
+            // 因此此处加载的实体归属本执行作用域的 dbContext，内核 SaveChanges 不会触发重复插入 / Detached 异常。
+            var workflow = await dbContext.Workflows
+                .FirstOrDefaultAsync(w => w.Id == item.WorkflowDefinitionId, stoppingToken)
+                .ConfigureAwait(false);
 
-                if (loaded is null)
-                {
-                    _logger.LogWarning("工作流 {WorkflowId} 不存在，跳过执行。", item.WorkflowDefinitionId);
-                    return;
-                }
-
-                workflow = loaded;
+            if (workflow is null)
+            {
+                _logger.LogWarning("工作流 {WorkflowId} 不存在，跳过执行。", item.WorkflowDefinitionId);
+                return;
             }
 
             // 每执行一个独立的、与进程关闭令牌联动的取消源，并登记到注册表；

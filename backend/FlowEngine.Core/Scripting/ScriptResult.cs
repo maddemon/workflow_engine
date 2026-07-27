@@ -109,6 +109,13 @@ public sealed class ScriptResult
     public object? ToClr()
     {
         EnsureSuccess();
+
+        // 数值分支优先按不丢失精度的类型返回（int/long/decimal/double）。
+        if (TryGetNumber(out var number))
+        {
+            return number;
+        }
+
         var raw = ResolveRaw();
 
         if (raw.IsUndefined() || raw.IsNull())
@@ -119,14 +126,6 @@ public sealed class ScriptResult
         if (raw.IsBoolean())
         {
             return raw.AsBoolean();
-        }
-
-        if (raw.IsNumber())
-        {
-            var num = raw.AsNumber();
-            return num == Math.Floor(num) && num is >= int.MinValue and <= int.MaxValue
-                ? (int)num
-                : num;
         }
 
         if (raw.IsString())
@@ -181,6 +180,13 @@ public sealed class ScriptResult
     public JsonNode? ToJson()
     {
         EnsureSuccess();
+
+        // 数值分支优先按不丢失精度的类型输出 JSON 数字字面量（整数不会被写成指数形式）。
+        if (TryGetNumber(out var number))
+        {
+            return JsonValue.Create(number);
+        }
+
         var raw = ResolveRaw();
 
         if (raw.IsUndefined() || raw.IsNull())
@@ -191,17 +197,6 @@ public sealed class ScriptResult
         if (raw.IsBoolean())
         {
             return JsonValue.Create(raw.AsBoolean());
-        }
-
-        if (raw.IsNumber())
-        {
-            var num = raw.AsNumber();
-            if (num == Math.Floor(num) && num is >= int.MinValue and <= int.MaxValue)
-            {
-                return JsonValue.Create((int)num);
-            }
-
-            return JsonValue.Create(num);
         }
 
         if (raw.IsString())
@@ -251,23 +246,22 @@ public sealed class ScriptResult
 
         if (targetType == typeof(int) || targetType == typeof(long) || targetType == typeof(double))
         {
-            if (!raw.IsNumber())
+            if (!TryGetNumber(out var numObj))
             {
                 return default;
             }
 
-            var num = raw.AsNumber();
             if (targetType == typeof(int))
             {
-                return (T?)(object)Convert.ToInt32(num);
+                return (T?)(object)Convert.ToInt32(numObj);
             }
 
             if (targetType == typeof(long))
             {
-                return (T?)(object)Convert.ToInt64(num);
+                return (T?)(object)Convert.ToInt64(numObj);
             }
 
-            return (T?)(object)num;
+            return (T?)(object)Convert.ToDouble(numObj);
         }
 
         if (targetType == typeof(JsonNode) || targetType == typeof(JsonObject) || targetType == typeof(JsonArray))
@@ -308,6 +302,123 @@ public sealed class ScriptResult
             return default;
         }
     }
+
+    /// <summary>
+    /// 将数值结果解析为不丢失精度的 CLR 数值（int/long/decimal/double）。
+    /// 已预求值的 JSON 节点按原类型直读，避免经 Jint 的 double 模型丢失大整数精度；
+    /// 否则从 JsValue 读取：整数优先 long，超出 long 范围用 decimal，仅非整数用 double。
+    /// </summary>
+    private bool TryGetNumber(out object? number)
+    {
+        number = null;
+
+        // 已预求值的 JSON 节点：直接按 System.Text.Json 原类型取值，保留大整数精度。
+        if (_resolvedNode is JsonValue jsonValue)
+        {
+            if (jsonValue.TryGetValue<JsonElement>(out var je) && je.ValueKind == JsonValueKind.Number)
+            {
+                number = NormalizeJsonElementNumber(je);
+                return number is not null;
+            }
+
+            if (jsonValue.TryGetValue<object>(out var obj) && obj is not null)
+            {
+                number = NormalizeResolvedNumber(obj);
+                return number is not null;
+            }
+
+            return false;
+        }
+
+        var raw = ResolveRaw();
+        if (!raw.IsNumber())
+        {
+            return false;
+        }
+
+        var num = raw.AsNumber();
+        number = num == Math.Floor(num) && !double.IsInfinity(num) && !double.IsNaN(num)
+            ? NormalizeIntegral(num)
+            : num;
+        return true;
+    }
+
+    /// <summary>
+    /// 将已确认无小数部分的整数规范化为最紧凑的 CLR 类型：
+    /// int 范围内用 int（兼容既有行为），否则 long，超出 long 范围用 decimal。
+    /// </summary>
+    private static object NormalizeIntegral(double value)
+    {
+        if (value is >= int.MinValue and <= int.MaxValue)
+        {
+            return (int)value;
+        }
+
+        if (value is >= long.MinValue and <= long.MaxValue)
+        {
+            return (long)value;
+        }
+
+        return (decimal)value;
+    }
+
+    /// <summary>
+    /// 将已确认无小数部分的整数（源自 JSON 节点）规范化为 int/long，保留精确值。
+    /// </summary>
+    private static object NormalizeIntegral(long value)
+    {
+        if (value is >= int.MinValue and <= int.MaxValue)
+        {
+            return (int)value;
+        }
+
+        return value;
+    }
+
+    /// <summary>
+    /// 将已解析的 JSON 数字元素规范化为不丢失精度的 CLR 类型。
+    /// 优先 int/long 保留整数精度，其次 decimal 保留金额精度，仅非整数用 double。
+    /// </summary>
+    private static object? NormalizeJsonElementNumber(JsonElement element)
+    {
+        if (element.TryGetInt64(out var l))
+        {
+            return NormalizeIntegral(l);
+        }
+
+        if (element.TryGetDecimal(out var d))
+        {
+            return d;
+        }
+
+        if (element.TryGetDouble(out var db))
+        {
+            return db == Math.Floor(db) && !double.IsInfinity(db) && !double.IsNaN(db)
+                ? NormalizeIntegral(db)
+                : db;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 将已预求值 JSON 节点反序列化得到的基础数值对象规范化为不丢失精度的 CLR 类型。
+    /// </summary>
+    private static object? NormalizeResolvedNumber(object obj) => obj switch
+    {
+        int or short or byte or sbyte or uint or ushort => obj,
+        long l => NormalizeIntegral(l),
+        ulong ul => NormalizeIntegral((long)ul),
+        decimal m => m,
+        double d => d == Math.Floor(d) && !double.IsInfinity(d) && !double.IsNaN(d)
+            ? NormalizeIntegral(d)
+            : d,
+        float f => f == Math.Floor(f) && !float.IsInfinity(f) && !float.IsNaN(f)
+            ? NormalizeIntegral(f)
+            : f,
+        JsonElement je => NormalizeJsonElementNumber(je),
+        _ => null
+    };
 
     private void EnsureSuccess()
     {

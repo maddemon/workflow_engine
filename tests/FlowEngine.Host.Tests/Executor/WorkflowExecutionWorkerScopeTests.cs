@@ -210,6 +210,9 @@ public sealed class WorkflowExecutionWorkerScopeTests : HostIntegrationTestBase
         using (var seedScope = scopeFactory.CreateScope())
         {
             var db = seedScope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
+            // 工作流须持久化到执行作用域数据库：worker 依据 Id 在执行作用域内重新加载，不再随工作项携带实体。
+            db.Workflows.Add(workflow);
+            await db.SaveChangesAsync(ct);
             foreach (var _ in Enumerable.Range(0, itemCount))
             {
                 var record = new ExecutionRecord
@@ -222,7 +225,7 @@ public sealed class WorkflowExecutionWorkerScopeTests : HostIntegrationTestBase
                 };
                 db.ExecutionRecords.Add(record);
                 await db.SaveChangesAsync(ct);
-                await queue.EnqueueAsync(new WorkflowExecutionWorkItem(record.Id, workflowId, null, workflow), ct);
+                await queue.EnqueueAsync(new WorkflowExecutionWorkItem(record.Id, workflowId, null), ct);
             }
         }
 
@@ -252,12 +255,13 @@ public sealed class WorkflowExecutionWorkerScopeTests : HostIntegrationTestBase
     }
 
     /// <summary>
-    /// P3 #20 衍生：验证工作项携带 <see cref="WorkflowExecutionWorkItem.PreloadedWorkflow"/> 时，
-    /// worker 直接复用该实例而无需重新查询 Workflows。本用例刻意不将工作流写入数据库，
-    /// 若 worker 回退到数据库查询会得到 null 并跳过执行，从而可断言透传生效。
+    /// Task 7 验证：工作项仅携带工作流定义 ID，worker 在各自执行作用域内依据 ID 重新加载工作流定义，
+    /// 不再依赖随工作项跨作用域携带的实体。本用例将工作流与执行记录写入 worker 执行作用域的数据库，
+    /// 仅以 Id 入队；若 worker 能正确重新加载并执行（执行记录落库为 Completed），
+    /// 证明跨 DbContext 作用域的实体复用已被移除。
     /// </summary>
     [Fact]
-    public async Task Execute_WithPreloadedWorkflow_ReusesInstanceWithoutRequery()
+    public async Task Execute_WithoutPreloadedWorkflow_ReloadsFromExecutionScopeAndRuns()
     {
         var ct = TestContext.Current.CancellationToken;
 
@@ -285,7 +289,7 @@ public sealed class WorkflowExecutionWorkerScopeTests : HostIntegrationTestBase
         collection.AddSingleton(kernelLogger);
         collection.AddSingleton(queue);
         collection.AddSingleton(cancellationRegistry);
-        collection.AddDbContext<FlowEngineDbContext>(o => o.UseInMemoryDatabase("worker-preloaded-test"));
+        collection.AddDbContext<FlowEngineDbContext>(o => o.UseInMemoryDatabase("worker-reload-test"));
         collection.AddScoped<WorkflowExecutor>(sp =>
         {
             var db = sp.GetRequiredService<FlowEngineDbContext>();
@@ -296,8 +300,7 @@ public sealed class WorkflowExecutionWorkerScopeTests : HostIntegrationTestBase
         var provider = collection.BuildServiceProvider();
         IServiceScopeFactory scopeFactory = new DelegatingScopeFactory(provider);
 
-        // 仅写入执行记录（Completed 使 ExecuteLoopAsync 提前返回，不触达内核），
-        // 但刻意不将工作流写入数据库，以验证 worker 完全依赖 PreloadedWorkflow。
+        // 将工作流与执行记录写入 worker 执行作用域的数据库；工作项仅携带 Id。
         Guid workflowId;
         var recordIds = new List<Guid>();
         using (var seedScope = scopeFactory.CreateScope())
@@ -319,18 +322,18 @@ public sealed class WorkflowExecutionWorkerScopeTests : HostIntegrationTestBase
             {
                 WorkflowDefinitionId = workflowId,
                 ProjectId = workflow.ProjectId,
-                Status = ExecutionStatus.Completed,
+                Status = ExecutionStatus.Pending,
                 StartedAt = DateTime.UtcNow,
-                CompletedAt = DateTime.UtcNow,
                 NodeRecords = [],
             };
+            db.Workflows.Add(workflow);
             db.ExecutionRecords.Add(record);
             recordIds.Add(record.Id);
 
             await db.SaveChangesAsync(ct);
 
-            // 工作项随带 PreloadedWorkflow；若该实例未被使用，worker 会回退查询并得到 null 而跳过。
-            await queue.EnqueueAsync(new WorkflowExecutionWorkItem(recordIds[0], workflowId, null, workflow), ct);
+            // 仅以 Id 入队（不携带任何实体引用）。
+            await queue.EnqueueAsync(new WorkflowExecutionWorkItem(recordIds[0], workflowId, null), ct);
         }
 
         var worker = new WorkflowExecutionWorker(scopeFactory, null!, NullLogger<WorkflowExecutionWorker>.Instance);
@@ -340,15 +343,25 @@ public sealed class WorkflowExecutionWorkerScopeTests : HostIntegrationTestBase
             ?? throw new InvalidOperationException("未能通过反射获取 ExecuteAsync。");
         var workerTask = (Task)executeMethod.Invoke(worker, new object[] { stoppingCts.Token })!;
 
-        // 等待执行项被处理（依赖预加载实例，未查询 Workflows）。
+        // 等待执行项被处理（worker 重新加载工作流并执行）。
         var deadline = DateTime.UtcNow.AddSeconds(10);
         while (resolvedDbContexts.Count < 1 && DateTime.UtcNow < deadline)
         {
             await Task.Delay(20, ct);
         }
 
-        // worker 使用了预加载工作流（否则因 Workflows 为空会跳过，resolvedDbContexts 仍为 0）。
+        // worker 在独立执行作用域内解析出 DbContext 并依据 Id 重新加载工作流执行。
         Assert.Single(resolvedDbContexts);
+
+        // 执行已真正运行：执行记录由 Pending 落库为 Completed，证明 worker 在作用域内重新加载并运行。
+        using (var verifyScope = scopeFactory.CreateScope())
+        {
+            var db = verifyScope.ServiceProvider.GetRequiredService<FlowEngineDbContext>();
+            var record = await db.ExecutionRecords
+                .FirstOrDefaultAsync(e => e.Id == recordIds[0], ct);
+            Assert.NotNull(record);
+            Assert.Equal(ExecutionStatus.Completed, record.Status);
+        }
 
         stoppingCts.Cancel();
         await Task.WhenAny(workerTask, Task.Delay(5000, ct));

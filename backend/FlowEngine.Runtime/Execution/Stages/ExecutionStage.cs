@@ -43,6 +43,7 @@ public sealed class ExecutionStage(
         NodeExecutionResult? finalResult = null;
         // 累积本节点本次调用的各次成功运行输出（OncePerItem 会按批次多次运行同一节点），
         // 全部项都需进入 SuccessfulOutputs / LatestBatches，供下游 $node.<name> / $items(<name>) 读取。
+        // 两字典均以节点 Id（稳定唯一标识）为键，而非 Name，避免同名节点互相覆盖。
         var accumulatedItems = new List<DataItem>();
 
         for (var runIndex = 0; runIndex < runCount; runIndex++)
@@ -206,17 +207,18 @@ public sealed class ExecutionStage(
         if (accumulatedItems.Count > 0)
         {
             var cumulative = new DataBatch { Items = accumulatedItems.ToList() };
-            session.LatestBatches[node.Name] = cumulative;
+            // 累积键为节点 Id（稳定唯一标识），确保同名不同节点互不覆盖/串数据。
+            session.LatestBatches[node.Id] = cumulative;
             routingBatch = cumulative;
 
             // 无条件写入 SuccessfulOutputs：节点每次成功运行的输出都作为该节点的成功结果累积，
             // 供下游经 $node.<name> / $items(<name>) 读取。BranchIndex 仅标识输出端口，
             // 不能据此丢弃输出——否则 IfNode 的 true 分支、SwitchNode 的 case 0 等 BranchIndex = 0 的
-            // 合法输出会被静默丢弃。
-            var priorItems = session.SuccessfulOutputs.TryGetValue(node.Name, out var prior) && prior.Items.Count > 0
+            // 合法输出会被静默丢弃。累积键为节点 Id（非 Name），同名节点亦各自独立。
+            var priorItems = session.SuccessfulOutputs.TryGetValue(node.Id, out var prior) && prior.Items.Count > 0
                 ? prior.Items
                 : [];
-            session.SuccessfulOutputs[node.Name] = new DataBatch
+            session.SuccessfulOutputs[node.Id] = new DataBatch
             {
                 Items = priorItems.Concat(accumulatedItems).ToList()
             };
@@ -224,16 +226,19 @@ public sealed class ExecutionStage(
         else
         {
             // 无任何成功运行（全部失败等）：保留原有语义，仅刷新 LatestBatches 为最终批，不写入 SuccessfulOutputs。
-            session.LatestBatches[node.Name] = finalResult.Output;
+            // 累积键为节点 Id（非 Name）。
+            session.LatestBatches[node.Id] = finalResult.Output;
             routingBatch = finalResult.Output;
         }
 
         // CON-5：限制单个节点在 SuccessfulOutputs / LatestBatches 中保留的输出项数，
         // 避免大批次（如大 OncePerItem 输入）在整个运行期间无界常驻内存。
-        if (defaults.MaxRetainedOutputItems > 0)
-        {
-            NodeExecutionHelpers.CapRetainedOutput(session, node.Name, defaults.MaxRetainedOutputItems);
-        }
+        // 键为节点 Id（稳定唯一标识），确保同名不同节点互不覆盖。
+        // 上限始终生效：配置 0/负值回退为默认上限（EngineDefaultsOptions.DefaultMaxRetainedOutputItems）。
+        var retentionCap = defaults.MaxRetainedOutputItems > 0
+            ? defaults.MaxRetainedOutputItems
+            : EngineDefaultsOptions.DefaultMaxRetainedOutputItems;
+        NodeExecutionHelpers.CapRetainedOutput(session, node.Id, retentionCap);
 
         // OncePerItem：下游边消费的是累积批（全部项）而非最后一次运行的单批，避免静默丢数据。
         var resultForRouting = accumulatedItems.Count > 0

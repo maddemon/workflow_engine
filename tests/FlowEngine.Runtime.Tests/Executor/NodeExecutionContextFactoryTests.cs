@@ -13,6 +13,14 @@ using Microsoft.Extensions.Options;
 
 namespace FlowEngine.Runtime.Tests.Executor;
 
+/// <summary>
+/// 独立串行集合：确保本类测试执行期间无其他集合并发创建 JsEngine，
+/// 使 JsEngine.CreateCallCount 计数在本次测试窗口内确定（用于验证引擎复用）。
+/// </summary>
+[CollectionDefinition("FactoryEngineReuse", DisableParallelization = true)]
+public sealed class FactoryEngineReuseCollection;
+
+[Collection("FactoryEngineReuse")]
 public sealed class NodeExecutionContextFactoryTests
 {
     private readonly NodeExecutionContextFactory _factory;
@@ -366,6 +374,35 @@ public sealed class NodeExecutionContextFactoryTests
         // 运行期全局变量表含 $nodeContext，且为同一实例。
         Assert.True(context.GlobalVariables.TryGetValue("$nodeContext", out var injected));
         Assert.Same(nodeContext, injected);
+    }
+
+    [Fact]
+    public async Task CreateAsync_ReusesSingleManagedEngine_NotTempPerCall()
+    {
+        // Task 5-A：CreateAsync 应在参数预求值阶段复用 GetOrCreateEngine 返回的同一托管引擎，
+        // 而非每次调用额外创建并销毁一个临时引擎。验证：从 CreateAsync 到后续 GetOrCreateEngine
+        // 全程仅创建 1 个 JsEngine（修复前为 2：临时预求值引擎 + 节点执行体托管引擎）。
+        JsEngine.ResetCreateCallCount();
+        var ct = TestContext.Current.CancellationToken;
+        var workflow = new Workflow { Id = Guid.NewGuid(), Name = "Test" };
+        var execution = new ExecutionRecord { Id = Guid.NewGuid(), WorkflowDefinitionId = workflow.Id };
+        var node = new NodeDefinition { Id = "Node1", TypeName = "testNode", Name = "Node1" };
+        var nodeInstance = new TestNodeInstance();
+
+        var context = await _factory.CreateAsync(
+            workflow, execution, node, nodeInstance,
+            new Dictionary<string, DataBatch>(),
+            new Dictionary<string, DataBatch>(),
+            new Dictionary<string, DataBatch>(),
+            0, ct);
+
+        // 节点执行体随后经 GetOrCreateEngine 获取引擎：应为 CreateAsync 已创建的同一实例，不再新建。
+        var engine = context.GetOrCreateEngine();
+        Assert.NotNull(engine);
+
+        Assert.Equal(1, JsEngine.CreateCallCount);
+
+        context.ReleaseEngine();
     }
 
     [Fact]

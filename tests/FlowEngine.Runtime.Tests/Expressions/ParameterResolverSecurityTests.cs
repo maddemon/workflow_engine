@@ -61,6 +61,6 @@ public class ParameterResolverSecurityTests
 
         var result = await _resolver.ResolveAsync(raw, js);
 
-        Assert.Equal(10d, result["val"]);
+        Assert.Equal(10, result["val"]);
     }
 }
