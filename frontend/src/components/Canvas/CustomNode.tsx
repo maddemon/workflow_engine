@@ -52,90 +52,96 @@ function sortAiInputs(inputs: PortDefinition[]): PortDefinition[] {
   return [...inputs].sort((a, b) => (AI_INPUT_SORT_ORDER[a.type] ?? 99) - (AI_INPUT_SORT_ORDER[b.type] ?? 99))
 }
 
-function computePortLayouts(
-  inputPorts: PortDefinition[],
-  outputPorts: PortDefinition[],
-  layoutDirection: "vertical" | "horizontal",
-  configurable: boolean,
-  config: boolean,
-  tool: boolean,
-): Map<string, PortLayout> {
-  const layouts = new Map<string, PortLayout>()
+// Exported as a single object so the (pure) layout helper can be spied from tests
+// without altering its body or the `layouts` memo logic. The memo calls
+// `portLayouts.computePortLayouts(...)`; spying on this method observes internal call
+// sites, which is what the F5 memo-regression test relies on.
+export const portLayouts = {
+  computePortLayouts(
+    inputPorts: PortDefinition[],
+    outputPorts: PortDefinition[],
+    layoutDirection: "vertical" | "horizontal",
+    configurable: boolean,
+    config: boolean,
+    tool: boolean,
+  ): Map<string, PortLayout> {
+    const layouts = new Map<string, PortLayout>()
 
-  const isVertical = layoutDirection === "vertical"
+    const isVertical = layoutDirection === "vertical"
 
-  const mainInputPos = isVertical ? Position.Top : Position.Left
-  const mainOutputPos = isVertical ? Position.Bottom : Position.Right
-  const aiInputPos = isVertical ? Position.Right : Position.Bottom
-  const aiOutputPos = isVertical ? Position.Left : Position.Top
+    const mainInputPos = isVertical ? Position.Top : Position.Left
+    const mainOutputPos = isVertical ? Position.Bottom : Position.Right
+    const aiInputPos = isVertical ? Position.Right : Position.Bottom
+    const aiOutputPos = isVertical ? Position.Left : Position.Top
 
-  if (tool) {
-    const aiOutputs = outputPorts.filter((p) => p.type === "AgentTool")
-    for (let i = 0; i < aiOutputs.length; i++) {
-      layouts.set(aiOutputs[i].name, {
-        position: aiOutputPos,
-        percent: distributePercent(aiOutputs.length, i),
-      })
+    if (tool) {
+      const aiOutputs = outputPorts.filter((p) => p.type === "AgentTool")
+      for (let i = 0; i < aiOutputs.length; i++) {
+        layouts.set(aiOutputs[i].name, {
+          position: aiOutputPos,
+          percent: distributePercent(aiOutputs.length, i),
+        })
+      }
+      return layouts
     }
+
+    if (config) {
+      for (let i = 0; i < outputPorts.length; i++) {
+        layouts.set(outputPorts[i].name, {
+          position: aiOutputPos,
+          percent: distributePercent(outputPorts.length, i),
+        })
+      }
+      return layouts
+    }
+
+    if (configurable) {
+      const mainInputs = inputPorts.filter((p) => !isAiPort(p))
+      const aiInputs = sortAiInputs(inputPorts.filter((p) => isAiPort(p)))
+      const mainOutputs = outputPorts.filter((p) => !isAiPort(p))
+      const aiOutputs = outputPorts.filter((p) => isAiPort(p))
+
+      for (let i = 0; i < mainInputs.length; i++) {
+        layouts.set(mainInputs[i].name, {
+          position: mainInputPos,
+          percent: distributePercent(mainInputs.length, i),
+        })
+      }
+      for (let i = 0; i < aiInputs.length; i++) {
+        layouts.set(aiInputs[i].name, {
+          position: aiInputPos,
+          percent: distributePercent(aiInputs.length, i),
+        })
+      }
+      for (let i = 0; i < mainOutputs.length; i++) {
+        layouts.set(mainOutputs[i].name, {
+          position: mainOutputPos,
+          percent: distributePercent(mainOutputs.length, i),
+        })
+      }
+      for (let i = 0; i < aiOutputs.length; i++) {
+        layouts.set(aiOutputs[i].name, {
+          position: aiOutputPos,
+          percent: distributePercent(aiOutputs.length, i),
+        })
+      }
+    } else {
+      for (let i = 0; i < inputPorts.length; i++) {
+        layouts.set(inputPorts[i].name, {
+          position: mainInputPos,
+          percent: distributePercent(inputPorts.length, i),
+        })
+      }
+      for (let i = 0; i < outputPorts.length; i++) {
+        layouts.set(outputPorts[i].name, {
+          position: mainOutputPos,
+          percent: distributePercent(outputPorts.length, i),
+        })
+      }
+    }
+
     return layouts
-  }
-
-  if (config) {
-    for (let i = 0; i < outputPorts.length; i++) {
-      layouts.set(outputPorts[i].name, {
-        position: aiOutputPos,
-        percent: distributePercent(outputPorts.length, i),
-      })
-    }
-    return layouts
-  }
-
-  if (configurable) {
-    const mainInputs = inputPorts.filter((p) => !isAiPort(p))
-    const aiInputs = sortAiInputs(inputPorts.filter((p) => isAiPort(p)))
-    const mainOutputs = outputPorts.filter((p) => !isAiPort(p))
-    const aiOutputs = outputPorts.filter((p) => isAiPort(p))
-
-    for (let i = 0; i < mainInputs.length; i++) {
-      layouts.set(mainInputs[i].name, {
-        position: mainInputPos,
-        percent: distributePercent(mainInputs.length, i),
-      })
-    }
-    for (let i = 0; i < aiInputs.length; i++) {
-      layouts.set(aiInputs[i].name, {
-        position: aiInputPos,
-        percent: distributePercent(aiInputs.length, i),
-      })
-    }
-    for (let i = 0; i < mainOutputs.length; i++) {
-      layouts.set(mainOutputs[i].name, {
-        position: mainOutputPos,
-        percent: distributePercent(mainOutputs.length, i),
-      })
-    }
-    for (let i = 0; i < aiOutputs.length; i++) {
-      layouts.set(aiOutputs[i].name, {
-        position: aiOutputPos,
-        percent: distributePercent(aiOutputs.length, i),
-      })
-    }
-  } else {
-    for (let i = 0; i < inputPorts.length; i++) {
-      layouts.set(inputPorts[i].name, {
-        position: mainInputPos,
-        percent: distributePercent(inputPorts.length, i),
-      })
-    }
-    for (let i = 0; i < outputPorts.length; i++) {
-      layouts.set(outputPorts[i].name, {
-        position: mainOutputPos,
-        percent: distributePercent(outputPorts.length, i),
-      })
-    }
-  }
-
-  return layouts
+  },
 }
 
 const statusBadgeColor: Record<string, string> = {
@@ -147,8 +153,8 @@ const statusBadgeColor: Record<string, string> = {
 
 function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
   const ports = useMemo(() => computeDynamicPorts(data), [data])
-  const inputPorts = ports.filter((p) => p.direction === "Input")
-  const outputPorts = ports.filter((p) => p.direction === "Output")
+  const inputPorts = useMemo(() => ports.filter((p) => p.direction === "Input"), [ports])
+  const outputPorts = useMemo(() => ports.filter((p) => p.direction === "Output"), [ports])
   const styleSettings = useCanvasStore((s) => s.styleSettings)
   const layoutDirection = styleSettings.layoutDirection
 
@@ -166,7 +172,7 @@ function CustomNodeComponent({ id, data, selected }: NodeProps<WorkflowNode>) {
   const nodeHeight = circular ? 56 : 64
 
   const layouts = useMemo(
-    () => computePortLayouts(inputPorts, outputPorts, layoutDirection, configurable, config, tool),
+    () => portLayouts.computePortLayouts(inputPorts, outputPorts, layoutDirection, configurable, config, tool),
     [inputPorts, outputPorts, layoutDirection, configurable, config, tool],
   )
 
