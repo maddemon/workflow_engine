@@ -19,15 +19,17 @@ public sealed class JsEngine : IDisposable
     private readonly Engine _engine;
     private readonly ILogger? _logger;
     private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly int _executionTimeoutMs;
     private bool _disposed;
 
     // 统计 JsEngine.Create 调用次数，供测试验证"逐 item 复用单一引擎"而非每次新建。
     private static int s_createCount;
 
-    private JsEngine(Engine engine, ILogger? logger)
+    private JsEngine(Engine engine, ILogger? logger, int executionTimeoutMs)
     {
         _engine = engine;
         _logger = logger;
+        _executionTimeoutMs = executionTimeoutMs;
     }
 
     /// <summary>
@@ -73,7 +75,7 @@ public sealed class JsEngine : IDisposable
         InjectWhitelistFunctions(engine);
 
         Interlocked.Increment(ref s_createCount);
-        return new JsEngine(engine, logger);
+        return new JsEngine(engine, logger, opts.ExecutionTimeoutMs);
     }
 
     /// <summary>
@@ -211,9 +213,12 @@ public sealed class JsEngine : IDisposable
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            // 使用 CancellationTokenSource 强制超时，防止异步操作长时间挂起
+            // 使用 CancellationTokenSource 强制超时，防止异步操作长时间挂起。
+            // 超时阈值取自 JsEngineOptions.ExecutionTimeoutMs（构造时存入实例字段）；
+            // 若配置为 0/非法值，回退到默认 5000ms，避免无限等待。
             using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-            timeoutCts.CancelAfter(TimeSpan.FromMilliseconds(5000)); // 默认 5 秒超时
+            var effectiveTimeoutMs = _executionTimeoutMs > 0 ? _executionTimeoutMs : 5000;
+            timeoutCts.CancelAfter(TimeSpan.FromMilliseconds(effectiveTimeoutMs));
 
             try
             {
