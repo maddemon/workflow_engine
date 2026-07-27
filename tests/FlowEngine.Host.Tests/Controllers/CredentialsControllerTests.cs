@@ -31,9 +31,9 @@ public class CredentialsControllerTests : HostIntegrationTestBase
         var response = await client.GetAsync("/api/v1/credentials", ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var result = await response.Content.ReadFromJsonAsync<IReadOnlyCollection<CredentialDto>>(TestJsonOptions, ct);
+        var result = await response.Content.ReadFromJsonAsync<PagedResult<CredentialDto>>(TestJsonOptions, ct);
         Assert.NotNull(result);
-        Assert.Contains(result, c => c.Id == credential.Id);
+        Assert.Contains(result.Items, c => c.Id == credential.Id);
     }
 
     [Fact]
@@ -47,9 +47,9 @@ public class CredentialsControllerTests : HostIntegrationTestBase
         var response = await client.GetAsync($"/api/v1/credentials?projectId={credential.ProjectId}", ct);
 
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
-        var result = await response.Content.ReadFromJsonAsync<IReadOnlyCollection<CredentialDto>>(TestJsonOptions, ct);
+        var result = await response.Content.ReadFromJsonAsync<PagedResult<CredentialDto>>(TestJsonOptions, ct);
         Assert.NotNull(result);
-        Assert.Contains(result, c => c.Id == credential.Id);
+        Assert.Contains(result.Items, c => c.Id == credential.Id);
     }
 
     [Fact]
