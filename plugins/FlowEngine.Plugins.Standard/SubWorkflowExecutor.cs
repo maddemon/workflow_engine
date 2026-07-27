@@ -671,9 +671,10 @@ internal sealed class SubWorkflowExecutor
                     var descriptor = _nodeRegistry.GetDescriptor(sourceNode.TypeName);
                     portName = descriptor.Ports.FirstOrDefault(p => p.Direction == PortDirection.Output)?.Name ?? string.Empty;
                 }
-                catch
+                catch (Exception ex)
                 {
-                    // 注册中心查找失败，保持空字符串
+                    // 注册中心查找失败，保持空端口名（保底回退）；记录以便排查端口解析问题。
+                    _logger?.LogWarning("解析源端口名时注册中心查找失败，回退为空端口名。节点类型={TypeName}, 错误={Error}", sourceNode.TypeName, ex.Message);
                 }
             }
         }
