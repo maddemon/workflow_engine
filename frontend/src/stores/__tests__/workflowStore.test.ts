@@ -207,7 +207,7 @@ describe('workflowStore', () => {
       useWorkflowStore.getState().setWorkflowName('Updated');
       useCanvasStore.getState().setNodes([makeNode('n1')]);
       mockedSerializer.serializeWorkflow.mockReturnValue({ nodeDefinitions: [], connections: [] });
-      mockedApi.updateWorkflow.mockResolvedValue({ id: 'w1' } as unknown as Workflow);
+      mockedApi.updateWorkflow.mockResolvedValue({ id: 'w1', version: 5 } as unknown as Workflow);
 
       const result = await useWorkflowStore.getState().saveWorkflow();
 

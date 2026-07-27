@@ -6,14 +6,8 @@ import { Plus, Trash2, Edit, AlertCircle } from 'lucide-react';
 import { useRequest } from 'ahooks';
 import { getCredentials, createCredential, deleteCredential, updateCredential, getCredentialTypes } from '../../services/api.ts';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
-import type { CredentialDto, CredentialTypeDefinition } from '../../types/workflow.ts';
-
-const defaultTypeOptions: CredentialTypeDefinition[] = [
-  { name: 'apiKey', displayName: 'API Key', fields: [] },
-  { name: 'oauth2', displayName: 'OAuth2', fields: [] },
-  { name: 'basicAuth', displayName: 'Basic Auth', fields: [] },
-  { name: 'connectionString', displayName: 'Connection String', fields: [] },
-];
+import type { CredentialDto } from '../../types/workflow.ts';
+import { defaultCredentialTypeOptions } from '../../types/workflow.ts';
 
 interface CredentialListModalProps {
   opened: boolean;
@@ -42,45 +36,91 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
   }, [opened]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
-  const { data: typeOptions = defaultTypeOptions } = useRequest(getCredentialTypes);
+  const { data: typeOptions = defaultCredentialTypeOptions } = useRequest(getCredentialTypes);
 
-  const handleCreate = async () => {
+  const { run: runCreate, loading: creating } = useRequest(
+    async (payload: { name: string; type: string; fields: Record<string, string> }) => {
+      await createCredential(payload);
+    },
+    {
+      manual: true,
+      onSuccess: async () => {
+        resetForm();
+        await refreshCredentials();
+        useWorkflowStore.getState().bumpCredentialRevision();
+      },
+      onError: (err) => {
+        notifications.show({
+          title: t('error'),
+          message: err instanceof Error ? err.message : t('createFailed'),
+          color: 'red',
+        });
+      },
+    },
+  );
+
+  const { run: runDelete } = useRequest(
+    async (id: string) => {
+      await deleteCredential(id);
+    },
+    {
+      manual: true,
+      onSuccess: async () => {
+        await refreshCredentials();
+        useWorkflowStore.getState().bumpCredentialRevision();
+      },
+      onError: (err) => {
+        notifications.show({
+          title: t('error'),
+          message: err instanceof Error ? err.message : t('deleteFailed'),
+          color: 'red',
+        });
+      },
+    },
+  );
+
+  const { run: runUpdate, loading: updating } = useRequest(
+    async (id: string, payload: { name: string; fields: Record<string, string> }) => {
+      await updateCredential(id, payload);
+    },
+    {
+      manual: true,
+      onSuccess: async () => {
+        resetForm();
+        await refreshCredentials();
+        useWorkflowStore.getState().bumpCredentialRevision();
+      },
+      onError: (err) => {
+        notifications.show({
+          title: t('error'),
+          message: err instanceof Error ? err.message : t('updateFailed'),
+          color: 'red',
+        });
+      },
+    },
+  );
+
+  const resetForm = () => {
+    setShowForm(false);
+    setEditingId(null);
+    setFormName('');
+    setFormType('apiKey');
+    setFormFields([{ id: crypto.randomUUID(), key: '', value: '' }]);
+  };
+
+  const handleCreate = () => {
     const fields: Record<string, string> = {};
     for (const f of formFields) {
       if (f.key.trim()) {
         fields[f.key.trim()] = f.value;
       }
     }
-    try {
-      await createCredential({ name: formName, type: formType, fields });
-      setShowForm(false);
-      setFormName('');
-      setFormType('apiKey');
-      setFormFields([{ id: crypto.randomUUID(), key: '', value: '' }]);
-      await refreshCredentials();
-      useWorkflowStore.getState().bumpCredentialRevision();
-    } catch (err) {
-      notifications.show({
-        title: t('error'),
-        message: err instanceof Error ? err.message : t('createFailed'),
-        color: 'red',
-      });
-    }
+    runCreate({ name: formName, type: formType, fields });
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = (id: string) => {
     if (!confirm(t('deleteConfirm'))) return;
-    try {
-      await deleteCredential(id);
-      await refreshCredentials();
-      useWorkflowStore.getState().bumpCredentialRevision();
-    } catch (err) {
-      notifications.show({
-        title: t('error'),
-        message: err instanceof Error ? err.message : t('deleteFailed'),
-        color: 'red',
-      });
-    }
+    runDelete(id);
   };
 
   const handleEdit = (cred: CredentialDto) => {
@@ -92,7 +132,7 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
     setShowForm(true);
   };
 
-  const handleUpdate = async () => {
+  const handleUpdate = () => {
     if (!editingId) return;
     const fields: Record<string, string> = {};
     for (const f of formFields) {
@@ -100,22 +140,7 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
         fields[f.key.trim()] = f.value;
       }
     }
-    try {
-      await updateCredential(editingId, { name: formName, fields });
-      setShowForm(false);
-      setEditingId(null);
-      setFormName('');
-      setFormType('apiKey');
-      setFormFields([{ id: crypto.randomUUID(), key: '', value: '' }]);
-      await refreshCredentials();
-      useWorkflowStore.getState().bumpCredentialRevision();
-    } catch (err) {
-      notifications.show({
-        title: t('error'),
-        message: err instanceof Error ? err.message : t('updateFailed'),
-        color: 'red',
-      });
-    }
+    runUpdate(editingId, { name: formName, fields });
   };
 
   return (
@@ -181,7 +206,7 @@ export function CredentialListModal({ opened, onClose }: CredentialListModalProp
             <Button variant="default" onClick={() => { setShowForm(false); setEditingId(null); }}>
               {t('form.cancel')}
             </Button>
-            <Button onClick={editingId ? handleUpdate : handleCreate}>
+            <Button loading={creating || updating} onClick={editingId ? handleUpdate : handleCreate}>
               {editingId ? t('form.update') : t('form.create')}
             </Button>
           </Group>

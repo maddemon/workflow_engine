@@ -3,7 +3,7 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { FileField } from '../FileField.tsx';
 import { renderWithProvider } from '../../../../test-utils.tsx';
 import type { ParameterDefinition } from '../../../../types/workflow.ts';
-import { uploadFile } from '../../../../services/api.ts';
+import { uploadFile, listFiles } from '../../../../services/api.ts';
 
 vi.mock('../../../../services/api.ts', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../../../services/api.ts')>();
@@ -15,6 +15,7 @@ vi.mock('../../../../services/api.ts', async (importOriginal) => {
 });
 
 const mockedUploadFile = vi.mocked(uploadFile);
+const mockedListFiles = vi.mocked(listFiles);
 
 // FileField only reads name/displayName/required/description from the definition,
 // so a minimal object cast to the full type keeps the test focused.
@@ -82,5 +83,32 @@ describe('FileField', () => {
 
     await waitFor(() => expect(mockedUploadFile).toHaveBeenCalled());
     expect(onChange).not.toHaveBeenCalled();
+  });
+
+  it('clears the selected value', async () => {
+    const onChange = vi.fn();
+
+    renderWithProvider(
+      <FileField definition={definition} value="file-1" onChange={onChange} projectId="p-1" />,
+    );
+
+    const clearButton = screen.getByRole('button', { name: /clear/i });
+    fireEvent.click(clearButton);
+
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith(''));
+  });
+
+  it('fetches file name when value is a uuid', async () => {
+    const onChange = vi.fn();
+    const uuid = '12345678-1234-1234-1234-123456789012';
+    mockedListFiles.mockResolvedValue([
+      { id: uuid, fileName: 'report.pdf', contentType: 'application/pdf', fileSize: 10, createdAt: '2024-01-01' },
+    ]);
+
+    renderWithProvider(
+      <FileField definition={definition} value={uuid} onChange={onChange} projectId="p-1" />,
+    );
+
+    await waitFor(() => expect(screen.getByText('report.pdf')).toBeInTheDocument());
   });
 });
