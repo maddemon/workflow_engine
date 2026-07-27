@@ -12,7 +12,7 @@ import {
   Tooltip,
 } from "@mantine/core"
 import { Braces, Code as CodeIcon, HelpCircle } from "lucide-react"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { createElement, useEffect, useRef, useState } from "react"
 import { useTranslation } from "react-i18next"
 import type { ParameterDefinition } from "../../../types/workflow.ts"
 import { extractScriptSource } from "../../../utils/scriptValue.ts"
@@ -84,7 +84,7 @@ export function ExpressionField({ definition, value, onChange, error }: Expressi
 
   const currentValue = extractScriptSource(value)
   const scriptLanguage = getScriptLanguage(definition)
-  const LanguageIcon = useMemo(() => getLanguageIcon(scriptLanguage), [scriptLanguage])
+  const languageIcon = getLanguageIcon(scriptLanguage)
 
   // 从 hintProperties 获取自定义帮助内容
   const helpContent =
@@ -119,7 +119,7 @@ export function ExpressionField({ definition, value, onChange, error }: Expressi
   const helpPanel = (
     <Stack gap="xs" p="xs">
       <Group gap={4}>
-        <LanguageIcon size={14} />
+        {createElement(languageIcon, { size: 14 })}
         <Text size="xs" fw={600}>
           {t("fields.expression.usage")} ({scriptLanguage})
         </Text>
@@ -206,7 +206,7 @@ export function ExpressionField({ definition, value, onChange, error }: Expressi
               }}
               mr={4}
             >
-              <LanguageIcon size={14} />
+              {createElement(languageIcon, { size: 14 })}
             </ActionIcon>
           </Tooltip>
         }

@@ -37,6 +37,8 @@ export function ExecutionHistoryPage() {
   const [page, setPage] = useState(1);
   const [expandedOutputs, setExpandedOutputs] = useState<Set<string>>(new Set());
 
+  const PAGE_SIZE = 20;
+
   const { data, loading, error } = useRequest(
     () => getWorkflowExecutions(id!, {
       status: statusFilter === 'all' ? undefined : statusFilter,
@@ -45,8 +47,6 @@ export function ExecutionHistoryPage() {
     }),
     { ready: !!id, refreshDeps: [id, page, statusFilter] },
   );
-
-  const PAGE_SIZE = 20;
 
   const executions = data?.items ?? [];
   const totalPages = data?.totalPages ?? 0;

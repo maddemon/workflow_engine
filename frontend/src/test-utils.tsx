@@ -1,4 +1,4 @@
-import { type ReactElement, type ReactNode } from 'react';
+import { type ReactElement } from 'react';
 import { render, type RenderOptions } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
 import { I18nextProvider } from 'react-i18next';
@@ -78,22 +78,6 @@ interface RenderWithProviderOptions extends RenderOptions {
   initialEntries?: string[];
 }
 
-function Providers({ children, withRouter, withAuth, initialEntries }: { children: ReactNode; withRouter?: boolean; withAuth?: boolean; initialEntries?: string[] }) {
-  let content: ReactNode = (
-    <I18nextProvider i18n={testI18n}>
-      <MantineProvider>
-        {withAuth ? <AuthProvider>{children}</AuthProvider> : children}
-      </MantineProvider>
-    </I18nextProvider>
-  );
-
-  if (withRouter) {
-    content = <MemoryRouter initialEntries={initialEntries ?? ['/']}>{content}</MemoryRouter>;
-  }
-
-  return content;
-}
-
 /**
  * Render a React element wrapped in I18nextProvider, MantineProvider and optional AuthProvider.
  * Use for components that use Mantine UI primitives, react-i18next or auth context.
@@ -104,9 +88,23 @@ export function renderWithProvider(ui: ReactElement, options?: RenderWithProvide
   const { withRouter, withAuth, initialEntries, ...renderOptions } = options ?? {};
   return render(ui, {
     wrapper: ({ children }) => (
-      <Providers withRouter={withRouter} withAuth={withAuth} initialEntries={initialEntries}>
-        {children}
-      </Providers>
+      <I18nextProvider i18n={testI18n}>
+        <MantineProvider>
+          {withAuth ? (
+            <AuthProvider>
+              {withRouter ? (
+                <MemoryRouter initialEntries={initialEntries ?? ['/']}>{children}</MemoryRouter>
+              ) : (
+                children
+              )}
+            </AuthProvider>
+          ) : withRouter ? (
+            <MemoryRouter initialEntries={initialEntries ?? ['/']}>{children}</MemoryRouter>
+          ) : (
+            children
+          )}
+        </MantineProvider>
+      </I18nextProvider>
     ),
     ...renderOptions,
   });
