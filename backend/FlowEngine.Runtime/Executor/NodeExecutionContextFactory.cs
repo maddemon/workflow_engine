@@ -72,11 +72,25 @@ public sealed class NodeExecutionContextFactory(
         };
         var inputContainer = new InputContainer(inputItems, currentInput, rawParameters, inputContext);
 
+        // 成功输出与最新批现以节点 Id 为键累积（见 ExecutionStage，避免同名节点互相覆盖），
+        // 但下游表达式 $node['Name'] / $items('Name') 仍按节点名读取。
+        // 此处经 workflow.Nodes 做 Id→Name 映射，重建按名索引的只读视图，保持表达式契约不变；
+        // 同名的多个节点仅最后一个写入者生效（表达式语义本就无法区分同名节点）。
+        var nodeNameById = workflow.Nodes.ToDictionary(n => n.Id, n => n.Name, StringComparer.OrdinalIgnoreCase);
         var nodeDict = new Dictionary<string, NodeOutput>(StringComparer.OrdinalIgnoreCase);
-        foreach (var (name, batch) in successfulOutputs)
+        foreach (var (id, batch) in successfulOutputs)
         {
-            nodeDict[name] = new NodeOutput(
+            var nodeName = nodeNameById.TryGetValue(id, out var resolved) ? resolved : id;
+            nodeDict[nodeName] = new NodeOutput(
                 batch.Items.Select(i => (object?)i.Data).ToList());
+        }
+
+        // $items('Name') 读取的 latestBatches 同样需按名索引：经 Id→Name 映射重建只读视图。
+        var latestBatchesByName = new Dictionary<string, DataBatch>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (id, batch) in latestBatches)
+        {
+            var nodeName = nodeNameById.TryGetValue(id, out var resolved) ? resolved : id;
+            latestBatchesByName[nodeName] = batch;
         }
 
         var credsAccessor = credentialAccessorOverride ?? credentialAccessor;
@@ -162,7 +176,7 @@ public sealed class NodeExecutionContextFactory(
         // 也作为 ScriptContext.ExtraGlobals 传入，保证两种求值路径变量集一致。
         var globals = ExecutionContextGlobalsBuilder.BuildFull(
             credentialsDict, workflowDict, executionDict, ctxDict, nodeDict,
-            currentInput, inputContainer, inputItems, latestBatches, runIndex, environmentWhitelist);
+            currentInput, inputContainer, inputItems, latestBatchesByName, runIndex, environmentWhitelist);
 
         foreach (var (key, value) in globals)
         {
