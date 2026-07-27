@@ -2,6 +2,7 @@ import { ReactFlowProvider } from "@xyflow/react"
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useParams } from "react-router-dom"
 import { useTranslation } from "react-i18next"
+import { useRequest } from "ahooks"
 import { WorkflowCanvas } from "../components/Canvas/WorkflowCanvas.tsx"
 import { ExecutionPanel } from "../components/ExecutionPanel/ExecutionPanel.tsx"
 import { NodePanel } from "../components/NodePanel/NodePanel.tsx"
@@ -123,28 +124,48 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
     onLayoutChange?.(navbar, aside)
   }, [onLayoutChange, navbar, aside])
 
-  const handleConfirm = useCallback(async () => {
-    if (!workflowId) return;
-    try {
-      await confirmWorkflow(workflowId);
-      notifications.show({ title: t('editor.activated'), message: t('editor.activationMessage'), color: 'green' });
-      setValidationModalOpen(false);
-    } catch (err) {
-      notifications.show({ title: t('error', { ns: 'common' }), message: err instanceof Error ? err.message : t('editor.confirmationFailed'), color: 'red' });
-    }
-  }, [workflowId, t]);
+  const { run: runConfirm } = useRequest(
+    async (wid: string) => {
+      await confirmWorkflow(wid);
+    },
+    {
+      manual: true,
+      onSuccess: () => {
+        notifications.show({ title: t('editor.activated'), message: t('editor.activationMessage'), color: 'green' });
+        setValidationModalOpen(false);
+      },
+      onError: (err) => {
+        notifications.show({ title: t('error', { ns: 'common' }), message: err instanceof Error ? err.message : t('editor.confirmationFailed'), color: 'red' });
+      },
+    },
+  );
 
-  const handleReject = useCallback(async () => {
+  const handleConfirm = useCallback(() => {
+    if (!workflowId) return;
+    runConfirm(workflowId);
+  }, [workflowId, runConfirm]);
+
+  const { run: runReject, loading: rejecting } = useRequest(
+    async (wid: string, reason: string) => {
+      await rejectDraft(wid, reason);
+    },
+    {
+      manual: true,
+      onSuccess: () => {
+        notifications.show({ title: t('editor.rejected'), message: t('editor.rejectionMessage'), color: 'orange' });
+        setRejectModalOpen(false);
+        setRejectReason('');
+      },
+      onError: (err) => {
+        notifications.show({ title: t('error', { ns: 'common' }), message: err instanceof Error ? err.message : t('editor.rejectionFailed'), color: 'red' });
+      },
+    },
+  );
+
+  const handleReject = useCallback(() => {
     if (!workflowId || !rejectReason.trim()) return;
-    try {
-      await rejectDraft(workflowId, rejectReason);
-      notifications.show({ title: t('editor.rejected'), message: t('editor.rejectionMessage'), color: 'orange' });
-      setRejectModalOpen(false);
-      setRejectReason('');
-    } catch (err) {
-      notifications.show({ title: t('error', { ns: 'common' }), message: err instanceof Error ? err.message : t('editor.rejectionFailed'), color: 'red' });
-    }
-  }, [workflowId, rejectReason, t]);
+    runReject(workflowId, rejectReason);
+  }, [workflowId, rejectReason, runReject]);
 
   useEffect(() => {
     handleLayoutChange()
@@ -203,7 +224,7 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
           />
           <Group justify="flex-end">
             <Button variant="subtle" color="gray" onClick={() => setRejectModalOpen(false)}>{t('cancel', { ns: 'common' })}</Button>
-            <Button color="red" onClick={handleReject} disabled={!rejectReason.trim()}>{t('editor.submitRejection')}</Button>
+            <Button color="red" onClick={handleReject} disabled={!rejectReason.trim()} loading={rejecting}>{t('editor.submitRejection')}</Button>
           </Group>
         </Stack>
       </Modal>

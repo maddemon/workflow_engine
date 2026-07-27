@@ -292,8 +292,50 @@ describe('WorkflowEditorPage', () => {
     expect(mockedNotifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: 'orange' }));
   });
 
-  it('shows_externalChangeAlert_andLoadsNewVersion', async () => {
-    const dismiss = vi.fn();
+  it('reject_submitButton_is_disabled_while_request_in_flight', async () => {
+    useCanvasStore.setState({ reviewMode: true });
+
+    let resolveReject!: (value: unknown) => void;
+    mockedRejectDraft.mockImplementation(
+      () => new Promise((resolve) => { resolveReject = resolve; }) as unknown as ReturnType<typeof rejectDraft>,
+    );
+
+    renderPage('/workflows/wf-1/edit');
+    fireEvent.click(await screen.findByText(/Reject/i));
+
+    const textarea = await screen.findByPlaceholderText(/Describe what needs to be improved/i);
+    fireEvent.change(textarea, { target: { value: 'needs work' } });
+
+    const submitButton = () => screen.getByRole('button', { name: /submit rejection/i });
+    expect(submitButton()).not.toBeDisabled();
+
+    fireEvent.click(submitButton());
+
+    // While the request is in flight the submit button must reflect loading (disabled).
+    expect(submitButton()).toBeDisabled();
+
+    resolveReject({
+      id: 'wf-1',
+      projectId: null,
+      name: 'Test',
+      version: 1,
+      createdBy: 'user',
+      createdAt: '',
+      updatedAt: '',
+      isActive: false,
+      styleSettings: { layoutDirection: 'horizontal' },
+      nodes: [],
+      connections: [],
+    });
+
+    await waitFor(() => expect(mockedRejectDraft).toHaveBeenCalledWith('wf-1', 'needs work'));
+    // onSuccess (rejection notification) confirms the request completed.
+    await waitFor(() =>
+      expect(mockedNotifications.show).toHaveBeenCalledWith(expect.objectContaining({ color: 'orange' })),
+    );
+  });
+
+  it('shows_externalChangeAlert_andLoadsNewVersion', async () => {    const dismiss = vi.fn();
     mockedUseWorkflowVersionPolling.mockReturnValue({ changed: true, newVersion: 2, dismiss });
     const loadWorkflow = vi.spyOn(useWorkflowStore.getState(), 'loadWorkflow').mockResolvedValue(undefined);
     window.confirm = vi.fn(() => true);

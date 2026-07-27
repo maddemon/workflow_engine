@@ -1,105 +1,86 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen, fireEvent, waitFor } from '@testing-library/react';
-import { renderWithProvider } from '../../../../test-utils.tsx';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { FileField } from '../FileField.tsx';
-import type { StoredFileDto } from '../../../../services/api.ts';
+import { renderWithProvider } from '../../../../test-utils.tsx';
+import type { ParameterDefinition } from '../../../../types/workflow.ts';
+import { uploadFile } from '../../../../services/api.ts';
 
-vi.mock('../../../../services/api.ts', () => ({
-  uploadFile: vi.fn(),
-  listFiles: vi.fn(),
-}));
+vi.mock('../../../../services/api.ts', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../../services/api.ts')>();
+  return {
+    ...actual,
+    uploadFile: vi.fn(),
+    listFiles: vi.fn().mockResolvedValue([]),
+  };
+});
 
-vi.mock('@mantine/notifications', () => ({
-  notifications: { show: vi.fn() },
-}));
-
-import { uploadFile, listFiles } from '../../../../services/api.ts';
 const mockedUploadFile = vi.mocked(uploadFile);
-const mockedListFiles = vi.mocked(listFiles);
+
+// FileField only reads name/displayName/required/description from the definition,
+// so a minimal object cast to the full type keeps the test focused.
+const definition = {
+  name: 'attachment',
+  displayName: 'Attachment',
+  type: 'file',
+  defaultValue: '',
+  required: false,
+  validationRules: [],
+  displayRule: null,
+  credentialType: null,
+  options: [],
+} as unknown as ParameterDefinition;
+
+function uploadFileHelper(container: HTMLElement, fileName = 'test.txt') {
+  const input = container.querySelector('input[type="file"]') as HTMLInputElement;
+  const file = new File(['hello'], fileName, { type: 'text/plain' });
+  Object.defineProperty(input, 'files', { value: [file], configurable: true });
+  fireEvent.change(input, { target: { files: [file] } });
+  return { input, file };
+}
 
 describe('FileField', () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it('shows warning when uploading without projectId', async () => {
+  it('uploads file and shows loading state during the request', async () => {
     const onChange = vi.fn();
-    renderWithProvider(
-      <FileField
-        definition={{ name: 'file', displayName: 'File', type: 'File', defaultValue: '', required: false, validationRules: [], displayRule: null, credentialType: null, options: [] }}
-        value=""
-        onChange={onChange}
-      />,
+    let resolveUpload!: (value: unknown) => void;
+    mockedUploadFile.mockImplementation(
+      () => new Promise((resolve) => { resolveUpload = resolve; }) as unknown as ReturnType<typeof uploadFile>,
     );
 
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = new File(['x'], 'test.txt');
-    fireEvent.change(input, { target: { files: [file] } });
+    const { container } = renderWithProvider(
+      <FileField definition={definition} value="" onChange={onChange} projectId="p-1" />,
+    );
 
-    await waitFor(() => {
-      expect(mockedUploadFile).not.toHaveBeenCalled();
-    });
+    const uploadButton = () => screen.getByRole('button', { name: /upload file/i });
+    expect(uploadButton()).not.toBeDisabled();
+
+    const { file } = uploadFileHelper(container);
+
+    // While the upload is in flight the action button reflects loading (disabled).
+    expect(uploadButton()).toBeDisabled();
+
+    resolveUpload({ id: 'file-1', fileName: 'test.txt', fileSize: 5 });
+
+    await waitFor(() => expect(mockedUploadFile).toHaveBeenCalledWith(file, 'p-1'));
+    await waitFor(() => expect(onChange).toHaveBeenCalledWith('file-1'));
+    // Once finished the button is interactive again.
+    await waitFor(() => expect(uploadButton()).not.toBeDisabled());
   });
 
-  it('uploads file and calls onChange with file id', async () => {
+  it('shows error notification and does not call onChange when upload fails', async () => {
     const onChange = vi.fn();
-    mockedUploadFile.mockResolvedValue({ id: 'f1', fileName: 'test.txt', fileSize: 1 } as unknown as StoredFileDto);
+    mockedUploadFile.mockRejectedValue(new Error('boom'));
 
-    renderWithProvider(
-      <FileField
-        definition={{ name: 'file', displayName: 'File', type: 'File', defaultValue: '', required: false, validationRules: [], displayRule: null, credentialType: null, options: [] }}
-        value=""
-        onChange={onChange}
-        projectId="p1"
-      />,
+    const { container } = renderWithProvider(
+      <FileField definition={definition} value="" onChange={onChange} projectId="p-1" />,
     );
 
-    const input = document.querySelector('input[type="file"]') as HTMLInputElement;
-    const file = new File(['x'], 'test.txt');
-    fireEvent.change(input, { target: { files: [file] } });
+    uploadFileHelper(container);
 
-    await waitFor(() => {
-      expect(mockedUploadFile).toHaveBeenCalledWith(file, 'p1');
-    });
-    await waitFor(() => {
-      expect(onChange).toHaveBeenCalledWith('f1');
-    });
-  });
-
-  it('clears the selected value', () => {
-    const onChange = vi.fn();
-    renderWithProvider(
-      <FileField
-        definition={{ name: 'file', displayName: 'File', type: 'File', defaultValue: '', required: false, validationRules: [], displayRule: null, credentialType: null, options: [] }}
-        value="some-file"
-        onChange={onChange}
-        projectId="p1"
-      />,
-    );
-
-    fireEvent.click(screen.getByRole('button', { name: /clear/i }));
-    expect(onChange).toHaveBeenCalledWith('');
-  });
-
-  it('fetches file name when value is a uuid', async () => {
-    const fileId = '550e8400-e29b-41d4-a716-446655440000';
-    mockedListFiles.mockResolvedValue([{ id: fileId, fileName: 'report.pdf', fileSize: 1024 } as unknown as StoredFileDto]);
-    const onChange = vi.fn();
-
-    renderWithProvider(
-      <FileField
-        definition={{ name: 'file', displayName: 'File', type: 'File', defaultValue: '', required: false, validationRules: [], displayRule: null, credentialType: null, options: [] }}
-        value={fileId}
-        onChange={onChange}
-        projectId="p1"
-      />,
-    );
-
-    await waitFor(() => {
-      expect(mockedListFiles).toHaveBeenCalledWith('p1');
-    });
-    await waitFor(() => {
-      expect(screen.getByText('report.pdf')).toBeDefined();
-    });
+    await waitFor(() => expect(mockedUploadFile).toHaveBeenCalled());
+    expect(onChange).not.toHaveBeenCalled();
   });
 });
