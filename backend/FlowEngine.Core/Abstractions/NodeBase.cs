@@ -3,7 +3,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
 using FlowEngine.Core.Attributes;
-using Microsoft.Extensions.DependencyInjection;
 using FlowEngine.Core.Ai;
 using FlowEngine.Core.Entities;
 using FlowEngine.Core.Enums;
@@ -113,9 +112,9 @@ public abstract class NodeBase : INodeType, INodeHandler
         // 写入受保护通道所需上下文（引擎等能力改由 NodeCapabilityInjector 经 [Inject] 注入，基类不释放）。
 
         // 兼容直接执行路径（如单元测试、非管线调用）：按节点声明的 [Inject] 能力补注入，
-        // 等价于生产管线 ExecutionStage / SubExecutionService 的注入。上下文派生能力（Ctx / Logger /
-        // LlmClient / NodeContext）始终取自 context；DI 能力仅当 context.NodeRegistry 非空时映射，
-        // 其余 DI 能力（Http / Sub / Tools 等）若已由管线注入则保持原值，不被本次清空。
+        // 等价于生产管线 ExecutionStage / SubExecutionService 的注入。所有上下文派生能力（Ctx / Logger /
+        // LlmClient / NodeContext / INodeRegistry 等）均经 NodeCapabilityInjector 的 ContextProviders
+        // 从 context 解析；其余 DI 能力（Http / Sub / Tools 等）若已由管线注入则保持原值，不被本次清空。
         InjectCapabilities(context);
 
         var input = new NodeInput(
