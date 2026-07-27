@@ -123,13 +123,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     set({ saving: true });
     try {
       if (workflowId) {
-        await api.updateWorkflow(workflowId, {
+        const updated = await api.updateWorkflow(workflowId, {
           name: workflowName,
           isActive,
           styleSettings,
           nodes: nodeDefinitions,
           connections,
         });
+        set({ workflowVersion: updated.version });
       } else {
         const created = await api.createWorkflow({
           name: workflowName || 'Untitled Workflow',
@@ -138,7 +139,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
           nodes: nodeDefinitions,
           connections,
         });
-        set({ workflowId: created.id });
+        set({ workflowId: created.id, workflowVersion: created.version });
       }
       set({ isDirty: false });
       useCanvasStore.setState({ validationErrors: {} });
