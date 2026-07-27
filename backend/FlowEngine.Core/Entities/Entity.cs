@@ -26,7 +26,6 @@ public abstract class Entity : IEntity<Guid>
     private static Guid NewId(DateTimeOffset? timestamp = null) => Guid.CreateVersion7(timestamp ?? DateTimeOffset.UtcNow);
 
     [Key, DatabaseGenerated(DatabaseGeneratedOption.None)]
-    [MaxLength(36), StringLength(36)]
     public Guid Id { get; set; }
 
     [Comment("创建时间")]
