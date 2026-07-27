@@ -50,8 +50,53 @@ public class FlowEngineDbContext : DbContext
     /// <see cref="WorkflowCredentialUsageInterceptor"/> 在 SaveChanges 事务内部完成，
     /// 因此凭据引用行的删除与写入同工作流主体数据在同一事务内原子提交。本方法不再承载该业务逻辑。
     /// </summary>
+    public override int SaveChanges(bool acceptAllChangesOnSuccess = true)
+    {
+        BumpOptimisticConcurrencyTokens();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    /// <summary>
+    /// 保存更改（异步）。在提交前自增高竞争实体的乐观并发行版本，详见
+    /// <see cref="BumpOptimisticConcurrencyTokens"/>。
+    /// </summary>
     public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
-        => base.SaveChangesAsync(cancellationToken);
+    {
+        BumpOptimisticConcurrencyTokens();
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// 为携带 <c>RowVersion</c> 乐观并发令牌的实体在每次新增或变更时自增版本号，
+    /// 使跨 DbContext 的并发更新可被乐观并发检测拦截（防止丢失更新）。
+    /// </summary>
+    /// <remarks>
+    /// <para>为何由应用层维护而非依赖数据库 rowversion：SQLite/PostgreSQL/MySQL 不会在
+    /// UPDATE 时自动递增 <see cref="byte"/>[] rowversion，仅 SQL Server 原生支持。
+    /// 采用 <see cref="long"/> 令牌并在保存前统一自增，可保证所有提供程序行为一致。</para>
+    /// <para>仅处理 <see cref="EntityState.Added"/> 与 <see cref="EntityState.Modified"/> 实体；
+    /// 未变更实体不进入此分支，避免无谓的版本自增。</para>
+    /// </remarks>
+    private void BumpOptimisticConcurrencyTokens()
+    {
+        foreach (var entry in ChangeTracker.Entries())
+        {
+            if (entry.State is not (EntityState.Added or EntityState.Modified))
+            {
+                continue;
+            }
+
+            var property = entry.Metadata.FindProperty("RowVersion");
+            if (property is null)
+            {
+                continue;
+            }
+
+            var current = entry.Property(property.Name).CurrentValue;
+            var next = current is null ? 1L : Convert.ToInt64(current) + 1;
+            entry.Property(property.Name).CurrentValue = next;
+        }
+    }
 
     /// <summary>
     /// 注册 <see cref="WorkflowCredentialUsageInterceptor"/>，使其在每次 SaveChanges 时于事务内部
