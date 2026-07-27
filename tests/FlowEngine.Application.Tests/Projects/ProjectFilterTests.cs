@@ -84,10 +84,10 @@ public sealed class ProjectFilterTests : IDisposable
 
         var service = CreateCredentialService();
 
-        var result = await service.GetAllAsync(projectId, cancellationToken: ct);
+        var result = await service.GetAllAsync(projectId, ct);
 
-        Assert.Equal(2, result.TotalCount);
-        Assert.All(result.Items, item => Assert.Equal(projectId, item.ProjectId));
+        Assert.Equal(2, result.Count);
+        Assert.All(result, item => Assert.Equal(projectId, item.ProjectId));
     }
 
     [Fact]
@@ -103,7 +103,7 @@ public sealed class ProjectFilterTests : IDisposable
 
         var result = await service.GetAllAsync(cancellationToken: ct);
 
-        Assert.Equal(2, result.TotalCount);
+        Assert.Equal(2, result.Count);
     }
 
     [Fact]

@@ -155,69 +155,7 @@ public sealed class CredentialServiceTests : IDisposable
 
         var results = await _service.GetAllAsync(cancellationToken: ct);
 
-        Assert.Equal(2, results.TotalCount);
-        Assert.Equal(2, results.Items.Count);
-    }
-
-    [Fact]
-    public async Task GetAllAsync_WithPaging_ReturnsPagedResult()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        const int total = 25;
-        const int pageSize = 10;
-        for (var i = 0; i < total; i++)
-        {
-            _dbContext.Credentials.Add(CreateTestCredential($"Key {i}"));
-        }
-
-        await _dbContext.SaveChangesAsync(ct);
-
-        var page1 = await _service.GetAllAsync(page: 1, pageSize: pageSize, cancellationToken: ct);
-        var page2 = await _service.GetAllAsync(page: 2, pageSize: pageSize, cancellationToken: ct);
-        var page3 = await _service.GetAllAsync(page: 3, pageSize: pageSize, cancellationToken: ct);
-
-        Assert.Equal(total, page1.TotalCount);
-        Assert.Equal(1, page1.Page);
-        Assert.Equal(pageSize, page1.PageSize);
-        Assert.Equal(3, page1.TotalPages);
-        Assert.Equal(pageSize, page1.Items.Count);
-
-        Assert.Equal(pageSize, page2.Items.Count);
-
-        Assert.Equal(5, page3.Items.Count);
-        Assert.Equal(3, page3.Page);
-
-        // 各页返回的项互不重叠，且覆盖全部记录
-        var allIds = page1.Items.Select(c => c.Id)
-            .Concat(page2.Items.Select(c => c.Id))
-            .Concat(page3.Items.Select(c => c.Id))
-            .Distinct()
-            .ToList();
-        Assert.Equal(total, allIds.Count);
-    }
-
-    [Fact]
-    public async Task GetAllAsync_WithProjectIdFilter_PagesWithinProject()
-    {
-        var ct = TestContext.Current.CancellationToken;
-        var projectId = Guid.NewGuid();
-        var otherProjectId = Guid.NewGuid();
-        for (var i = 0; i < 15; i++)
-        {
-            _dbContext.Credentials.Add(CreateTestCredential($"Key {i}", projectId: projectId));
-        }
-
-        _dbContext.Credentials.Add(CreateTestCredential("Other", projectId: otherProjectId));
-        await _dbContext.SaveChangesAsync(ct);
-
-        const int pageSize = 10;
-        var page1 = await _service.GetAllAsync(projectId: projectId, page: 1, pageSize: pageSize, cancellationToken: ct);
-        var page2 = await _service.GetAllAsync(projectId: projectId, page: 2, pageSize: pageSize, cancellationToken: ct);
-
-        Assert.Equal(15, page1.TotalCount);
-        Assert.Equal(pageSize, page1.Items.Count);
-        Assert.Equal(5, page2.Items.Count);
-        Assert.DoesNotContain(page1.Items, c => c.Name == "Other");
+        Assert.Equal(2, results.Count);
     }
 
     [Fact]

@@ -1,7 +1,6 @@
 using FlowEngine.Application.Credentials;
 using FlowEngine.Application.Dtos;
 using FlowEngine.Core.Authorization;
-using System.ComponentModel.DataAnnotations;
 using FlowEngine.Core.Credentials;
 using FlowEngine.Resources;
 using Microsoft.AspNetCore.Authorization;
@@ -22,17 +21,15 @@ public class CredentialsController(
     IStringLocalizer<SharedResource> localizer) : ControllerBase
 {
     /// <summary>
-    /// 分页获取所有凭据摘要列表。
+    /// 获取所有凭据摘要列表。
     /// </summary>
     [HttpGet]
     [AuthorizePermission(Scope.Credential, Operation.Read)]
-    public async Task<ActionResult<PagedResult<CredentialDto>>> GetAll(
+    public async Task<ActionResult<IReadOnlyCollection<CredentialDto>>> GetAll(
         [FromQuery] Guid? projectId = null,
-        [FromQuery] [Range(1, int.MaxValue)] int page = 1,
-        [FromQuery] [Range(1, 200)] int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
-        var credentials = await credentialService.GetAllAsync(projectId, page, pageSize, cancellationToken).ConfigureAwait(false);
+        var credentials = await credentialService.GetAllAsync(projectId, cancellationToken).ConfigureAwait(false);
         return Ok(credentials);
     }
 

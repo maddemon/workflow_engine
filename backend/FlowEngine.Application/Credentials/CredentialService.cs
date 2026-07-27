@@ -147,44 +147,21 @@ public sealed class CredentialService(
     }
 
     /// <summary>
-    /// 获取所有凭据摘要列表（分页）。项目（ProjectId）仅作为分类字段，不做隔离。
+    /// 获取所有凭据摘要列表。项目（ProjectId）仅作为分类字段，不做隔离。
     /// </summary>
-    /// <param name="projectId">按项目过滤；为 null 时返回全部项目。</param>
-    /// <param name="page">页码，从 1 开始。</param>
-    /// <param name="pageSize">每页大小，限制为 [1, 200]。</param>
-    /// <param name="cancellationToken">取消令牌。</param>
-    /// <returns>分页结果，包含当前页凭据摘要与总记录数。</returns>
-    public async Task<PagedResult<CredentialDto>> GetAllAsync(
+    public async Task<IReadOnlyCollection<CredentialDto>> GetAllAsync(
         Guid? projectId = null,
-        int page = 1,
-        int pageSize = 20,
         CancellationToken cancellationToken = default)
     {
-        page = Math.Max(1, page);
-        pageSize = Math.Clamp(pageSize, 1, 200);
-
-        var query = projectId.HasValue
-            ? dbContext.Credentials.AsNoTracking().Where(c => c.ProjectId == projectId.Value)
-            : dbContext.Credentials.AsNoTracking().AsQueryable();
-
-        var totalCount = await query.CountAsync(cancellationToken).ConfigureAwait(false);
-
-        var credentials = await query
-            .OrderBy(c => c.CreatedAt)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToListAsync(cancellationToken).ConfigureAwait(false);
-
-        var shouldMask = ShouldMaskCredentialValues();
-        var items = credentials.Select(c => MapToDto(c, shouldMask)).ToList();
-
-        return new PagedResult<CredentialDto>
+        var query = dbContext.Credentials.AsNoTracking();
+        if (projectId.HasValue)
         {
-            Items = items,
-            TotalCount = totalCount,
-            Page = page,
-            PageSize = pageSize,
-        };
+            query = query.Where(c => c.ProjectId == projectId.Value);
+        }
+
+        var credentials = await query.ToListAsync(cancellationToken).ConfigureAwait(false);
+        var shouldMask = ShouldMaskCredentialValues();
+        return credentials.Select(c => MapToDto(c, shouldMask)).ToList();
     }
 
     /// <summary>
