@@ -46,65 +46,21 @@ public class FlowEngineDbContext : DbContext
     }
 
     /// <summary>
-    /// 集中维护 <see cref="WorkflowCredentialUsage"/> 关联表：在工作流新增/修改/删除时，
-    /// 删除该工作流的旧引用行，并为新增/修改的工作流按节点参数重新计算写入引用行。
-    /// 删除+写入在 <see cref="base.SaveChangesAsync"/> 的同一事务内原子提交。
+    /// 保存更改。凭据引用关联表（<see cref="WorkflowCredentialUsage"/>）的同步由
+    /// <see cref="WorkflowCredentialUsageInterceptor"/> 在 SaveChanges 事务内部完成，
+    /// 因此凭据引用行的删除与写入同工作流主体数据在同一事务内原子提交。本方法不再承载该业务逻辑。
     /// </summary>
-    public override async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+        => base.SaveChangesAsync(cancellationToken);
+
+    /// <summary>
+    /// 注册 <see cref="WorkflowCredentialUsageInterceptor"/>，使其在每次 SaveChanges 时于事务内部
+    /// 维护凭据引用关联表。无论 DbContext 经 DI 还是直接构造，拦截器均生效。
+    /// </summary>
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
     {
-        var changedWorkflows = ChangeTracker.Entries<Workflow>()
-            .Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
-            .ToList();
-
-        if (changedWorkflows.Count > 0)
-        {
-            await MaintainWorkflowCredentialUsagesAsync(changedWorkflows, cancellationToken).ConfigureAwait(false);
-        }
-
-        return await base.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task MaintainWorkflowCredentialUsagesAsync(
-        IReadOnlyList<Microsoft.EntityFrameworkCore.ChangeTracking.EntityEntry<Workflow>> changedWorkflows,
-        CancellationToken cancellationToken)
-    {
-        var workflowIds = changedWorkflows.Select(e => e.Entity.Id).ToList();
-
-        // 仅针对本次变更的工作流维护凭据引用（增量，不触达未变更工作流，避免批量保存时放大为 N 次查询）。
-        // 关系型提供程序可直接用单语句批量删除旧行（避免把已删行物化回 ChangeTracker）；
-        // InMemory 提供程序不支持 ExecuteDelete，回退为加载后删除。
-        if (Database.IsRelational())
-        {
-            await WorkflowCredentialUsages
-                .Where(u => workflowIds.Contains(u.WorkflowId))
-                .ExecuteDeleteAsync(cancellationToken)
-                .ConfigureAwait(false);
-        }
-        else
-        {
-            var existing = await WorkflowCredentialUsages
-                .Where(u => workflowIds.Contains(u.WorkflowId))
-                .ToListAsync(cancellationToken)
-                .ConfigureAwait(false);
-            if (existing.Count > 0)
-            {
-                WorkflowCredentialUsages.RemoveRange(existing);
-            }
-        }
-
-        // 仅为仍存在的（新增/修改）工作流重新计算并写入引用行。
-        foreach (var entry in changedWorkflows)
-        {
-            if (entry.State == EntityState.Deleted)
-            {
-                continue;
-            }
-
-            foreach (var usage in CredentialReferenceScanner.Scan(entry.Entity))
-            {
-                WorkflowCredentialUsages.Add(usage);
-            }
-        }
+        base.OnConfiguring(optionsBuilder);
+        optionsBuilder.AddInterceptors(new WorkflowCredentialUsageInterceptor());
     }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
