@@ -18,6 +18,7 @@ public sealed class JsEngine : IDisposable
 {
     private readonly Engine _engine;
     private readonly ILogger? _logger;
+    private readonly SemaphoreSlim _gate = new(1, 1);
     private bool _disposed;
 
     private JsEngine(Engine engine, ILogger? logger)
@@ -129,7 +130,15 @@ public sealed class JsEngine : IDisposable
     public JsValue Evaluate(string expression)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return _engine.Evaluate($"return ({expression})");
+        _gate.Wait();
+        try
+        {
+            return _engine.Evaluate($"return ({expression})");
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     /// <summary>
@@ -139,7 +148,15 @@ public sealed class JsEngine : IDisposable
     public JsValue Run(string script)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        return _engine.Evaluate($"(function() {{ {script} }})()");
+        _gate.Wait();
+        try
+        {
+            return _engine.Evaluate($"(function() {{ {script} }})()");
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     /// <summary>
@@ -148,19 +165,28 @@ public sealed class JsEngine : IDisposable
     public async Task<JsValue> RunAsync(string script, CancellationToken cancellationToken = default)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        
-        // 使用 CancellationTokenSource 强制超时，防止异步操作长时间挂起
-        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-        timeoutCts.CancelAfter(TimeSpan.FromMilliseconds(5000)); // 默认 5 秒超时
-        
+
+        // 异步获取实例锁，避免阻塞线程池线程；取消信号量等待时一并尊重外部取消。
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
         {
-            var result = _engine.Evaluate($"(async function() {{ {script} }})()");
-            return await result.UnwrapIfPromiseAsync(timeoutCts.Token).ConfigureAwait(false);
+            // 使用 CancellationTokenSource 强制超时，防止异步操作长时间挂起
+            using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeoutCts.CancelAfter(TimeSpan.FromMilliseconds(5000)); // 默认 5 秒超时
+
+            try
+            {
+                var result = _engine.Evaluate($"(async function() {{ {script} }})()");
+                return await result.UnwrapIfPromiseAsync(timeoutCts.Token).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+            {
+                throw new TimeoutException("脚本执行超时");
+            }
         }
-        catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+        finally
         {
-            throw new TimeoutException("脚本执行超时");
+            _gate.Release();
         }
     }
 
@@ -178,7 +204,58 @@ public sealed class JsEngine : IDisposable
     public JsValue EvaluatePrepared(JintPreparedScript prepared)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        _gate.Wait();
+        try
+        {
+            return EvaluatePreparedCore(prepared);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// 无锁执行已预编译表达式（内部使用）。调用方须保证已持有实例锁。
+    /// 用于 <see cref="LockAsync"/> 包裹的复合关键区（如作用域注入 + 求值）。
+    /// </summary>
+    internal JsValue EvaluatePreparedCore(JintPreparedScript prepared)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
         return _engine.Evaluate(in prepared);
+    }
+
+    /// <summary>
+    /// 进入实例级串行锁。把多次引擎访问（如作用域注入 + 求值）作为原子操作，
+    /// 避免同一 <see cref="JsEngine"/> 实例被并发驱动时结果错乱。
+    /// 锁作用域仅限本实例，不影响其他实例的并行。
+    /// </summary>
+    /// <param name="cancellationToken">取消令牌。</param>
+    public async ValueTask<IDisposable> LockAsync(CancellationToken cancellationToken = default)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        return new GateReleaser(_gate);
+    }
+
+    /// <summary>
+    /// 实例锁释放器。
+    /// </summary>
+    private sealed class GateReleaser : IDisposable
+    {
+        private readonly SemaphoreSlim _semaphore;
+        private bool _released;
+
+        public GateReleaser(SemaphoreSlim semaphore) => _semaphore = semaphore;
+
+        public void Dispose()
+        {
+            if (!_released)
+            {
+                _released = true;
+                _semaphore.Release();
+            }
+        }
     }
 
     /// <summary>
@@ -238,6 +315,7 @@ public sealed class JsEngine : IDisposable
         {
             _disposed = true;
             _engine.Dispose();
+            _gate.Dispose();
         }
     }
 

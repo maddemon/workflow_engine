@@ -40,13 +40,18 @@ public sealed class PreparedScriptSession : IDisposable
             return Task.FromResult(new ScriptResult(prepared.Original, prepared.CompileError));
         }
 
-        return Task.Run(() =>
+        return Task.Run(async () =>
         {
             try
             {
-                PreparedScript.InjectScope(_engine, context);
-                var raw = _engine.EvaluatePrepared(prepared.Inner);
-                return new ScriptResult(prepared.Original, raw);
+                // 实例级串行：把"作用域注入 + 求值"作为原子关键区，
+                // 避免同一引擎并发执行多个 item 时作用域互相覆盖导致结果错乱。
+                using (await _engine.LockAsync(cancellationToken).ConfigureAwait(false))
+                {
+                    PreparedScript.InjectScope(_engine, context);
+                    var raw = _engine.EvaluatePreparedCore(prepared.Inner);
+                    return new ScriptResult(prepared.Original, raw);
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
@@ -75,25 +80,30 @@ public sealed class PreparedScriptSession : IDisposable
             return Task.FromResult(new ScriptResult(prepared.Original, prepared.CompileError));
         }
 
-        return Task.Run(() =>
+        return Task.Run(async () =>
         {
             try
             {
-                _engine.ApplyGlobalVariables(context.NodeContext);
-
-                var allItems = GetAllItems(context.NodeContext, currentItem);
-                _engine.ApplyItemScope(context.NodeContext, currentItem, allItems, itemIndex);
-
-                foreach (var (key, value) in context.ExtraGlobals)
+                // 实例级串行：把"作用域注入 + 求值"作为原子关键区，
+                // 避免同一引擎并发执行多个 item 时作用域互相覆盖导致结果错乱。
+                using (await _engine.LockAsync(cancellationToken).ConfigureAwait(false))
                 {
-                    if (!string.IsNullOrEmpty(key))
-                    {
-                        _engine.SetValue(key, value);
-                    }
-                }
+                    _engine.ApplyGlobalVariables(context.NodeContext);
 
-                var raw = _engine.EvaluatePrepared(prepared.Inner);
-                return new ScriptResult(prepared.Original, raw);
+                    var allItems = GetAllItems(context.NodeContext, currentItem);
+                    _engine.ApplyItemScope(context.NodeContext, currentItem, allItems, itemIndex);
+
+                    foreach (var (key, value) in context.ExtraGlobals)
+                    {
+                        if (!string.IsNullOrEmpty(key))
+                        {
+                            _engine.SetValue(key, value);
+                        }
+                    }
+
+                    var raw = _engine.EvaluatePreparedCore(prepared.Inner);
+                    return new ScriptResult(prepared.Original, raw);
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
