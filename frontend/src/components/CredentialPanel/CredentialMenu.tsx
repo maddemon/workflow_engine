@@ -6,14 +6,8 @@ import { useTranslation } from 'react-i18next';
 import { useRequest } from 'ahooks';
 import { getCredentials, createCredential, deleteCredential, updateCredential, getCredentialTypes } from '../../services/api.ts';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
-import type { CredentialDto, CredentialTypeDefinition } from '../../types/workflow.ts';
-
-const defaultTypeOptions: CredentialTypeDefinition[] = [
-  { name: 'apiKey', displayName: 'API Key', fields: [] },
-  { name: 'oauth2', displayName: 'OAuth2', fields: [] },
-  { name: 'basicAuth', displayName: 'Basic Auth', fields: [] },
-  { name: 'connectionString', displayName: 'Connection String', fields: [] },
-];
+import type { CredentialDto } from '../../types/workflow.ts';
+import { defaultCredentialTypeOptions } from '../../types/workflow.ts';
 
 export function CredentialMenu() {
   const { t } = useTranslation(['credentialPanel', 'header']);
@@ -29,7 +23,7 @@ export function CredentialMenu() {
     { ready: opened },
   );
 
-  const { data: typeOptions = defaultTypeOptions } = useRequest(getCredentialTypes);
+  const { data: typeOptions = defaultCredentialTypeOptions } = useRequest(getCredentialTypes);
 
   const { run: runCreate, loading: creating } = useRequest(
     async (payload: { name: string; type: string; fields: Record<string, string> }) => {
