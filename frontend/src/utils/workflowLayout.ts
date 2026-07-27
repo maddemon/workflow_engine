@@ -22,6 +22,15 @@ export type LayoutDirection = 'vertical' | 'horizontal';
 export type LayoutResult = Record<string, { x: number; y: number }>;
 
 /**
+ * 将任意输入归一化为合法的布局方向。
+ * 仅 'vertical' 与 'horizontal' 被接受，其余（null/undefined/空串/大小写不符/任意垃圾值）
+ * 一律回退到 'vertical'，避免不安全的值写入状态。
+ */
+export function normalizeLayoutDirection(value: string | null | undefined): LayoutDirection {
+  return value === 'vertical' || value === 'horizontal' ? value : 'vertical';
+}
+
+/**
  * 计算自动布局。
  * @param nodes 节点列表（仅需 id 与当前 position）
  * @param edges 边列表（source/target）

@@ -6,6 +6,7 @@ import { useShallow } from 'zustand/shallow';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
 import { useCanvasStore } from '../Canvas/stores/canvasStore.ts';
 import { useDisplayRule } from '../../hooks/useDisplayRule.ts';
+import { normalizeLayoutDirection } from '../../utils/workflowLayout.ts';
 import { FieldResolver } from './FieldResolver.tsx';
 import { TriggerConfig } from './TriggerConfig.tsx';
 import { InfoTooltip } from './fields/InfoTooltip.tsx';
@@ -63,7 +64,7 @@ export function ParameterPanel() {
   const layoutDirection = styleSettings.layoutDirection;
 
   const handleLayoutChange = (value: string | null) => {
-    setStyleSettings({ ...styleSettings, layoutDirection: (value as 'vertical' | 'horizontal') ?? 'vertical' });
+    setStyleSettings({ ...styleSettings, layoutDirection: normalizeLayoutDirection(value) });
   };
 
   // P3 #26：从 store 读取最新状态，使回调引用稳定，避免 selectedNode 每次渲染变化导致的非必要重渲染。
