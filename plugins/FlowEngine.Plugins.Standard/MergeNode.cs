@@ -83,10 +83,15 @@ public sealed class MergeNode : NodeBase
             var item2 = i < batch2.Items.Count ? batch2.Items[i] : null;
 
             var merged = MergeJsonNodes(item1?.Data, item2?.Data);
+            // Propagate the source items' status: a merged item is only successful when
+            // every contributing source succeeded; otherwise carry through the source Error.
+            var success = (item1?.Success ?? true) && (item2?.Success ?? true);
+            var error = item1?.Success == false ? item1.Error : item2?.Error;
             items.Add(new DataItem
             {
                 Data = merged,
-                Success = true,
+                Success = success,
+                Error = error,
                 SourceIndex = i
             });
         }
@@ -113,10 +118,15 @@ public sealed class MergeNode : NodeBase
             if (item2 is not null)
             {
                 var merged = MergeJsonNodes(item1.Data, item2.Data);
+                // Propagate status from the source items; if either side failed, the merged
+                // result is unreliable, so mark it failed and carry through the source Error.
+                var success = item1.Success && (item2?.Success ?? true);
+                var error = item1.Success ? item2?.Error : item1.Error;
                 items.Add(new DataItem
                 {
                     Data = merged,
-                    Success = true,
+                    Success = success,
+                    Error = error,
                     SourceIndex = item1.SourceIndex
                 });
             }
@@ -159,10 +169,15 @@ public sealed class MergeNode : NodeBase
             foreach (var item2 in batch2.Items)
             {
                 var merged = MergeJsonNodes(item1.Data, item2.Data);
+                // Both contributors must succeed for the product to be valid; otherwise
+                // carry through the failing source's Error.
+                var success = item1.Success && item2.Success;
+                var error = item1.Success ? item2.Error : item1.Error;
                 items.Add(new DataItem
                 {
                     Data = merged,
-                    Success = true,
+                    Success = success,
+                    Error = error,
                     SourceIndex = items.Count
                 });
             }
