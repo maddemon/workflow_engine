@@ -85,4 +85,59 @@ describe('CredentialField', () => {
       expect(mockedCreateCredential).toHaveBeenCalledWith(expect.objectContaining({ name: 'Staging', type: 'apiKey' }));
     });
   });
+
+  it('disables create button while in-flight, bumps revision and closes modal on success', async () => {
+    mockedGetCredentials.mockResolvedValue([]);
+    let resolveCreate!: () => void;
+    mockedCreateCredential.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveCreate = () => resolve({ id: 'c3' } as unknown as CredentialDto);
+        }),
+    );
+    const onChange = vi.fn();
+    const bumpSpy = vi.spyOn(useWorkflowStore.getState(), 'bumpCredentialRevision');
+
+    renderWithProvider(
+      <CredentialField
+        definition={{ name: 'credential', displayName: 'Credential', type: 'Credential', defaultValue: '', required: false, validationRules: [], displayRule: null, credentialType: null, options: [] }}
+        value=""
+        onChange={onChange}
+      />,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /new/i })).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /new/i }));
+    await waitFor(() => {
+      expect(screen.getByLabelText(/name/i)).toBeDefined();
+    });
+
+    fireEvent.change(screen.getByLabelText(/name/i), { target: { value: 'Dev Key' } });
+
+    const createBtn = screen.getByRole('button', { name: /^create$/i });
+    fireEvent.click(createBtn);
+
+    // 请求进行中：创建按钮应被禁用（manual useRequest 的 loading 态）
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /^create$/i })).toBeDisabled();
+    });
+
+    resolveCreate();
+
+    await waitFor(() => {
+      expect(mockedCreateCredential).toHaveBeenCalledWith(
+        expect.objectContaining({ name: 'Dev Key', type: 'apiKey', fields: {} }),
+      );
+    });
+    await waitFor(() => {
+      expect(bumpSpy).toHaveBeenCalled();
+    });
+    // 成功后弹窗关闭（name 输入框不再渲染）
+    await waitFor(() => {
+      expect(screen.queryByLabelText(/name/i)).toBeNull();
+    });
+  });
 });
