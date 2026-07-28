@@ -16,22 +16,19 @@ globs: "*"
 
 ## 2. AI 协作流程
 
-1. **读规矩**：先读 `AGENTS.md`，再读本文件，然后按任务方向读前端/后端代码规范和文档规范。
-2. **读计划**：查看 `docs/plans/` 中当前模块的开发计划。
-3. **建任务文档**：多步骤任务先在 `docs/plans/` 或 `docs/chats/` 创建 `task-xxx-*.md`。
-4. **实施**：按计划和规范写代码。
-5. **编译验证**：后端 `dotnet build`，前端 `npm run build` / `npm run typecheck`，修复所有报错。
-6. **Code Review**：发起 SubAgent Code Review，以任务文档和计划文档为依据。
-7. **收尾**：更新任务文档，标记完成状态。
+1. **读规矩**：先读 `AGENTS.md`，再读本文件，然后按任务方向读前端/后端代码规范。
+2. **查 wiki**：需要背景知识时阅读 `wiki/`（架构、操作指南、终端用户手册），以代码为准、不臆测。
+3. **实施**：按规范和 `wiki/how-to/` 中的指南写代码。
+4. **编译验证**：后端 `dotnet build`，前端 `npm run build` / `npm run typecheck`，修复所有报错。
+5. **Code Review**：发起 SubAgent Code Review，以本仓库规范为依据。
+6. **收尾**：如改动涉及架构或用法，同步更新 `wiki/` 对应页面。
 
 ## 3. 硬性约束
 
 | 约束 | 说明 |
 |------|------|
 | 代码规范优先 | 后端代码遵循 `backend-code-rules.md`，前端代码遵循 `frontend-code-rules.md`。 |
-| 文档规范优先 | 计划文档、任务文档遵循 `docs-rules.md`。 |
-| 设计先于实施 | 模块开发前必须有 `docs/plans/plan-xxx-*.md`，并经过 Code Review。 |
-| 任务文档先行 | 多步骤任务必须有 `task-xxx-*.md`。 |
+| 文档以代码为准 | `wiki/` 下的架构与指南须与实际代码一致；发现文档与代码不符时以代码为准并更新文档。 |
 | 编译/构建必须通过 | 任何代码修改后必须修复所有编译错误。 |
 | 先写测试再写实现 | 新增功能先写非法输入/异常复现用例，再写实现至用例通过。 |
 | 不主动创建无关文件 | 不主动创建 README、空项目、示例代码、未明确需要的配置或文档。 |
@@ -96,13 +93,17 @@ globs: "*"
 | 项目总规则 | `.agents/rules/project-rules.md` |
 | 后端代码规范 | `.agents/rules/backend-code-rules.md` |
 | 前端代码规范 | `.agents/rules/frontend-code-rules.md` |
-| 文档规范与开发计划实施 | `.agents/rules/docs-rules.md` |
 
-## 8. 文档目录索引
+## 8. 文档目录索引（wiki）
+
+系统文档统一放在 `wiki/`，从代码编写、以代码为准：
 
 | 文档类型 | 目录 |
 |----------|------|
-| 开发计划 | `docs/plans/plan-xxx-*.md` |
-| 任务记录 | `docs/plans/task-xxx-*.md` 或 `docs/chats/task-xxx-*.md` |
-| 架构概念 | `docs/architecture/*.md`（待拆分） |
-| 开发指南 | `docs/guides/*.md`（待补充） |
+| wiki 首页与索引 | `wiki/README.md` |
+| 核心概念 | `wiki/concepts/*.md` |
+| 架构 | `wiki/architecture/*.md` |
+| 开发者操作指南 | `wiki/how-to/*.md` |
+| 部署与运维 | `wiki/deployment/*.md` |
+| 参考 | `wiki/reference/*.md` |
+| 终端用户手册 | `wiki/user-guide/*.md` |
