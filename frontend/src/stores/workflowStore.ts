@@ -138,7 +138,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
         set({ workflowId: created.id, workflowVersion: created.version });
       }
       set({ isDirty: false });
-      useCanvasStore.setState({ validationErrors: {} });
+      useCanvasStore.setState({ isDirty: false, validationErrors: {} });
       return true;
     } catch (err) {
       console.error('Failed to save workflow:', err);

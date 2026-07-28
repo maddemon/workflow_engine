@@ -6,6 +6,7 @@ import { useShallow } from 'zustand/shallow';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
 import { useCanvasStore } from '../Canvas/stores/canvasStore.ts';
 import { useDisplayRule } from '../../hooks/useDisplayRule.ts';
+import { useIsDirty } from '../../hooks/useIsDirty.ts';
 import { normalizeLayoutDirection } from '../../utils/workflowLayout.ts';
 import { FieldResolver } from './FieldResolver.tsx';
 import { TriggerConfig } from './TriggerConfig.tsx';
@@ -54,7 +55,7 @@ export function ParameterPanel() {
   const nodeCount = useCanvasStore((s) => s.nodes.length);
   const workflowName = useWorkflowStore((s) => s.workflowName);
   const setWorkflowName = useWorkflowStore((s) => s.setWorkflowName);
-  const isDirty = useWorkflowStore((s) => s.isDirty);
+  const isDirty = useIsDirty();
   const workflowId = useWorkflowStore((s) => s.workflowId ?? '');
   const projectId = useWorkflowStore((s) => s.projectId);
   const [settingsOpen, setSettingsOpen] = useState(false);
