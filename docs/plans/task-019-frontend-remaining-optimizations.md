@@ -39,10 +39,10 @@
 - [ ] 更新本任务文档「完成状态」。
 
 ## 完成状态
-- [ ] F6（需后端先合并轻量版本接口）
-- [ ] F7（纯前端，后端已分页）
-- [ ] F8（运行时收尾，纯前端）
-- [ ] Minor: CredentialField 直调整改（纯前端）
+- [x] F6（后端新增轻量版本接口 `GET /api/v1/workflows/{id}/version` + 前端轮询改调）
+- [x] F7（纯前端：日期预格式化 + 客户端分页；修复后分页在生产中真实生效）
+- [x] F8（运行时收尾：移除 canvasStore→workflowStore 静态导入，画布脏标记本地化，useIsDirty 组合 hook）
+- [x] Minor: CredentialField 直调整改 useRequest(manual)
 
 ## 前后端对齐调研
 
@@ -108,8 +108,15 @@ GET /api/v1/workflows/{id:guid}/version
 3. 若后端接口尚未就绪，F7/F8/Minor 可先行（均不依赖后端），F6 前端侧留好切换点。
 
 ## 主要修改记录
-- 调研结论：F6 需后端新增 `GET /api/v1/workflows/{id}/version`（additive，非破坏）；F7 后端已分页，纯前端；F8/Minor 纯前端。（见「前后端对齐调研」）
+- T1 F6-backend：新增 `GET /api/v1/workflows/{id}/version`（WorkflowVersionDto + Service + Controller），additive 非破坏。commit 7aa2d5d。
+- T2 F6-frontend：useWorkflowVersionPolling 改调 getWorkflowVersion，新增 WorkflowVersion 类型与 api 函数。commit a2378f7。
+- T3 F7：日期 useMemo 预格式化 + 客户端分页（PAGE_SIZE=20，Mantine Pagination）。commit 084eb99。
+- T4 F8：移除 canvasStore 对 workflowStore 的静态导入，画布 isDirty 本地化，新增 useIsDirty 组合 hook，保存时清空两侧脏标记。commit bc7e9cb。
+- T5 Minor：CredentialField 创建改为 useRequest(createCredential, { manual: true })，保留 bumpCredentialRevision 与错误通知。commit 4d7f363。
+- F7 修复：getWorkflows 默认 pageSize=200 使客户端分页在 ≤200 时生效；数据集缩小重置到第 1 页；去除冗余 guard。还原被误删的 api.test.ts，新增独立 api.getWorkflows.test.ts。commit b559e80。
+- 最终整体评审：首轮 With fixes（F7 分页死代码），修复后复审 Approved，Ready to merge。
 
 ## 说明
-- 本任务与 `fix/frontend-task-018` 解耦：018 已合并不影响本任务；本任务另开分支实施。
-- F6 需后端先行立项轻量版本接口，但该接口为 additive，不阻塞现有前端运行。
+- 本任务与 `fix/frontend-task-018` 解耦；在 `fix/task-019-remaining-optimizations` 分支实施，已合并至 main（见提交历史）。
+- F6 后端接口为 additive，不破坏现有契约；前端 F6 依赖该接口。
+- 已知前置问题（非本任务引入）：`npm run build`（`tsc -b`）在 main 即存在无关 test 文件类型错误，建议另立清理 task；本任务改动文件均类型干净、vitest 全过。
