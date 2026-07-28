@@ -143,10 +143,11 @@ public class ShellToolNodeTests
     [Fact]
     public async Task Execute_RunInShellTrue_WithPermission_Executes()
     {
+        // 跨平台：Windows 用 cmd，其余平台用 bash（echo 均为 shell 内置命令，验证 RunInShell 真实执行）。
         var node = new ShellToolNode
         {
             Command = (Script)"'echo SECURITY_OK'",
-            Shell = ShellType.Cmd,
+            Shell = OperatingSystem.IsWindows() ? ShellType.Cmd : ShellType.Bash,
             RunInShell = true
         };
         var context = CreateContext(new JsonObject());
