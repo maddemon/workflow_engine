@@ -8,10 +8,6 @@ import { useCanvasStore } from '../components/Canvas/stores/canvasStore.ts';
 import { notifications } from '@mantine/notifications';
 import i18n from '../i18n.ts';
 
-// 画布相关类型（WorkflowNode/WorkflowEdge/WorkflowNodeData）定义在 canvasStore，
-// 此处重新导出以保持既有导入路径兼容。
-export type { WorkflowNode, WorkflowEdge, WorkflowNodeData } from '../components/Canvas/stores/canvasStore.ts';
-
 interface WorkflowState {
   workflowId: string | null;
   projectId: string | null;
@@ -123,13 +119,14 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
     set({ saving: true });
     try {
       if (workflowId) {
-        await api.updateWorkflow(workflowId, {
+        const updated = await api.updateWorkflow(workflowId, {
           name: workflowName,
           isActive,
           styleSettings,
           nodes: nodeDefinitions,
           connections,
         });
+        set({ workflowVersion: updated.version });
       } else {
         const created = await api.createWorkflow({
           name: workflowName || 'Untitled Workflow',
@@ -138,7 +135,7 @@ export const useWorkflowStore = create<WorkflowState>((set, get) => ({
           nodes: nodeDefinitions,
           connections,
         });
-        set({ workflowId: created.id });
+        set({ workflowId: created.id, workflowVersion: created.version });
       }
       set({ isDirty: false });
       useCanvasStore.setState({ validationErrors: {} });

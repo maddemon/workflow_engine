@@ -1,5 +1,5 @@
-import { useState, useRef, useMemo } from 'react';
-import { Group, Text, ActionIcon, Tooltip } from '@mantine/core';
+import { useRef, useMemo } from 'react';
+import { Group, Text, ActionIcon, Tooltip, Box } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import { Upload, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -22,8 +22,26 @@ export function FileField({ definition, value, onChange, error, projectId }: Fil
   const { t } = useTranslation('parameterPanel');
   const paramName = useParameterName();
   const label = paramName(definition.name, definition.displayName);
-  const [uploading, setUploading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const { run: runUpload, loading: uploading } = useRequest(
+    async (file: File, pid: string) => await uploadFile(file, pid),
+    {
+      manual: true,
+      onSuccess: (result, params) => {
+        const file = params[0] as File;
+        onChange(result.id); // save the file ID
+        notifications.show({ title: t('fields.file.uploaded'), message: t('fields.file.uploadedMessage', { name: file.name }), color: 'green' });
+      },
+      onError: (err) => {
+        notifications.show({
+          title: t('fields.file.uploadFailed'),
+          message: err instanceof Error ? err.message : t('fields.file.uploadFailed'),
+          color: 'red',
+        });
+      },
+    },
+  );
 
   const handleFileSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -32,19 +50,12 @@ export function FileField({ definition, value, onChange, error, projectId }: Fil
       notifications.show({ title: t('fields.file.uploadError'), message: t('fields.file.uploadError'), color: 'yellow' });
       return;
     }
-    setUploading(true);
     try {
-      const result = await uploadFile(file, projectId);
-      onChange(result.id); // save the file ID
-      notifications.show({ title: t('fields.file.uploaded'), message: t('fields.file.uploadedMessage', { name: file.name }), color: 'green' });
-    } catch (err) {
-      notifications.show({
-        title: t('fields.file.uploadFailed'),
-        message: err instanceof Error ? err.message : t('fields.file.uploadFailed'),
-        color: 'red',
-      });
+      await runUpload(file, projectId);
+    } catch {
+      // 上传失败已由 useRequest 的 onError 以通知形式呈现给用户，此处仅吞掉
+      // run 返回的 rejected promise，避免未处理的 rejection。
     } finally {
-      setUploading(false);
       if (inputRef.current) inputRef.current.value = '';
     }
   };
@@ -67,7 +78,7 @@ export function FileField({ definition, value, onChange, error, projectId }: Fil
   }, [strVal, projectFiles]);
 
   return (
-    <div>
+    <Box>
       <Group gap={4} mb={4}>
         <Text size="xs" fw={400}>
           {label}
@@ -109,6 +120,6 @@ export function FileField({ definition, value, onChange, error, projectId }: Fil
       {error && (
         <Text size="xs" c="red" mt={4}>{error}</Text>
       )}
-    </div>
+    </Box>
   );
 }

@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { Stack, TextInput, Text, Badge, Group, ScrollArea, Switch, Select, Collapse, UnstyledButton, Divider, NumberInput } from '@mantine/core';
+import { Stack, TextInput, Text, Badge, Group, ScrollArea, Switch, Select, Collapse, UnstyledButton, Divider, NumberInput, Box } from '@mantine/core';
 import { ChevronRight, ChevronDown } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useShallow } from 'zustand/shallow';
@@ -177,7 +177,7 @@ export function ParameterPanel() {
       {/* 参数列表 */}
       <ScrollArea style={{ flex: 1, position: 'relative' }} offsetScrollbars>
         {isExecuting && (
-          <div
+          <Box
             style={{
               position: 'absolute', inset: 0, zIndex: 10,
               background: 'var(--mantine-color-body)',

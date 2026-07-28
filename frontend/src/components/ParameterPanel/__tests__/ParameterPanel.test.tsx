@@ -5,7 +5,7 @@ import { ParameterPanel } from '../ParameterPanel.tsx';
 import { useWorkflowStore } from '../../../stores/workflowStore.ts';
 import { useCanvasStore } from '../../Canvas/stores/canvasStore.ts';
 import type { NodeTypeDescriptor, ParameterDefinition } from '../../../types/workflow.ts';
-import type { WorkflowNode } from '../../Canvas/stores/canvasStore.ts';
+import type { WorkflowNode } from '../../../types/canvas.ts';
 
 vi.mock('../TriggerConfig.tsx', () => ({
   TriggerConfig: () => <div data-testid="trigger-config">TriggerConfig</div>,

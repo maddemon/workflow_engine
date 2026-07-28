@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { useWorkflowStore } from '../workflowStore.ts';
 import { useCanvasStore } from '../../components/Canvas/stores/canvasStore.ts';
 import type { NodeTypeDescriptor, Workflow } from '../../types/workflow.ts';
-import type { WorkflowNode } from '../../components/Canvas/stores/canvasStore.ts';
+import type { WorkflowNode } from '../../types/canvas.ts';
 import * as api from '../../services/api.ts';
 import * as serializer from '../../utils/workflowSerializer.ts';
 import { notifications } from '@mantine/notifications';
@@ -207,12 +207,43 @@ describe('workflowStore', () => {
       useWorkflowStore.getState().setWorkflowName('Updated');
       useCanvasStore.getState().setNodes([makeNode('n1')]);
       mockedSerializer.serializeWorkflow.mockReturnValue({ nodeDefinitions: [], connections: [] });
-      mockedApi.updateWorkflow.mockResolvedValue({ id: 'w1' } as unknown as Workflow);
+      mockedApi.updateWorkflow.mockResolvedValue({ id: 'w1', version: 5 } as unknown as Workflow);
 
       const result = await useWorkflowStore.getState().saveWorkflow();
 
       expect(result).toBe(true);
       expect(mockedApi.updateWorkflow).toHaveBeenCalled();
+      expect(useWorkflowStore.getState().isDirty).toBe(false);
+    });
+
+    it('updates workflowVersion after update save', async () => {
+      useWorkflowStore.setState({ workflowId: 'w1', workflowVersion: 1 });
+      useWorkflowStore.getState().setWorkflowName('Updated');
+      useCanvasStore.getState().setNodes([makeNode('n1')]);
+      mockedSerializer.serializeWorkflow.mockReturnValue({ nodeDefinitions: [], connections: [] });
+      mockedApi.updateWorkflow.mockResolvedValue({ id: 'w1', version: 5 } as unknown as Workflow);
+
+      const result = await useWorkflowStore.getState().saveWorkflow();
+
+      expect(result).toBe(true);
+      expect(mockedApi.updateWorkflow).toHaveBeenCalled();
+      expect(useWorkflowStore.getState().workflowVersion).toBe(5);
+      expect(useWorkflowStore.getState().isDirty).toBe(false);
+    });
+
+    it('updates workflowId and workflowVersion after create save', async () => {
+      useWorkflowStore.setState({ workflowId: null, workflowVersion: 1 });
+      useWorkflowStore.getState().setWorkflowName('New');
+      useCanvasStore.getState().setNodes([makeNode('n1')]);
+      mockedSerializer.serializeWorkflow.mockReturnValue({ nodeDefinitions: [], connections: [] });
+      mockedApi.createWorkflow.mockResolvedValue({ id: 'w2', version: 3 } as unknown as Workflow);
+
+      const result = await useWorkflowStore.getState().saveWorkflow();
+
+      expect(result).toBe(true);
+      expect(mockedApi.createWorkflow).toHaveBeenCalled();
+      expect(useWorkflowStore.getState().workflowId).toBe('w2');
+      expect(useWorkflowStore.getState().workflowVersion).toBe(3);
       expect(useWorkflowStore.getState().isDirty).toBe(false);
     });
 

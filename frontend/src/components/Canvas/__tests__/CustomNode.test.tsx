@@ -1,12 +1,21 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { screen } from '@testing-library/react';
+import { screen, render } from '@testing-library/react';
+import { MantineProvider } from '@mantine/core';
 import { ReactFlowProvider } from '@xyflow/react';
 import { renderWithProvider } from '../../../test-utils.tsx';
 import { WorkflowCanvas } from '../WorkflowCanvas.tsx';
 import { useWorkflowStore } from '../../../stores/workflowStore.ts';
 import { useCanvasStore } from '../stores/canvasStore.ts';
 import type { NodeTypeDescriptor, PortDefinition } from '../../../types/workflow.ts';
-import type { WorkflowNode } from '../stores/canvasStore.ts';
+import type { WorkflowNode } from '../../types/canvas.ts';
+import { CustomNode, portLayouts } from '../CustomNode.tsx';
+import { ConnectedHandlesContext } from '../connectedHandlesContext.ts';
+
+// Spy on portLayouts.computePortLayouts so we can assert how many times the (expensive)
+// layout computation runs across re-renders. The function is exported on the `portLayouts`
+// object so the internal call site in the `layouts` memo is observable without altering the
+// function's body or the memo's dependency list.
+vi.spyOn(portLayouts, 'computePortLayouts');
 
 const descriptor: NodeTypeDescriptor = {
   typeName: 'custom',
@@ -46,6 +55,32 @@ function renderWithNodes(nodes: WorkflowNode[]) {
       <WorkflowCanvas onExecute={vi.fn()} />
     </ReactFlowProvider>,
   );
+}
+
+// Render CustomNode directly (unit) so re-render control is deterministic. The providers
+// (Mantine / ReactFlow / ConnectedHandles) live in the wrapper and stay mounted across
+// rerenders, so changing a prop (e.g. `selected`) forces a real CustomNode re-render
+// without remounting the component tree.
+function customNodeElement(node: WorkflowNode, selected: boolean) {
+  return (
+    <ReactFlowProvider>
+      <ConnectedHandlesContext.Provider value={{}}>
+        <CustomNode id={node.id} data={node.data} selected={selected} />
+      </ConnectedHandlesContext.Provider>
+    </ReactFlowProvider>
+  );
+}
+
+function renderCustomNode(node: WorkflowNode, selected: boolean) {
+  return render(customNodeElement(node, selected), {
+    wrapper: ({ children }) => (
+      <MantineProvider>
+        <ReactFlowProvider>
+          <ConnectedHandlesContext.Provider value={{}}>{children}</ConnectedHandlesContext.Provider>
+        </ReactFlowProvider>
+      </MantineProvider>
+    ),
+  });
 }
 
 describe('CustomNode', () => {
@@ -145,5 +180,112 @@ describe('CustomNode', () => {
     ]);
 
     expect(await screen.findByText('Node n1')).toBeInTheDocument();
+  });
+
+  // Switch-like descriptor: has a `default` Output port (dynamic-port marker) plus an
+  // Array parameter with a `name` field, so computeDynamicPorts generates one Output
+  // port per case item.
+  const switchDescriptor: NodeTypeDescriptor = {
+    typeName: 'switch',
+    displayName: 'Switch',
+    category: 'Logic',
+    categoryKey: 'logic',
+    icon: '',
+    executionMode: 'Sync',
+    parameters: [
+      {
+        name: 'cases',
+        displayName: 'Cases',
+        type: 'Array',
+        required: false,
+        validationRules: [],
+        itemDefinition: {
+          fields: [
+            { name: 'name', displayName: 'Name', type: 'String', required: false },
+            { name: 'label', displayName: 'Label', type: 'String', required: false },
+          ],
+        },
+      },
+    ],
+    ports: [
+      { name: 'in', displayName: 'In', direction: 'Input', type: 'Main', required: false },
+      { name: 'default', displayName: 'Default', direction: 'Output', type: 'Main', required: false },
+    ],
+    defaultIsEntry: false,
+  };
+
+  function makeSwitchNode(id: string, cases: { name: string; label: string }[]): WorkflowNode {
+    return makeNode(id, switchDescriptor.ports, {
+      descriptor: { ...switchDescriptor },
+      parameters: { value: 'abc', cases },
+      isEntry: false,
+    });
+  }
+
+  // Correctness regression for the memo refactor: a Switch node with dynamic ports must
+  // still render one output handle per case (plus the static `default` output) and its
+  // single input handle. This proves the layout computation continues to consume
+  // computeDynamicPorts correctly after the filter memoization change.
+  it('renders_switch_node_dynamic_case_output_ports', async () => {
+    const { container } = renderWithNodes([
+      makeSwitchNode('s1', [
+        { name: 'caseA', label: 'A' },
+        { name: 'caseB', label: 'B' },
+      ]),
+    ]);
+
+    expect(await screen.findByText('Node s1')).toBeInTheDocument();
+
+    // Output handles: caseA, caseB, default => 3
+    const outputHandles = container.querySelectorAll('.port-output');
+    expect(outputHandles.length).toBe(3);
+
+    // Input handle: in => 1
+    const inputHandles = container.querySelectorAll('.port-input');
+    expect(inputHandles.length).toBe(1);
+  });
+
+  // Memo regression (the real win of the F5 fix): the `layouts` useMemo depends on
+  // `inputPorts`/`outputPorts`. Before the fix those arrays were rebuilt every render via
+  // `.filter()`, breaking the memo dependency identity so `computePortLayouts` recomputed
+  // on every re-render. After the fix they are memoized on `[ports]`, so a re-render with
+  // UNCHANGED data/ports must NOT recompute the layout. We force a genuine re-render by
+  // flipping `selected` (a prop, not data) and assert computePortLayouts is still called
+  // exactly once.
+  it('computePortLayouts_called_once_on_rerender_with_unchanged_ports', async () => {
+    const node = makeSwitchNode('s1', [
+      { name: 'caseA', label: 'A' },
+      { name: 'caseB', label: 'B' },
+    ]);
+
+    const { rerender } = renderCustomNode(node, false);
+    expect(await screen.findByText('Node s1')).toBeInTheDocument();
+    expect(vi.mocked(portLayouts.computePortLayouts).mock.calls.length).toBe(1);
+
+    // Re-render with identical data/ports (same reference) but a changed `selected` prop,
+    // which forces CustomNode (memo) to re-render.
+    rerender(customNodeElement(node, true));
+    expect(await screen.findByText('Node s1')).toBeInTheDocument();
+    expect(vi.mocked(portLayouts.computePortLayouts).mock.calls.length).toBe(1);
+  });
+
+  // Guard against the opposite regression: when the dynamic ports actually CHANGE (a
+  // Switch switching from one case to two cases), computePortLayouts MUST recompute. This
+  // ensures the memo is keyed on the right dependencies and not over-memoized.
+  it('computePortLayouts_called_again_when_ports_change', async () => {
+    const oneCase = makeSwitchNode('s1', [{ name: 'caseA', label: 'A' }]);
+    const twoCases = makeSwitchNode('s2', [
+      { name: 'caseA', label: 'A' },
+      { name: 'caseB', label: 'B' },
+    ]);
+
+    const { rerender } = renderCustomNode(oneCase, false);
+    expect(await screen.findByText('Node s1')).toBeInTheDocument();
+    const callsAfterFirstRender = vi.mocked(portLayouts.computePortLayouts).mock.calls.length;
+
+    // Ports change (one case -> two cases): the layout must recompute.
+    rerender(customNodeElement(twoCases, false));
+    expect(await screen.findByText('Node s2')).toBeInTheDocument();
+    expect(vi.mocked(portLayouts.computePortLayouts).mock.calls.length).toBeGreaterThan(callsAfterFirstRender);
   });
 });

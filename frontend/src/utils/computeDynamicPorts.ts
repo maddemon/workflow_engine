@@ -1,5 +1,5 @@
 import type { PortDefinition } from '../types/workflow.ts';
-import type { WorkflowNode } from '../stores/workflowStore.ts';
+import type { WorkflowNode } from '../types/canvas.ts';
 
 /**
  * 对拥有动态端口的节点（如 Switch），根据当前参数值重新计算端口列表。

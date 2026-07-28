@@ -294,6 +294,19 @@ export interface CredentialTypeDefinition {
   fields: CredentialFieldDefinition[];
 }
 
+/**
+ * 默认凭据类型选项兜底列表。
+ * 单一来源：后端 CredentialTypeRegistry 内置类型恰好为 apiKey / database / basicAuth / oauth2。
+ * `connectionString` 是 `database` 类型内部的一个字段名，并非凭据类型，故不得作为默认选项。
+ * 当后端 getCredentialTypes 不可用（请求失败/为空）时回退到此常量。
+ */
+export const defaultCredentialTypeOptions: CredentialTypeDefinition[] = [
+  { name: 'apiKey', displayName: 'API Key', fields: [] },
+  { name: 'database', displayName: 'Database', fields: [] },
+  { name: 'basicAuth', displayName: 'Basic Auth', fields: [] },
+  { name: 'oauth2', displayName: 'OAuth2', fields: [] },
+];
+
 export interface DryRunRequest {
   nodes: NodeDefinition[];
   connections: Connection[];

@@ -55,9 +55,12 @@ export function useWorkflowVersionPolling(workflowId: string | null): UseWorkflo
   }, [workflowId, reviewMode, isExecuting]);
 
   const dismiss = useCallback(() => {
+    // 推进基线版本到被忽略的版本，避免下一轮轮询用同一高版本重复提示。
+    // 注意：dismiss 不是保存，不更新全局 store 的 workflowVersion。
+    latestVersionRef.current = newVersion ?? latestVersionRef.current;
     setChanged(false);
     setNewVersion(null);
-  }, []);
+  }, [newVersion]);
 
   return { changed, newVersion, dismiss };
 }

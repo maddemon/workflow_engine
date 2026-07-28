@@ -28,10 +28,15 @@ export function useWebSocketConnection(options: UseWebSocketConnectionOptions) {
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const connectFnRef = useRef<() => void>(() => {});
+  // 标记本次关闭是否为主动关闭（如组件卸载），用于阻止 onclose 之后的自动重连。
+  const manualCloseRef = useRef(false);
   const maxReconnectAttempts = 5;
   const reconnectInterval = 2000;
 
   const doConnect = useCallback(() => {
+    // 清除主动关闭标记：意外断线重新进入连接流程时，应允许后续的重连调度。
+    manualCloseRef.current = false;
+
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       return;
     }
@@ -67,6 +72,12 @@ export function useWebSocketConnection(options: UseWebSocketConnectionOptions) {
       setStatus('disconnected');
       wsRef.current = null;
 
+      // 主动关闭（closeConnection）后浏览器仍会异步触发 onclose，
+      // 此处需跳过自动重连，仅将状态置为 disconnected。
+      if (manualCloseRef.current) {
+        return;
+      }
+
       if (reconnectAttemptsRef.current < maxReconnectAttempts) {
         reconnectTimeoutRef.current = setTimeout(() => {
           reconnectAttemptsRef.current++;
@@ -95,6 +106,9 @@ export function useWebSocketConnection(options: UseWebSocketConnectionOptions) {
   }, [doConnect]);
 
   const closeConnection = useCallback(() => {
+    // 标记为主动关闭，避免浏览器异步触发的 onclose 再次发起重连。
+    manualCloseRef.current = true;
+
     if (reconnectTimeoutRef.current) {
       clearTimeout(reconnectTimeoutRef.current);
       reconnectTimeoutRef.current = null;

@@ -6,8 +6,9 @@ import type {
   NodeTypeDescriptor,
   PortDefinition,
 } from '../types/workflow.ts';
-import type { WorkflowNodeData, WorkflowNode } from '../stores/workflowStore.ts';
+import type { WorkflowNodeData, WorkflowNode } from '../types/canvas.ts';
 import { encodeHandleId, decodeHandleId } from './handleId.ts';
+import { computeDynamicPorts } from './computeDynamicPorts.ts';
 
 export function serializeWorkflow(
   nodes: WorkflowNode[],
@@ -16,12 +17,14 @@ export function serializeWorkflow(
 ): { nodeDefinitions: NodeDefinition[]; connections: Connection[] } {
   const nodeDefinitions: NodeDefinition[] = nodes.map((node) => {
     const data = node.data as WorkflowNodeData;
+    // 使用完整动态端口集（含 Switch 等节点的运行时分支端口），避免分支连线在保存时丢失。
+    const ports = computeDynamicPorts(data);
     return {
       id: node.id,
       typeName: data.typeName,
       name: data.name,
       parameters: data.parameters,
-      ports: data.descriptor.ports,
+      ports,
       positionX: Math.round(node.position.x),
       positionY: Math.round(node.position.y),
       isEntry: data.isEntry,
@@ -32,14 +35,14 @@ export function serializeWorkflow(
     };
   });
 
-  // 构建节点端口索引，用于保存时清理无效连接
+  // 构建节点端口索引，用于保存时清理无效连接。复用上方已计算的完整动态端口集，确保动态分支连线不被误过滤。
   const nodePortMap = new Map<string, Set<string>>();
-  for (const node of nodes) {
+  for (const def of nodeDefinitions) {
     const ports = new Set<string>();
-    for (const port of node.data.descriptor.ports) {
+    for (const port of def.ports) {
       ports.add(port.name);
     }
-    nodePortMap.set(node.id, ports);
+    nodePortMap.set(def.id, ports);
   }
 
   const connections: Connection[] = edges

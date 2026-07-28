@@ -2,7 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { serializeWorkflow, deserializeWorkflow } from '../workflowSerializer.ts';
 import type { Edge } from '@xyflow/react';
 import type { Workflow, NodeTypeDescriptor } from '../../types/workflow.ts';
-import type { WorkflowNode } from '../../stores/workflowStore.ts';
+import type { WorkflowNode } from '../../types/canvas.ts';
+import { encodeHandleId } from '../handleId.ts';
 
 function makeNodeType(typeName: string, portNames: { name: string; direction: 'Input' | 'Output' }[]): NodeTypeDescriptor {
   return {
@@ -345,6 +346,127 @@ describe('workflowSerializer', () => {
       expect(result.edges[1].targetHandle).toBe('port-Input%202');
       expect(result.edges[0].targetHandle).not.toContain(' ');
       expect(result.edges[1].targetHandle).not.toContain(' ');
+    });
+  });
+
+  describe('serializeWorkflow - dynamic ports (Switch)', () => {
+    function makeSwitchDescriptor(): NodeTypeDescriptor {
+      return {
+        typeName: 'Switch',
+        displayName: 'Switch',
+        category: 'Logic',
+        categoryKey: 'logic',
+        icon: '',
+        executionMode: 'Sync',
+        parameters: [
+          {
+            name: 'cases',
+            displayName: 'Cases',
+            type: 'Array',
+            defaultValue: null,
+            required: false,
+            validationRules: [],
+            displayRule: null,
+            credentialType: null,
+            options: [],
+            itemDefinition: {
+              name: 'case',
+              displayName: 'Case',
+              type: 'Object',
+              defaultValue: null,
+              required: false,
+              validationRules: [],
+              displayRule: null,
+              credentialType: null,
+              options: [],
+              fields: [
+                {
+                  name: 'name',
+                  displayName: 'Name',
+                  type: 'String',
+                  defaultValue: null,
+                  required: false,
+                  validationRules: [],
+                  displayRule: null,
+                  credentialType: null,
+                  options: [],
+                },
+                {
+                  name: 'label',
+                  displayName: 'Label',
+                  type: 'String',
+                  defaultValue: null,
+                  required: false,
+                  validationRules: [],
+                  displayRule: null,
+                  credentialType: null,
+                  options: [],
+                },
+              ],
+            },
+          },
+        ],
+        ports: [
+          { name: 'Input', displayName: 'Input', direction: 'Input', type: 'Main', required: false },
+          { name: 'default', displayName: 'Default', direction: 'Output', type: 'Main', required: false },
+        ],
+        defaultIsEntry: false,
+      };
+    }
+
+    function makeSwitchNode(id: string, cases: { name: string }[]): WorkflowNode {
+      const descriptor = makeSwitchDescriptor();
+      return {
+        id,
+        type: 'workflow',
+        position: { x: 0, y: 0 },
+        data: {
+          typeName: 'Switch',
+          name: id,
+          parameters: { cases },
+          isEntry: false,
+          descriptor,
+          errorStrategy: 'Terminate',
+          retryPolicy: null,
+          timeout: null,
+        },
+      };
+    }
+
+    it('includes dynamic case ports and keeps their branch connections', () => {
+      const sw = makeSwitchNode('sw1', [{ name: 'case_0' }, { name: 'case_1' }]);
+      const target = makeWorkflowNode('t1', 'HttpRequest', makeNodeType('HttpRequest', [
+        { name: 'Input', direction: 'Input' },
+        { name: 'Output', direction: 'Output' },
+      ]));
+      const nodes: WorkflowNode[] = [sw, target];
+      const edges: Edge[] = [
+        { id: 'e0', source: 'sw1', target: 't1', sourceHandle: encodeHandleId('case_0'), targetHandle: encodeHandleId('Input'), type: 'workflow' },
+        { id: 'e1', source: 'sw1', target: 't1', sourceHandle: encodeHandleId('case_1'), targetHandle: encodeHandleId('Input'), type: 'workflow' },
+      ];
+      const result = serializeWorkflow(nodes, edges, 'test');
+
+      const portNames = result.nodeDefinitions[0].ports.map((p) => p.name);
+      expect(portNames).toContain('case_0');
+      expect(portNames).toContain('case_1');
+
+      expect(result.connections).toHaveLength(2);
+      expect(result.connections.map((c) => c.sourcePortName ?? '').sort()).toEqual(['case_0', 'case_1']);
+    });
+
+    it('renames duplicate case names so serialized ports have no duplicates', () => {
+      const sw = makeSwitchNode('sw1', [{ name: 'dup' }, { name: 'dup' }]);
+      const target = makeWorkflowNode('t1', 'HttpRequest', makeNodeType('HttpRequest', [
+        { name: 'Input', direction: 'Input' },
+        { name: 'Output', direction: 'Output' },
+      ]));
+      const nodes: WorkflowNode[] = [sw, target];
+      const result = serializeWorkflow(nodes, [], 'test');
+
+      const outputPortNames = result.nodeDefinitions[0].ports
+        .map((p) => p.name)
+        .filter((n) => n !== 'Input' && n !== 'default');
+      expect(new Set(outputPortNames).size).toBe(outputPortNames.length);
     });
   });
 

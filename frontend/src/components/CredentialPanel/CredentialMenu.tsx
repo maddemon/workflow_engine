@@ -6,14 +6,8 @@ import { useTranslation } from 'react-i18next';
 import { useRequest } from 'ahooks';
 import { getCredentials, createCredential, deleteCredential, updateCredential, getCredentialTypes } from '../../services/api.ts';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
-import type { CredentialDto, CredentialTypeDefinition } from '../../types/workflow.ts';
-
-const defaultTypeOptions: CredentialTypeDefinition[] = [
-  { name: 'apiKey', displayName: 'API Key', fields: [] },
-  { name: 'oauth2', displayName: 'OAuth2', fields: [] },
-  { name: 'basicAuth', displayName: 'Basic Auth', fields: [] },
-  { name: 'connectionString', displayName: 'Connection String', fields: [] },
-];
+import type { CredentialDto } from '../../types/workflow.ts';
+import { defaultCredentialTypeOptions } from '../../types/workflow.ts';
 
 export function CredentialMenu() {
   const { t } = useTranslation(['credentialPanel', 'header']);
@@ -29,7 +23,69 @@ export function CredentialMenu() {
     { ready: opened },
   );
 
-  const { data: typeOptions = defaultTypeOptions } = useRequest(getCredentialTypes);
+  const { data: typeOptions = defaultCredentialTypeOptions } = useRequest(getCredentialTypes);
+
+  const { run: runCreate, loading: creating } = useRequest(
+    async (payload: { name: string; type: string; fields: Record<string, string> }) => {
+      await createCredential(payload);
+    },
+    {
+      manual: true,
+      onSuccess: async () => {
+        resetForm();
+        await refreshCredentials();
+        useWorkflowStore.getState().bumpCredentialRevision();
+      },
+      onError: (err) => {
+        notifications.show({
+          title: t('credentialPanel:error'),
+          message: err instanceof Error ? err.message : t('credentialPanel:createFailed'),
+          color: 'red',
+        });
+      },
+    },
+  );
+
+  const { run: runDelete } = useRequest(
+    async (id: string) => {
+      await deleteCredential(id);
+    },
+    {
+      manual: true,
+      onSuccess: async () => {
+        await refreshCredentials();
+        useWorkflowStore.getState().bumpCredentialRevision();
+      },
+      onError: (err) => {
+        notifications.show({
+          title: t('credentialPanel:error'),
+          message: err instanceof Error ? err.message : t('credentialPanel:deleteFailed'),
+          color: 'red',
+        });
+      },
+    },
+  );
+
+  const { run: runUpdate, loading: updating } = useRequest(
+    async (id: string, payload: { name: string; fields: Record<string, string> }) => {
+      await updateCredential(id, payload);
+    },
+    {
+      manual: true,
+      onSuccess: async () => {
+        resetForm();
+        await refreshCredentials();
+        useWorkflowStore.getState().bumpCredentialRevision();
+      },
+      onError: (err) => {
+        notifications.show({
+          title: t('credentialPanel:error'),
+          message: err instanceof Error ? err.message : t('credentialPanel:updateFailed'),
+          color: 'red',
+        });
+      },
+    },
+  );
 
   const resetForm = () => {
     setShowForm(false);
@@ -39,38 +95,17 @@ export function CredentialMenu() {
     setFormFields([{ id: crypto.randomUUID(), key: '', value: '' }]);
   };
 
-  const handleCreate = async () => {
+  const handleCreate = () => {
     const fields: Record<string, string> = {};
     for (const f of formFields) {
       if (f.key.trim()) fields[f.key.trim()] = f.value;
     }
-    try {
-      await createCredential({ name: formName, type: formType, fields });
-      resetForm();
-      await refreshCredentials();
-      useWorkflowStore.getState().bumpCredentialRevision();
-    } catch (err) {
-      notifications.show({
-        title: t('credentialPanel:error'),
-        message: err instanceof Error ? err.message : t('credentialPanel:createFailed'),
-        color: 'red',
-      });
-    }
+    runCreate({ name: formName, type: formType, fields });
   };
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = (id: string) => {
     if (!confirm(t('credentialPanel:deleteConfirm'))) return;
-    try {
-      await deleteCredential(id);
-      await refreshCredentials();
-      useWorkflowStore.getState().bumpCredentialRevision();
-    } catch (err) {
-      notifications.show({
-        title: t('credentialPanel:error'),
-        message: err instanceof Error ? err.message : t('credentialPanel:deleteFailed'),
-        color: 'red',
-      });
-    }
+    runDelete(id);
   };
 
   const handleEdit = (cred: CredentialDto) => {
@@ -82,24 +117,13 @@ export function CredentialMenu() {
     setShowForm(true);
   };
 
-  const handleUpdate = async () => {
+  const handleUpdate = () => {
     if (!editingId) return;
     const fields: Record<string, string> = {};
     for (const f of formFields) {
       if (f.key.trim()) fields[f.key.trim()] = f.value;
     }
-    try {
-      await updateCredential(editingId, { name: formName, fields });
-      resetForm();
-      await refreshCredentials();
-      useWorkflowStore.getState().bumpCredentialRevision();
-    } catch (err) {
-      notifications.show({
-        title: t('credentialPanel:error'),
-        message: err instanceof Error ? err.message : t('credentialPanel:updateFailed'),
-        color: 'red',
-      });
-    }
+    runUpdate(editingId, { name: formName, fields });
   };
 
   return (
@@ -182,7 +206,7 @@ export function CredentialMenu() {
               <Button variant="default" size="xs" onClick={resetForm}>
                 {t('credentialPanel:form.cancel')}
               </Button>
-              <Button size="xs" onClick={editingId ? handleUpdate : handleCreate}>
+              <Button size="xs" loading={creating || updating} onClick={editingId ? handleUpdate : handleCreate}>
                 {editingId ? t('credentialPanel:form.update') : t('credentialPanel:form.create')}
               </Button>
             </Group>

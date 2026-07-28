@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { notifications } from '@mantine/notifications';
-import { Select, Group, Text, Button, Modal, Stack, TextInput, PasswordInput } from '@mantine/core';
+import { Select, Group, Text, Button, Modal, Stack, TextInput, PasswordInput, Box } from '@mantine/core';
 import { useTranslation } from 'react-i18next';
 import { Plus } from 'lucide-react';
 import { useRequest } from 'ahooks';
@@ -10,6 +10,7 @@ import { getCredentials, createCredential, getCredentialTypes } from '../../../s
 import { useWorkflowStore } from '../../../stores/workflowStore.ts';
 import { useCanvasStore } from '../../Canvas/stores/canvasStore.ts';
 import type { ParameterDefinition, CredentialTypeDefinition } from '../../../types/workflow.ts';
+import { defaultCredentialTypeOptions } from '../../../types/workflow.ts';
 
 interface CredentialFieldProps {
   definition: ParameterDefinition;
@@ -45,12 +46,7 @@ export function CredentialField({ definition, value, onChange, error }: Credenti
 
   const typeOptions = types.length > 0
     ? types.map((t: CredentialTypeDefinition) => ({ label: t.displayName, value: t.name }))
-    : [
-        { label: 'API Key', value: 'apiKey' },
-        { label: 'OAuth2', value: 'oauth2' },
-        { label: 'Basic Auth', value: 'basicAuth' },
-        { label: 'Database', value: 'database' },
-      ];
+    : defaultCredentialTypeOptions.map((t: CredentialTypeDefinition) => ({ label: t.displayName, value: t.name }));
 
   // 选中的凭据类型定义，用于按 schema 生成表单字段
   const selectedType = useMemo(
@@ -99,7 +95,7 @@ export function CredentialField({ definition, value, onChange, error }: Credenti
   };
 
   return (
-    <div>
+    <Box>
       <Group gap={4} mb={4} justify="space-between" wrap="nowrap">
         <Group gap={4} wrap="nowrap">
           <Text size="xs" fw={400}>
@@ -175,6 +171,6 @@ export function CredentialField({ definition, value, onChange, error }: Credenti
           </Group>
         </Stack>
       </Modal>
-    </div>
+    </Box>
   );
 }

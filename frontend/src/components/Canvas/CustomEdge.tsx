@@ -1,7 +1,7 @@
 import type { EdgeProps } from "@xyflow/react"
 import { EdgeLabelRenderer, getBezierPath, getSmoothStepPath, Position, useReactFlow } from "@xyflow/react"
 import { memo, useState } from "react"
-import type { WorkflowNode } from "./stores/canvasStore.ts"
+import type { WorkflowNode } from "../../types/canvas.ts"
 import { useCanvasStore } from "./stores/canvasStore.ts"
 import { computeDynamicPorts } from "../../utils/computeDynamicPorts.ts"
 import { encodeHandleId } from "../../utils/handleId.ts"
