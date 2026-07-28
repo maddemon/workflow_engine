@@ -13,8 +13,9 @@ using Xunit;
 namespace FlowEngine.Runtime.Tests.Plugins;
 
 /// <summary>
-/// 本机 PostgreSQL 冒烟测试：用真实连接串驱动 dbUpsert / dbRead 节点，验证 Postgres 支持。
-/// 连接信息硬编码为本机测试实例，仅用于本地手动验证，不应进入 CI。
+/// PostgreSQL 冒烟测试：用真实连接串驱动 dbUpsert / dbRead 节点，验证 Postgres 支持。
+/// 属集成冒烟测试，依赖外部 PostgreSQL 实例；当目标实例不可达时（如 CI 未提供 Postgres
+/// 服务容器）通过 <see cref="Assert.Skip"/> 优雅跳过，而非让测试套件整体失败。
 /// </summary>
 public sealed class PostgresSmokeTests
 {
@@ -29,10 +30,23 @@ public sealed class PostgresSmokeTests
     public async Task DbUpsertAndDbRead_AgainstLivePostgres_Work()
     {
         var connectionString = BuildConnectionString();
-        await using var setupConn = new NpgsqlConnection(connectionString);
-        await setupConn.OpenAsync();
+
+        // 先探测可达性：PostgreSQL 不可用时跳过（避免 CI 无 Postgres 服务时整体失败）。
+        NpgsqlConnection? setupConn = null;
         try
         {
+            setupConn = new NpgsqlConnection(connectionString);
+            await setupConn.OpenAsync();
+        }
+        catch (Exception ex) when (ex is NpgsqlException or System.Net.Sockets.SocketException or TimeoutException or OperationCanceledException)
+        {
+            Assert.Skip($"未检测到可用的 PostgreSQL（{Host}:{Port}），跳过 Postgres 冒烟测试：{ex.Message}");
+        }
+
+        await using (setupConn)
+        {
+            try
+            {
             await ExecuteNonQueryAsync(setupConn, $"DROP TABLE IF EXISTS \"{Table}\"");
             await ExecuteNonQueryAsync(setupConn,
                 $"CREATE TABLE \"{Table}\" (\"id\" INTEGER PRIMARY KEY, \"name\" TEXT NOT NULL, \"email\" TEXT)");
@@ -115,10 +129,11 @@ public sealed class PostgresSmokeTests
             Assert.Single(read2.Output.Items);
             Assert.Equal("Alice Smith", GetString(read2.Output.Items[0].Data, "name"));
             Assert.Equal("alice.smith@example.com", GetString(read2.Output.Items[0].Data, "email"));
-        }
+            }
         finally
         {
             await ExecuteNonQueryAsync(setupConn, $"DROP TABLE IF EXISTS \"{Table}\"");
+        }
         }
     }
 
@@ -130,7 +145,8 @@ public sealed class PostgresSmokeTests
             Port = Port,
             Database = Database,
             Username = UserId,
-            Password = Password
+            Password = Password,
+            Timeout = 3
         };
         return builder.ConnectionString;
     }
