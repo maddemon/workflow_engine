@@ -3,7 +3,7 @@ import { screen, fireEvent, waitFor, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { MemoryRouter, Routes, Route } from 'react-router-dom';
 import { renderWithProvider } from '../../../test-utils.tsx';
-import { WorkflowListPage } from '../WorkflowListPage.tsx';
+import { WorkflowListPage, PAGE_SIZE } from '../WorkflowListPage.tsx';
 import type { WorkflowSummary, ProjectDto, ImportResult, BatchImportResult, WorkflowExportResult } from '../../../types/workflow.ts';
 
 vi.mock('../../../services/api.ts', () => ({
@@ -253,5 +253,61 @@ describe('WorkflowListPage', () => {
     await waitFor(() => {
       expect(mockedImportWorkflowsBatch).toHaveBeenCalled();
     });
+  });
+
+  it('pagination - renders only page-size rows and shows paged control', async () => {
+    const workflows = Array.from({ length: 25 }, (_, i) => makeWorkflow(`w${i}`, `WF ${i}`));
+    mockedGetWorkflows.mockResolvedValue(workflows);
+
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('WF 0')).toBeDefined();
+    });
+
+    const tbody = document.querySelector('tbody')!;
+    expect(within(tbody).getAllByRole('row').length).toBe(PAGE_SIZE);
+
+    const page2 = screen.getByRole('button', { name: '2' });
+    expect(page2).toBeDefined();
+
+    fireEvent.click(page2);
+    await waitFor(() => {
+      const rows = within(document.querySelector('tbody')!).getAllByRole('row');
+      expect(rows.length).toBe(5);
+    });
+    await waitFor(() => {
+      expect(screen.queryByText('WF 0')).toBeNull();
+    });
+  });
+
+  it('pagination - resets to first page when project filter changes', async () => {
+    const workflows = [
+      ...Array.from({ length: 25 }, (_, i) => makeWorkflow(`w${i}`, `WF ${i}`, 'p1')),
+      makeWorkflow('w-other', 'Other', null),
+    ];
+    mockedGetWorkflows.mockResolvedValue(workflows);
+
+    renderPage();
+    await waitFor(() => {
+      expect(screen.getByText('WF 0')).toBeDefined();
+    });
+
+    const page2 = screen.getByRole('button', { name: '2' });
+    fireEvent.click(page2);
+    await waitFor(() => {
+      expect(screen.queryByText('WF 0')).toBeNull();
+    });
+
+    // Change filter to global (__none__) which removes p1 workflows -> page resets to 1
+    fireEvent.click(screen.getAllByRole('combobox')[0]);
+    const option = document.querySelector('[role="option"][value="__none__"]');
+    expect(option).not.toBeNull();
+    fireEvent.click(option!);
+
+    await waitFor(() => {
+      expect(screen.getByText('Other')).toBeDefined();
+    });
+    // After reset, pagination should no longer be needed (only 1 row)
+    expect(screen.queryByRole('button', { name: '2' })).toBeNull();
   });
 });
