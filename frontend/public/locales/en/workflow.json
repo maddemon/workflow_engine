@@ -67,6 +67,7 @@
     "placeholder": "Filter by project"
   },
   "editor": {
+    "title": "Workflow Editor",
     "activated": "Activated",
     "activationMessage": "Workflow confirmed and activated.",
     "confirmationFailed": "Confirmation failed",

@@ -15,6 +15,7 @@ import { AdminFilesPage } from './pages/AdminFilesPage.tsx';
 import { AdminProjectsPage } from './pages/AdminProjectsPage.tsx';
 import { LoginPage } from './pages/LoginPage.tsx';
 import { LoadingOverlay } from '@mantine/core';
+import { usePageTitle } from './hooks/usePageTitle.ts';
 import './App.css';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -46,6 +47,8 @@ function AuthLayout({ children }: { children: React.ReactNode }) {
 }
 
 function AppRoutes() {
+  usePageTitle();
+
   const [navbar, setNavbar] = useState<React.ReactNode>(null);
   const [aside, setAside] = useState<React.ReactNode>(null);
 

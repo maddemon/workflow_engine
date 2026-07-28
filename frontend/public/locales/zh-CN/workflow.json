@@ -67,6 +67,7 @@
     "placeholder": "按项目筛选"
   },
   "editor": {
+    "title": "工作流编辑器",
     "activated": "已激活",
     "activationMessage": "工作流已确认并激活。",
     "confirmationFailed": "确认失败",

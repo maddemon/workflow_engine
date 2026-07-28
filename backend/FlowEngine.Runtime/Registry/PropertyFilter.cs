@@ -17,6 +17,12 @@ internal static class PropertyFilter
             return true;
         }
 
+        // 由引擎注入的能力属性（如 NodeExecutionContext）不属于用户可配置参数，须排除出属性面板。
+        if (property.GetCustomAttribute<InjectAttribute>() is not null)
+        {
+            return true;
+        }
+
         if (property.GetCustomAttribute<JsonIgnoreAttribute>() is not null)
         {
             return true;

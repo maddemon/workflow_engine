@@ -40,6 +40,13 @@ public class PropertyFilterTests
     }
 
     [Fact]
+    public void ShouldSkip_PropertyWithInjectAttribute_ReturnsTrue()
+    {
+        // 由引擎注入的能力属性（如 NodeExecutionContext）不应出现在用户参数面板。
+        Assert.True(Skip("InjectedProp"));
+    }
+
+    [Fact]
     public void ShouldSkip_PropertyWithJsonIgnoreAttribute_ReturnsTrue()
     {
         Assert.True(Skip("JsonIgnoredProp"));
@@ -98,6 +105,9 @@ public class PropertyFilterTests
     {
         [IgnoreParameter]
         public string IgnoredProp { get; set; } = string.Empty;
+
+        [Inject]
+        public NodeExecutionContext InjectedProp { get; set; } = null!;
 
         [JsonIgnore]
         public string JsonIgnoredProp { get; set; } = string.Empty;
