@@ -59,7 +59,7 @@ describe('canvasStore', () => {
     it('setNodes updates nodes and marks dirty', () => {
       useCanvasStore.getState().setNodes([makeNode('n1')]);
       expect(useCanvasStore.getState().nodes).toHaveLength(1);
-      expect(useWorkflowStore.getState().isDirty).toBe(true);
+      expect(useCanvasStore.getState().isDirty).toBe(true);
     });
 
     it('setSelectedNode updates selection', () => {
@@ -71,22 +71,22 @@ describe('canvasStore', () => {
       useCanvasStore.getState().setNodes([makeNode('n1')]);
       useCanvasStore.getState().onNodesChange([{ id: 'n1', type: 'select', selected: true }]);
       expect(useCanvasStore.getState().nodes[0].selected).toBe(true);
-      expect(useWorkflowStore.getState().isDirty).toBe(true);
+      expect(useCanvasStore.getState().isDirty).toBe(true);
     });
 
     it('onNodesChange with dragging position updates nodePositions', () => {
       useCanvasStore.getState().setNodes([makeNode('n1')]);
-      useWorkflowStore.setState({ isDirty: false });
+      useCanvasStore.setState({ isDirty: false });
       useCanvasStore.getState().onNodesChange([{ id: 'n1', type: 'position', position: { x: 10, y: 20 }, dragging: true }]);
       expect(useCanvasStore.getState().nodePositions['n1']).toEqual({ x: 10, y: 20 });
-      expect(useWorkflowStore.getState().isDirty).toBe(false);
+      expect(useCanvasStore.getState().isDirty).toBe(false);
     });
 
     it('onNodesChange with non-dragging position applies to nodes', () => {
       useCanvasStore.getState().setNodes([makeNode('n1')]);
       useCanvasStore.getState().onNodesChange([{ id: 'n1', type: 'position', position: { x: 10, y: 20 }, dragging: false }]);
       expect(useCanvasStore.getState().nodes[0].position).toEqual({ x: 10, y: 20 });
-      expect(useWorkflowStore.getState().isDirty).toBe(true);
+      expect(useCanvasStore.getState().isDirty).toBe(true);
     });
 
     it('addNode creates a node at the given position', () => {
@@ -200,7 +200,7 @@ describe('canvasStore', () => {
     it('setStyleSettings updates settings and marks dirty', () => {
       useCanvasStore.getState().setStyleSettings({ layoutDirection: 'vertical' });
       expect(useCanvasStore.getState().styleSettings.layoutDirection).toBe('vertical');
-      expect(useWorkflowStore.getState().isDirty).toBe(true);
+      expect(useCanvasStore.getState().isDirty).toBe(true);
     });
 
     it('setNodeTypes updates available types', () => {
@@ -306,7 +306,7 @@ describe('canvasStore', () => {
       useCanvasStore.getState().autoLayout();
       const positions = useCanvasStore.getState().nodes.map((n) => n.position);
       expect(positions[0]).not.toEqual(positions[1]);
-      expect(useWorkflowStore.getState().isDirty).toBe(true);
+      expect(useCanvasStore.getState().isDirty).toBe(true);
     });
   });
 
@@ -318,6 +318,25 @@ describe('canvasStore', () => {
       expect(useCanvasStore.getState().nodes).toHaveLength(0);
       // 重置回到默认样式（DEFAULT_STYLE_SETTINGS.layoutDirection = 'horizontal'）
       expect(useCanvasStore.getState().styleSettings.layoutDirection).toBe('horizontal');
+    });
+  });
+
+  describe('dirty flag localization (task-019 F8)', () => {
+    it('canvas change marks canvasStore dirty without polluting workflowStore', () => {
+      useCanvasStore.getState().setNodes([makeNode('n1')]);
+      useCanvasStore.getState().addNode(descriptor.typeName, { x: 100, y: 200 });
+
+      expect(useCanvasStore.getState().isDirty).toBe(true);
+      // 关键：画布脏标记必须保留在 canvasStore，不得反向写入 workflowStore。
+      expect(useWorkflowStore.getState().isDirty).toBe(false);
+    });
+
+    it('canvas dirty flag can be cleared independently', () => {
+      useCanvasStore.getState().addNode(descriptor.typeName, { x: 100, y: 200 });
+      expect(useCanvasStore.getState().isDirty).toBe(true);
+
+      useCanvasStore.setState({ isDirty: false });
+      expect(useCanvasStore.getState().isDirty).toBe(false);
     });
   });
 });

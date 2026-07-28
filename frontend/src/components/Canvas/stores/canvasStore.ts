@@ -11,7 +11,6 @@ import type {
 import { DEFAULT_STYLE_SETTINGS } from '../../../types/workflow.ts';
 import { validateParameters } from '../../../utils/validateParameters.ts';
 import { computeAutoLayout } from '../../../utils/workflowLayout.ts';
-import { useWorkflowStore } from '../../../stores/workflowStore.ts';
 import type { WorkflowNode, WorkflowEdge, WorkflowNodeData } from '../../../types/canvas.ts';
 
 interface HistorySnapshot {
@@ -39,6 +38,8 @@ interface CanvasState {
   /** nodeDefinitionId → NodeExecutionRecordDto，累积存储，不覆盖 */
   nodeExecutionRecords: Record<string, NodeExecutionRecordDto>;
   reviewMode: boolean;
+  /** 画布脏标记：画布节点/边/样式等本地变更即为脏（不污染 workflowStore）。 */
+  isDirty: boolean;
 
   setNodes: (nodes: WorkflowNode[]) => void;
   setEdges: (edges: WorkflowEdge[]) => void;
@@ -118,13 +119,6 @@ function buildNodeFromDescriptor(
   };
 }
 
-// canvasStore 与 workflowStore 存在双向引用：workflowStore 导入 canvasStore 以编排
-// load/save/new，而画布变更需要把 workflowStore 标记为 dirty。此处仅在 action 运行时
-// 访问 useWorkflowStore（模块求值阶段不触碰），因此 ESM 下的循环导入是安全的。
-function markWorkflowDirty() {
-  useWorkflowStore.setState({ isDirty: true });
-}
-
 export const useCanvasStore = create<CanvasState>((set, get) => {
   // 撤销/重做栈保存在闭包中，不进入可序列化 state。
   const undoStack: HistorySnapshot[] = [];
@@ -140,6 +134,10 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       }),
       nodePositions: {},
     });
+  }
+
+  function markDirty() {
+    set({ isDirty: true });
   }
 
   function snapshot(): HistorySnapshot {
@@ -178,23 +176,24 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
     isExecuting: false,
     nodeExecutionRecords: {},
     reviewMode: false,
+    isDirty: false,
     canUndo: false,
     canRedo: false,
 
     setNodes: (nodes) => {
       set({ nodes });
-      markWorkflowDirty();
+      markDirty();
     },
     setEdges: (edges) => {
       set({ edges });
-      markWorkflowDirty();
+      markDirty();
     },
 
     onNodesChange: (changes) => {
       const hasNonPositionChange = changes.some((c) => c.type !== 'position' || c.dragging === false);
       if (hasNonPositionChange) {
         set({ nodes: applyNodeChanges<WorkflowNode>(changes, get().nodes), nodePositions: {} });
-        markWorkflowDirty();
+        markDirty();
       } else {
         const posUpdates: Record<string, { x: number; y: number }> = {};
         for (const c of changes) {
@@ -208,7 +207,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
     onEdgesChange: (changes) => {
       set({ edges: applyEdgeChanges(changes, get().edges) });
-      markWorkflowDirty();
+      markDirty();
     },
 
     addNode: (typeName, position) => {
@@ -219,7 +218,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       node.selected = true;
       const deselectedNodes = get().nodes.map((n) => ({ ...n, selected: false }));
       set({ nodes: [...deselectedNodes, node], selectedNodeId: node.id, canUndo: true, canRedo: false });
-      markWorkflowDirty();
+      markDirty();
     },
 
     removeNode: (nodeId) => {
@@ -231,14 +230,14 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         canUndo: true,
         canRedo: false,
       });
-      markWorkflowDirty();
+      markDirty();
     },
 
     updateNodePosition: (nodeId, position) => {
       set({
         nodes: get().nodes.map((n) => (n.id === nodeId ? { ...n, position } : n)),
       });
-      markWorkflowDirty();
+      markDirty();
     },
 
     updateNodeParameters: (nodeId, parameters) => {
@@ -247,7 +246,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           n.id === nodeId ? { ...n, data: { ...n.data, parameters } } : n,
         ),
       });
-      markWorkflowDirty();
+      markDirty();
     },
 
     updateNodeName: (nodeId, name) => {
@@ -256,7 +255,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
           n.id === nodeId ? { ...n, data: { ...n.data, name } } : n,
         ),
       });
-      markWorkflowDirty();
+      markDirty();
     },
 
     updateNodeSettings: (nodeId, settings) => {
@@ -267,7 +266,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
             : n,
         ),
       });
-      markWorkflowDirty();
+      markDirty();
     },
 
     copyNode: (nodeId) => {
@@ -294,7 +293,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       };
       const deselected = get().nodes.map((n) => ({ ...n, selected: false }));
       set({ nodes: [...deselected, newNode], selectedNodeId: id, canUndo: true, canRedo: false });
-      markWorkflowDirty();
+      markDirty();
     },
 
     addEdge: (source, sourceHandle, target, targetHandle) => {
@@ -310,13 +309,13 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         animated: false,
       };
       set({ edges: [...get().edges, edge], canUndo: true, canRedo: false });
-      markWorkflowDirty();
+      markDirty();
     },
 
     removeEdge: (edgeId) => {
       pushHistoryInternal();
       set({ edges: get().edges.filter((e) => e.id !== edgeId), canUndo: true, canRedo: false });
-      markWorkflowDirty();
+      markDirty();
     },
 
     setSelectedNode: (nodeId) => set({ selectedNodeId: nodeId }),
@@ -325,7 +324,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
 
     setStyleSettings: (settings) => {
       set({ styleSettings: settings });
-      markWorkflowDirty();
+      markDirty();
     },
 
     setIsExecuting: (executing) => {
@@ -394,7 +393,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         canUndo: undoStack.length > 0,
         canRedo: true,
       });
-      markWorkflowDirty();
+      markDirty();
     },
 
     redo: () => {
@@ -409,7 +408,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         canUndo: true,
         canRedo: redoStack.length > 0,
       });
-      markWorkflowDirty();
+      markDirty();
     },
 
     pushHistory: () => {
@@ -423,7 +422,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
       set({
         nodes: nodes.map((n) => ({ ...n, position: positions[n.id] ?? n.position })),
       });
-      markWorkflowDirty();
+      markDirty();
     },
 
     loadFromWorkflow: ({ nodes, edges, styleSettings, reviewMode }) => {
@@ -439,6 +438,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         isExecuting: false,
         nodeExecutionRecords: {},
         reviewMode,
+        isDirty: false,
         canUndo: false,
         canRedo: false,
       });
@@ -458,6 +458,7 @@ export const useCanvasStore = create<CanvasState>((set, get) => {
         isExecuting: false,
         nodeExecutionRecords: {},
         reviewMode: false,
+        isDirty: false,
         canUndo: false,
         canRedo: false,
       });

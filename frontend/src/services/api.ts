@@ -31,6 +31,7 @@ import type {
   ValidateWorkflowResult,
   CreateApiKeyResult,
   PagedResult,
+  WorkflowVersion,
 } from '../types/workflow.ts';
 
 const api = axios.create({
@@ -97,13 +98,22 @@ export async function getNodeTypes(category?: string): Promise<NodeTypeDescripto
   return res.data;
 }
 
-export async function getWorkflows(): Promise<WorkflowSummary[]> {
-  const res = await api.get<{ items: WorkflowSummary[]; totalCount: number }>('/workflows');
+// 后端默认 pageSize=20 会把列表截断到 20，导致前端客户端分页永远无法触发。
+// 此处显式请求一个更大的窗口（后端允许上限 200），让客户端分页在 ≤200 个工作流时生效；
+// 超过 200 的列表仍按后端上限截断，服务端分页为后续增强，不在本次范围。
+export async function getWorkflows(pageSize = 200): Promise<WorkflowSummary[]> {
+  const res = await api.get<{ items: WorkflowSummary[]; totalCount: number }>(`/workflows?pageSize=${pageSize}`);
   return res.data.items;
 }
 
 export async function getWorkflow(id: string): Promise<Workflow> {
   const res = await api.get<Workflow>(`/workflows/${id}`);
+  return res.data;
+}
+
+/** 获取工作流当前版本轻量信息（轮询用，避免全量 getWorkflow 的开销）。 */
+export async function getWorkflowVersion(id: string): Promise<WorkflowVersion> {
+  const res = await api.get<WorkflowVersion>(`/workflows/${id}/version`);
   return res.data;
 }
 

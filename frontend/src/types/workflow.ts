@@ -145,6 +145,16 @@ export interface ValidateWorkflowResult {
   canAutoFix: boolean;
 }
 
+/**
+ * 工作流版本轻量信息（轮询用，对应后端 WorkflowVersionDto）。
+ * 与全量 Workflow 不同，仅含 id/version/updatedAt，用于前端版本轮询降低开销。
+ */
+export interface WorkflowVersion {
+  id: string;
+  version: number;
+  updatedAt: string | null;
+}
+
 export interface Workflow {
   id: string;
   projectId: string | null;

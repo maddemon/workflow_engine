@@ -259,6 +259,21 @@ public sealed record WorkflowDto
 }
 
 /// <summary>
+/// 工作流版本轻量信息（轮询用）。
+/// </summary>
+public sealed record WorkflowVersionDto
+{
+    /// <summary>工作流 ID。</summary>
+    public Guid Id { get; init; }
+
+    /// <summary>当前版本号。</summary>
+    public int Version { get; init; }
+
+    /// <summary>最后更新时间（null 表示从未更新）。</summary>
+    public DateTime? UpdatedAt { get; init; }
+}
+
+/// <summary>
 /// 工作流列表摘要。
 /// </summary>
 public sealed record WorkflowSummaryDto

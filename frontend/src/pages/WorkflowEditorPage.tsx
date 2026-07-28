@@ -188,8 +188,9 @@ export function WorkflowEditorPage({ onLayoutChange }: WorkflowEditorPageProps) 
             component="button"
             ml="xs"
             onClick={() => {
-              const store = useWorkflowStore.getState();
-              if (store.isDirty) {
+              const workflowDirty = useWorkflowStore.getState().isDirty;
+              const canvasDirty = useCanvasStore.getState().isDirty;
+              if (workflowDirty || canvasDirty) {
                 if (!window.confirm(t('editor.unsavedChangesConfirm'))) return;
               }
               if (workflowId) {

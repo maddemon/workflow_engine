@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { getWorkflow } from '../services/api.ts';
+import { getWorkflowVersion } from '../services/api.ts';
 import { useWorkflowStore } from '../stores/workflowStore.ts';
 import { useCanvasStore } from '../components/Canvas/stores/canvasStore.ts';
 
@@ -36,10 +36,10 @@ export function useWorkflowVersionPolling(workflowId: string | null): UseWorkflo
 
     intervalRef.current = setInterval(async () => {
       try {
-        const workflow = await getWorkflow(workflowId!);
-        if (workflow.version > latestVersionRef.current) {
+        const info = await getWorkflowVersion(workflowId!);
+        if (info.version > latestVersionRef.current) {
           setChanged(true);
-          setNewVersion(workflow.version);
+          setNewVersion(info.version);
         }
       } catch {
         // Silently ignore polling errors

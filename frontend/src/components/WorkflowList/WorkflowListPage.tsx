@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import {
   Stack,
   Text,
@@ -18,6 +18,7 @@ import {
   Code,
   List,
   Tooltip,
+  Pagination,
 } from '@mantine/core';
 import { notifications } from '@mantine/notifications';
 import {
@@ -75,6 +76,14 @@ function formatDateTime(iso: string | null | undefined): string {
   return formatLocalDateTime(iso);
 }
 
+export const PAGE_SIZE = 20;
+
+interface DisplayRow extends WorkflowSummary {
+  formattedUpdatedAt: string;
+  formattedLastRun: string;
+  formattedNextTrigger: string | null;
+}
+
 function readFileAsText(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -109,12 +118,41 @@ export function WorkflowListPage() {
     return map;
   }, [projects]);
   const [projectFilter, setProjectFilter] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
 
-  const filteredWorkflows = projectFilter === '__none__'
-    ? workflows.filter((w) => !w.projectId)
-    : projectFilter
-      ? workflows.filter((w) => w.projectId === projectFilter)
-      : workflows;
+  const filteredWorkflows = useMemo(() => {
+    return projectFilter === '__none__'
+      ? workflows.filter((w) => !w.projectId)
+      : projectFilter
+        ? workflows.filter((w) => w.projectId === projectFilter)
+        : workflows;
+  }, [workflows, projectFilter]);
+
+  const displayRows = useMemo<DisplayRow[]>(() => {
+    return filteredWorkflows.map((wf) => ({
+      ...wf,
+      formattedUpdatedAt: formatDateTime(wf.updatedAt ?? wf.createdAt),
+      formattedLastRun: formatDateTime(wf.lastExecutionAt),
+      formattedNextTrigger: wf.nextTriggerAt ? formatDateTime(wf.nextTriggerAt) : null,
+    }));
+  }, [filteredWorkflows]);
+
+  const pagedRows = useMemo<DisplayRow[]>(() => {
+    const start = (page - 1) * PAGE_SIZE;
+    return displayRows.slice(start, start + PAGE_SIZE);
+  }, [displayRows, page]);
+
+  // 筛选条件变化时重置到第一页，避免停留在已不存在的越界页
+  useEffect(() => {
+    setPage(1);
+  }, [projectFilter]);
+
+  // 数据集因删除/刷新而缩小到当前页窗口之外时，重置到第一页，避免空白表格
+  useEffect(() => {
+    if (filteredWorkflows.length < (page - 1) * PAGE_SIZE) {
+      setPage(1);
+    }
+  }, [filteredWorkflows, page]);
 
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
@@ -361,7 +399,7 @@ export function WorkflowListPage() {
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
-            {filteredWorkflows.map((wf) => (
+            {pagedRows.map((wf) => (
               <Table.Tr key={wf.id}>
                 <Table.Td>
                   <Checkbox
@@ -412,7 +450,7 @@ export function WorkflowListPage() {
                   <Group gap="xs" wrap="nowrap">
                     <Clock size={12} color="var(--mantine-color-dimmed-text)" />
                     <Text size="xs" c={wf.lastExecutionAt ? 'dimmed' : 'disabled'}>
-                      {formatDateTime(wf.lastExecutionAt)}
+                      {wf.formattedLastRun}
                     </Text>
                   </Group>
                 </Table.Td>
@@ -421,10 +459,10 @@ export function WorkflowListPage() {
                     <Group gap="xs" wrap="nowrap">
                       <Badge size="sm" variant="outline" color="indigo">{wf.triggerCount}</Badge>
                       {wf.nextTriggerAt && (
-                        <Tooltip label={t('list.nextTrigger', { time: formatDateTime(wf.nextTriggerAt) })}>
+                        <Tooltip label={t('list.nextTrigger', { time: wf.formattedNextTrigger ?? '' })}>
                           <Group gap={4} wrap="nowrap">
                             <CalendarClock size={12} color="var(--mantine-color-indigo-text)" />
-                            <Text size="xs" c="indigo">{formatDateTime(wf.nextTriggerAt)}</Text>
+                            <Text size="xs" c="indigo">{wf.formattedNextTrigger}</Text>
                           </Group>
                         </Tooltip>
                       )}
@@ -434,7 +472,7 @@ export function WorkflowListPage() {
                   )}
                 </Table.Td>
                 <Table.Td>
-                  <Text size="xs" c="dimmed">{formatDateTime(wf.updatedAt ?? wf.createdAt)}</Text>
+                  <Text size="xs" c="dimmed">{wf.formattedUpdatedAt}</Text>
                 </Table.Td>
                 <Table.Td style={{ textAlign: 'right' }}>
                   <Group gap={4} justify="flex-end" wrap="nowrap">
@@ -485,6 +523,15 @@ export function WorkflowListPage() {
             ))}
           </Table.Tbody>
         </Table>
+      )}
+      {Math.ceil(displayRows.length / PAGE_SIZE) > 1 && (
+        <Pagination
+          total={Math.ceil(displayRows.length / PAGE_SIZE)}
+          value={page}
+          onChange={setPage}
+          mt="md"
+          mb="xl"
+        />
       )}
 
       {/* Import Modal */}

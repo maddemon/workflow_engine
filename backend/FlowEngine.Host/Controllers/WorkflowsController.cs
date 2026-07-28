@@ -55,6 +55,17 @@ public class WorkflowsController(
     }
 
     /// <summary>
+    /// 获取工作流版本轻量信息（轮询用），仅返回 id / version / updatedAt。
+    /// </summary>
+    [HttpGet("{id:guid}/version")]
+    [AuthorizePermission(Scope.Workflow, Operation.Read)]
+    public async Task<ActionResult<WorkflowVersionDto>> GetVersion(Guid id, CancellationToken cancellationToken)
+    {
+        var info = await workflowService.GetVersionInfoAsync(id, cancellationToken).ConfigureAwait(false);
+        return this.OkOrNotFound(info);
+    }
+
+    /// <summary>
     /// 创建工作流。
     /// </summary>
     [HttpPost]

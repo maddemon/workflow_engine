@@ -44,6 +44,8 @@ export function CredentialField({ definition, value, onChange, error }: Credenti
 
   const { data: types = [] } = useRequest(getCredentialTypes);
 
+  const { runAsync: createCredentialAsync, loading: creating } = useRequest(createCredential, { manual: true });
+
   const typeOptions = types.length > 0
     ? types.map((t: CredentialTypeDefinition) => ({ label: t.displayName, value: t.name }))
     : defaultCredentialTypeOptions.map((t: CredentialTypeDefinition) => ({ label: t.displayName, value: t.name }));
@@ -80,7 +82,7 @@ export function CredentialField({ definition, value, onChange, error }: Credenti
       return;
     }
     try {
-      await createCredential({ name: formName, type: formType, fields: { ...formValues } });
+      await createCredentialAsync({ name: formName, type: formType, fields: { ...formValues } });
       setCreateOpen(false);
       setFormName('');
       setFormValues({});
@@ -167,7 +169,7 @@ export function CredentialField({ definition, value, onChange, error }: Credenti
           </Stack>
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setCreateOpen(false)}>{t('fields.credential.cancel')}</Button>
-            <Button onClick={handleCreate}>{t('fields.credential.create')}</Button>
+            <Button onClick={handleCreate} disabled={creating}>{t('fields.credential.create')}</Button>
           </Group>
         </Stack>
       </Modal>
