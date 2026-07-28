@@ -90,6 +90,31 @@ public sealed class WorkflowService(
     }
 
     /// <summary>
+    /// 获取工作流版本轻量信息（轮询用）。仅投影 <c>Id</c> / <c>Version</c> / <c>UpdatedAt</c>，
+    /// 不物化 Nodes/Connections 等大 JSON 列。不存在时返回 <c>null</c>。
+    /// </summary>
+    /// <param name="id">工作流 ID。</param>
+    /// <param name="cancellationToken">取消令牌。</param>
+    public async Task<WorkflowVersionDto?> GetVersionInfoAsync(
+        Guid id, CancellationToken cancellationToken = default)
+    {
+        await authGuard.RequireAccessAsync(ResourceKind.Workflow, id, Operation.Read, cancellationToken);
+
+        // D-6：仅投影轮询所需标量字段，避免物化 Nodes/Connections 等大 JSON 列。
+        return await dbContext.Workflows
+            .AsNoTracking()
+            .Where(w => w.Id == id)
+            .Select(w => new WorkflowVersionDto
+            {
+                Id = w.Id,
+                Version = w.Version,
+                UpdatedAt = w.UpdatedAt,
+            })
+            .FirstOrDefaultAsync(cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// 分页获取工作流摘要列表。项目（ProjectId）仅作为分类字段，不对可见性做隔离。
     /// </summary>
     /// <param name="page">页码（从 1 开始）。</param>

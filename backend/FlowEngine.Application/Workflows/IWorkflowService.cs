@@ -13,6 +13,11 @@ public interface IWorkflowService
     Task<WorkflowDto?> GetAsync(Guid id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// 获取工作流版本轻量信息（仅投影 Id / Version / UpdatedAt，轮询用）。
+    /// </summary>
+    Task<WorkflowVersionDto?> GetVersionInfoAsync(Guid id, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// 分页获取工作流摘要列表。
     /// </summary>
     Task<PagedResult<WorkflowSummaryDto>> GetAllAsync(
