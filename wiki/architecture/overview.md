@@ -22,8 +22,9 @@ Flow Engine 是一个节点可**热插拔**的工作流自动化引擎。前端�
 | `FlowEngine.Runtime` | 执行引擎、表达式/脚本求值、等待区、快照 | Core + Logging |
 | `FlowEngine.Application` | 用例编排：`Workflows` / `Executions` / `Orchestrators` / `Tools` / `DTOs` | Core + Runtime |
 | `FlowEngine.Infrastructure` | 持久化、调度（Quartz）、事件总线、凭据加密（AES-GCM）、文件存储 | Core + Application（实现其接口） |
-| `FlowEngine.Migrations` | EF Core 迁移程序集 | Core + Infrastructure |
-| `FlowEngine.Host` | 组合根：`Controllers` / `WebSocketHandlers` / `Middlewares` / `BackgroundServices` / `wwwroot` | 全部 |
+| `FlowEngine.Migrations.Sqlite` | SQLite 迁移程序集（默认提供器专用） | Core |
+| `FlowEngine.Migrations.Postgres` | PostgreSQL 迁移程序集（Provider 为 postgresql/npgsql/kingbasees 时使用） | Core |
+| `FlowEngine.Host` | 组合根：`Controllers` / `WebSocketHandlers` / `Middlewares` / `BackgroundServices` / `wwwroot` / `MigrationsExtensions`（运行时迁移应用器） | 全部 |
 
 另有辅助工程 `FlowEngine.Analyzers` 与 `FlowEngine.Resources`。
 
@@ -52,7 +53,8 @@ Flow Engine 是一个节点可**热插拔**的工作流自动化引擎。前端�
 
 ## 7. 持久化
 
-- 默认 **SQLite**（零配置启动）；EF Core 已接入 **SQLite 与 PostgreSQL** 提供器，可按部署切换数据库连接（DB 节点另可通过原始 ADO 驱动直连 MySQL / SQL Server）。
+- 默认 **SQLite**（零配置启动）。EF Core 已接入 **SQLite / PostgreSQL(Npgsql) / MySQL / KingbaseES / Dameng** 提供器，通过 `Database:Provider` 配置切换（`postgresql`/`npgsql`/`kingbasees`/`kingbase` 走 PostgreSQL 迁移，其余走 SQLite 迁移，详见 [单机部署](deployment/single-machine.md) §4）。
+- **迁移程序集按提供器分离**：EF Core 无法在单一程序集内按提供器过滤迁移，故采用官方推荐的「每提供器独立迁移程序集」模式——`FlowEngine.Migrations.Sqlite`（默认）与 `FlowEngine.Migrations.Postgres` 各持本提供器的 `Init` 迁移；运行期由 `FlowEngine.Host` 中的 `MigrationsExtensions.ApplyFlowEngineMigrationsAsync` 按当前 `Provider` 选用对应程序集调用 `MigrateAsync()`。
 - 凭据加密存储（AES-GCM），运行时解密注入。
 
 ## 8. 触发器

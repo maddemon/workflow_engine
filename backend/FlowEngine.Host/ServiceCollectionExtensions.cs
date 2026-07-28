@@ -589,28 +589,37 @@ public static class ServiceCollectionExtensions
         var connectionString = configuration.GetConnectionString("Default")
             ?? throw new InvalidOperationException("ConnectionStrings:Default is not configured.");
 
+        // 各 provider 的迁移存放在独立程序集（FlowEngine.Migrations.Sqlite 为 SQLite，FlowEngine.Migrations.Postgres 为 PostgreSQL），
+        // 避免 SQLite 迁移被重放到 PostgreSQL（其 Up() 含 SQLite 专有 SQL）。EF Core 未提供单程序集内按 provider
+        // 筛选迁移的公开 API，因此多提供程序采用独立迁移程序集这一官方推荐模式。
+        var migrationsAssembly = dbProvider.ToLowerInvariant() switch
+        {
+            "postgresql" or "npgsql" or "kingbasees" or "kingbase" => "FlowEngine.Migrations.Postgres",
+            _ => "FlowEngine.Migrations.Sqlite"
+        };
+
         services.AddDbContext<FlowEngineDbContext>(options =>
         {
             switch (dbProvider.ToLowerInvariant())
             {
                 case "sqlite":
                     options.UseSqlite(connectionString, x =>
-                        x.MigrationsAssembly("FlowEngine.Migrations")
+                        x.MigrationsAssembly(migrationsAssembly)
                          .MigrationsHistoryTable("__ef_migrations_history"));
                     break;
                 case "postgresql" or "npgsql" or "kingbasees" or "kingbase":
                     options.UseNpgsql(connectionString, x =>
-                        x.MigrationsAssembly("FlowEngine.Migrations")
+                        x.MigrationsAssembly(migrationsAssembly)
                          .MigrationsHistoryTable("__ef_migrations_history", "flow"));
                     break;
                 case "mysql" or "pomelo" or "tidb" or "oceanbase":
                     options.UseMySQL(connectionString, x =>
-                        x.MigrationsAssembly("FlowEngine.Migrations")
+                        x.MigrationsAssembly("FlowEngine.Migrations.Sqlite")
                          .MigrationsHistoryTable("__ef_migrations_history"));
                     break;
                 case "dameng" or "dm":
                     options.UseDm(connectionString, x =>
-                        x.MigrationsAssembly("FlowEngine.Migrations")
+                        x.MigrationsAssembly("FlowEngine.Migrations.Sqlite")
                          .MigrationsHistoryTable("__ef_migrations_history"));
                     break;
                 default:

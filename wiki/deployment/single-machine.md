@@ -50,7 +50,17 @@ Flow Engine 以**单一 .NET 后台服务进程**形态运行，启动后同时�
 ```
 
 - 无需任何外部数据库服务即可运行。
-- 切换 Provider 即可改用 **PostgreSQL / MySQL**（EF Core 提供器已接入，见 [横向扩展路径](deployment/scaling.md)）。
+- 切换 `Database:Provider` 即可改用其他提供器；支持的取值与对应迁移程序集：
+
+| `Database:Provider` 取值 | 提供器 | 使用的迁移程序集 | 说明 |
+|--------------------------|--------|------------------|------|
+| `sqlite`（默认） | EF Core SQLite | `FlowEngine.Migrations.Sqlite` | 零配置，自动建库 |
+| `postgresql` / `npgsql` / `kingbasees` / `kingbase` | Npgsql（含人大金仓适配） | `FlowEngine.Migrations.Postgres` | 需自备 PostgreSQL / 金仓服务并配置连接串 |
+| `mysql` | EF Core MySQL | `FlowEngine.Migrations.Sqlite` | 需自备 MySQL 服务并配置连接串 |
+| `dameng` | 达梦 EF 提供器 | `FlowEngine.Migrations.Sqlite` | 需自备达梦服务并配置连接串 |
+
+- **迁移程序集按提供器分离**：EF Core 无法在单一程序集内按提供器过滤迁移（其 `IMigrationsFinder` / `IMigrationsAssembly` 均为内部类型），故采用官方推荐的「每提供器独立迁移程序集」模式——PostgreSQL 走 `FlowEngine.Migrations.Postgres`，其余走 `FlowEngine.Migrations.Sqlite`。运行期由 `FlowEngine.Host` 的 `MigrationsExtensions.ApplyFlowEngineMigrationsAsync` 按当前 `Provider` 自动选用对应程序集。
+- 切换 Provider 只需改 `appsettings.json` 的 `Database.Provider` 与 `ConnectionStrings.Default`（或环境变量 `Database__Provider` / `ConnectionStrings__Default`），启动时会自动应用对应迁移。PostgreSQL / MySQL / 达梦的跨实例共享用法见 [横向扩展路径](deployment/scaling.md)。
 
 ## 5. 关键配置（`appsettings.json`）
 

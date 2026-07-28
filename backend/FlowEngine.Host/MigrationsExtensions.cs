@@ -3,8 +3,12 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using FlowEngine.Core.Data;
 
-namespace FlowEngine.Migrations;
+namespace FlowEngine.Host;
 
+/// <summary>
+/// 运行时迁移执行器。在宿主启动时调用，按当前 provider 应用待执行的 EF Core 迁移。
+/// 放在宿主项目中（而非迁移程序集），因为它属于启动编排逻辑，而非迁移定义本身。
+/// </summary>
 public static class MigrationsExtensions
 {
     public static async Task ApplyFlowEngineMigrationsAsync(
@@ -32,8 +36,6 @@ public static class MigrationsExtensions
             {
                 logger?.LogInformation("数据库已是最新状态，无需迁移");
             }
-
-
         }
         catch (Exception ex)
         {

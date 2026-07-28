@@ -9,9 +9,9 @@
 | .NET SDK | **.NET 10 SDK** | `FlowEngine.Core.csproj` 的 `TargetFramework` 为 `net10.0`，故需 .NET 10 SDK（仓库无 `global.json`，不锁定特定 SDK 补丁版本）。 |
 | Node.js | **Node.js 20+** | 前端基于 Vite 8 / React 19 / TypeScript 6，需 Node 20 及以上（`package.json` 未声明 `engines`，按依赖推断）。 |
 | 包管理器 | npm（随 Node 提供） | 前端依赖安装与脚本运行使用 npm。 |
-| 数据库 | SQLite（自动创建） | 首次启动后端会应用 EF Core 迁移并自动生成 SQLite 数据库文件，无需手动安装数据库服务。 |
+| 数据库 | SQLite（默认，自动创建）或 PostgreSQL / MySQL 等 | 默认 SQLite 首次启动后端会应用 EF Core 迁移并自动生成数据库文件，无需手动安装数据库服务；如需对接 PostgreSQL 等外部数据库，需自备数据库服务并在配置中切换 `Database:Provider` 与连接串，详见 [单机部署](deployment/single-machine.md) §4 与 [横向扩展路径](deployment/scaling.md)。 |
 
-> 如需对接 SQL Server / PostgreSQL / MySQL，可在配置中替换连接串，详见 [系统总览](architecture/overview.md)。
+> SQLite 迁移由 `FlowEngine.Migrations.Sqlite` 程序集承载，PostgreSQL 由 `FlowEngine.Migrations.Postgres` 承载（EF Core 多提供器迁移分离的官方推荐模式）。
 
 ## 2. 获取代码
 

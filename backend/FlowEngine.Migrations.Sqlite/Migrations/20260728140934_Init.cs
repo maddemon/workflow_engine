@@ -3,10 +3,10 @@ using Microsoft.EntityFrameworkCore.Migrations;
 
 #nullable disable
 
-namespace FlowEngine.Migrations.Migrations.Sqlite
+namespace FlowEngine.Migrations.Sqlite.Migrations
 {
     /// <inheritdoc />
-    public partial class InitSqlite : Migration
+    public partial class Init : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -19,12 +19,13 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                 schema: "flow",
                 columns: table => new
                 {
-                    Id = table.Column<Guid>(type: "TEXT", maxLength: 36, nullable: false),
+                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
                     project_id = table.Column<Guid>(type: "TEXT", nullable: true, comment: "项目 ID"),
                     name = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false, comment: "凭据名称"),
                     type = table.Column<string>(type: "TEXT", maxLength: 64, nullable: false, comment: "凭据类型"),
                     data = table.Column<string>(type: "json", nullable: false, comment: "加密字段数据映射"),
                     key_version = table.Column<string>(type: "TEXT", maxLength: 64, nullable: false, comment: "密钥版本"),
+                    row_version = table.Column<long>(type: "INTEGER", nullable: false, comment: "乐观并发行版本"),
                     CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false, comment: "创建时间"),
                     UpdatedAt = table.Column<DateTime>(type: "TEXT", nullable: true, comment: "最后更新时间"),
                     Deleted = table.Column<bool>(type: "INTEGER", nullable: false, comment: "是否删除")
@@ -36,11 +37,27 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                 comment: "凭据定义");
 
             migrationBuilder.CreateTable(
+                name: "execution_dedup",
+                schema: "flow",
+                columns: table => new
+                {
+                    idempotency_key = table.Column<string>(type: "TEXT", maxLength: 512, nullable: false, comment: "幂等键"),
+                    execution_id = table.Column<Guid>(type: "TEXT", nullable: false, comment: "执行记录 ID"),
+                    created_at = table.Column<DateTime>(type: "TEXT", nullable: false, comment: "创建时间"),
+                    expires_at = table.Column<DateTime>(type: "TEXT", nullable: true, comment: "过期时间")
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_execution_dedup", x => x.idempotency_key);
+                },
+                comment: "执行幂等去重表");
+
+            migrationBuilder.CreateTable(
                 name: "execution_records",
                 schema: "flow",
                 columns: table => new
                 {
-                    Id = table.Column<Guid>(type: "TEXT", maxLength: 36, nullable: false),
+                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
                     workflow_definition_id = table.Column<Guid>(type: "TEXT", nullable: false, comment: "工作流定义 ID"),
                     project_id = table.Column<Guid>(type: "TEXT", nullable: true, comment: "项目 ID"),
                     parent_execution_id = table.Column<Guid>(type: "TEXT", nullable: true, comment: "父执行 ID"),
@@ -59,33 +76,15 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                 comment: "执行记录");
 
             migrationBuilder.CreateTable(
-                name: "project_members",
-                schema: "flow",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "TEXT", maxLength: 36, nullable: false),
-                    project_id = table.Column<Guid>(type: "TEXT", nullable: false, comment: "项目 ID"),
-                    user_id = table.Column<Guid>(type: "TEXT", nullable: false, comment: "用户 ID"),
-                    role = table.Column<string>(type: "TEXT", maxLength: 64, nullable: false, comment: "成员角色"),
-                    CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false, comment: "创建时间"),
-                    UpdatedAt = table.Column<DateTime>(type: "TEXT", nullable: true, comment: "最后更新时间"),
-                    Deleted = table.Column<bool>(type: "INTEGER", nullable: false, comment: "是否删除")
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_project_members", x => x.Id);
-                },
-                comment: "项目成员");
-
-            migrationBuilder.CreateTable(
                 name: "projects",
                 schema: "flow",
                 columns: table => new
                 {
-                    Id = table.Column<Guid>(type: "TEXT", maxLength: 36, nullable: false),
+                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
                     name = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false, comment: "项目名称"),
                     description = table.Column<string>(type: "TEXT", maxLength: 1024, nullable: true, comment: "项目描述"),
-                    created_by = table.Column<Guid>(type: "TEXT", nullable: false, comment: "创建人"),
+                    created_by = table.Column<string>(type: "TEXT", nullable: false, comment: "创建人"),
+                    row_version = table.Column<long>(type: "INTEGER", nullable: false, comment: "乐观并发行版本"),
                     CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false, comment: "创建时间"),
                     UpdatedAt = table.Column<DateTime>(type: "TEXT", nullable: true, comment: "最后更新时间"),
                     Deleted = table.Column<bool>(type: "INTEGER", nullable: false, comment: "是否删除")
@@ -101,7 +100,7 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                 schema: "flow",
                 columns: table => new
                 {
-                    Id = table.Column<Guid>(type: "TEXT", maxLength: 36, nullable: false),
+                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
                     file_name = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false, comment: "文件名"),
                     content_type = table.Column<string>(type: "TEXT", maxLength: 128, nullable: true, comment: "MIME 类型"),
                     size = table.Column<long>(type: "INTEGER", nullable: false, comment: "文件大小"),
@@ -122,7 +121,7 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                 name: "triggers",
                 columns: table => new
                 {
-                    Id = table.Column<Guid>(type: "TEXT", maxLength: 36, nullable: false),
+                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
                     workflow_definition_id = table.Column<Guid>(type: "TEXT", nullable: false, comment: "关联工作流定义 ID"),
                     project_id = table.Column<Guid>(type: "TEXT", nullable: true, comment: "项目 ID"),
                     workflow_version = table.Column<int>(type: "INTEGER", nullable: false, comment: "工作流版本号"),
@@ -146,7 +145,7 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                 name: "user_roles",
                 columns: table => new
                 {
-                    Id = table.Column<Guid>(type: "TEXT", maxLength: 36, nullable: false),
+                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
                     UserId = table.Column<Guid>(type: "TEXT", nullable: false, comment: "用户 ID"),
                     Role = table.Column<string>(type: "TEXT", maxLength: 64, nullable: false, comment: "角色名称"),
                     CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false, comment: "创建时间"),
@@ -163,7 +162,7 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                 name: "users",
                 columns: table => new
                 {
-                    Id = table.Column<Guid>(type: "TEXT", maxLength: 36, nullable: false),
+                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
                     Email = table.Column<string>(type: "TEXT", maxLength: 320, nullable: false, comment: "邮箱地址"),
                     UserName = table.Column<string>(type: "TEXT", maxLength: 128, nullable: false, comment: "用户名"),
                     PasswordHash = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false, comment: "密码哈希值"),
@@ -183,7 +182,7 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                 name: "webhook_routes",
                 columns: table => new
                 {
-                    Id = table.Column<Guid>(type: "TEXT", maxLength: 36, nullable: false),
+                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
                     path = table.Column<string>(type: "TEXT", maxLength: 512, nullable: false, comment: "Webhook 路径"),
                     method = table.Column<string>(type: "TEXT", maxLength: 16, nullable: false, comment: "HTTP 方法"),
                     workflow_definition_id = table.Column<Guid>(type: "TEXT", nullable: false, comment: "关联工作流定义 ID"),
@@ -205,11 +204,27 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                 comment: "Webhook 路由");
 
             migrationBuilder.CreateTable(
+                name: "workflow_credential_usages",
+                schema: "flow",
+                columns: table => new
+                {
+                    WorkflowId = table.Column<Guid>(type: "TEXT", nullable: false, comment: "所属工作流 ID"),
+                    CredentialId = table.Column<Guid>(type: "TEXT", nullable: false, comment: "被引用凭据 ID"),
+                    NodeId = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false, comment: "引用该凭据的节点 ID（工作流级引用时为空字符串）"),
+                    WorkflowName = table.Column<string>(type: "TEXT", nullable: false, comment: "所属工作流名称（冗余存储，便于删除凭据时直接展示引用方，无需回查工作流表）")
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_workflow_credential_usages", x => new { x.WorkflowId, x.CredentialId, x.NodeId });
+                },
+                comment: "工作流→凭据引用关系（归一化关联表），用于删除凭据时快速定位引用方");
+
+            migrationBuilder.CreateTable(
                 name: "workflows",
                 schema: "flow",
                 columns: table => new
                 {
-                    Id = table.Column<Guid>(type: "TEXT", maxLength: 36, nullable: false),
+                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
                     project_id = table.Column<Guid>(type: "TEXT", nullable: true, comment: "项目 ID"),
                     name = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false, comment: "工作流名称"),
                     version = table.Column<int>(type: "INTEGER", nullable: false, comment: "版本号"),
@@ -217,7 +232,12 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                     nodes = table.Column<string>(type: "json", nullable: false, comment: "节点实例列表"),
                     connections = table.Column<string>(type: "json", nullable: false, comment: "连接列表"),
                     is_active = table.Column<bool>(type: "INTEGER", nullable: false, comment: "是否激活"),
+                    source = table.Column<int>(type: "INTEGER", nullable: false, comment: "工作流来源：人工创建或 AI 生成"),
+                    draft_status = table.Column<int>(type: "INTEGER", nullable: true, comment: "草稿审查状态：待审查/已拒绝/已确认"),
+                    rejection_reason = table.Column<string>(type: "TEXT", maxLength: 2000, nullable: true, comment: "拒绝理由"),
+                    diff = table.Column<string>(type: "json", nullable: false, comment: "modify 草稿的结构化差异"),
                     style_settings = table.Column<string>(type: "json", nullable: true, comment: "样式设置"),
+                    row_version = table.Column<long>(type: "INTEGER", nullable: false, comment: "乐观并发行版本"),
                     CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false, comment: "创建时间"),
                     UpdatedAt = table.Column<DateTime>(type: "TEXT", nullable: true, comment: "最后更新时间"),
                     Deleted = table.Column<bool>(type: "INTEGER", nullable: false, comment: "是否删除")
@@ -228,12 +248,103 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                 },
                 comment: "工作流定义");
 
-            migrationBuilder.CreateIndex(
-                name: "IX_project_members_project_id_user_id",
+            migrationBuilder.CreateTable(
+                name: "api_keys",
                 schema: "flow",
-                table: "project_members",
-                columns: new[] { "project_id", "user_id" },
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "TEXT", nullable: false),
+                    user_id = table.Column<Guid>(type: "TEXT", nullable: false, comment: "所属用户 ID"),
+                    name = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false, comment: "令牌名称"),
+                    key_hash = table.Column<string>(type: "TEXT", maxLength: 256, nullable: false, comment: "完整 Key 的哈希值"),
+                    prefix = table.Column<string>(type: "TEXT", maxLength: 16, nullable: false, comment: "Key 前缀"),
+                    expires_at = table.Column<DateTime>(type: "TEXT", nullable: true, comment: "过期时间"),
+                    revoked_at = table.Column<DateTime>(type: "TEXT", nullable: true, comment: "吊销时间"),
+                    CreatedAt = table.Column<DateTime>(type: "TEXT", nullable: false, comment: "创建时间"),
+                    UpdatedAt = table.Column<DateTime>(type: "TEXT", nullable: true, comment: "最后更新时间"),
+                    Deleted = table.Column<bool>(type: "INTEGER", nullable: false, comment: "是否删除")
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_api_keys", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_api_keys_users_user_id",
+                        column: x => x.user_id,
+                        principalTable: "users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                },
+                comment: "API Key");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_api_keys_key_hash",
+                schema: "flow",
+                table: "api_keys",
+                column: "key_hash",
                 unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_api_keys_user_id",
+                schema: "flow",
+                table: "api_keys",
+                column: "user_id");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_credentials_name_null_project",
+                schema: "flow",
+                table: "credentials",
+                column: "name",
+                unique: true,
+                filter: "\"project_id\" IS NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_credentials_name_project_id_notnull",
+                schema: "flow",
+                table: "credentials",
+                columns: new[] { "name", "project_id" },
+                unique: true,
+                filter: "\"project_id\" IS NOT NULL");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_execution_dedup_idempotency_key",
+                schema: "flow",
+                table: "execution_dedup",
+                column: "idempotency_key",
+                unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_execution_records_project_id",
+                schema: "flow",
+                table: "execution_records",
+                column: "project_id");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_execution_records_status_completed_at",
+                schema: "flow",
+                table: "execution_records",
+                columns: new[] { "status", "completed_at" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_execution_records_workflow_definition_id_started_at",
+                schema: "flow",
+                table: "execution_records",
+                columns: new[] { "workflow_definition_id", "started_at" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_stored_files_project_id",
+                schema: "flow",
+                table: "stored_files",
+                column: "project_id");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_triggers_project_id",
+                table: "triggers",
+                column: "project_id");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_triggers_workflow_definition_id",
+                table: "triggers",
+                column: "workflow_definition_id");
 
             migrationBuilder.CreateIndex(
                 name: "IX_user_roles_UserId_Role",
@@ -246,21 +357,37 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                 table: "users",
                 column: "Email",
                 unique: true);
+
+            migrationBuilder.CreateIndex(
+                name: "IX_workflow_credential_usages_CredentialId",
+                schema: "flow",
+                table: "workflow_credential_usages",
+                column: "CredentialId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_workflows_project_id",
+                schema: "flow",
+                table: "workflows",
+                column: "project_id");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.DropTable(
+                name: "api_keys",
+                schema: "flow");
+
+            migrationBuilder.DropTable(
                 name: "credentials",
                 schema: "flow");
 
             migrationBuilder.DropTable(
-                name: "execution_records",
+                name: "execution_dedup",
                 schema: "flow");
 
             migrationBuilder.DropTable(
-                name: "project_members",
+                name: "execution_records",
                 schema: "flow");
 
             migrationBuilder.DropTable(
@@ -278,14 +405,18 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                 name: "user_roles");
 
             migrationBuilder.DropTable(
-                name: "users");
+                name: "webhook_routes");
 
             migrationBuilder.DropTable(
-                name: "webhook_routes");
+                name: "workflow_credential_usages",
+                schema: "flow");
 
             migrationBuilder.DropTable(
                 name: "workflows",
                 schema: "flow");
+
+            migrationBuilder.DropTable(
+                name: "users");
         }
     }
 }

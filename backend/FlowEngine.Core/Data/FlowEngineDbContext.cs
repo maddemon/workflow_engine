@@ -7,6 +7,7 @@ using FlowEngine.Core.Enums;
 using FlowEngine.Core.Identity;
 using FlowEngine.Core.ValueObjects;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 namespace FlowEngine.Core.Data;
@@ -179,7 +180,9 @@ public class FlowEngineDbContext : DbContext
     /// </summary>
     private void ConfigureJsonColumns(ModelBuilder modelBuilder)
     {
-        var columnType = Database.ProviderName == "Npgsql" ? "jsonb" : "json";
+        // 注意：OnModelCreating 阶段（含设计期迁移脚手架）Database.ProviderName 尚未赋值，
+        // 因此改从已配置完成的 DbContextOptions 扩展判断提供程序，保证运行时与设计期一致。
+        var columnType = IsNpgsqlProvider() ? "jsonb" : "json";
         var entityTypes = typeof(Workflow).Assembly
             .GetTypes()
             .Where(t => t.IsClass && !t.IsAbstract && !typeof(Attribute).IsAssignableFrom(t));
@@ -202,6 +205,17 @@ public class FlowEngineDbContext : DbContext
                 propertyBuilder.HasColumnType(columnType);
             }
         }
+    }
+
+    /// <summary>
+    /// 判断当前提供程序是否为 PostgreSQL（Npgsql）。
+    /// 不直接引用 Npgsql 类型以保持 Core 与具体提供程序解耦，改为按扩展类型全名匹配。
+    /// </summary>
+    private bool IsNpgsqlProvider()
+    {
+        var options = this.GetService<IDbContextOptions>();
+        return options.Extensions.Any(e =>
+            e.GetType().FullName?.IndexOf("pgsql", StringComparison.OrdinalIgnoreCase) >= 0);
     }
 }
 

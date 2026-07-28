@@ -3,19 +3,16 @@ using System;
 using FlowEngine.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
-using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
 
-namespace FlowEngine.Migrations.Migrations.Sqlite
+namespace FlowEngine.Migrations.Sqlite.Migrations
 {
     [DbContext(typeof(FlowEngineDbContext))]
-    [Migration("20260711091123_AddCredentialNameUniqueIndex")]
-    partial class AddCredentialNameUniqueIndex
+    partial class FlowEngineDbContextModelSnapshot : ModelSnapshot
     {
-        /// <inheritdoc />
-        protected override void BuildTargetModel(ModelBuilder modelBuilder)
+        protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "10.0.9");
@@ -23,7 +20,6 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
             modelBuilder.Entity("FlowEngine.Core.Entities.Credential", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasMaxLength(36)
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("CreatedAt")
@@ -59,6 +55,12 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                         .HasColumnName("project_id")
                         .HasComment("项目 ID");
 
+                    b.Property<long>("RowVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("row_version")
+                        .HasComment("乐观并发行版本");
+
                     b.Property<string>("Type")
                         .IsRequired()
                         .HasMaxLength(64)
@@ -72,8 +74,15 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
 
                     b.HasKey("Id");
 
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("IX_credentials_name_null_project")
+                        .HasFilter("\"project_id\" IS NULL");
+
                     b.HasIndex("Name", "ProjectId")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasDatabaseName("IX_credentials_name_project_id_notnull")
+                        .HasFilter("\"project_id\" IS NOT NULL");
 
                     b.ToTable("credentials", "flow", t =>
                         {
@@ -118,7 +127,6 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
             modelBuilder.Entity("FlowEngine.Core.Entities.ExecutionRecord", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasMaxLength(36)
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime?>("CompletedAt")
@@ -171,6 +179,12 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("Status", "CompletedAt");
+
+                    b.HasIndex("WorkflowDefinitionId", "StartedAt");
+
                     b.ToTable("execution_records", "flow", t =>
                         {
                             t.HasComment("执行记录");
@@ -180,14 +194,14 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
             modelBuilder.Entity("FlowEngine.Core.Entities.Project", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasMaxLength(36)
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT")
                         .HasComment("创建时间");
 
-                    b.Property<Guid>("CreatedBy")
+                    b.Property<string>("CreatedBy")
+                        .IsRequired()
                         .HasColumnType("TEXT")
                         .HasColumnName("created_by")
                         .HasComment("创建人");
@@ -209,6 +223,12 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                         .HasColumnName("name")
                         .HasComment("项目名称");
 
+                    b.Property<long>("RowVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("row_version")
+                        .HasComment("乐观并发行版本");
+
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("TEXT")
                         .HasComment("最后更新时间");
@@ -224,7 +244,6 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
             modelBuilder.Entity("FlowEngine.Core.Entities.StoredFile", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasMaxLength(36)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("ContentType")
@@ -276,6 +295,8 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ProjectId");
+
                     b.ToTable("stored_files", "flow", t =>
                         {
                             t.HasComment("存储文件");
@@ -285,7 +306,6 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
             modelBuilder.Entity("FlowEngine.Core.Entities.Trigger", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasMaxLength(36)
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("CreatedAt")
@@ -350,6 +370,10 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ProjectId");
+
+                    b.HasIndex("WorkflowDefinitionId");
+
                     b.ToTable("triggers", t =>
                         {
                             t.HasComment("触发器");
@@ -359,7 +383,6 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
             modelBuilder.Entity("FlowEngine.Core.Entities.WebhookRoute", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasMaxLength(36)
                         .HasColumnType("TEXT");
 
                     b.PrimitiveCollection<string>("AllowedIps")
@@ -440,7 +463,6 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
             modelBuilder.Entity("FlowEngine.Core.Entities.Workflow", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasMaxLength(36)
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Connections")
@@ -463,6 +485,17 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                     b.Property<bool>("Deleted")
                         .HasColumnType("INTEGER")
                         .HasComment("是否删除");
+
+                    b.Property<string>("Diff")
+                        .IsRequired()
+                        .HasColumnType("json")
+                        .HasColumnName("diff")
+                        .HasComment("modify 草稿的结构化差异");
+
+                    b.Property<int?>("DraftStatus")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("draft_status")
+                        .HasComment("草稿审查状态：待审查/已拒绝/已确认");
 
                     b.Property<bool>("IsActive")
                         .HasColumnType("INTEGER")
@@ -487,6 +520,23 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
                         .HasColumnName("project_id")
                         .HasComment("项目 ID");
 
+                    b.Property<string>("RejectionReason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT")
+                        .HasColumnName("rejection_reason")
+                        .HasComment("拒绝理由");
+
+                    b.Property<long>("RowVersion")
+                        .IsConcurrencyToken()
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("row_version")
+                        .HasComment("乐观并发行版本");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("INTEGER")
+                        .HasColumnName("source")
+                        .HasComment("工作流来源：人工创建或 AI 生成");
+
                     b.Property<string>("StyleSettings")
                         .HasColumnType("json")
                         .HasColumnName("style_settings")
@@ -503,16 +553,47 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
 
                     b.HasKey("Id");
 
+                    b.HasIndex("ProjectId");
+
                     b.ToTable("workflows", "flow", t =>
                         {
                             t.HasComment("工作流定义");
                         });
                 });
 
+            modelBuilder.Entity("FlowEngine.Core.Entities.WorkflowCredentialUsage", b =>
+                {
+                    b.Property<Guid>("WorkflowId")
+                        .HasColumnType("TEXT")
+                        .HasComment("所属工作流 ID");
+
+                    b.Property<Guid>("CredentialId")
+                        .HasColumnType("TEXT")
+                        .HasComment("被引用凭据 ID");
+
+                    b.Property<string>("NodeId")
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT")
+                        .HasComment("引用该凭据的节点 ID（工作流级引用时为空字符串）");
+
+                    b.Property<string>("WorkflowName")
+                        .IsRequired()
+                        .HasColumnType("TEXT")
+                        .HasComment("所属工作流名称（冗余存储，便于删除凭据时直接展示引用方，无需回查工作流表）");
+
+                    b.HasKey("WorkflowId", "CredentialId", "NodeId");
+
+                    b.HasIndex("CredentialId");
+
+                    b.ToTable("workflow_credential_usages", "flow", t =>
+                        {
+                            t.HasComment("工作流→凭据引用关系（归一化关联表），用于删除凭据时快速定位引用方");
+                        });
+                });
+
             modelBuilder.Entity("FlowEngine.Core.Identity.ApiKey", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasMaxLength(36)
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("CreatedAt")
@@ -579,7 +660,6 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
             modelBuilder.Entity("FlowEngine.Core.Identity.User", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasMaxLength(36)
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("CreatedAt")
@@ -635,7 +715,6 @@ namespace FlowEngine.Migrations.Migrations.Sqlite
             modelBuilder.Entity("FlowEngine.Core.Identity.UserRole", b =>
                 {
                     b.Property<Guid>("Id")
-                        .HasMaxLength(36)
                         .HasColumnType("TEXT");
 
                     b.Property<DateTime>("CreatedAt")

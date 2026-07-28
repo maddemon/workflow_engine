@@ -417,3 +417,4 @@ frontend/coverage/
 tests/**/TestResults/
 scripts/
 docs/
+run_host_pg.sh

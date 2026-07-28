@@ -12,14 +12,14 @@ Flow Engine **当前设计为单机形态**：执行引擎、Quartz 调度、Web
 
 | 能力 | 现状（代码依据） | 多实例含义 |
 |------|------------------|-----------|
-| 共享数据库 | `ServiceCollectionExtensions.cs` 接入 **SQLite + PostgreSQL + MySQL** EF 提供器（`UseSqlite` / `UseNpgsql` / `UseMySQL`） | 将所有实例指向同一 PostgreSQL，即可共享工作流 / 凭据 / 执行记录 |
+| 共享数据库 | `ServiceCollectionExtensions.cs` 接入 **SQLite + PostgreSQL(Npgsql) + MySQL + KingbaseES + Dameng** EF 提供器（`UseSqlite` / `UseNpgsql` / `UseMySQL` / 达梦） | 将所有实例指向同一 PostgreSQL，即可共享工作流 / 凭据 / 执行记录 |
 | DB 节点跨库直连 | 插件节点可经原始 ADO 驱动直连 **MySQL / SQL Server** | 与平台库解耦，数据源无关 |
 | 无状态认证 | JWT 令牌（`Jwt` 配置）签发，API Key（Bearer）用于 MCP | 多实例前置负载均衡无需会话粘滞（Cookie 除外，见 §4） |
 | 文件存储抽象 | `Storage:Type`（`LocalFileSystem`）可扩展为对象存储 | 多实例共享对象存储即可统一文件 |
 | 审计 / 日志抽象 | `AuditLogFileSink` 落盘（NDJSON）；`AuditEventNotificationHandler` 经 `IEventBus` 通知；Serilog + OpenTelemetry（stdout 导出） | 可接外部日志/追踪后端（外部转发取决于 `IEventBus` 实现） |
 | 凭据加密 | AES-GCM，密钥来自配置 | 多实例共用同一主密钥即可解密同一凭据 |
 
-> 切换数据库提供器仅需改 `appsettings.json` 的 `Database.Provider` 与 `ConnectionStrings.Default`，并应用对应迁移（EF 迁移程序集 `FlowEngine.Migrations` 已为多提供器生成）。
+> 切换数据库提供器仅需改 `appsettings.json` 的 `Database.Provider` 与 `ConnectionStrings.Default`；迁移按提供器分离为 `FlowEngine.Migrations.Sqlite`（默认）与 `FlowEngine.Migrations.Postgres`（PostgreSQL / 金仓），运行期由 `FlowEngine.Host.MigrationsExtensions` 自动选用对应程序集应用迁移。
 
 ## 3. 尚未实现（规划 / 待确认）
 
