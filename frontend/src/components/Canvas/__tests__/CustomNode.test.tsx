@@ -7,7 +7,7 @@ import { WorkflowCanvas } from '../WorkflowCanvas.tsx';
 import { useWorkflowStore } from '../../../stores/workflowStore.ts';
 import { useCanvasStore } from '../stores/canvasStore.ts';
 import type { NodeTypeDescriptor, PortDefinition } from '../../../types/workflow.ts';
-import type { WorkflowNode } from '../../types/canvas.ts';
+import type { WorkflowNode } from '../../../types/canvas.ts';
 import { CustomNode, portLayouts } from '../CustomNode.tsx';
 import { ConnectedHandlesContext } from '../connectedHandlesContext.ts';
 
@@ -65,7 +65,20 @@ function customNodeElement(node: WorkflowNode, selected: boolean) {
   return (
     <ReactFlowProvider>
       <ConnectedHandlesContext.Provider value={{}}>
-        <CustomNode id={node.id} data={node.data} selected={selected} />
+        <CustomNode
+          id={node.id}
+          data={node.data}
+          selected={selected}
+          type="workflow"
+          deletable
+          selectable
+          draggable
+          dragging={false}
+          zIndex={0}
+          isConnectable
+          positionAbsoluteX={0}
+          positionAbsoluteY={0}
+        />
       </ConnectedHandlesContext.Provider>
     </ReactFlowProvider>
   );
@@ -197,12 +210,25 @@ describe('CustomNode', () => {
         name: 'cases',
         displayName: 'Cases',
         type: 'Array',
+        defaultValue: null,
         required: false,
         validationRules: [],
+        displayRule: null,
+        credentialType: null,
+        options: [],
         itemDefinition: {
+          name: 'case',
+          displayName: 'Case',
+          type: 'Array',
+          defaultValue: null,
+          required: false,
+          validationRules: [],
+          displayRule: null,
+          credentialType: null,
+          options: [],
           fields: [
-            { name: 'name', displayName: 'Name', type: 'String', required: false },
-            { name: 'label', displayName: 'Label', type: 'String', required: false },
+            { name: 'name', displayName: 'Name', type: 'String', required: false, defaultValue: '', validationRules: [], displayRule: null, credentialType: null, options: [] },
+            { name: 'label', displayName: 'Label', type: 'String', required: false, defaultValue: '', validationRules: [], displayRule: null, credentialType: null, options: [] },
           ],
         },
       },

@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import type { Mock } from 'vitest';
 import { renderHook, act } from '@testing-library/react';
 import type { MutableRefObject } from 'react';
 import { useWebSocketConnection } from '../useWebSocketConnection.ts';
+import type { WebSocketPushMessage, WebSocketStatus } from '../messageHandlers.ts';
 
 /**
  * 由于 jsdom 不提供 WebSocket 实现，这里用一个最小可用的假类替换全局 WebSocket。
@@ -63,16 +65,16 @@ function simulateOpen(ws: MockWebSocket): void {
 }
 
 describe('useWebSocketConnection', () => {
-  let setStatus: ReturnType<typeof vi.fn>;
-  let processMessage: ReturnType<typeof vi.fn>;
-  let trySseFallback: ReturnType<typeof vi.fn>;
-  let getWebSocketUrl: ReturnType<typeof vi.fn>;
+  let setStatus: Mock<(status: WebSocketStatus) => void>;
+  let processMessage: Mock<(message: WebSocketPushMessage) => void>;
+  let trySseFallback: Mock<(executionId: string) => void>;
+  let getWebSocketUrl: Mock<() => string>;
 
   beforeEach(() => {
     MockWebSocket.reset();
-    setStatus = vi.fn();
-    processMessage = vi.fn();
-    trySseFallback = vi.fn();
+    setStatus = vi.fn<(status: WebSocketStatus) => void>();
+    processMessage = vi.fn<(message: WebSocketPushMessage) => void>();
+    trySseFallback = vi.fn<(executionId: string) => void>();
     getWebSocketUrl = vi.fn(() => 'ws://fake-url');
     vi.useFakeTimers();
     vi.stubGlobal('WebSocket', MockWebSocket);

@@ -372,7 +372,7 @@ describe('workflowSerializer', () => {
             itemDefinition: {
               name: 'case',
               displayName: 'Case',
-              type: 'Object',
+              type: 'Array',
               defaultValue: null,
               required: false,
               validationRules: [],

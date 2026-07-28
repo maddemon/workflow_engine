@@ -6,7 +6,7 @@ import { WorkflowCanvas } from '../WorkflowCanvas.tsx';
 import { useWorkflowStore } from '../../../stores/workflowStore.ts';
 import { useCanvasStore } from '../stores/canvasStore.ts';
 import type { NodeTypeDescriptor, PortDefinition } from '../../../types/workflow.ts';
-import type { WorkflowNode } from '../../types/canvas.ts';
+import type { WorkflowNode } from '../../../types/canvas.ts';
 
 vi.mock('@mantine/notifications', () => ({
   notifications: { show: vi.fn() },
