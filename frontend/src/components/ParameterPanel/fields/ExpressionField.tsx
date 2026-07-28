@@ -154,7 +154,7 @@ export function ExpressionField({ definition, value, onChange, error }: Expressi
       <Group gap={4} mb={4}>
         <Text size="xs" fw={400}>
           {label}
-          {definition.required && <span style={{ color: "var(--mantine-color-error)" }}> *</span>}
+          {definition.required && definition.defaultValue == null && <span style={{ color: "var(--mantine-color-error)" }}> *</span>}
         </Text>
         {definition.description && <InfoTooltip label={definition.description} />}
         <Box style={{ marginLeft: "auto" }}>

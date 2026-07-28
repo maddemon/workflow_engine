@@ -21,7 +21,7 @@ export function ResourceField({ definition, value, onChange, error }: ResourceFi
       <Group gap={4} mb={4}>
         <Text size="xs" fw={400}>
           {label}
-          {definition.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
+          {definition.required && definition.defaultValue == null && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
         </Text>
         <InfoTooltip label={definition.description ?? t('fields.resource.tooltip', { type: definition.resourceType ?? 'resource' })} />
       </Group>

@@ -71,6 +71,24 @@ public sealed class WorkflowAssemblyService(
                     $"Node '{resolvedId}' uses an unknown node type '{draftNode.TypeName}'.");
             }
 
+            // 合并参数默认值：AI 只填了部分参数，用 schema 中的 DefaultValue 补全缺失项
+            var mergedParameters = new Dictionary<string, object>(StringComparer.Ordinal);
+            foreach (var paramDef in descriptor.Parameters)
+            {
+                if (paramDef.DefaultValue is not null)
+                {
+                    mergedParameters[paramDef.Name] = ConvertDefaultValue(paramDef.DefaultValue);
+                }
+            }
+            // AI 提供的值优先覆盖默认值
+            if (draftNode.Parameters is { Count: > 0 })
+            {
+                foreach (var kvp in draftNode.Parameters)
+                {
+                    mergedParameters[kvp.Key] = kvp.Value;
+                }
+            }
+
             // 从端口定义创建端口实例
             var ports = descriptor.Ports.Select(p => new PortInstance
             {
@@ -84,7 +102,7 @@ public sealed class WorkflowAssemblyService(
                 Id = resolvedId,
                 TypeName = draftNode.TypeName,
                 Name = resolvedId, // 默认以 AI 赋予的 ID 作为显示名称
-                Parameters = draftNode.Parameters,
+                Parameters = mergedParameters,
                 Ports = ports,
                 PositionX = null,
                 PositionY = null,
@@ -245,6 +263,19 @@ public sealed class WorkflowAssemblyService(
             DraftId = draftDto.Id,
             Workflow = draftDto,
         };
+    }
+
+    /// <summary>
+    /// 将默认值转为 JSON 友好类型：枚举转为字符串，避免在 <c>Dictionary&lt;string, object&gt;</c> 中序列化为数字。
+    /// </summary>
+    private static object ConvertDefaultValue(object value)
+    {
+        if (value is Enum e)
+        {
+            return e.ToString();
+        }
+
+        return value;
     }
 
     /// <summary>

@@ -82,7 +82,7 @@ export function FileField({ definition, value, onChange, error, projectId }: Fil
       <Group gap={4} mb={4}>
         <Text size="xs" fw={400}>
           {label}
-          {definition.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
+          {definition.required && definition.defaultValue == null && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
         </Text>
         {definition.description && <InfoTooltip label={definition.description} />}
       </Group>

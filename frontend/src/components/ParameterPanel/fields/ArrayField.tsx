@@ -61,7 +61,7 @@ export function ArrayField({ definition, value, onChange, error }: ArrayFieldPro
       <Group justify="space-between" mb={4}>
         <Text size="sm" fw={400}>
           {label}
-          {definition.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
+          {definition.required && definition.defaultValue == null && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
         </Text>
         <Button variant="subtle" size="xs" leftSection={<Plus size={14} />} onClick={handleAdd}>
           {t('fields.array.add')}

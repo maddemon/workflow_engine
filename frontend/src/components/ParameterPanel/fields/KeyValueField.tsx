@@ -105,7 +105,7 @@ export function KeyValueField({ definition, value, onChange, error }: KeyValueFi
         <Group gap={4}>
           <Text size="xs" fw={400}>
             {label}
-            {definition.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
+            {definition.required && definition.defaultValue == null && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
           </Text>
           {definition.description && <InfoTooltip label={definition.description} />}
         </Group>

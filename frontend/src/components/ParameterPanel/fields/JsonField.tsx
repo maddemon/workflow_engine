@@ -51,7 +51,7 @@ export function JsonField({ definition, value, onChange, error }: JsonFieldProps
       <Group justify="space-between" gap="xs" mb={4}>
         <Text size="sm" fw={400}>
           {paramName(definition.name, definition.displayName)}
-          {definition.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
+          {definition.required && definition.defaultValue == null && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
         </Text>
         <ActionIcon variant="subtle" onClick={handleFormat} title={t('fields.json.format')} size="sm">
           <Braces size={16} />

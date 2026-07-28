@@ -102,7 +102,7 @@ export function CredentialField({ definition, value, onChange, error }: Credenti
         <Group gap={4} wrap="nowrap">
           <Text size="xs" fw={400}>
             {label}
-            {definition.required && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
+            {definition.required && definition.defaultValue == null && <span style={{ color: 'var(--mantine-color-error)' }}> *</span>}
           </Text>
           {definition.description && <InfoTooltip label={definition.description} />}
         </Group>

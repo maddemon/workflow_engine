@@ -87,7 +87,7 @@ public class NodeTypesController(
             Name = param.Name,
             DisplayName = displayName.ResourceNotFound ? param.DisplayName : displayName.Value,
             Type = param.Type,
-            DefaultValue = param.DefaultValue,
+            DefaultValue = ConvertDefaultValue(param.DefaultValue),
             Required = param.Required,
             ValidationRules = param.ValidationRules,
             DisplayRule = param.DisplayRule,
@@ -114,4 +114,17 @@ public class NodeTypesController(
         OutputSchema = port.OutputSchema,
         ExpectedSchema = port.ExpectedSchema,
     };
+
+    /// <summary>
+    /// 将默认值转为 JSON 友好类型：枚举转为字符串，避免在 object? 属性中序列化为数字。
+    /// </summary>
+    private static object? ConvertDefaultValue(object? value)
+    {
+        if (value is Enum e)
+        {
+            return e.ToString();
+        }
+
+        return value;
+    }
 }
