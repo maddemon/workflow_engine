@@ -147,6 +147,13 @@ export function WorkflowListPage() {
     setPage(1);
   }, [projectFilter]);
 
+  // 数据集因删除/刷新而缩小到当前页窗口之外时，重置到第一页，避免空白表格
+  useEffect(() => {
+    if (filteredWorkflows.length < (page - 1) * PAGE_SIZE) {
+      setPage(1);
+    }
+  }, [filteredWorkflows, page]);
+
   const toggleSelect = (id: string) => {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -517,7 +524,7 @@ export function WorkflowListPage() {
           </Table.Tbody>
         </Table>
       )}
-      {filteredWorkflows.length > 0 && Math.ceil(displayRows.length / PAGE_SIZE) > 1 && (
+      {Math.ceil(displayRows.length / PAGE_SIZE) > 1 && (
         <Pagination
           total={Math.ceil(displayRows.length / PAGE_SIZE)}
           value={page}
