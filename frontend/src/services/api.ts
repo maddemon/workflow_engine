@@ -31,6 +31,7 @@ import type {
   ValidateWorkflowResult,
   CreateApiKeyResult,
   PagedResult,
+  WorkflowVersion,
 } from '../types/workflow.ts';
 
 const api = axios.create({
@@ -104,6 +105,12 @@ export async function getWorkflows(): Promise<WorkflowSummary[]> {
 
 export async function getWorkflow(id: string): Promise<Workflow> {
   const res = await api.get<Workflow>(`/workflows/${id}`);
+  return res.data;
+}
+
+/** 获取工作流当前版本轻量信息（轮询用，避免全量 getWorkflow 的开销）。 */
+export async function getWorkflowVersion(id: string): Promise<WorkflowVersion> {
+  const res = await api.get<WorkflowVersion>(`/workflows/${id}/version`);
   return res.data;
 }
 

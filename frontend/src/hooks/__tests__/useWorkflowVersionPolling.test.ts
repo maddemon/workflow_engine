@@ -4,28 +4,22 @@ import { useWorkflowVersionPolling } from '../useWorkflowVersionPolling.ts';
 import { useWorkflowStore } from '../../stores/workflowStore.ts';
 import { useCanvasStore } from '../../components/Canvas/stores/canvasStore.ts';
 import * as api from '../../services/api.ts';
-import type { Workflow } from '../../types/workflow.ts';
+import type { WorkflowVersion } from '../../types/workflow.ts';
 
 vi.mock('../../services/api.ts', () => ({
+  getWorkflowVersion: vi.fn(),
   getWorkflow: vi.fn(),
 }));
 
+const mockedGetWorkflowVersion = vi.mocked(api.getWorkflowVersion);
 const mockedGetWorkflow = vi.mocked(api.getWorkflow);
 
-/** 构造仅 `version` 不同的最小 Workflow 对象，供 mock getWorkflow 使用。 */
-function makeWorkflow(version: number): Workflow {
+/** 构造仅 `version` 不同的最小 WorkflowVersion 对象，供 mock getWorkflowVersion 使用。 */
+function makeWorkflowVersion(version: number): WorkflowVersion {
   return {
     id: 'wf-1',
-    projectId: null,
-    name: 'Test',
     version,
-    createdBy: 'user',
-    createdAt: '2024-01-01T00:00:00Z',
-    updatedAt: '2024-01-01T00:00:00Z',
-    isActive: false,
-    styleSettings: null,
-    nodes: [],
-    connections: [],
+    updatedAt: null,
   };
 }
 
@@ -43,12 +37,14 @@ describe('useWorkflowVersionPolling', () => {
   it('noWorkflowId_doesNotPoll', () => {
     renderHook(() => useWorkflowVersionPolling(null));
     vi.advanceTimersByTime(60000);
+    expect(mockedGetWorkflowVersion).not.toHaveBeenCalled();
     expect(mockedGetWorkflow).not.toHaveBeenCalled();
   });
 
   it('newWorkflowId_doesNotPoll', () => {
     renderHook(() => useWorkflowVersionPolling('new'));
     vi.advanceTimersByTime(60000);
+    expect(mockedGetWorkflowVersion).not.toHaveBeenCalled();
     expect(mockedGetWorkflow).not.toHaveBeenCalled();
   });
 
@@ -57,6 +53,7 @@ describe('useWorkflowVersionPolling', () => {
     useWorkflowStore.setState({ workflowVersion: 1 });
     renderHook(() => useWorkflowVersionPolling('wf-1'));
     vi.advanceTimersByTime(60000);
+    expect(mockedGetWorkflowVersion).not.toHaveBeenCalled();
     expect(mockedGetWorkflow).not.toHaveBeenCalled();
   });
 
@@ -65,12 +62,13 @@ describe('useWorkflowVersionPolling', () => {
     useWorkflowStore.setState({ workflowVersion: 1 });
     renderHook(() => useWorkflowVersionPolling('wf-1'));
     vi.advanceTimersByTime(60000);
+    expect(mockedGetWorkflowVersion).not.toHaveBeenCalled();
     expect(mockedGetWorkflow).not.toHaveBeenCalled();
   });
 
-  it('pollingDetectsHigherVersion_setsChanged', async () => {
+  it('pollingCallsVersionEndpoint_notGetWorkflow', async () => {
     useWorkflowStore.setState({ workflowVersion: 1 });
-    mockedGetWorkflow.mockResolvedValue({ id: 'wf-1', version: 2 } as unknown as Workflow);
+    mockedGetWorkflowVersion.mockResolvedValue(makeWorkflowVersion(2));
 
     const { result } = renderHook(() => useWorkflowVersionPolling('wf-1'));
     expect(result.current.changed).toBe(false);
@@ -80,14 +78,33 @@ describe('useWorkflowVersionPolling', () => {
       await vi.advanceTimersByTimeAsync(0);
     });
 
-    expect(mockedGetWorkflow).toHaveBeenCalledWith('wf-1');
+    // 轮询应调用轻量 version 接口而非全量 getWorkflow
+    expect(mockedGetWorkflowVersion).toHaveBeenCalledWith('wf-1');
+    expect(mockedGetWorkflow).not.toHaveBeenCalled();
+    expect(result.current.changed).toBe(true);
+    expect(result.current.newVersion).toBe(2);
+  });
+
+  it('pollingDetectsHigherVersion_setsChanged', async () => {
+    useWorkflowStore.setState({ workflowVersion: 1 });
+    mockedGetWorkflowVersion.mockResolvedValue(makeWorkflowVersion(2));
+
+    const { result } = renderHook(() => useWorkflowVersionPolling('wf-1'));
+    expect(result.current.changed).toBe(false);
+
+    await act(async () => {
+      vi.advanceTimersByTime(30000);
+      await vi.advanceTimersByTimeAsync(0);
+    });
+
+    expect(mockedGetWorkflowVersion).toHaveBeenCalledWith('wf-1');
     expect(result.current.changed).toBe(true);
     expect(result.current.newVersion).toBe(2);
   });
 
   it('pollingError_isSilentlyIgnored', async () => {
     useWorkflowStore.setState({ workflowVersion: 1 });
-    mockedGetWorkflow.mockRejectedValue(new Error('network'));
+    mockedGetWorkflowVersion.mockRejectedValue(new Error('network'));
 
     renderHook(() => useWorkflowVersionPolling('wf-1'));
     await act(async () => {
@@ -95,13 +112,13 @@ describe('useWorkflowVersionPolling', () => {
       await vi.advanceTimersByTimeAsync(0);
     });
 
-    expect(mockedGetWorkflow).toHaveBeenCalled();
+    expect(mockedGetWorkflowVersion).toHaveBeenCalled();
     // no throw, test passes
   });
 
   it('dismiss_clearsChangedState', async () => {
     useWorkflowStore.setState({ workflowVersion: 1 });
-    mockedGetWorkflow.mockResolvedValue({ id: 'wf-1', version: 2 } as unknown as Workflow);
+    mockedGetWorkflowVersion.mockResolvedValue(makeWorkflowVersion(2));
 
     const { result } = renderHook(() => useWorkflowVersionPolling('wf-1'));
     await act(async () => {
@@ -121,7 +138,7 @@ describe('useWorkflowVersionPolling', () => {
 
   it('dismiss - advances baseline version so the dismissed version is not re-flagged on next poll', async () => {
     // 后端持续返回较高版本（5），模拟他人已保存的新版本。
-    vi.spyOn(api, 'getWorkflow').mockResolvedValue(makeWorkflow(5));
+    vi.spyOn(api, 'getWorkflowVersion').mockResolvedValue(makeWorkflowVersion(5));
 
     const { result } = renderHook(() => useWorkflowVersionPolling('wf-1'));
 
