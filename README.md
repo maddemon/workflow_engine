@@ -9,7 +9,7 @@ A workflow automation engine with **hot-pluggable nodes**. The React/TypeScript 
 - **Visual workflow editor** — drag-and-drop nodes on a canvas, wire them up, undo/redo, configure parameters in an auto-generated panel.
 - **Hot-pluggable nodes** — implement a node as a DLL, drop it into `plugins/`, and it is discovered and registered on startup via an isolated `AssemblyLoadContext`.
 - **Deterministic execution engine** — executes nodes in DAG topological order with multi-input barriers, branching, retries, cancellation, and Saga compensation.
-- **Safe expression engine** — expressions are JavaScript (via Jint) evaluated in a restricted sandbox, using `$`-prefixed variables such as `$json`, `$input`, and `$credentials`. The `{{ }}` mustache syntax is not supported.
+- **Safe expression engine** — expressions are JavaScript (via Jint) evaluated in a restricted sandbox, using `$`-prefixed variables such as `$json`, `$input`, and `$credentials`.
 - **Credentials system** — credentials are encrypted at rest (AES-GCM) and decrypted/injected at runtime; raw values never reach logs or the frontend.
 - **Triggers** — schedule (Quartz.NET), webhook, and polling triggers start executions.
 - **Real-time execution view** — execution events are pushed over WebSocket and rendered live in the frontend.
@@ -41,12 +41,12 @@ The frontend only **describes workflows** and **shows execution progress**; all 
 
 ## Tech Stack
 
-| Layer    | Technology                                                                 |
-|----------|---------------------------------------------------------------------------|
-| Backend  | .NET 10 (C# 12), ASP.NET Core, Entity Framework Core, Quartz.NET, Jint   |
+| Layer    | Technology                                                                         |
+| -------- | ---------------------------------------------------------------------------------- |
+| Backend  | .NET 10 (C# 12), ASP.NET Core, Entity Framework Core, Quartz.NET, Jint             |
 | Frontend | React 19, TypeScript (strict), Vite, Mantine, React Flow (`@xyflow/react`), ahooks |
-| Tests    | xUnit v3 (backend), Vitest (frontend)                                     |
-| Storage  | SQLite (default) · PostgreSQL / MySQL / SQL Server (scaling)              |
+| Tests    | xUnit v3 (backend), Vitest (frontend)                                              |
+| Storage  | SQLite (default) · PostgreSQL / MySQL / SQL Server (scaling)                       |
 
 ## Project Structure
 
@@ -156,16 +156,16 @@ In HTTP mode the key is sent as the `Authorization: Bearer <apiKey>` header; in 
 
 The skill exposes these tools:
 
-| Tool                  | Purpose                                                          |
-|-----------------------|------------------------------------------------------------------|
-| `list_node_catalog`   | List available node types (parameters and ports).               |
-| `get_node_detail`     | Get the full schema of a specific node type.                    |
-| `assemble_workflow`   | Create a workflow from a natural-language or structured prompt. |
-| `modify_workflow`     | Change an existing workflow (add/remove nodes, rewire, edit params). |
-| `validate_workflow`   | Check structure, node types, ports, connections, and required params. |
-| `confirm_workflow`    | Save a validated draft as a versioned workflow.                 |
-| `execute_workflow`    | Run a workflow and observe the result.                          |
-| `get_workflow` / `list_workflows` | Inspect existing workflows.                          |
+| Tool                              | Purpose                                                               |
+| --------------------------------- | --------------------------------------------------------------------- |
+| `list_node_catalog`               | List available node types (parameters and ports).                     |
+| `get_node_detail`                 | Get the full schema of a specific node type.                          |
+| `assemble_workflow`               | Create a workflow from a natural-language or structured prompt.       |
+| `modify_workflow`                 | Change an existing workflow (add/remove nodes, rewire, edit params).  |
+| `validate_workflow`               | Check structure, node types, ports, connections, and required params. |
+| `confirm_workflow`                | Save a validated draft as a versioned workflow.                       |
+| `execute_workflow`                | Run a workflow and observe the result.                                |
+| `get_workflow` / `list_workflows` | Inspect existing workflows.                                           |
 
 Typical loop: describe what you want → the agent lists nodes and assembles a draft → `validate_workflow` → fix any reported issues → `confirm_workflow` to save → `execute_workflow` to test. Credentials are referenced by ID only; secrets are never embedded in the workflow definition.
 
@@ -226,6 +226,6 @@ npm test
 ---
 
 > 采得百花成蜜后，为谁辛苦为谁甜？
-> *— after gathering a hundred flowers into honey, for whom the toil, for whom the sweet?*
+> _— after gathering a hundred flowers into honey, for whom the toil, for whom the sweet?_
 >
 > —— [唐] 罗隐《蜂》

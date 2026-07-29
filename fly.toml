@@ -1,0 +1,44 @@
+# Fly.io 部署配置（Flow Engine 试用实例）
+#
+# 部署步骤：
+#   1. fly auth login
+#   2. fly volumes create flowdata --region <region> --size 1   # 创建 SQLite 持久卷（每日清空只删 db 文件）
+#   3. fly secrets set FLOWENGINE_ADMIN_PASSWORD=<至少12位> JWT__Secret=<至少32字节随机串>
+#   4. fly deploy
+#
+# 说明：
+#   - Fly 自动注入 PORT（默认 8080），Program.cs 读取并绑定 0.0.0.0:PORT。
+#   - 默认 SQLite：数据库文件落在挂载卷 /data/flowengine.db；每日清空只需删该文件并重启机器。
+#   - 若要改用 PostgreSQL，把 Database__Provider 改为 postgresql 并设 ConnectionStrings__Default 为 Postgres 连接串。
+
+app = "flow-engine-trial"
+primary_region = "sin"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  ASPNETCORE_ENVIRONMENT = "Production"
+  PORT = "8080"
+  Database__Provider = "sqlite"
+  ConnectionStrings__Default = "Data Source=/data/flowengine.db;Mode=ReadWriteCreate;Cache=Shared"
+  # 以下两项改用 fly secrets set 注入（见上方步骤 3），此处仅占位，切勿填写真实口令：
+  FLOWENGINE_ADMIN_PASSWORD = "CHANGE_ME_VIA_FLY_SECRETS"
+  JWT__Secret = "CHANGE_ME_VIA_FLY_SECRETS"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = "off"
+  auto_start_machines = true
+  # 试用实例常驻，别人随时可登录；免费额度内（shared-cpu-1x）。
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-1x"
+  cpus = 1
+  memory = "256mb"
+
+[mounts]
+  source = "flowdata"
+  destination = "/data"

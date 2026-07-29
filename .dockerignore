@@ -1,0 +1,15 @@
+# 排除本地构建产物与依赖，避免污染 Docker 构建上下文（也防止用本地残留 wwwroot 覆盖镜像内新构建的前端）
+**/bin/
+**/obj/
+**/node_modules/
+**/TestResults/
+**/.git/
+**/.github/
+
+# 宿主 wwwroot 由镜像内的前端构建阶段生成，不应从本地拷贝
+backend/FlowEngine.Host/wwwroot/
+
+# 本地可能遗留的运行态文件
+*.db
+*.sqlite
+flowengine.db

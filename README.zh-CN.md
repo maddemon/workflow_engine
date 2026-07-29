@@ -9,7 +9,7 @@
 - **可视化工作流编辑器** —— 画布上拖拽节点、连线、撤销/重做，参数在自动生成的面板中配置。
 - **热插拔节点** —— 把节点编译成 DLL 放入 `plugins/`，启动时通过隔离的 `AssemblyLoadContext` 自动发现并注册。
 - **确定性执行引擎** —— 按 DAG 拓扑顺序执行节点，支持多输入等待屏障、分支、重试、取消与 Saga 补偿。
-- **安全的表达式引擎** —— 表达式为 JavaScript（经 Jint 求值），运行在受限沙箱中，使用 `$` 前缀变量（如 `$json`、`$input`、`$credentials`）；不支持 `{{ }}` mustache 语法。
+- **安全的表达式引擎** —— 表达式为 JavaScript（经 Jint 求值），运行在受限沙箱中，使用 `$` 前缀变量（如 `$json`、`$input`、`$credentials`）。
 - **凭据系统** —— 凭据静态加密存储（AES-GCM），运行时解密注入；明文不落日志、不返回前端。
 - **触发器** —— 定时（Quartz.NET）、Webhook、轮询触发器均可启动执行。
 - **实时执行视图** —— 执行事件经 WebSocket 推送，前端实时高亮展示。
@@ -40,12 +40,12 @@ Flow Engine 服务进程
 
 ## 技术栈
 
-| 层       | 技术                                                                |
-|----------|-------------------------------------------------------------------|
-| 后端     | .NET 10 (C# 12)、ASP.NET Core、Entity Framework Core、Quartz.NET、Jint |
-| 前端     | React 19、TypeScript（严格模式）、Vite、Mantine、React Flow (`@xyflow/react`)、ahooks |
-| 测试     | xUnit v3（后端）、Vitest（前端）                                    |
-| 存储     | SQLite（默认）· PostgreSQL / MySQL / SQL Server（扩展时）              |
+| 层   | 技术                                                                                  |
+| ---- | ------------------------------------------------------------------------------------- |
+| 后端 | .NET 10 (C# 12)、ASP.NET Core、Entity Framework Core、Quartz.NET、Jint                |
+| 前端 | React 19、TypeScript（严格模式）、Vite、Mantine、React Flow (`@xyflow/react`)、ahooks |
+| 测试 | xUnit v3（后端）、Vitest（前端）                                                      |
+| 存储 | SQLite（默认）· PostgreSQL / MySQL / SQL Server（扩展时）                             |
 
 ## 目录结构
 
@@ -155,16 +155,16 @@ HTTP 模式下 Key 以 `Authorization: Bearer <apiKey>` 请求头发送；stdio 
 
 该技能暴露以下工具：
 
-| 工具                    | 用途                                                      |
-|-------------------------|-----------------------------------------------------------|
-| `list_node_catalog`     | 列出可用节点类型（参数与端口）。                          |
-| `get_node_detail`       | 获取某节点类型的完整 schema。                             |
-| `assemble_workflow`     | 根据自然语言或结构化描述创建工作流。                      |
-| `modify_workflow`       | 修改已有工作流（增删节点、重连连线、编辑参数）。          |
-| `validate_workflow`     | 校验结构、节点类型、端口、连线与必填参数。                |
-| `confirm_workflow`      | 将校验通过的草稿保存为带版本的工作流。                    |
-| `execute_workflow`      | 执行工作流并查看结果。                                    |
-| `get_workflow` / `list_workflows` | 查看已有工作流。                                  |
+| 工具                              | 用途                                             |
+| --------------------------------- | ------------------------------------------------ |
+| `list_node_catalog`               | 列出可用节点类型（参数与端口）。                 |
+| `get_node_detail`                 | 获取某节点类型的完整 schema。                    |
+| `assemble_workflow`               | 根据自然语言或结构化描述创建工作流。             |
+| `modify_workflow`                 | 修改已有工作流（增删节点、重连连线、编辑参数）。 |
+| `validate_workflow`               | 校验结构、节点类型、端口、连线与必填参数。       |
+| `confirm_workflow`                | 将校验通过的草稿保存为带版本的工作流。           |
+| `execute_workflow`                | 执行工作流并查看结果。                           |
+| `get_workflow` / `list_workflows` | 查看已有工作流。                                 |
 
 典型闭环：描述需求 → Agent 列出节点并装配草稿 → `validate_workflow` → 修正报告的问题 → `confirm_workflow` 保存 → `execute_workflow` 测试。凭据仅以 ID 引用，密钥绝不写入工作流定义。
 

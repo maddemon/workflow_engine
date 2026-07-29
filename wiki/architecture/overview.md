@@ -16,15 +16,15 @@ Flow Engine 是一个节点可**热插拔**的工作流自动化引擎。前端�
 
 6 个核心后端项目：
 
-| 项目 | 职责 | 依赖 |
-|------|------|------|
-| `FlowEngine.Core` | 实体、抽象契约、值对象，及下沉的脚本/HTTP/Agent/Tools 类型；承载 `FlowEngineDbContext` | EF Core + Jint + Logging |
-| `FlowEngine.Runtime` | 执行引擎、表达式/脚本求值、等待区、快照 | Core + Logging |
-| `FlowEngine.Application` | 用例编排：`Workflows` / `Executions` / `Orchestrators` / `Tools` / `DTOs` | Core + Runtime |
-| `FlowEngine.Infrastructure` | 持久化、调度（Quartz）、事件总线、凭据加密（AES-GCM）、文件存储 | Core + Application（实现其接口） |
-| `FlowEngine.Migrations.Sqlite` | SQLite 迁移程序集（默认提供器专用） | Core |
-| `FlowEngine.Migrations.Postgres` | PostgreSQL 迁移程序集（Provider 为 postgresql/npgsql/kingbasees 时使用） | Core |
-| `FlowEngine.Host` | 组合根：`Controllers` / `WebSocketHandlers` / `Middlewares` / `BackgroundServices` / `wwwroot` / `MigrationsExtensions`（运行时迁移应用器） | 全部 |
+| 项目                             | 职责                                                                                                                                        | 依赖                             |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------- |
+| `FlowEngine.Core`                | 实体、抽象契约、值对象，及下沉的脚本/HTTP/Agent/Tools 类型；承载 `FlowEngineDbContext`                                                      | EF Core + Jint + Logging         |
+| `FlowEngine.Runtime`             | 执行引擎、表达式/脚本求值、等待区、快照                                                                                                     | Core + Logging                   |
+| `FlowEngine.Application`         | 用例编排：`Workflows` / `Executions` / `Orchestrators` / `Tools` / `DTOs`                                                                   | Core + Runtime                   |
+| `FlowEngine.Infrastructure`      | 持久化、调度（Quartz）、事件总线、凭据加密（AES-GCM）、文件存储                                                                             | Core + Application（实现其接口） |
+| `FlowEngine.Migrations.Sqlite`   | SQLite 迁移程序集（默认提供器专用）                                                                                                         | Core                             |
+| `FlowEngine.Migrations.Postgres` | PostgreSQL 迁移程序集（Provider 为 postgresql/npgsql/kingbasees 时使用）                                                                    | Core                             |
+| `FlowEngine.Host`                | 组合根：`Controllers` / `WebSocketHandlers` / `Middlewares` / `BackgroundServices` / `wwwroot` / `MigrationsExtensions`（运行时迁移应用器） | 全部                             |
 
 另有辅助工程 `FlowEngine.Analyzers` 与 `FlowEngine.Resources`。
 
@@ -39,7 +39,6 @@ Flow Engine 是一个节点可**热插拔**的工作流自动化引擎。前端�
 ## 5. 表达式与脚本模型（重点）
 
 - 表达式/脚本以 **JavaScript 语法**经 **Jint** 求值，运行在**受限沙箱**中：默认不调用 `AllowClr()`，并按白名单裁剪全局对象，封死借 `constructor` / 原型链访问 .NET 类型的路径。
-- **不支持 `{{ }}` mustache 模板语法**——校验阶段直接拒绝含 `{{` / `}}` 的内容。
 - 可用变量（由 `ExecutionScope` 注入）：
   - **逐项**：`$json`（当前 item）、`$input`（含 `.params` / `.context` / `.item()` / `.all()`）、`$itemIndex`、`$runIndex`。
   - **全局**（来自 `context.GlobalVariables`）：`$credentials`、`$env`、`$workflow`、`$execution`、`$vars`、`$now`、`$today`、`$node`、`$ctx`、`$items`（`$items()` 取当前输入批次 item 列表；`$items("节点名")` 取指定上游节点最新输出批次 item 列表）。
@@ -81,8 +80,8 @@ Flow Engine 是一个节点可**热插拔**的工作流自动化引擎。前端�
 
 ## 12. 默认端口
 
-| 服务 | 端口 |
-|------|------|
-| 后端 HTTP | `:8001`（HTTPS `:8002`） |
-| MCP 端点 | `/mcp`（同后端地址） |
+| 服务            | 端口                             |
+| --------------- | -------------------------------- |
+| 后端 HTTP       | `:8001`（HTTPS `:8002`）         |
+| MCP 端点        | `/mcp`（同后端地址）             |
 | 前端 dev server | `:4000`（代理 `/api` → `:8001`） |

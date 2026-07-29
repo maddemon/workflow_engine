@@ -1,17 +1,19 @@
-# ── Backend build ─────────────────────────────────────────────
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS backend-build
-WORKDIR /src
-COPY backend/ ./backend/
-COPY plugins/ ./plugins/
-RUN dotnet publish backend/FlowEngine.Host/FlowEngine.Host.csproj -c Release -o /app/publish
-
 # ── Frontend build ───────────────────────────────────────────
 FROM node:20-alpine AS frontend-build
 WORKDIR /web
 COPY frontend/package*.json ./
 RUN npm ci
 COPY frontend/ ./
-RUN npm run build
+# 覆盖 vite 的 outDir（默认 ../backend/FlowEngine.Host/wwwroot 对容器布局无效），
+# 产物统一落到 /web/dist，运行阶段再拷进 wwwroot。
+RUN npm run build -- --outDir /web/dist
+
+# ── Backend build ─────────────────────────────────────────────
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS backend-build
+WORKDIR /src
+COPY backend/ ./backend/
+COPY plugins/ ./plugins/
+RUN dotnet publish backend/FlowEngine.Host/FlowEngine.Host.csproj -c Release -o /app/publish
 
 # ── Runtime ──────────────────────────────────────────────────
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS runtime
@@ -23,6 +25,8 @@ COPY --from=backend-build /app/publish ./
 # 前端静态资源（由 ASP.NET 的 UseStaticFiles + MapFallbackToFile 提供）
 COPY --from=frontend-build /web/dist ./wwwroot
 
+# Fly.io / 容器通过 PORT 告知监听端口（默认 8080）；Program.cs 读取并绑定 0.0.0.0:PORT。
+ENV PORT=8080
 EXPOSE 8080
 
 # 安全提示（对应审查 H1）：

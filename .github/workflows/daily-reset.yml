@@ -1,0 +1,42 @@
+name: Daily Demo Reset
+
+# 每天定时清空 Flow Engine 试用实例的数据：删除挂载卷上的 SQLite 文件后重启应用，
+# 启动时会自动重新迁移表结构并重新播种默认管理员（admin@flowengine.local）。
+#
+# 所需 Secrets（仓库 Settings → Secrets → Actions）：
+#   FLY_API_TOKEN  : 在本地执行 `fly auth token` 获取
+#   FLY_APP_NAME   : 你的 Fly 应用名（如 flow-engine-trial）
+#
+# 说明：
+#   - cron 使用 UTC。下方 "0 16 * * *" = 北京时间每日 00:00（他人入睡后清空）。
+#   - 清空仅删数据库文件，默认管理员账户会在重启时重新创建；试用口令由各人自持。
+#   - 若改用 PostgreSQL，此脚本需改为清空对应 schema（如 fly ssh console -C "psql ... -c 'DROP SCHEMA public CASCADE; CREATE SCHEMA public;'"）。
+
+on:
+  schedule:
+    - cron: "0 16 * * *"
+  workflow_dispatch: # 允许在 Actions 页面手动触发，便于验证
+
+concurrency:
+  group: daily-reset
+  cancel-in-progress: false
+
+jobs:
+  reset:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Setup flyctl
+        uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: Delete SQLite DB on volume
+        run: fly ssh console -a "$FLY_APP" -C "rm -f /data/flowengine.db"
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_APP: ${{ secrets.FLY_APP_NAME }}
+
+      - name: Restart app (re-migrate + re-seed admin)
+        run: fly apps restart "$FLY_APP"
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          FLY_APP: ${{ secrets.FLY_APP_NAME }}
